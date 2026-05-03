@@ -1,0 +1,53 @@
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+tmp/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+
+# Air hot-reload
+.air.toml
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Database
+data/
+*.db
+*.sqlite
+
+# Docker volumes
+mysql_data/
+redis_data/
+
+# Node / Frontend
+node_modules/
+web/dist/
+pnpm-lock.yaml
+
+# Logs
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Build output
+/newmcp
+/newmcp-server
