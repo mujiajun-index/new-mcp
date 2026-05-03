@@ -124,6 +124,7 @@ CREATE TABLE `mcp_groups` (
     -- MCP 端点配置
     `endpoint_slug`     VARCHAR(128)    DEFAULT '' COMMENT 'URL 路径标识 (全局唯一)',
     `endpoint_auth`     VARCHAR(32)     DEFAULT 'api_key' COMMENT '端点认证: api_key, jwt, none',
+    `expose_mode`       VARCHAR(16)     DEFAULT 'smart' COMMENT '暴露模式: smart=元工具模式(3个), direct=直接暴露所有工具',
 
     -- 中间件配置 (V2 扩展)
     `middleware_config`  TEXT            DEFAULT '{}' COMMENT '中间件配置 JSON',
@@ -246,22 +247,26 @@ CREATE TABLE `cameras` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='摄像头表';
 ```
 
-### 2.9 xiaozhi_endpoints - 小智 WSS 端点配置表
+### 2.9 cloud_endpoints - 云端主动连接表
 
 ```sql
-CREATE TABLE `xiaozhi_endpoints` (
+CREATE TABLE `cloud_endpoints` (
     `id`                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `user_id`           BIGINT UNSIGNED NOT NULL COMMENT '所属用户 ID',
-    `name`              VARCHAR(128)    NOT NULL COMMENT '端点名称 (如"客厅小智")',
+    `name`              VARCHAR(128)    NOT NULL COMMENT '连接名称 (如"客厅小智")',
 
-    -- 小智云 Agent 信息 (从 JWT 解析)
-    `agent_id_ext`      VARCHAR(128)    DEFAULT '' COMMENT '小智 Agent ID',
+    -- 云平台类型
+    `cloud_type`        VARCHAR(32)     NOT NULL DEFAULT 'custom' COMMENT '云平台类型: xiaozhi, custom',
 
-    -- WSS 连接配置
+    -- 连接配置
     `wss_url`           VARCHAR(1024)   NOT NULL COMMENT '完整 WSS URL (含 token)',
-    `token_expires_at`  DATETIME        DEFAULT NULL COMMENT 'JWT 过期时间',
+    `cloud_config`      TEXT            DEFAULT '{}' COMMENT '平台特定配置 JSON',
 
-    -- 绑定分组 (此端点暴露该分组内的所有工具给小智设备)
+    -- 云平台解析信息 (如小智 JWT 解析)
+    `remote_id`         VARCHAR(128)    DEFAULT '' COMMENT '远端 ID (如小智 Agent ID)',
+    `token_expires_at`  DATETIME        DEFAULT NULL COMMENT 'Token 过期时间',
+
+    -- 绑定分组 (此连接暴露该分组内的工具给远端平台)
     `group_id`          BIGINT UNSIGNED DEFAULT NULL COMMENT '绑定的 MCP 分组 ID',
 
     -- 连接状态
@@ -277,9 +282,10 @@ CREATE TABLE `xiaozhi_endpoints` (
     PRIMARY KEY (`id`),
     KEY `idx_user_id` (`user_id`),
     KEY `idx_group_id` (`group_id`),
+    KEY `idx_cloud_type` (`cloud_type`),
     KEY `idx_connection_status` (`connection_status`),
     KEY `idx_deleted_at` (`deleted_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='小智 WSS 端点配置表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='云端主动连接表';
 ```
 
 ### 2.10 mcp_call_logs - MCP 调用日志表
@@ -326,12 +332,12 @@ users (1) ──< (N) mcp_services
 users (1) ──< (N) mcp_groups
 users (1) ──< (N) vision_configs
 users (1) ──< (N) cameras
-users (1) ──< (N) xiaozhi_endpoints
+users (1) ──< (N) cloud_endpoints
 
 mcp_groups (1) ──< (N) mcp_group_services >── (1) mcp_services
 mcp_groups (1) ──< (N) mcp_group_tools   >── (1) mcp_services
 
-mcp_groups (1) ──< (N) xiaozhi_endpoints
+mcp_groups (1) ──< (N) cloud_endpoints
 
 vision_configs (1) ──< (N) cameras
 

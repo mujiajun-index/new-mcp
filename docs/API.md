@@ -516,23 +516,44 @@ websocket:
 
 ---
 
-## 5. 小智 WSS 端点接口
+## 5. 云端主动连接接口
 
-### GET /xiaozhi/endpoints
-获取小智 WSS 端点列表。
+### GET /connections
+获取云端主动连接列表。
 
-### POST /xiaozhi/endpoints
-配置新的小智 WSS 端点（用户粘贴从小智云平台复制的 WSS 链接）。
+### POST /connections
+添加新的云端主动连接。
 
-**Request Body:**
+**Request Body (小智云):**
 ```json
 {
     "name": "客厅小智 Agent",
+    "cloud_type": "xiaozhi",
     "wss_url": "wss://api.xiaozhi.me/mcp/?token=eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...",
     "group_id": 1,
     "auto_connect": true
 }
 ```
+
+**Request Body (自定义 WSS):**
+```json
+{
+    "name": "我的云平台",
+    "cloud_type": "custom",
+    "wss_url": "wss://my-cloud.example.com/mcp/?token=xxx",
+    "cloud_config": {
+        "headers": {}
+    },
+    "group_id": 2,
+    "auto_connect": true
+}
+```
+
+**支持的 cloud_type:**
+| cloud_type | 说明 | 特殊处理 |
+|------------|------|----------|
+| xiaozhi | 小智云平台 | 自动解析 JWT 获取 Agent ID 和过期时间 |
+| custom | 自定义 WSS 端点 | 无特殊处理 |
 
 **Response:** `201 Created`
 ```json
@@ -541,8 +562,9 @@ websocket:
     "data": {
         "id": 1,
         "name": "客厅小智 Agent",
+        "cloud_type": "xiaozhi",
         "wss_url": "wss://api.xiaozhi.me/mcp/?token=eyJ...",
-        "agent_id_ext": "104304",
+        "remote_id": "104304",
         "token_expires_at": "2027-05-03T00:00:00Z",
         "group_id": 1,
         "connection_status": "connecting",
@@ -551,18 +573,18 @@ websocket:
 }
 ```
 
-> **说明**: 创建后 NewMCP 自动解析 JWT 获取 agent_id_ext 和 token_expires_at，并尝试连接小智云。
+> **说明**: cloud_type 为 xiaozhi 时，创建后自动解析 JWT 获取 remote_id (Agent ID) 和 token_expires_at，并尝试连接。
 
-### GET /xiaozhi/endpoints/:id
-获取端点详情（含连接状态）。
+### GET /connections/:id
+获取连接详情（含连接状态）。
 
-### PUT /xiaozhi/endpoints/:id
-更新端点配置（如更换 token、切换分组）。
+### PUT /connections/:id
+更新连接配置（如更换 URL、切换分组）。
 
-### DELETE /xiaozhi/endpoints/:id
-删除端点（同时断开 WSS 连接）。
+### DELETE /connections/:id
+删除连接（同时断开 WSS 连接）。
 
-### POST /xiaozhi/endpoints/:id/connect
+### POST /connections/:id/connect
 手动触发连接。
 
 **Response:** `200 OK`
@@ -576,10 +598,10 @@ websocket:
 }
 ```
 
-### POST /xiaozhi/endpoints/:id/disconnect
+### POST /connections/:id/disconnect
 手动断开连接。
 
-### PUT /xiaozhi/endpoints/:id/bind-group
+### PUT /connections/:id/bind-group
 更换绑定的分组。
 
 **Request Body:**
@@ -589,7 +611,7 @@ websocket:
 }
 ```
 
-> 更换分组后自动重新向小智云注册工具列表。
+> 更换分组后自动重新向远端平台注册工具列表。
 
 ---
 
@@ -793,6 +815,68 @@ websocket:
 
 这些端点遵循 MCP 协议规范，不使用上述 REST 响应格式。
 
+### 双模式说明
+
+每个分组通过 `expose_mode` 配置选择工具暴露模式：
+
+| 模式 | tools/list 返回 | tools/call 行为 |
+|------|-----------------|-----------------|
+| direct | 所有聚合工具（带 `serviceName__toolName` 前缀） | 直接路由到上游服务 |
+| smart | 固定 3 个元工具: `mcp.search`, `mcp.describe`, `mcp.execute` | 先解析元工具，再路由 |
+
+### Smart 模式元工具 Schema
+
+**mcp.search:**
+```json
+{
+    "name": "mcp.search",
+    "description": "搜索可用的 MCP 服务和工具。支持按关键字、分组名、服务名搜索。",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "搜索关键字"},
+            "scope": {"type": "string", "enum": ["mcp", "tool", "all"], "default": "mcp", "description": "搜索范围"},
+            "group": {"type": "string", "description": "限定分组"},
+            "limit": {"type": "number", "default": 10, "maximum": 50}
+        },
+        "required": ["query"]
+    }
+}
+```
+
+**mcp.describe:**
+```json
+{
+    "name": "mcp.describe",
+    "description": "查看指定 MCP 服务的工具列表，或指定工具的完整参数 Schema。",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "targets": {"type": "array", "items": {"type": "string"}, "description": "服务名或 serviceName.toolName"},
+            "include_schema": {"type": "boolean", "default": true}
+        },
+        "required": ["targets"]
+    }
+}
+```
+
+**mcp.execute:**
+```json
+{
+    "name": "mcp.execute",
+    "description": "执行指定的 MCP 工具。",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "tool_id": {"type": "string", "description": "格式: 服务名.工具名"},
+            "arguments": {"type": "object", "description": "工具参数"},
+            "timeout_ms": {"type": "number", "default": 30000}
+        },
+        "required": ["tool_id"]
+    }
+}
+```
+
 ### POST /mcp
 主网关端点 (Streamable HTTP)。
 
@@ -815,7 +899,7 @@ X-API-Key: <key>
 ```
 
 ### POST /mcp/group/{slug}
-分组端点 (Streamable HTTP)。
+分组端点 (Streamable HTTP)。按分组的 `expose_mode` 返回 Direct 或 Smart 模式工具。
 
 ### GET /mcp/group/{slug}
 SSE 流 (服务端推送)。
@@ -824,12 +908,4 @@ SSE 流 (服务端推送)。
 WebSocket MCP 传输。
 
 ### WebSocket /mcp/ws/group/{slug}
-分组 WebSocket MCP 传输。
-
-### WebSocket /mcp/xiaozhi
-小智设备专用 WebSocket MCP 端点。
-
-**连接参数:**
-```
-wss://your-newmcp.com/mcp/xiaozhi?token=<DEVICE_TOKEN>
-```
+分组 WebSocket MCP 传输。按分组的 `expose_mode` 返回 Direct 或 Smart 模式工具。

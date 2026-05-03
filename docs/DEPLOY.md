@@ -379,12 +379,9 @@ server {
 }
 ```
 
-### 4.3 小智设备
+### 4.3 云端主动连接 (小智等平台)
 
-在小智平台配置 MCP 接入点:
-```
-wss://your-newmcp.com/mcp/xiaozhi?token=<DEVICE_TOKEN>
-```
+在 NewMCP 管理界面 → 云端连接 → 添加连接，选择云平台类型（如小智），粘贴远端平台提供的 WSS URL 即可。
 
 ### 4.4 通用 MCP 客户端 (stdio 桥接)
 

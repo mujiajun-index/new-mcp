@@ -48,9 +48,9 @@
 | `/groups` | MCP 分组列表 | 登录 |
 | `/groups/create` | 创建分组 | 登录 |
 | `/groups/:id` | 分组详情 | 登录 |
-| `/devices` | 设备列表 | 登录 |
-| `/devices/create` | 注册设备 | 登录 |
-| `/devices/:id` | 设备详情 | 登录 |
+| `/connections` | 云端主动连接列表 | 登录 |
+| `/connections/create` | 添加云端连接 | 登录 |
+| `/connections/:id` | 连接详情 | 登录 |
 | `/vision` | 视觉配置列表 | 登录 |
 | `/vision/create` | 新建视觉配置 | 登录 |
 | `/vision/:id` | 编辑视觉配置 | 登录 |
@@ -74,10 +74,10 @@
 - 登录按钮 + 注册链接
 
 ### 3.2 Dashboard `/dashboard`
-- 4 个统计卡片: 服务数 / 分组数 / 设备数 / 今日调用量
+- 4 个统计卡片: 服务数 / 分组数 / 主动连接数 / 今日调用量
 - 服务健康状态列表 (实时显示各 MCP 服务健康/不健康)
 - 最近调用日志 (最近 10 条)
-- 快捷操作: 注册服务 / 创建分组 / 添加设备
+- 快捷操作: 注册服务 / 创建分组 / 添加连接
 
 ### 3.3 MCP 服务列表 `/services`
 - 表格视图: 名称 / 类型 / 状态 / 健康状态 / 工具数 / 操作
@@ -108,21 +108,28 @@
 
 ### 3.7 分组详情 `/groups/:id`
 - 分组信息 (可编辑)
+- **暴露模式切换**: Direct 模式 / Smart 模式 (Radio 或 Switch 组件)
+  - Direct 模式说明: 直接暴露所有工具，适合工具少的场景
+  - Smart 模式说明: 仅暴露 3 个元工具（搜索/查看/执行），适合工具多或设备上下文受限的场景
 - 端点信息卡片: Streamable HTTP URL / WebSocket URL / 连接配置 JSON (一键复制)
 - 已添加服务列表 (可拖拽排序、启用/禁用、移除)
 - 聚合工具列表 (带命名空间前缀、可单独启用/禁用/重命名)
+- Smart 模式下额外显示: 搜索引擎状态、已索引文档数
 - "添加服务" 按钮 (弹出服务选择器)
 
-### 3.8 设备列表 `/devices`
-- 表格: 名称 / 类型 / 绑定分组 / 状态(在线/离线) / 最后连接时间
-- 设备类型图标区分
+### 3.8 云端连接列表 `/connections`
+- 表格: 名称 / 云平台类型 / 绑定分组 / 连接状态(已连接/断开/错误) / 最后连接时间
+- 操作: 连接/断开/编辑/删除
+- "添加连接" 按钮
 
-### 3.9 设备详情 `/devices/:id`
-- 设备信息卡片
-- 连接状态 (实时)
-- 绑定的分组信息 (可切换)
-- 连接配置: WebSocket URL + Token (一键复制)
-- 最近调用日志
+### 3.9 添加云端连接 `/connections/create`
+- 选择云平台类型: 小智 / 自定义 WSS
+- 根据平台类型动态显示配置表单:
+  - 小智: 粘贴 WSS URL（自动解析 JWT 获取 Agent ID 和过期时间）
+  - 自定义 WSS: 输入 URL + 自定义请求头
+- 选择绑定的 MCP 分组
+- 自动连接开关
+- 测试连接
 
 ### 3.10 视觉配置 `/vision`
 - 配置列表卡片: 模型提供商 / 模型名 / 状态
@@ -149,7 +156,8 @@
 | `ConnectionTester` | MCP 连接测试按钮 + 结果展示 |
 | `EndpointInfo` | MCP 端点信息卡片 (URL + 复制按钮) |
 | `GroupSelector` | 分组选择器 (下拉/穿梭框) |
-| `DeviceStatusBadge` | 设备在线/离线状态标识 |
+| `ExposeModeSwitch` | 暴露模式切换 (Direct / Smart) |
+| `ConnectionStatusBadge` | 连接状态标识 (已连接/断开/错误) |
 | `CopyButton` | 一键复制按钮 |
 
 ### 4.2 表单组件
@@ -197,12 +205,14 @@ interface GroupState {
   updateToolConfig: (groupId: number, toolName: string, config: ToolConfig) => Promise<void>;
 }
 
-// stores/deviceStore.ts
-interface DeviceState {
-  devices: Device[];
-  fetchDevices: () => Promise<void>;
-  createDevice: (data: CreateDeviceDTO) => Promise<Device>;
-  bindGroup: (deviceId: number, groupId: number) => Promise<void>;
+// stores/connectionStore.ts
+interface ConnectionState {
+  connections: CloudConnection[];
+  fetchConnections: () => Promise<void>;
+  createConnection: (data: CreateConnectionDTO) => Promise<CloudConnection>;
+  connect: (id: number) => Promise<void>;
+  disconnect: (id: number) => Promise<void>;
+  bindGroup: (connectionId: number, groupId: number) => Promise<void>;
 }
 ```
 
@@ -224,7 +234,8 @@ web/
 │   │   ├── McpServiceCard.tsx
 │   │   ├── McpToolTable.tsx
 │   │   ├── GroupSelector.tsx
-│   │   ├── DeviceStatusBadge.tsx
+│   │   ├── ExposeModeSwitch.tsx
+│   │   ├── ConnectionStatusBadge.tsx
 │   │   ├── ServiceStatusBadge.tsx
 │   │   ├── TransportTypeTag.tsx
 │   │   ├── JsonEditor.tsx
@@ -245,10 +256,10 @@ web/
 │   │   │   ├── GroupListPage.tsx
 │   │   │   ├── GroupCreatePage.tsx
 │   │   │   └── GroupDetailPage.tsx
-│   │   ├── devices/
-│   │   │   ├── DeviceListPage.tsx
-│   │   │   ├── DeviceCreatePage.tsx
-│   │   │   └── DeviceDetailPage.tsx
+│   │   ├── connections/
+│   │   │   ├── ConnectionListPage.tsx
+│   │   │   ├── ConnectionCreatePage.tsx
+│   │   │   └── ConnectionDetailPage.tsx
 │   │   ├── vision/
 │   │   │   ├── VisionConfigList.tsx
 │   │   │   ├── VisionConfigCreate.tsx
@@ -269,20 +280,20 @@ web/
 │   │   ├── authStore.ts
 │   │   ├── serviceStore.ts
 │   │   ├── groupStore.ts
-│   │   └── deviceStore.ts
+│   │   └── connectionStore.ts
 │   ├── api/                     # API 客户端
 │   │   ├── client.ts            # Axios 实例 + 拦截器
 │   │   ├── auth.ts
 │   │   ├── services.ts
 │   │   ├── groups.ts
-│   │   ├── devices.ts
+│   │   ├── connections.ts
 │   │   ├── vision.ts
 │   │   ├── cameras.ts
 │   │   └── apiKeys.ts
 │   ├── hooks/                   # 自定义 Hooks
 │   │   ├── useMcpService.ts
 │   │   ├── useGroup.ts
-│   │   └── useDevice.ts
+│   │   └── useConnection.ts
 │   ├── i18n/                    # 国际化
 │   │   ├── index.ts
 │   │   └── locales/

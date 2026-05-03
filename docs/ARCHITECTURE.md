@@ -49,7 +49,7 @@
 │                         │                                      │
 │  ┌──────────────────────┴──────────────────────────────────┐   │
 │  │                    Controller Layer                      │   │
-│  │  Auth │ Service │ Group │ Device │ Vision │ Camera      │   │
+│  │  Auth │ Service │ Group │ Connection │ Vision │ Camera  │   │
 │  └──────────────────────┬──────────────────────────────────┘   │
 │                         │                                      │
 │  ┌──────────────────────┴──────────────────────────────────┐   │
@@ -61,13 +61,12 @@
 │  │  │ - 发现     │  │ - 工具聚合 │  │ - 工具路由       │  │   │
 │  │  │ - 健康检查 │  │ - 过滤控制 │  │ - 会话池管理     │  │   │
 │  │  └────────────┘  └────────────┘  └──────────────────┘  │   │
-│  │                                                          │   │
-│  │  ┌────────────┐  ┌────────────┐                         │   │
-│  │  │ Device     │  │ Vision     │                         │   │
-│  │  │ - 设备管理 │  │ - 模型配置 │                         │   │
-│  │  │ - 小智桥接 │  │ - 摄像头   │                         │   │
-│  │  │ - 状态监控 │  │ - 帧处理   │                         │   │
-│  │  └────────────┘  └────────────┘                         │   │
+│  │  ┌────────────┐  ┌────────────┐  ┌──────────────────┐  │   │
+│  │  │ Smart      │  │ Cloud      │  │ Vision           │  │   │
+│  │  │ - 搜索引擎 │  │ - 主动连接 │  │ - 模型配置       │  │   │
+│  │  │ - 元工具   │  │ - 多平台   │  │ - 摄像头         │  │   │
+│  │  │ - BM25     │  │ - 状态监控 │  │ - 帧处理         │  │   │
+│  │  └────────────┘  └────────────┘  └──────────────────┘  │   │
 │  └──────────────────────┬──────────────────────────────────┘   │
 │                         │                                      │
 │  ┌──────────────────────┴──────────────────────────────────┐   │
@@ -153,23 +152,22 @@
     │<─────────────│               │               │               │
 ```
 
-### 3.2 小智设备通过 NewMCP 消费工具（核心模式）
+### 3.2 云端主动连接（NewMCP 向远端平台暴露工具）
 
-> **关键**: NewMCP **主动连接**小智云 WSS 端点，作为 MCP Server 向小智注册工具。小智设备通过小智云调用工具时，小智云转发到 NewMCP。
+> **关键**: NewMCP **主动连接**远端云平台 WSS 端点（如小智云），作为 MCP Server 注册工具。远端设备通过云平台调用工具时，云平台转发到 NewMCP。
 
 ```
-时序图: 小智设备通过 NewMCP 调用工具
+时序图: 远端设备通过 NewMCP 调用工具
 
 ┌────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│小智    │    │小智云    │    │NewMCP    │    │上游 MCP  │
-│设备    │    │api.xiaozhi│   │XiaoZhi   │    │服务      │
-│(ESP32) │    │.me       │    │Client    │    │(calculator│
+│远端    │    │云平台    │    │NewMCP    │    │上游 MCP  │
+│设备    │    │(如小智云)│    │Cloud     │    │服务      │
 └───┬────┘    └────┬─────┘    └────┬─────┘    └────┬─────┘
     │              │               │               │
     │              │  ① NewMCP 主动连接 WSS 端点   │
     │              │<──────────────│               │
     │              │               │               │
-    │              │  ② 小智云作为 MCP Client       │
+    │              │  ② 云平台作为 MCP Client       │
     │              │  发送 initialize               │
     │              │──────────────>│               │
     │              │               │               │
@@ -177,18 +175,16 @@
     │              │  (声明提供 tools 能力)          │
     │              │<──────────────│               │
     │              │               │               │
-    │              │  ④ 小智云请求 tools/list       │
+    │              │  ④ 云平台请求 tools/list       │
     │              │──────────────>│               │
     │              │               │               │
     │              │  ⑤ 返回聚合工具列表             │
-    │              │  (calculator, web_search, ...) │
     │              │<──────────────│               │
     │              │               │               │
-    │  ⑥ 设备语音指令               │               │
+    │  ⑥ 设备调用工具               │               │
     │─────────────>│               │               │
     │              │               │               │
-    │              │  ⑦ 小智云转发 tools/call       │
-    │              │  {name:"calculator", args:...} │
+    │              │  ⑦ 转发 tools/call             │
     │              │──────────────>│               │
     │              │               │               │
     │              │               │  ⑧ 路由到上游  │
@@ -204,44 +200,17 @@
     │<─────────────│               │               │
 ```
 
-### 3.3 LLM 客户端通过 NewMCP 消费小智工具（辅助模式）
+### 3.3 NewMCP 连接模型
 
-> 可选模式: 将小智 WSS 注册为上游 MCP 服务，LLM 客户端也能调用小智的工具。
+NewMCP 支持两种连接方向:
 
-```
-时序图: Claude Code 通过 NewMCP 调用小智工具
+**被动连接（LLM 客户端连入）:**
+- `http://` 或 `https://` → Streamable HTTP（主要方式）
+- `ws://` 或 `wss://` → WebSocket
 
-┌──────────┐    ┌──────────┐    ┌──────────┐
-│LLM Client│    │NewMCP    │    │小智云 MCP│
-│(Claude)  │    │Gateway   │    │(wss://)  │
-└────┬─────┘    └────┬─────┘    └────┬─────┘
-     │               │               │
-     │               │ NewMCP 作为 MCP Client 连接小智云
-     │               │──────────────>│
-     │               │               │
-     │               │ 获取小智工具列表
-     │               │<──────────────│
-     │               │               │
-     │               │ 注册为虚拟 MCP 服务
-     │               │───┐           │
-     │               │<──┘           │
-     │               │               │
-     │ POST /mcp (tools/list)        │
-     │──────────────>│               │
-     │               │               │
-     │ 返回包含小智工具的聚合列表     │
-     │<──────────────│               │
-     │               │               │
-     │ POST /mcp (tools/call)        │
-     │ tool: xiaozhi__xxx            │
-     │──────────────>│               │
-     │               │               │
-     │               │ 转发到小智云   │
-     │               │──────────────>│
-     │               │               │
-     │               │<──────────────│
-     │<──────────────│               │
-```
+**主动连接（NewMCP 连出）:**
+- NewMCP 主动连接远端云平台 WSS（如小智云等），作为 MCP Server 向远端注册工具
+- 支持 `cloud_type` 区分不同平台（xiaozhi、custom）
 
 ---
 
@@ -297,7 +266,41 @@ type McpSession struct {
 }
 ```
 
-### 4.3 工具路由器
+### 4.3 Smart 模式搜索引擎
+
+```go
+// internal/mcp/smart/search_engine.go
+
+// SearchEngine 提供 BM25 搜索能力，用于 Smart 模式下的工具发现
+type SearchEngine struct {
+    index    bleve.Index
+    mu       sync.RWMutex
+}
+
+// Search 支持按关键字搜索 MCP 服务名、工具名、描述
+// 字段权重: 服务名 3x / 工具名 2x / 描述 1x
+func (e *SearchEngine) Search(query string, scope string, group string, limit int) ([]SearchResult, error)
+```
+
+### 4.4 双模式分发器
+
+```go
+// GatewayHandler 根据分组的 expose_mode 配置分发请求
+
+// Direct 模式: 聚合所有工具，添加命名空间前缀 (serviceName__toolName)
+// Smart 模式: 只暴露 3 个固定元工具 (mcp.search, mcp.describe, mcp.execute)
+
+func (h *GatewayHandler) HandleToolsList(ctx context.Context, groupID int64) ([]Tool, error) {
+    switch group.ExposeMode {
+    case "direct":
+        return h.handleDirectToolsList(ctx, groupID)   // 聚合所有工具
+    case "smart":
+        return h.getMetaTools(), nil                     // 固定 3 个元工具
+    }
+}
+```
+
+### 4.5 工具路由器
 
 ```go
 // internal/mcp/bridge/tool_router.go
@@ -312,7 +315,7 @@ type ToolRouter struct {
 func (r *ToolRouter) Route(namespacedTool string) (*McpSession, string, error)
 ```
 
-### 4.4 MCP Gateway Handler
+### 4.6 MCP Gateway Handler
 
 ```go
 // internal/mcp/handler/gateway_handler.go
@@ -352,7 +355,7 @@ func (h *GatewayHandler) HandleToolsCall(ctx context.Context, req *Request) (*Re
          ▼                     ▼
 ┌──────────────────────────────────────────────┐
 │ Service Layer (业务逻辑)                      │
-│  Registry │ Group │ Device │ Vision │ Bridge │
+│  Registry │ Group │ Connection │ Vision │ Bridge │
 └──────────────────────┬───────────────────────┘
                        │
          ┌─────────────┼─────────────┐
@@ -378,6 +381,8 @@ func (h *GatewayHandler) HandleToolsCall(ctx context.Context, req *Request) (*Re
 | 前端框架 | React + Semi Design | Semi Design 功能丰富，中文生态好 |
 | 前端构建 | Vite | 开发体验好，构建快 |
 | 状态管理 | Zustand | 比 Redux 轻量，适合中小项目 |
+| 工具暴露 | 双模式 (Direct + Smart) | Direct 适合工具少场景，Smart 适合大量工具/受限设备 |
+| 搜索引擎 | bleve (BM25) | 内存索引，零依赖，适合中小规模工具搜索 |
 
 ---
 
