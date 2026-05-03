@@ -838,6 +838,85 @@ GET /api/v1/marketplace?q=search&category=&page=1&page_size=20
 
 10K 行的 `LIKE` 查询在 SQLite 中 <50ms，完全够用。未来规模更大时可切换到 FTS5/FULLTEXT，上层 API 无感。
 
+#### 未来扩展：SQLite FTS5
+
+当市场服务超过 50K 时，可启用 FTS5 全文索引。FTS5 原生支持 BM25 字段权重：
+
+```sql
+-- FTS5 虚拟表 (content table 模式，避免数据冗余)
+CREATE VIRTUAL TABLE mcp_search USING fts5(
+    service_name,
+    tool_name,
+    description,
+    content='mcp_search_content',
+    content_rowid='id',
+    prefix='2 3 4',
+    tokenize='unicode61 categories "L* N* Co"'
+);
+
+-- 内容表 + 同步触发器
+CREATE TABLE mcp_search_content (
+    id INTEGER PRIMARY KEY,
+    service_name TEXT,
+    tool_name TEXT,
+    description TEXT
+);
+
+CREATE TRIGGER mcp_search_ai AFTER INSERT ON mcp_search_content BEGIN
+    INSERT INTO mcp_search(rowid, service_name, tool_name, description)
+    VALUES (new.id, new.service_name, new.tool_name, new.description);
+END;
+CREATE TRIGGER mcp_search_ad AFTER DELETE ON mcp_search_content BEGIN
+    INSERT INTO mcp_search(mcp_search, rowid, service_name, tool_name, description)
+    VALUES('delete', old.id, old.service_name, old.tool_name, old.description);
+END;
+CREATE TRIGGER mcp_search_au AFTER UPDATE ON mcp_search_content BEGIN
+    INSERT INTO mcp_search(mcp_search, rowid, service_name, tool_name, description)
+    VALUES('delete', old.id, old.service_name, old.tool_name, old.description);
+    INSERT INTO mcp_search(rowid, service_name, tool_name, description)
+    VALUES (new.id, new.service_name, new.tool_name, new.description);
+END;
+```
+
+BM25 字段权重查询（name=3.0, tool=2.0, desc=1.0）：
+
+```sql
+SELECT sc.*, bm25(mcp_search, 3.0, 2.0, 1.0) AS score
+FROM mcp_search ms
+JOIN mcp_search_content sc ON ms.rowid = sc.id
+WHERE ms.mcp_search MATCH ?
+ORDER BY score
+LIMIT 20;
+```
+
+中文分词可集成 [wangfenjin/simple](https://github.com/wangfenjin/simple) C 扩展（支持 jieba 分词 + 拼音搜索），或用 unicode61 unigram + 应用层预处理。索引大小预估：100K 文档约 25-50MB。
+
+#### 未来扩展：MySQL FULLTEXT + ngram
+
+MySQL 5.7.6+ 内置 ngram 分词器，原生支持 CJK：
+
+```sql
+-- ngram_token_size=2，将中文按双字切分
+CREATE FULLTEXT INDEX ft_idx
+ON mcp_services(name, description) WITH PARSER ngram;
+
+-- 前缀搜索
+WHERE MATCH(name, description) AGAINST('搜索词*' IN BOOLEAN MODE)
+```
+
+模拟字段权重（需每列单独 FULLTEXT 索引）：
+
+```sql
+SELECT *,
+    (MATCH(name) AGAINST(?) * 3.0 +
+     MATCH(description) AGAINST(?)) AS weighted_score
+FROM mcp_services
+WHERE MATCH(name, description) AGAINST(? IN BOOLEAN MODE)
+  AND visibility = 'public'
+ORDER BY weighted_score DESC
+LIMIT 20;
+```
+
 ---
 
 ## 9. MCP 协议端点汇总
