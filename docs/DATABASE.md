@@ -65,14 +65,19 @@ CREATE TABLE `mcp_services` (
     `name`             VARCHAR(128)    NOT NULL COMMENT '服务标识 (用户内唯一)',
     `display_name`     VARCHAR(255)    DEFAULT '' COMMENT '显示名称',
     `description`      TEXT            DEFAULT '' COMMENT '服务描述',
-    `transport_type`   VARCHAR(32)     NOT NULL COMMENT '传输类型: stdio, sse, streamable-http, websocket',
+    `transport_type`   VARCHAR(32)     NOT NULL COMMENT '传输类型: stdio, sse, streamable-http, websocket, passive-ws',
 
     -- 连接配置 (JSON)
-    -- stdio:        {"command":"npx","args":["-y","@exa/mcp"],"env":{"EXA_API_KEY":"xxx"}}
-    -- sse:          {"url":"http://localhost:3000/sse","headers":{}}
-    -- streamable-http: {"url":"http://localhost:3000/mcp","headers":{}}
-    -- websocket:    {"url":"wss://api.xiaozhi.me/mcp/?token=eyJ...","headers":{}}
+    -- stdio:            {"command":"npx","args":["-y","@exa/mcp"],"env":{"EXA_API_KEY":"xxx"}}
+    -- sse:              {"url":"http://localhost:3000/sse","headers":{}}
+    -- streamable-http:  {"url":"http://localhost:3000/mcp","headers":{}}
+    -- websocket:        {"url":"wss://remote-server.com/mcp","headers":{}}
+    -- passive-ws:       {} (空，由 NewMCP 生成接入点 URL，外部服务连入)
     `config`           TEXT            NOT NULL DEFAULT '{}' COMMENT '连接配置 JSON',
+
+    -- 被动连接配置 (仅 transport_type=passive-ws 时有效)
+    `passive_token`    VARCHAR(512)    DEFAULT '' COMMENT '被动连接 JWT Token',
+    `passive_connected` TINYINT        DEFAULT 0 COMMENT '被动连接状态: 0=等待连入, 1=已连入',
 
     -- 认证配置
     `auth_type`        VARCHAR(32)     DEFAULT 'none' COMMENT '认证类型: none, api_key, bearer, basic, oauth',

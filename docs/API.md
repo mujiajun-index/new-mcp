@@ -247,9 +247,34 @@ streamable-http:
 websocket:
 ```json
 {
-    "url": "wss://api.xiaozhi.me/mcp/?token=eyJhbGciOiJFUzI1NiIs..."
+    "url": "wss://remote-server.com/mcp",
+    "headers": {}
 }
 ```
+
+passive-ws (被动连接):
+```json
+{
+}
+```
+> passive-ws 无需提供 URL，NewMCP 自动生成 WSS 接入点。返回结果中包含生成的接入 URL。
+
+**Response (passive-ws):** `201 Created`
+```json
+{
+    "success": true,
+    "data": {
+        "id": 1,
+        "name": "remote-calculator",
+        "transport_type": "passive-ws",
+        "passive_url": "wss://api.newmcp.pro/mcp/passive/?token=eyJhbGciOiJFUzI1NiIs...",
+        "passive_connected": false,
+        ...
+    }
+}
+```
+
+> 将 `passive_url` 复制到外部 MCP 服务配置中，外部服务连接后 NewMCP 自动发现工具。
 
 **Response:** `201 Created`
 ```json
@@ -909,3 +934,13 @@ WebSocket MCP 传输。
 
 ### WebSocket /mcp/ws/group/{slug}
 分组 WebSocket MCP 传输。按分组的 `expose_mode` 返回 Direct 或 Smart 模式工具。
+
+### WebSocket /mcp/passive/
+被动接入端点。外部 MCP Server 连入注册工具。
+
+**连接参数:**
+```
+wss://api.newmcp.pro/mcp/passive/?token=<PASSIVE_JWT>
+```
+
+> 此 URL 由创建 `passive-ws` 类型服务时自动生成。外部 MCP Server 连入后，NewMCP 作为 MCP Client 发起 `initialize` → `tools/list`，自动发现并缓存工具。

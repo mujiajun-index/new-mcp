@@ -63,9 +63,9 @@
 │  │  └────────────┘  └────────────┘  └──────────────────┘  │   │
 │  │  ┌────────────┐  ┌────────────┐  ┌──────────────────┐  │   │
 │  │  │ Smart      │  │ Cloud      │  │ Vision           │  │   │
-│  │  │ - 搜索引擎 │  │ - 主动连接 │  │ - 模型配置       │  │   │
+│  │  │ - BM25搜索 │  │ - 主动连接 │  │ - 模型配置       │  │   │
 │  │  │ - 元工具   │  │ - 多平台   │  │ - 摄像头         │  │   │
-│  │  │ - BM25     │  │ - 状态监控 │  │ - 帧处理         │  │   │
+│  │  │ - 范围收敛 │  │ - 状态监控 │  │ - 帧处理         │  │   │
 │  │  └────────────┘  └────────────┘  └──────────────────┘  │   │
 │  └──────────────────────┬──────────────────────────────────┘   │
 │                         │                                      │
@@ -74,7 +74,7 @@
 │  │                                                          │   │
 │  │  ┌──────────────────────────────────────────────────┐  │   │
 │  │  │  Transport Adapters                               │  │   │
-│  │  │  StdioAdapter │ SSEAdapter │ HTTPAdapter │ WSAdapter │  │
+│  │  │  Stdio │ SSE │ HTTP │ WS │ PassiveWS                    │  │
 │  │  └──────────────────────────────────────────────────┘  │   │
 │  │                                                          │   │
 │  │  ┌──────────────┐  ┌──────────────┐                     │   │
@@ -212,6 +212,12 @@ NewMCP 支持两种连接方向:
 - NewMCP 主动连接远端云平台 WSS（如小智云等），作为 MCP Server 向远端注册工具
 - 支持 `cloud_type` 区分不同平台（xiaozhi、custom）
 
+**被动接入（外部 MCP 服务连入）:**
+- NewMCP 生成 WSS 接入点 URL: `wss://api.newmcp.pro/mcp/passive/?token=JWT`
+- 外部 MCP 服务（如远程 calculator、自定义服务）连接此 URL，向 NewMCP 注册工具
+- 类似小智云的注册模式：服务提供方连接平台，而非平台连接服务
+- 适合外部服务在 NAT/防火墙后的场景（服务主动连出）
+
 ---
 
 ## 4. 模块详细设计
@@ -238,10 +244,11 @@ type TransportAdapter interface {
 // TransportType 传输类型枚举
 type TransportType string
 const (
-    TransportStdio         TransportType = "stdio"
-    TransportSSE           TransportType = "sse"
-    TransportStreamableHTTP TransportType = "streamable-http"
-    TransportWebSocket     TransportType = "websocket"
+    TransportStdio          TransportType = "stdio"           // 本地子进程
+    TransportSSE            TransportType = "sse"             // 主动连接远程 SSE
+    TransportStreamableHTTP TransportType = "streamable-http" // 主动连接远程 HTTP
+    TransportWebSocket      TransportType = "websocket"       // 主动连接远程 WSS
+    TransportPassiveWS      TransportType = "passive-ws"      // 被动: 外部服务连入
 )
 ```
 
@@ -271,16 +278,19 @@ type McpSession struct {
 ```go
 // internal/mcp/smart/search_engine.go
 
-// SearchEngine 提供 BM25 搜索能力，用于 Smart 模式下的工具发现
+// SearchEngine 自实现 BM25Okapi 搜索 (参考 mcp-gateway MiniSearch)
+// 搜索范围通过 API Key → 分组 → MCP 服务 自然收敛 (5-200 条)
 type SearchEngine struct {
-    index    bleve.Index
+    docs     []SearchDoc
+    index    *bm25Index
     mu       sync.RWMutex
 }
 
-// Search 支持按关键字搜索 MCP 服务名、工具名、描述
-// 字段权重: 服务名 3x / 工具名 2x / 描述 1x
-func (e *SearchEngine) Search(query string, scope string, group string, limit int) ([]SearchResult, error)
+// Search 在 API Key 绑定的分组范围内 BM25 搜索
+func (e *SearchEngine) Search(ctx context.Context, store Store, apiKeyID int64, query string, opts SearchOptions) ([]SearchResult, error)
 ```
+
+> 零外部依赖，BM25Okapi + 字段权重 + Levenshtein 模糊匹配。详见 MCP-PROTOCOL.md 第 8 节。
 
 ### 4.4 双模式分发器
 
@@ -382,7 +392,7 @@ func (h *GatewayHandler) HandleToolsCall(ctx context.Context, req *Request) (*Re
 | 前端构建 | Vite | 开发体验好，构建快 |
 | 状态管理 | Zustand | 比 Redux 轻量，适合中小项目 |
 | 工具暴露 | 双模式 (Direct + Smart) | Direct 适合工具少场景，Smart 适合大量工具/受限设备 |
-| 搜索引擎 | bleve (BM25) | 内存索引，零依赖，适合中小规模工具搜索 |
+| 搜索引擎 | 自实现 BM25Okapi | 零依赖，搜索范围通过 API Key→分组 自然收敛到百级 |
 
 ---
 

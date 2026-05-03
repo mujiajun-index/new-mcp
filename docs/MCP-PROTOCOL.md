@@ -40,9 +40,42 @@ NewMCP 支持两种 MCP 工具暴露模式，按分组粒度配置：
 
 ---
 
-## 2. Smart 模式元工具
+## 2. 搜索范围收敛机制
 
-### 2.1 工具列表
+NewMCP 的 MCP 工具搜索通过 **API Key → 分组 → MCP 服务** 的关联链路自然收敛搜索范围，从平台级万级规模降到百级：
+
+```
+平台 MCP 市场 (10,000+ 服务)
+    │
+    │  用户从市场选择服务加入分组
+    ▼
+┌─────────────────────────────────────────────────┐
+│  用户分组:                                        │
+│  分组A "机器人控制": [sea-bot, air-drone, arm]    │
+│  分组B "数据分析": [exa-search, calculator, db]   │
+│                                                  │
+│  API Key-1 → 绑定 [分组A]                        │
+│    mcp.search 搜索范围: 3 服务, ~15 工具          │
+│                                                  │
+│  API Key-2 → 绑定 [分组A, 分组B]                 │
+│    mcp.search 搜索范围: 6 服务, ~30 工具          │
+└─────────────────────────────────────────────────┘
+```
+
+**搜索范围**: API Key 认证 → 查询 `permissions.groups` → 收集分组内所有服务+工具 → 在此范围内搜索
+
+**两种搜索场景**:
+
+| 场景 | 触发时机 | 搜索范围 | 规模 | 方案 |
+|------|----------|----------|------|------|
+| mcp.search | Smart 模式元工具调用 | API Key 绑定分组内 | 5-200 工具 | 自实现 BM25（零依赖） |
+| 市场浏览 | 前端 UI `/marketplace` | 全平台公开服务 | 10K+ 服务 | 数据库 LIKE/FTS 查询 |
+
+---
+
+## 3. Smart 模式元工具
+
+### 3.1 工具列表
 
 | 工具名 | 说明 | 对应 mcp-gateway |
 |--------|------|------------------|
@@ -54,9 +87,9 @@ NewMCP 支持两种 MCP 工具暴露模式，按分组粒度配置：
 
 V1 核心实现前 3 个，后 2 个作为 V1.1 扩展。
 
-### 2.2 mcp.search - 搜索可用 MCP / 工具
+### 3.2 mcp.search - 搜索可用 MCP / 工具
 
-**功能**: 支持关键字搜索 MCP 服务名、分组名、工具名、描述。使用 BM25 算法 + 模糊匹配。
+**功能**: 在 API Key 绑定的分组范围内，使用 BM25 算法搜索 MCP 服务和工具。
 
 **参数:**
 ```json
@@ -102,46 +135,7 @@ V1 核心实现前 3 个，后 2 个作为 V1.1 扩展。
 }
 ```
 
-**搜索算法 (参考 mcp-gateway):**
-- **BM25 评分**: 标准文本相关性算法
-- **字段权重**: 服务名 3x / 工具名 2x / 描述 1x
-- **模糊匹配**: 0.2 阈值容忍拼写错误
-- **前缀匹配**: 支持 "搜" 匹配 "搜索"
-
-**Go 实现:**
-```go
-// internal/mcp/smart/search_engine.go
-
-type SearchEngine struct {
-    index  *bleve.Index  // 或自定义 BM25 实现
-    mu     sync.RWMutex
-}
-
-type SearchDocument struct {
-    ID          string  // "serviceName" 或 "serviceName.toolName"
-    Type        string  // "mcp" 或 "tool"
-    Name        string
-    Description string
-    Group       string
-    ServerName  string
-    ToolCount   int     // 仅 mcp 类型
-}
-
-func (e *SearchEngine) Search(query string, scope string, group string, limit int) ([]SearchResult, error) {
-    // 1. 构建搜索请求 (BM25 + 字段权重)
-    // 2. 可选: 添加 group 过滤
-    // 3. 可选: 添加 type 过滤 (mcp/tool)
-    // 4. 执行搜索，返回排序结果
-}
-
-// Rebuild 重建索引 (当 MCP 服务变更时调用)
-func (e *SearchEngine) Rebuild(tools []ToolDocument) {
-    // 清空索引
-    // 重新索引所有文档
-}
-```
-
-### 2.3 mcp.describe - 查看工具详细 Schema
+### 3.3 mcp.describe - 查看工具详细 Schema
 
 **功能**: 获取指定 MCP 服务的工具列表，或指定工具的完整参数 Schema。
 
@@ -185,7 +179,7 @@ func (e *SearchEngine) Rebuild(tools []ToolDocument) {
 
 返回两个服务的所有工具信息。
 
-### 2.4 mcp.execute - 执行指定工具
+### 3.4 mcp.execute - 执行指定工具
 
 **功能**: 根据工具 ID 和参数执行指定 MCP 工具。
 
@@ -247,9 +241,9 @@ func (e *Executor) Execute(ctx context.Context, toolID string, arguments json.Ra
 
 ---
 
-## 3. Direct 模式实现
+## 4. Direct 模式实现
 
-### 3.1 工具聚合 (tools/list)
+### 4.1 工具聚合 (tools/list)
 
 ```go
 func (g *GatewayHandler) HandleToolsList(ctx context.Context, groupID int64) ([]Tool, error) {
@@ -273,7 +267,7 @@ func (g *GatewayHandler) HandleToolsList(ctx context.Context, groupID int64) ([]
 }
 ```
 
-### 3.2 工具路由 (tools/call)
+### 4.2 工具路由 (tools/call)
 
 ```go
 func (g *GatewayHandler) HandleToolsCall(ctx context.Context, groupID int64, namespacedName string, arguments json.RawMessage) (json.RawMessage, error) {
@@ -289,7 +283,7 @@ func (g *GatewayHandler) HandleToolsCall(ctx context.Context, groupID int64, nam
 
 ---
 
-## 4. 模式分发
+## 5. 模式分发
 
 Gateway Handler 根据分组的 `expose_mode` 配置分发请求：
 
@@ -360,9 +354,9 @@ func (h *GatewayHandler) getMetaTools() []Tool {
 
 ---
 
-## 5. Transport Adapter 实现
+## 6. Transport Adapter 实现
 
-### 5.1 接口定义
+### 6.1 接口定义
 
 ```go
 // internal/mcp/transport/transport.go
@@ -377,20 +371,136 @@ type TransportAdapter interface {
 
 type TransportType string
 const (
-    TypeStdio          TransportType = "stdio"
-    TypeSSE            TransportType = "sse"
-    TypeStreamableHTTP  TransportType = "streamable-http"
-    TypeWebSocket      TransportType = "websocket"
+    TypeStdio          TransportType = "stdio"           // 本地子进程
+    TypeSSE            TransportType = "sse"             // 主动连接远程 SSE
+    TypeStreamableHTTP TransportType = "streamable-http" // 主动连接远程 HTTP
+    TypeWebSocket      TransportType = "websocket"       // 主动连接远程 WSS
+    TypePassiveWS      TransportType = "passive-ws"      // 被动: 外部服务连入
 )
 ```
 
-### 5.2 适配器实现
+### 6.2 连接方式
 
-各传输协议适配器（StdioAdapter, StreamableHTTPAdapter, WebSocketAdapter, SSEAdapter）实现同前，此处不重复。
+| 方式 | transport_type | 方向 | 说明 |
+|------|---------------|------|------|
+| Stdio | stdio | NewMCP → 本地子进程 | 本地命令行 MCP 服务 |
+| SSE | sse | NewMCP → 远程 | 连接远程 SSE 端点 |
+| Streamable HTTP | streamable-http | NewMCP → 远程 | 连接远程 HTTP 端点 |
+| WebSocket | websocket | NewMCP → 远程 | 连接远程 WSS 端点 |
+| 被动连接 | passive-ws | 外部 → NewMCP | NewMCP 生成接入 URL，外部服务主动连入 |
+
+### 6.3 被动连接 (passive-ws) 实现
+
+NewMCP 作为 MCP Client，接收外部 MCP Server 的连入:
+
+```
+时序图: 外部 MCP 服务通过被动连接注册到 NewMCP
+
+┌──────────┐    ┌──────────┐    ┌──────────┐
+│外部 MCP  │    │NewMCP    │    │LLM 客户端│
+│Server    │    │Passive   │    │(Claude)  │
+└────┬─────┘    └────┬─────┘    └────┬─────┘
+     │               │               │
+     │ ① 用户在 NewMCP 创建 passive-ws 服务
+     │   获得 URL: wss://api.newmcp.pro/mcp/passive/?token=JWT
+     │               │               │
+     │ ② 外部服务连接 WSS 接入点      │
+     │──────────────>│               │
+     │               │               │
+     │ ③ NewMCP 作为 MCP Client       │
+     │   发送 initialize              │
+     │<──────────────│               │
+     │               │               │
+     │ ④ 外部服务响应 capabilities     │
+     │──────────────>│               │
+     │               │               │
+     │ ⑤ NewMCP 请求 tools/list      │
+     │<──────────────│               │
+     │               │               │
+     │ ⑥ 返回工具列表，缓存到 mcp_services
+     │──────────────>│               │
+     │               │               │
+     │               │ ⑦ LLM 客户端调用工具
+     │               │──────────────>│ (via gateway)
+     │               │               │
+     │ ⑧ 路由 tools/call              │
+     │<──────────────│               │
+     │               │               │
+     │ ⑨ 执行并返回   │               │
+     │──────────────>│               │
+     │               │──────────────>│
+```
+
+**被动接入 URL 生成:**
+
+```go
+// internal/mcp/transport/passive_ws.go
+
+type PassiveWSListener struct {
+    services    map[string]*PassiveSession  // key: service_name
+    mu          sync.RWMutex
+    jwtSecret   string
+    baseURL     string
+}
+
+// GenerateConnectURL 为 passive-ws 类型的服务生成接入 URL
+func (l *PassiveWSListener) GenerateConnectURL(serviceID int64, serviceName string, userID int64) string {
+    token := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
+        "serviceId":  serviceID,
+        "serviceName": serviceName,
+        "userId":     userID,
+        "purpose":    "mcp-endpoint",
+        "iat":        time.Now().Unix(),
+        "exp":        time.Now().Add(365 * 24 * time.Hour).Unix(),
+    })
+    tokenString, _ := token.SignedString(l.jwtSecret)
+    return fmt.Sprintf("%s/mcp/passive/?token=%s", l.baseURL, tokenString)
+}
+```
+
+**被动连接 WebSocket Handler:**
+
+```go
+// 外部服务连入 wss://api.newmcp.pro/mcp/passive/?token=JWT
+
+func (l *PassiveWSListener) HandleConnection(wsConn *websocket.Conn, tokenClaims jwt.MapClaims) {
+    serviceName := tokenClaims["serviceName"].(string)
+    serviceID := int64(tokenClaims["serviceId"].(float64))
+
+    session := &PassiveSession{
+        ServiceID:   serviceID,
+        ServiceName: serviceName,
+        Conn:        wsConn,
+    }
+
+    l.mu.Lock()
+    l.services[serviceName] = session
+    l.mu.Unlock()
+
+    // NewMCP 作为 MCP Client: 发送 initialize → 获取工具 → 缓存
+    session.Initialize()
+    tools := session.FetchTools()
+    toolCache.Update(serviceID, tools)
+
+    // 更新数据库状态
+    db.Model(&McpService{}).Where("id = ?", serviceID).
+        Updates(map[string]interface{}{
+            "passive_connected": 1,
+            "health_status":     "healthy",
+        })
+
+    // 进入消息循环 (等待 NewMCP 发起 tools/call)
+    session.MessageLoop()
+}
+```
+
+### 6.4 适配器实现
+
+StreamableHTTPAdapter 和 WebSocketAdapter（主动连接远程）实现同前。
 
 ---
 
-## 6. 会话池与工具目录缓存
+## 7. 会话池与工具目录缓存
 
 ```go
 // internal/mcp/bridge/session_pool.go
@@ -423,155 +533,314 @@ type HealthChecker struct {
 
 ---
 
-## 7. 搜索引擎实现 (Smart 模式核心)
+## 8. 搜索引擎实现 (Smart 模式核心)
 
-参考 mcp-gateway 的 MiniSearch + BM25 实现：
+### 8.1 搜索范围收敛
+
+mcp.search 的搜索范围通过 API Key → 分组 → MCP 服务的关联链路自然收敛：
+
+```
+MCP 请求 (X-API-Key) → 认证中间件
+    → 查询 api_keys.permissions.groups (绑定的分组列表)
+    → 收集这些分组内所有服务+工具 (5-200 条)
+    → BM25 搜索 → 排序返回
+```
+
+API Key 的 `permissions` 字段示例:
+```json
+{
+    "groups": ["robot-control", "data-analysis"],
+    "max_rate": 100
+}
+```
+
+搜索范围通常只有几十到几百条，因此不需要外部搜索引擎库。
+
+### 8.2 BM25Okapi 自实现 (参考 mcp-gateway MiniSearch)
+
+参考 [eznix86/mcp-gateway](https://github.com/eznix86/mcp-gateway) 的 MiniSearch 实现，在 Go 中自实现轻量 BM25Okapi，零外部依赖。
+
+**BM25Okapi 核心公式:**
+```
+score(D, Q) = Σ IDF(t) × (f(t,D) × (k1+1)) / (f(t,D) + k1 × (1 - b + b × |D|/avgLen))
+
+IDF(t) = log((N - n(t) + 0.5) / (n(t) + 0.5) + 1)
+k1 = 1.2,  b = 0.75  (标准参数)
+```
+
+**字段权重 (与 MiniSearch 一致):**
+
+| 字段 | 权重 | 说明 |
+|------|------|------|
+| name | 3.0 | 服务名/工具名，最高权重 |
+| server_name | 2.0 | 所属服务名（工具类型） |
+| description | 1.0 | 描述文本 |
+
+**Go 实现:**
 
 ```go
 // internal/mcp/smart/search_engine.go
 
-import "github.com/blevesearch/bleve/v2"
-
 type SearchEngine struct {
-    index    bleve.Index
+    docs     []SearchDoc          // 当前范围的文档集合
+    index    *bm25Index           // 内存 BM25 索引
+    dirty    bool                 // 是否需要重建
     mu       sync.RWMutex
-    ready    bool
 }
 
 type SearchDoc struct {
-    ID          string  `json:"id"`            // "exa-search" 或 "exa-search.web_search"
-    Type        string  `json:"type"`          // "mcp" 或 "tool"
-    Name        string  `json:"name"`          // 服务名或工具名
-    Description string  `json:"description"`   // 描述
-    Group       string  `json:"group"`         // 分组名
-    ServerName  string  `json:"server_name"`   // 所属 MCP 服务名 (工具类型)
-    ToolCount   int     `json:"tool_count"`    // 工具数 (服务类型)
+    ID          string  // "svc:exa-search" 或 "tool:exa-search.web_search"
+    Type        string  // "mcp" 或 "tool"
+    Name        string  // 服务名或工具名
+    Description string
+    GroupName   string
+    ServerName  string  // 所属 MCP 服务名 (工具类型)
+    ToolCount   int     // 工具数 (服务类型)
 }
 
-func NewSearchEngine() (*SearchEngine, error) {
-    mapping := bleve.NewIndexMapping()
-    // 配置字段权重
-    docMapping := bleve.NewDocumentMapping()
-    nameField := bleve.NewTextFieldMapping()
-    nameField.Boost = 3.0  // 名字匹配 3x 权重
-    docMapping.AddFieldMappingsAt("name", nameField)
-
-    descField := bleve.NewTextFieldMapping()
-    descField.Boost = 1.0
-    docMapping.AddFieldMappingsAt("description", descField)
-
-    mapping.AddDocumentMapping("default", docMapping)
-
-    index, err := bleve.NewMemOnly(mapping)
-    if err != nil {
-        return nil, err
-    }
-    return &SearchEngine{index: index}, nil
+type bm25Index struct {
+    docs       []SearchDoc
+    termFreqs  map[string]map[int]int       // term → {docIdx: freq}
+    docLens    []int                          // 每个文档的词数
+    avgDocLen  float64
+    docCount   int
+    fieldBoost map[string]float64            // 字段权重
 }
 
-func (e *SearchEngine) Search(query string, scope string, group string, limit int) ([]SearchResult, error) {
+// Search 在 API Key 绑定的分组范围内搜索
+func (e *SearchEngine) Search(ctx context.Context, store Store, apiKeyID int64, query string, opts SearchOptions) ([]SearchResult, error) {
     e.mu.RLock()
     defer e.mu.RUnlock()
 
-    if !e.ready {
-        return nil, fmt.Errorf("search index not ready")
-    }
-
-    // 构建查询
-    bq := bleve.NewBooleanQuery()
-
-    // 文本搜索
-    textQuery := bleve.NewMatchQuery(query)
-    textQuery.SetBoost(1.0)
-    bq.AddMust(textQuery)
-
-    // 可选: scope 过滤
-    if scope != "" && scope != "all" {
-        scopeQuery := bleve.NewMatchPhraseQuery(scope)
-        scopeQuery.SetField("type")
-        bq.AddMust(scopeQuery)
-    }
-
-    // 可选: group 过滤
-    if group != "" {
-        groupQuery := bleve.NewMatchPhraseQuery(group)
-        groupQuery.SetField("group")
-        bq.AddMust(groupQuery)
-    }
-
-    search := bleve.NewSearchRequest(bq)
-    search.Size = limit
-    search.IncludeLocations = true
-
-    results, err := e.index.Search(search)
+    // 1. 根据 API Key 获取绑定的分组
+    groups, err := store.GetGroupsByAPIKey(apiKeyID)
     if err != nil {
         return nil, err
     }
 
-    // 转换结果
-    var searchResults []SearchResult
-    for _, hit := range results.Hits {
-        doc, _ := e.index.GetDocument(hit.ID)
-        searchResults = append(searchResults, SearchResult{
-            ID:          hit.ID,
-            Score:       hit.Score,
-            Name:        getStringField(doc, "name"),
-            Description: getStringField(doc, "description"),
-            Type:        getStringField(doc, "type"),
-            Group:       getStringField(doc, "group"),
-        })
-    }
-
-    return searchResults, nil
-}
-
-// Rebuild 重建搜索索引 (MCP 服务变更时调用)
-func (e *SearchEngine) Rebuild(services []McpServiceInfo, tools []ToolDocument) error {
-    e.mu.Lock()
-    defer e.mu.Unlock()
-
-    // 创建新索引
-    newIndex, _ := bleve.NewMemOnly(e.index.Mapping())
-
-    // 索引 MCP 服务文档
-    for _, svc := range services {
-        doc := SearchDoc{
-            ID:          svc.Name,
-            Type:        "mcp",
-            Name:        svc.Name,
-            Description: svc.Description,
-            Group:       svc.GroupName,
-            ToolCount:   svc.ToolCount,
+    // 2. 收集分组内所有服务+工具（从缓存中获取，已在内存中）
+    var docs []SearchDoc
+    for _, g := range groups {
+        if opts.Group != "" && g.Name != opts.Group {
+            continue
         }
-        newIndex.Index(doc.ID, doc)
-    }
-
-    // 索引工具文档
-    for _, tool := range tools {
-        doc := SearchDoc{
-            ID:          tool.ServiceName + "." + tool.Name,
-            Type:        "tool",
-            Name:        tool.Name,
-            Description: tool.Description,
-            Group:       tool.GroupName,
-            ServerName:  tool.ServiceName,
+        services := store.GetGroupServices(g.ID)
+        for _, svc := range services {
+            if opts.Scope != "tool" {
+                docs = append(docs, SearchDoc{
+                    ID:          "svc:" + svc.Name,
+                    Type:        "mcp",
+                    Name:        svc.Name,
+                    Description: svc.Description,
+                    GroupName:   g.Name,
+                    ToolCount:   len(svc.Tools),
+                })
+            }
+            if opts.Scope != "mcp" {
+                for _, tool := range svc.Tools {
+                    docs = append(docs, SearchDoc{
+                        ID:          "tool:" + svc.Name + "." + tool.Name,
+                        Type:        "tool",
+                        Name:        tool.Name,
+                        Description: tool.Description,
+                        ServerName:  svc.Name,
+                        GroupName:   g.Name,
+                    })
+                }
+            }
         }
-        newIndex.Index(doc.ID, doc)
     }
 
-    // 替换索引
-    oldIndex := e.index
-    e.index = newIndex
-    e.ready = true
-    oldIndex.Close()
-
-    return nil
+    // 3. BM25 搜索
+    idx := buildIndex(docs)
+    results := idx.search(query, opts.Limit)
+    return results, nil
 }
 ```
 
+**BM25 索引与评分:**
+
+```go
+// internal/mcp/smart/bm25.go
+
+const (
+    k1       = 1.2
+    b        = 0.75
+    fuzzDist = 2  // Levenshtein 最大编辑距离 (模糊匹配)
+)
+
+func buildIndex(docs []SearchDoc) *bm25Index {
+    idx := &bm25Index{
+        docs:       docs,
+        termFreqs:  make(map[string]map[int]int),
+        fieldBoost: map[string]float64{"name": 3.0, "server_name": 2.0, "description": 1.0},
+    }
+    idx.docLens = make([]int, len(docs))
+    totalLen := 0
+
+    for i, doc := range docs {
+        // 按字段分词，加权合并到文档词频中
+        fields := map[string]string{
+            "name":        doc.Name,
+            "server_name": doc.ServerName,
+            "description": doc.Description,
+        }
+        docTerms := 0
+        for field, text := range fields {
+            tokens := tokenize(text)
+            boost := idx.fieldBoost[field]
+            for _, tok := range tokens {
+                if idx.termFreqs[tok] == nil {
+                    idx.termFreqs[tok] = make(map[int]int)
+                }
+                // 字段权重体现为词频倍增
+                idx.termFreqs[tok][i] += int(boost * 10) // 乘以 10 避免浮点精度问题
+            }
+            docTerms += len(tokens)
+        }
+        idx.docLens[i] = docTerms
+        totalLen += docTerms
+    }
+
+    idx.docCount = len(docs)
+    if idx.docCount > 0 {
+        idx.avgDocLen = float64(totalLen) / float64(idx.docCount)
+    }
+    return idx
+}
+
+func (idx *bm25Index) search(query string, limit int) []SearchResult {
+    terms := tokenize(query)
+    if len(terms) == 0 {
+        return nil
+    }
+
+    // 计算每个文档的 BM25 分数
+    scores := make(map[int]float64)
+    for _, term := range terms {
+        // 模糊匹配: 查找编辑距离内的相似词
+        matchingTerms := idx.fuzzyExpand(term)
+
+        for _, mt := range matchingTerms {
+            postings, ok := idx.termFreqs[mt]
+            if !ok {
+                continue
+            }
+
+            // IDF(t) = log((N - n(t) + 0.5) / (n(t) + 0.5) + 1)
+            n := float64(len(postings))
+            idf := math.Log((float64(idx.docCount)-n+0.5)/(n+0.5) + 1)
+
+            for docIdx, freq := range postings {
+                f := float64(freq)
+                docLen := float64(idx.docLens[docIdx])
+                // BM25 评分
+                tf := (f * (k1 + 1)) / (f + k1*(1-b+b*docLen/idx.avgDocLen))
+                scores[docIdx] += idf * tf
+            }
+        }
+    }
+
+    // 排序
+    var results []SearchResult
+    for docIdx, score := range scores {
+        if score > 0 {
+            results = append(results, SearchResult{
+                Doc:   idx.docs[docIdx],
+                Score: score,
+            })
+        }
+    }
+    sort.Slice(results, func(i, j int) bool {
+        return results[i].Score > results[j].Score
+    })
+    if len(results) > limit {
+        results = results[:limit]
+    }
+    return results
+}
+
+// fuzzyExpand 模糊扩展: 查找索引中与 term 编辑距离 <= fuzzDist 的词
+func (idx *bm25Index) fuzzyExpand(term string) []string {
+    var matched []string
+    for idxTerm := range idx.termFreqs {
+        if levenshtein(term, idxTerm) <= fuzzDist {
+            matched = append(matched, idxTerm)
+        }
+    }
+    if len(matched) == 0 {
+        // 无模糊匹配时，尝试前缀匹配
+        for idxTerm := range idx.termFreqs {
+            if strings.HasPrefix(idxTerm, term) {
+                matched = append(matched, idxTerm)
+            }
+        }
+    }
+    if len(matched) == 0 {
+        matched = []string{term} // 回退到精确匹配
+    }
+    return matched
+}
+
+// tokenize 简单分词: 小写 + 按非字母数字拆分
+func tokenize(text string) []string {
+    return strings.Fields(strings.ToLower(text))
+}
+```
+
+**与 MiniSearch (mcp-gateway) 的对应关系:**
+
+| 特性 | MiniSearch (JS) | NewMCP (Go) |
+|------|-----------------|-------------|
+| 算法 | BM25Okapi | BM25Okapi |
+| 字段权重 | name 3x, title 2x, desc 1x | name 3x, server 2x, desc 1x |
+| 模糊匹配 | threshold 0.2 | Levenshtein ≤ 2 |
+| 前缀搜索 | 支持 | 支持 (fuzzyExpand 回退) |
+| 索引重建 | 全量销毁重建 | 按请求范围即时构建 |
+| 外部依赖 | 零 | 零 |
+
+### 8.3 搜索流程
+
+```
+mcp.search 请求
+    │
+    ▼
+认证中间件: 解析 X-API-Key → apiKeyID
+    │
+    ▼
+查询 api_keys: permissions.groups → ["robot-control", "data-analysis"]
+    │
+    ▼
+收集分组内服务+工具 (从缓存):
+    - robot-control: sea-bot(5 tools), air-drone(3 tools), arm(4 tools)
+    - data-analysis: exa-search(3 tools), calculator(1 tool)
+    = 5 服务 + 16 工具 = 21 个可搜索文档
+    │
+    ▼
+buildIndex(21 docs) → BM25 倒排索引
+    │
+    ▼
+search("机器人") → 模糊扩展 → 评分 → 排序 → 返回 top 10
+```
+
+### 8.4 市场浏览搜索 (前端 UI)
+
+市场浏览是独立的 REST API，搜索全平台公开服务，不经过 MCP 网关:
+
+```
+GET /api/v1/marketplace?q=search&category=&page=1&page_size=20
+
+→ 数据库查询:
+  WHERE visibility='public' AND status=1
+  AND (name LIKE '%search%' OR description LIKE '%search%')
+→ 分页返回
+```
+
+10K 行的 `LIKE` 查询在 SQLite 中 <50ms，完全够用。未来规模更大时可切换到 FTS5/FULLTEXT，上层 API 无感。
+
 ---
 
-## 8. MCP 协议端点汇总
+## 9. MCP 协议端点汇总
 
 | 路径 | 传输 | 模式 | 说明 |
 |------|------|------|------|
@@ -579,6 +848,8 @@ func (e *SearchEngine) Rebuild(services []McpServiceInfo, tools []ToolDocument) 
 | `/mcp/ws/group/{slug}` | WebSocket | 按 group 配置 | 分组 WebSocket 端点 |
 | `/mcp` | Streamable HTTP | 暴露所有工具 | 主网关 (direct 模式) |
 | `/mcp/ws` | WebSocket | 暴露所有工具 | 主网关 WebSocket |
+| `/mcp/passive/` | WebSocket | 被动接入 | 外部 MCP 服务连入注册 (token 认证) |
 
 Smart 模式下的 `tools/list` 永远返回 3 个元工具。
 Direct 模式下的 `tools/list` 返回聚合后的完整工具列表。
+被动接入端点 `/mcp/passive/` 供外部 MCP Server 连入，NewMCP 作为 MCP Client 发现和调用工具。
