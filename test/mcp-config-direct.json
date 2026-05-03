@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "calculator": {
+      "type": "stdio",
+      "command": "/Users/mu/Public/project/newmcp/test/.venv/bin/python",
+      "args": ["test/mcp-servers/calculator.py"]
+    },
+    "weather": {
+      "type": "stdio",
+      "command": "/Users/mu/Public/project/newmcp/test/.venv/bin/python",
+      "args": ["test/mcp-servers/weather.py"]
+    }
+  }
+}

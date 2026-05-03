@@ -31,4 +31,6 @@ https://github.com/suhuail/api-mcp
 
 
 
-我想要创建test目录，在其中设计最小实例，来测试 
+我想要创建test目录，在其中设计最小实例，来测试大模型agent是否可以正常搜索调用。MCP配置可手动json
+
+NewMCP ──主动连接──> 小智云 WSS ──注册工具──> 小智设备可调用

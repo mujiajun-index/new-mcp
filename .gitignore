@@ -38,6 +38,11 @@ node_modules/
 web/dist/
 pnpm-lock.yaml
 
+# Python
+test/.venv/
+__pycache__/
+*.pyc
+
 # Logs
 *.log
 

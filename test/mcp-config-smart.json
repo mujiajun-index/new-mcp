@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "newmcp-gateway": {
+      "type": "stdio",
+      "command": "/Users/mu/Public/project/newmcp/test/.venv/bin/python",
+      "args": ["test/mcp-servers/smart_gateway.py"]
+    }
+  }
+}
