@@ -59,8 +59,14 @@
 | `/cameras/:id` | 摄像头详情 | 登录 |
 | `/api-keys` | API 密钥管理 | 登录 |
 | `/settings` | 个人设置 | 登录 |
+| `/marketplace` | 平台市场 | 登录 |
+| `/marketplace/:id` | 市场服务详情 | 登录 |
 | `/admin/users` | 用户管理 | admin |
 | `/admin/logs` | 调用日志 | admin |
+| `/admin/marketplace` | 市场服务管理 | admin |
+| `/admin/marketplace/create` | 上架市场服务 | admin |
+| `/admin/marketplace/:id` | 编辑市场服务 | admin |
+| `/admin/reviews` | 上架审核列表 | admin |
 | `/admin/system` | 系统设置 | admin |
 
 ---
@@ -80,14 +86,18 @@
 - 快捷操作: 注册服务 / 创建分组 / 添加连接
 
 ### 3.3 MCP 服务列表 `/services`
-- 表格视图: 名称 / 类型 / 状态 / 健康状态 / 工具数 / 操作
-- 筛选器: 传输类型 / 状态 / 关键词搜索
+- 表格视图: 名称 / 类型 / 服务分类 / 状态 / 健康状态 / 工具数 / 操作
+- 筛选器: 服务分类（即时使用 / 自建部署 / 被动接入）/ 传输类型 / 状态 / 关键词搜索
 - 批量操作: 启用 / 禁用
 - "注册新服务" 按钮
 
 ### 3.4 注册新服务 `/services/create`
 - 分步表单 (Step Form):
-  1. 基本信息: 名称、显示名、描述、标签
+  1. 基本信息: 名称、显示名、描述、**服务分类**
+     - 选择服务分类后自动过滤可选传输类型:
+       - 即时使用 → SSE / Streamable HTTP / WebSocket
+       - 自建部署 → stdio
+       - 被动接入 → passive-ws
   2. 传输配置: 选择传输类型 → 动态显示对应配置表单
      - stdio: 命令、参数、环境变量
      - sse/http: URL、请求头
@@ -140,6 +150,38 @@
 - 添加摄像头: 配置源 URL / 帧率 / 分辨率 / 选择视觉配置
 - 摄像头详情: 实时预览 + 最新分析结果
 
+### 3.12 平台市场 `/marketplace`
+- 卡片网格视图: 每个市场服务一张卡片
+  - 卡片信息: 名称 / 描述 / 类型标签（即用型/源码型）/ 工具数 / 使用人数 / 评分
+  - 即用型卡片: 显示"一键添加"按钮
+  - 源码型卡片: 显示"查看部署指南"按钮
+- 筛选器: 服务类型（即用型/源码型）/ 分类标签 / 关键词搜索
+- 排序: 最热 / 最新 / 评分最高
+
+### 3.13 市场服务详情 `/marketplace/:id`
+- 服务信息卡片: 名称、描述、图标、类型（即用型/源码型）、作者、版本
+- 工具列表: 该服务提供的所有 MCP 工具
+- **即用型**: "添加到我的服务"按钮 → 弹窗填写 API Key / 认证信息 → 一键创建
+- **源码型**: 部署指南区域（仓库地址、安装命令、配置模板、环境变量说明）→ "我已部署，去注册"按钮跳转到注册页
+- 评论区: 用户评分和评论（后期）
+- 收藏按钮（后期）
+
+### 3.14 管理员 - 市场服务管理 `/admin/marketplace`
+- 表格: 名称 / 类型 / 状态（已上架/已下架）/ 使用人数 / 创建时间 / 操作
+- "上架新服务"按钮
+- 操作: 编辑 / 上架/下架 / 删除
+
+### 3.15 管理员 - 上架市场服务 `/admin/marketplace/create`
+- 选择服务类型: 即用型 / 源码型
+- **即用型配置**: 关联已有的 MCP 服务配置（URL、传输类型）+ 认证说明 + 使用文档
+- **源码型配置**: 仓库地址 + 安装说明 + 配置模板 + 环境变量说明 + 部署文档
+- 通用信息: 名称、描述、图标、分类标签、版本号
+- 上架后所有用户可在市场看到
+
+### 3.16 管理员 - 上架审核列表 `/admin/reviews`（后期）
+- 表格: 申请人 / 服务名称 / 提交时间 / 审核状态 / 操作
+- 审核操作: 查看详情 / 通过 / 拒绝（填写理由）
+
 ---
 
 ## 4. 组件设计
@@ -159,6 +201,7 @@
 | `ExposeModeSwitch` | 暴露模式切换 (Direct / Smart) |
 | `ConnectionStatusBadge` | 连接状态标识 (已连接/断开/错误) |
 | `CopyButton` | 一键复制按钮 |
+| `MarketTypeTag` | 市场服务类型标签 (即用型/源码型) |
 
 ### 4.2 表单组件
 
@@ -272,9 +315,16 @@ web/
 │   │   │   └── ApiKeyPage.tsx
 │   │   ├── settings/
 │   │   │   └── SettingsPage.tsx
+│   │   ├── marketplace/
+│   │   │   ├── MarketplaceListPage.tsx
+│   │   │   └── MarketplaceDetailPage.tsx
 │   │   └── admin/
 │   │       ├── UserManagePage.tsx
 │   │       ├── LogViewPage.tsx
+│   │       ├── MarketplaceManagePage.tsx
+│   │       ├── MarketplaceCreatePage.tsx
+│   │       ├── MarketplaceEditPage.tsx
+│   │       ├── ReviewListPage.tsx
 │   │       └── SystemPage.tsx
 │   ├── stores/                  # Zustand 状态
 │   │   ├── authStore.ts

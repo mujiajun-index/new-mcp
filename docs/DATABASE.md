@@ -97,6 +97,8 @@ CREATE TABLE `mcp_services` (
     `icon_url`         VARCHAR(512)    DEFAULT '' COMMENT '图标 URL',
     `tags`             VARCHAR(512)    DEFAULT '' COMMENT '标签 (逗号分隔)',
     `visibility`       VARCHAR(16)     DEFAULT 'private' COMMENT '可见性: private, public',
+    `source`           VARCHAR(16)     DEFAULT 'user' COMMENT '来源: user=用户自建, admin=管理员添加, marketplace=从市场安装',
+    `marketplace_item_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '来源市场项 ID (从市场安装时关联)',
     `sort_order`       INT             DEFAULT 0 COMMENT '排序权重',
     `status`           TINYINT         DEFAULT 1 COMMENT '1=启用, 2=禁用',
     `created_at`       DATETIME        DEFAULT CURRENT_TIMESTAMP,
@@ -327,6 +329,79 @@ CREATE TABLE `mcp_call_logs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP 调用日志表';
 ```
 
+### 2.11 marketplace_items - 平台市场服务表
+
+```sql
+CREATE TABLE `marketplace_items` (
+    `id`               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `admin_id`         BIGINT UNSIGNED NOT NULL COMMENT '上架管理员 ID',
+    `name`             VARCHAR(128)    NOT NULL COMMENT '服务标识 (全局唯一)',
+    `display_name`     VARCHAR(255)    DEFAULT '' COMMENT '显示名称',
+    `description`      TEXT            DEFAULT '' COMMENT '服务描述',
+    `icon_url`         VARCHAR(512)    DEFAULT '' COMMENT '图标 URL',
+    `category`         VARCHAR(32)     NOT NULL COMMENT '市场分类: instant=即用型, source=源码型',
+    `tags`             VARCHAR(512)    DEFAULT '' COMMENT '标签 (逗号分隔)',
+    `version`          VARCHAR(32)     DEFAULT '1.0.0' COMMENT '版本号',
+
+    -- 即用型配置 (category=instant)
+    -- 关联已配置好的 MCP 服务模板，用户添加时复制配置
+    `transport_type`   VARCHAR(32)     DEFAULT '' COMMENT '传输类型: streamable-http, sse, websocket (即用型)',
+    `config_template`  TEXT            DEFAULT '{}' COMMENT '连接配置模板 JSON (即用型，含 URL)',
+    `auth_instructions` TEXT           DEFAULT '' COMMENT '认证说明 (即用型，如"需要 Exa API Key")',
+
+    -- 源码型配置 (category=source)
+    `repo_url`         VARCHAR(1024)   DEFAULT '' COMMENT '仓库地址 (源码型)',
+    `install_guide`    TEXT            DEFAULT '' COMMENT '安装部署文档 Markdown (源码型)',
+    `config_template_source` TEXT      DEFAULT '{}' COMMENT '配置模板 JSON (源码型，供参考)',
+    `required_env`     TEXT            DEFAULT '[]' COMMENT '所需环境变量说明 JSON 数组 (源码型)',
+
+    -- 统计
+    `install_count`    INT             DEFAULT 0 COMMENT '安装/使用人数',
+    `rating_avg`       DECIMAL(2,1)    DEFAULT 0.0 COMMENT '平均评分',
+    `rating_count`     INT             DEFAULT 0 COMMENT '评分人数',
+
+    -- 工具信息快照
+    `tools_snapshot`   MEDIUMTEXT      DEFAULT '[]' COMMENT '工具目录快照 JSON (展示用)',
+
+    `status`           TINYINT         DEFAULT 1 COMMENT '1=已上架, 2=已下架',
+    `sort_order`       INT             DEFAULT 0 COMMENT '排序权重',
+    `created_at`       DATETIME        DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`       DATETIME        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `deleted_at`       DATETIME        DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `idx_name` (`name`),
+    KEY `idx_category` (`category`),
+    KEY `idx_status` (`status`),
+    KEY `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='平台市场服务表';
+```
+
+### 2.12 marketplace_reviews - 市场服务审核表（后期）
+
+```sql
+CREATE TABLE `marketplace_reviews` (
+    `id`               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `user_id`          BIGINT UNSIGNED NOT NULL COMMENT '提交用户 ID',
+    `name`             VARCHAR(128)    NOT NULL COMMENT '服务名称',
+    `display_name`     VARCHAR(255)    DEFAULT '' COMMENT '显示名称',
+    `description`      TEXT            DEFAULT '' COMMENT '服务描述',
+    `category`         VARCHAR(32)     NOT NULL COMMENT '分类: instant, source',
+    `submission`       MEDIUMTEXT      NOT NULL COMMENT '提交内容 JSON (代码/配置/文档)',
+    `review_status`    VARCHAR(16)     DEFAULT 'pending' COMMENT '审核状态: pending, approved, rejected',
+    `reviewer_id`      BIGINT UNSIGNED DEFAULT NULL COMMENT '审核管理员 ID',
+    `review_comment`   TEXT            DEFAULT '' COMMENT '审核意见',
+    `reviewed_at`      DATETIME        DEFAULT NULL COMMENT '审核时间',
+    `created_at`       DATETIME        DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`       DATETIME        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `deleted_at`       DATETIME        DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_user_id` (`user_id`),
+    KEY `idx_review_status` (`review_status`),
+    KEY `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='市场服务审核表';
+```
+```
+
 ---
 
 ## 3. ER 关系图
@@ -339,6 +414,9 @@ users (1) ──< (N) vision_configs
 users (1) ──< (N) cameras
 users (1) ──< (N) cloud_endpoints
 
+users (1) ──< (N) marketplace_items       (admin 上架)
+users (1) ──< (N) marketplace_reviews     (用户提交审核)
+
 mcp_groups (1) ──< (N) mcp_group_services >── (1) mcp_services
 mcp_groups (1) ──< (N) mcp_group_tools   >── (1) mcp_services
 
@@ -348,6 +426,8 @@ vision_configs (1) ──< (N) cameras
 
 mcp_services (1) ──< (N) mcp_call_logs
 mcp_groups   (1) ──< (N) mcp_call_logs
+
+marketplace_items (1) ──< (N) mcp_services (用户从市场安装)
 ```
 
 ---
