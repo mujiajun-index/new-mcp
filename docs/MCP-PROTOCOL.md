@@ -4,7 +4,16 @@
 
 ## 1. 双模式网关架构
 
-NewMCP 支持两种 MCP 工具暴露模式，按分组粒度配置：
+NewMCP 支持两种 MCP 工具暴露模式，**通过端点路由驱动**：
+
+| 端点 | 模式 | 说明 |
+|------|------|------|
+| `POST /mcp` | 固定 Smart | 聚合 API Key 所有分组，工具量大，只能走元工具 |
+| `POST /mcp/group/{slug}` | 由分组的 `expose_mode` 决定 | 端点驱动，每个分组独立配置 |
+| `WS /mcp/ws` | 固定 Smart | 同 POST /mcp |
+| `WS /mcp/ws/group/{slug}` | 由分组的 `expose_mode` 决定 | 端点驱动 |
+
+> **为什么主端点固定 Smart**: 一个 API Key 可绑定多个分组，跨分组聚合后工具数量不可控，只能通过 Smart 模式的 search → describe → execute 渐进发现。
 
 ### 1.1 Direct 模式（直接模式）
 
@@ -31,7 +40,7 @@ NewMCP 支持两种 MCP 工具暴露模式，按分组粒度配置：
 | 小智设备 | smart（可配置） | 设备上下文有限 |
 | 机器人控制 | smart | 需要动态发现可用控制 MCP |
 
-分组配置中的 `expose_mode` 字段控制模式：
+分组配置中的 `expose_mode` 字段控制模式（仅 `/mcp/group/{slug}` 端点生效）：
 ```json
 {
     "expose_mode": "smart"  // "direct" 或 "smart"
@@ -782,9 +791,32 @@ func (idx *bm25Index) fuzzyExpand(term string) []string {
     return matched
 }
 
-// tokenize 简单分词: 小写 + 按非字母数字拆分
+// tokenize 分词: 小写 + 英文按空格拆分 + 中文逐字拆分
+// 参考 smart_gateway.py 的 _tokenize 实现，支持中英文混合
 func tokenize(text string) []string {
-    return strings.Fields(strings.ToLower(text))
+    text = strings.ToLower(text)
+    var tokens []string
+    var buf strings.Builder
+    for _, r := range text {
+        if r >= 0x4E00 && r <= 0x9FFF { // CJK 统一汉字
+            if buf.Len() > 0 {
+                tokens = append(tokens, buf.String())
+                buf.Reset()
+            }
+            tokens = append(tokens, string(r))
+        } else if unicode.IsLetter(r) || unicode.IsDigit(r) {
+            buf.WriteRune(r)
+        } else {
+            if buf.Len() > 0 {
+                tokens = append(tokens, buf.String())
+                buf.Reset()
+            }
+        }
+    }
+    if buf.Len() > 0 {
+        tokens = append(tokens, buf.String())
+    }
+    return tokens
 }
 ```
 

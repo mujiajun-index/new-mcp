@@ -36,10 +36,11 @@
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │                    Gin HTTP Server                       │   │
 │  │                                                          │   │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │   │
-│  │  │  REST API    │  │  MCP Gateway │  │  WebSocket   │  │   │
-│  │  │  /api/v1/*   │  │  /mcp/*      │  │  /mcp/ws/*   │  │   │
-│  │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  │   │
+│  │  ┌──────────────┐  ┌──────────────────────────┐  ┌──────────────┐  │   │
+│  │  │  REST API    │  │  MCP Gateway             │  │  WebSocket   │  │   │
+│  │  │  /api/v1/*   │  │  /mcp        → Smart     │  │  /mcp/ws     → Smart │   │
+│  │  │              │  │  /mcp/group/* → 按配置    │  │  /mcp/ws/group/* → 按配置 │   │
+│  │  └──────┬───────┘  └──────┬───────────────────┘  └──────┬───────┘  │   │
 │  └─────────┼─────────────────┼─────────────────┼──────────┘   │
 │            │                 │                 │               │
 │  ┌─────────┴─────────────────┴─────────────────┴──────────┐   │
@@ -228,27 +229,30 @@ NewMCP 支持两种连接方向:
 // internal/mcp/transport/transport.go
 
 // TransportAdapter 定义 MCP 传输协议适配器接口
+// 注意: 所有方法必须支持并发安全调用
 type TransportAdapter interface {
     // Connect 建立到上游 MCP 服务器的连接
     Connect(ctx context.Context) error
     // Close 关闭连接
     Close() error
-    // Send 发送 JSON-RPC 消息
-    Send(ctx context.Context, message jsonrpc.Message) (jsonrpc.Message, error)
+    // Call 发送 MCP JSON-RPC 请求并返回响应
+    // method: MCP 方法名 (如 "tools/list", "tools/call")
+    // params: 请求参数 (map 或 struct)
+    Call(ctx context.Context, method string, params interface{}) (json.RawMessage, error)
     // IsConnected 检查连接状态
     IsConnected() bool
-    // GetTools 获取工具列表（缓存）
-    GetTools(ctx context.Context) ([]Tool, error)
+    // GetType 返回传输类型
+    GetType() TransportType
 }
 
 // TransportType 传输类型枚举
 type TransportType string
 const (
-    TransportStdio          TransportType = "stdio"           // 本地子进程
-    TransportSSE            TransportType = "sse"             // 主动连接远程 SSE
-    TransportStreamableHTTP TransportType = "streamable-http" // 主动连接远程 HTTP
-    TransportWebSocket      TransportType = "websocket"       // 主动连接远程 WSS
-    TransportPassiveWS      TransportType = "passive-ws"      // 被动: 外部服务连入
+    TypeStdio          TransportType = "stdio"           // 本地子进程
+    TypeSSE            TransportType = "sse"             // 主动连接远程 SSE
+    TypeStreamableHTTP TransportType = "streamable-http" // 主动连接远程 HTTP
+    TypeWebSocket      TransportType = "websocket"       // 主动连接远程 WSS
+    TypePassiveWS      TransportType = "passive-ws"      // 被动: 外部服务连入
 )
 ```
 
@@ -259,8 +263,10 @@ const (
 
 // SessionPool 管理到上游 MCP 服务器的连接池
 type SessionPool struct {
-    mu       sync.RWMutex
-    sessions map[int64]*McpSession  // key: service_id
+    mu          sync.RWMutex
+    sessions    map[int64]*McpSession  // key: service_id
+    idleTimeout time.Duration          // 空闲超时，默认 10 分钟
+    maxRetries  int                    // 最大重连次数，默认 5
 }
 
 // McpSession 代表一个到上游 MCP 服务器的活跃连接
@@ -268,10 +274,22 @@ type McpSession struct {
     ServiceID   int64
     Adapter     TransportAdapter
     Tools       []Tool
+    LastUsed    time.Time
     LastRefresh time.Time
     Health      HealthStatus
+    failCount   int                   // 连续失败计数（用于熔断）
 }
+
+// GetOrConnect 获取已有 session 或按需创建新连接
+func (p *SessionPool) GetOrConnect(ctx context.Context, serviceID int64) (*McpSession, error)
 ```
+
+> **Session 生命周期管理**:
+> - **空闲淘汰**: stdio 子进程 session 空闲超过 `idleTimeout` 后自动关闭，释放系统资源
+> - **健康检查**: 每 60 秒 ping 所有活跃 session，失败标记为 unhealthy
+> - **自动重连**: unhealthy session 按指数退避重连（1s, 2s, 4s, ..., 最大 30s），连续失败 5 次后标记为 dead
+> - **熔断机制**: 连续 3 次 `Call()` 失败的 session 自动熔断，路由绕过该 session
+> - **线程安全**: TransportAdapter 的 `Call()` 方法必须支持并发调用
 
 ### 4.3 Smart 模式搜索引擎
 
@@ -295,10 +313,14 @@ func (e *SearchEngine) Search(ctx context.Context, store Store, apiKeyID int64, 
 ### 4.4 双模式分发器
 
 ```go
-// GatewayHandler 根据分组的 expose_mode 配置分发请求
+// GatewayHandler 根据端点路由分发请求
 
-// Direct 模式: 聚合所有工具，添加命名空间前缀 (serviceName__toolName)
-// Smart 模式: 只暴露 3 个固定元工具 (mcp.search, mcp.describe, mcp.execute)
+// 端点驱动模式选择:
+//   POST /mcp              → 固定 Smart 模式（聚合 API Key 所有分组，工具量大）
+//   POST /mcp/group/{slug} → 按分组的 expose_mode 决定:
+//     Direct 模式: 聚合分组内所有工具，命名空间前缀 (serviceName__toolName，双下划线)
+//     Smart  模式: 只暴露 3 个固定元工具 (mcp.search, mcp.describe, mcp.execute)
+//                  mcp.execute 的 tool_id 使用 serviceName.toolName 格式（点号）
 
 func (h *GatewayHandler) HandleToolsList(ctx context.Context, groupID int64) ([]Tool, error) {
     switch group.ExposeMode {
@@ -308,7 +330,17 @@ func (h *GatewayHandler) HandleToolsList(ctx context.Context, groupID int64) ([]
         return h.getMetaTools(), nil                     // 固定 3 个元工具
     }
 }
+
+// 主端点 (无 slug): 聚合 API Key 所有分组，固定 Smart 模式
+func (h *GatewayHandler) HandleMainEndpointToolsList(ctx context.Context, apiKeyID int64) ([]Tool, error) {
+    return h.getMetaTools(), nil  // 固定 Smart
+}
 ```
+
+> **工具 ID 格式约定**:
+> - **Direct 模式**: `serviceName__toolName`（双下划线），出现在 `tools/list` 和 `tools/call` 中
+> - **Smart 模式**: `serviceName.toolName`（点号），出现在 `mcp.execute` 的 `tool_id` 参数和搜索结果中
+> - 原因: Direct 模式工具名需作为 MCP tool name，双下划线避免与 JSON path 冲突；Smart 模式通过元工具间接调用，点号更易读
 
 ### 4.5 工具路由器
 
@@ -320,7 +352,9 @@ type ToolRouter struct {
     pool *SessionPool
 }
 
-// Route 解析 "serviceName__toolName" 格式的工具调用
+// Route 解析工具调用，自动识别两种命名空间格式:
+//   Direct: "serviceName__toolName" (双下划线)
+//   Smart:  "serviceName.toolName"  (点号)
 // 返回目标 session 和原始 tool name
 func (r *ToolRouter) Route(namespacedTool string) (*McpSession, string, error)
 ```
@@ -398,10 +432,114 @@ func (h *GatewayHandler) HandleToolsCall(ctx context.Context, req *Request) (*Re
 
 ## 7. 扩展点设计
 
-### V2 扩展: IoT 集成
-- 新增 `IoTService` 实现 `TransportAdapter` 接口
-- 新增 `iot_configs` 表存储 IoT 设备参数
-- MQTT 客户端作为新的 transport adapter
+### V2 扩展: IoT / 智能家居集成
+
+#### 7.1 ProtocolBridge 抽象层
+
+IoT 协议（MQTT、Zigbee、Z-Wave）与 MCP 协议的语义不同（发布/订阅 vs 请求/响应），需要增加 `ProtocolBridge` 接口层:
+
+```
+IoT 设备 <--协议桥接--> ProtocolBridge <--MCP 工具映射--> IoTAdapter(TransportAdapter) --> SessionPool
+```
+
+```go
+// internal/mcp/transport/protocol_bridge.go
+
+// ProtocolBridge 定义 IoT/智能家居协议桥接接口
+type ProtocolBridge interface {
+    Connect(ctx context.Context) error
+    Close() error
+    DiscoverDevices(ctx context.Context) ([]IoTDevice, error)
+    ExecuteCommand(ctx context.Context, deviceID, command string, params map[string]any) (any, error)
+    ReadState(ctx context.Context, deviceID string) (map[string]any, error)
+    SubscribeStateChanges(callback DeviceStateCallback) error
+}
+
+type IoTDevice struct {
+    ID           string
+    Name         string
+    Type         string                 // sensor, actuator, light, thermostat, camera
+    Capabilities []DeviceCapability
+    State        map[string]any
+}
+
+type DeviceCapability struct {
+    Name       string
+    Type       string          // "action" 或 "sensor"
+    Parameters json.RawMessage // JSON Schema (action 参数)
+    ReturnType json.RawMessage // JSON Schema (sensor 返回值)
+}
+
+type DeviceStateCallback func(deviceID string, state map[string]any)
+```
+
+#### 7.2 IoTAdapter — 将 IoT 设备映射为 MCP 工具
+
+```go
+// internal/mcp/transport/iot_adapter.go
+
+// IoTAdapter 实现 TransportAdapter 接口，桥接 IoT 设备到 MCP
+type IoTAdapter struct {
+    bridge      ProtocolBridge
+    tools       []Tool                    // 从 DeviceCapabilities 动态生成
+    deviceState map[string]map[string]any // 设备状态缓存
+    mu          sync.RWMutex
+}
+
+// GetTools 将 IoTDevice.Capabilities 转为 MCP Tool 定义
+// 例如: 温度传感器 → tool "sensor.read_temperature"
+//       智能灯泡   → tool "light.set_brightness", "light.set_color"
+func (a *IoTAdapter) GetTools() []Tool
+
+// Call 路由到 ExecuteCommand (action) 或 ReadState (sensor)
+func (a *IoTAdapter) Call(ctx context.Context, method string, params interface{}) (json.RawMessage, error)
+```
+
+#### 7.3 桥接优先级
+
+| 桥接目标 | 优先级 | 覆盖范围 | 说明 |
+|---------|--------|---------|------|
+| Home Assistant REST/WS API | P0 | 2000+ 设备集成 | 最广泛的智能家居平台 |
+| MQTT (通用) | P0 | Zigbee2MQTT, ESPHome, Tasmota | 通用 IoT 协议 |
+| Zigbee2MQTT (via MQTT) | P1 | 直接 Zigbee 设备 | 通过 MQTT 桥接 |
+| Philips Hue Bridge | P2 | 流行照明系统 | REST API |
+| Apple HomeKit | P2 | Apple 生态 | 需通过 Home Assistant 桥接 |
+
+> **关键策略**: 不在 Go 中实现底层无线协议栈（Zigbee、Z-Wave、Thread/Matter），而是桥接到现有的 Hub/网关（Home Assistant、Zigbee2MQTT 等），这些平台已处理了设备配对、OTA、mesh 网络等复杂逻辑。
+
+#### 7.4 数据库扩展
+
+```sql
+-- IoT 网关配置 (V2)
+CREATE TABLE iot_configs (
+    id                BIGINT UNSIGNED AUTO_INCREMENT,
+    user_id           BIGINT UNSIGNED NOT NULL,
+    service_id        BIGINT UNSIGNED NOT NULL COMMENT '关联的 MCP 服务',
+    bridge_type       VARCHAR(32) NOT NULL COMMENT 'mqtt, homeassistant, zigbee2mqtt',
+    bridge_config     TEXT DEFAULT '{}' COMMENT 'Bridge 连接配置 JSON',
+    auto_discover     TINYINT DEFAULT 1,
+    state_ttl         INT DEFAULT 300 COMMENT '设备状态缓存 TTL (秒)',
+    PRIMARY KEY (id)
+);
+
+-- IoT 设备状态 (V2)
+CREATE TABLE iot_device_state (
+    id                BIGINT UNSIGNED AUTO_INCREMENT,
+    device_id         VARCHAR(128) NOT NULL COMMENT '设备唯一标识',
+    service_id        BIGINT UNSIGNED NOT NULL,
+    state             MEDIUMTEXT DEFAULT '{}' COMMENT '设备状态 JSON',
+    last_updated      DATETIME,
+    PRIMARY KEY (id),
+    UNIQUE KEY (device_id)
+);
+```
+
+#### 7.5 实时事件推送
+
+IoT 设备状态变化需推送到 LLM 客户端，利用已有的 WebSocket/SSE 传输层:
+- GatewayHandler 增加 notification dispatcher
+- 客户端可订阅特定设备组的事件
+- 状态变化通过 MCP notifications/tools_changed 通知客户端
 
 ### V3 扩展: 商业化
 - 新增 `BillingService` 处理用量计量

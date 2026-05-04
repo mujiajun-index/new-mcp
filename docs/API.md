@@ -922,7 +922,7 @@ passive-ws (被动连接):
 ```
 
 ### POST /mcp
-主网关端点 (Streamable HTTP)。
+主网关端点 (Streamable HTTP)。聚合 API Key 绑定的所有分组，**固定 Smart 模式**（因跨分组工具量大，只能通过元工具渐进发现）。
 
 **Headers:**
 ```
@@ -942,17 +942,19 @@ X-API-Key: <key>
 }
 ```
 
+**Response:** 固定返回 3 个元工具 (`mcp.search`, `mcp.describe`, `mcp.execute`)，搜索范围覆盖该 API Key 所有绑定分组。
+
 ### POST /mcp/group/{slug}
-分组端点 (Streamable HTTP)。按分组的 `expose_mode` 返回 Direct 或 Smart 模式工具。
+分组端点 (Streamable HTTP)。按分组的 `expose_mode` 决定模式（端点驱动）：`direct` 返回聚合工具，`smart` 返回元工具。
 
 ### GET /mcp/group/{slug}
 SSE 流 (服务端推送)。
 
 ### WebSocket /mcp/ws
-WebSocket MCP 传输。
+WebSocket MCP 传输。聚合 API Key 所有分组，**固定 Smart 模式**。
 
 ### WebSocket /mcp/ws/group/{slug}
-分组 WebSocket MCP 传输。按分组的 `expose_mode` 返回 Direct 或 Smart 模式工具。
+分组 WebSocket MCP 传输。按分组的 `expose_mode` 决定模式（端点驱动）。
 
 ### WebSocket /mcp/passive/
 被动接入端点。外部 MCP Server 连入注册工具。
