@@ -187,7 +187,7 @@ func (s *GroupService) getAggregatedTools(groupID int64) ([]dto.GroupToolItem, e
 
 	var result []dto.GroupToolItem
 	for _, gs := range groupServices {
-		svc, err := model.GetServiceByID(0, gs.ServiceID)
+		svc, err := model.GetServiceByIDWithoutUser(gs.ServiceID)
 		if err != nil {
 			continue
 		}
@@ -224,7 +224,7 @@ func (s *GroupService) toDetail(group *model.McpGroup) (*dto.GroupDetail, error)
 
 	services := make([]dto.GroupServiceItem, 0)
 	for _, gs := range groupServices {
-		svc, err := model.GetServiceByID(0, gs.ServiceID)
+		svc, err := model.GetServiceByIDWithoutUser(gs.ServiceID)
 		if err != nil {
 			continue
 		}

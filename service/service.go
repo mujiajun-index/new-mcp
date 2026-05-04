@@ -1,13 +1,17 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
+	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/model"
 )
+
+var SessionPool *bridge.SessionPool
 
 type McpServiceService struct{}
 
@@ -115,21 +119,50 @@ func (s *McpServiceService) Delete(userID, serviceID int64) error {
 }
 
 func (s *McpServiceService) RefreshTools(userID, serviceID int64) (*dto.RefreshToolsResult, error) {
-	_, err := model.GetServiceByID(userID, serviceID)
+	svc, err := model.GetServiceByID(userID, serviceID)
 	if err != nil {
 		return nil, err
 	}
-	// Actual tool refresh will use transport adapters in Phase 3
-	return &dto.RefreshToolsResult{ToolsCount: 0, Tools: []interface{}{}}, nil
+
+	if SessionPool == nil {
+		return nil, nil
+	}
+
+	session, err := SessionPool.GetOrConnect(context.Background(), svc)
+	if err != nil {
+		return nil, err
+	}
+	if session == nil {
+		return nil, nil
+	}
+
+	// Re-read the service to get updated tools_cache
+	svc, _ = model.GetServiceByID(userID, serviceID)
+	var tools []interface{}
+	_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
+
+	return &dto.RefreshToolsResult{
+		ToolsCount: len(tools),
+		Tools:      tools,
+	}, nil
 }
 
 func (s *McpServiceService) Test(userID, serviceID int64) (*dto.TestResult, error) {
-	_, err := model.GetServiceByID(userID, serviceID)
+	svc, err := model.GetServiceByID(userID, serviceID)
 	if err != nil {
 		return nil, err
 	}
-	// Actual connection test will use transport adapters in Phase 3
-	return &dto.TestResult{Connected: false}, nil
+
+	if SessionPool == nil {
+		return &dto.TestResult{Connected: false}, nil
+	}
+
+	session, err := SessionPool.GetOrConnect(context.Background(), svc)
+	if err != nil {
+		return &dto.TestResult{Connected: false}, nil
+	}
+
+	return &dto.TestResult{Connected: session.Adapter.IsConnected()}, nil
 }
 
 func (s *McpServiceService) GetTools(userID, serviceID int64) ([]interface{}, error) {
@@ -151,6 +184,61 @@ func (s *McpServiceService) GetHealth(userID, serviceID int64) (map[string]inter
 		"health_status":     svc.HealthStatus,
 		"last_health_check": svc.LastHealthCheck,
 	}, nil
+}
+
+// --- Admin service management ---
+
+func (s *McpServiceService) CreateAdminService(adminID int64, req *dto.CreateServiceReq) (*dto.ServiceDetail, error) {
+	configJSON, _ := json.Marshal(req.Config)
+	authConfigJSON, _ := json.Marshal(req.AuthConfig)
+	tags := strings.Join(req.Tags, ",")
+
+	svc := &model.McpService{
+		UserID:        adminID,
+		Name:          req.Name,
+		DisplayName:   req.DisplayName,
+		Description:   req.Description,
+		TransportType: req.TransportType,
+		Config:        string(configJSON),
+		AuthType:      req.AuthType,
+		AuthConfig:    string(authConfigJSON),
+		Tags:          tags,
+		Source:        "admin",
+		Status:        common.StatusEnabled,
+		HealthStatus:  common.HealthUnknown,
+	}
+	if svc.AuthType == "" {
+		svc.AuthType = "none"
+	}
+	if err := svc.Insert(); err != nil {
+		return nil, err
+	}
+	return s.toDetail(svc), nil
+}
+
+func (s *McpServiceService) ListAdminServices(page, pageSize int) ([]dto.ServiceListItem, int64, error) {
+	offset := common.GetOffset(page, pageSize)
+	services, total, err := model.ListServicesBySource("admin", offset, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+	items := make([]dto.ServiceListItem, len(services))
+	for i, svc := range services {
+		var tools []interface{}
+		_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
+		items[i] = dto.ServiceListItem{
+			ID:            svc.ID,
+			Name:          svc.Name,
+			DisplayName:   svc.DisplayName,
+			Description:   svc.Description,
+			TransportType: svc.TransportType,
+			HealthStatus:  svc.HealthStatus,
+			ToolsCount:    len(tools),
+			Status:        svc.Status,
+			CreatedAt:     svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		}
+	}
+	return items, total, nil
 }
 
 func (s *McpServiceService) toDetail(svc *model.McpService) *dto.ServiceDetail {
@@ -178,22 +266,22 @@ func (s *McpServiceService) toDetail(svc *model.McpService) *dto.ServiceDetail {
 	}
 
 	return &dto.ServiceDetail{
-		ID:              svc.ID,
-		Name:            svc.Name,
-		DisplayName:     svc.DisplayName,
-		Description:     svc.Description,
-		TransportType:   svc.TransportType,
-		Config:          config,
-		AuthType:        svc.AuthType,
-		HealthStatus:    svc.HealthStatus,
-		LastHealthCheck: lastHealthCheck,
-		ToolsCache:      toolsCache,
-		ToolsUpdatedAt:  toolsUpdatedAt,
-		ServerInfo:      serverInfo,
-		ProtocolVersion: svc.ProtocolVersion,
-		Tags:            tags,
-		Status:          svc.Status,
-		CreatedAt:       svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		ID:               svc.ID,
+		Name:             svc.Name,
+		DisplayName:      svc.DisplayName,
+		Description:      svc.Description,
+		TransportType:    svc.TransportType,
+		Config:           config,
+		AuthType:         svc.AuthType,
+		HealthStatus:     svc.HealthStatus,
+		LastHealthCheck:  lastHealthCheck,
+		ToolsCache:       toolsCache,
+		ToolsUpdatedAt:   toolsUpdatedAt,
+		ServerInfo:       serverInfo,
+		ProtocolVersion:  svc.ProtocolVersion,
+		Tags:             tags,
+		Status:           svc.Status,
+		CreatedAt:        svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		PassiveConnected: svc.PassiveConnected,
 	}
 }

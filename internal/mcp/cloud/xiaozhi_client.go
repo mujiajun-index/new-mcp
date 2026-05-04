@@ -408,7 +408,7 @@ func (c *XiaoZhiClient) getDirectTools(ctx context.Context) ([]map[string]interf
 
 	var allTools []map[string]interface{}
 	for _, gs := range groupServices {
-		svc, err := model.GetServiceByID(0, gs.ServiceID)
+		svc, err := model.GetServiceByIDWithoutUser(gs.ServiceID)
 		if err != nil {
 			continue
 		}

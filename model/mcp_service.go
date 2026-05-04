@@ -75,3 +75,20 @@ func (s *McpService) Update() error {
 func (s *McpService) Delete() error {
 	return DB.Delete(s).Error
 }
+
+func GetServiceByIDWithoutUser(serviceID int64) (*McpService, error) {
+	var svc McpService
+	err := DB.Where("id = ?", serviceID).First(&svc).Error
+	return &svc, err
+}
+
+func ListServicesBySource(source string, offset, limit int) ([]McpService, int64, error) {
+	var services []McpService
+	query := DB.Where("source = ?", source)
+	var total int64
+	if err := query.Model(&McpService{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	err := query.Order("created_at DESC").Offset(offset).Limit(limit).Find(&services).Error
+	return services, total, err
+}

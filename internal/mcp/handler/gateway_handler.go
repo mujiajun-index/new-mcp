@@ -49,7 +49,7 @@ func (h *GatewayHandler) HandleRequest(ctx context.Context, req *JSONRPCRequest,
 	case "initialize":
 		return h.handleInitialize(req)
 	case "notifications/initialized":
-		return nil // no response for notifications
+		return nil
 	case "tools/list":
 		return h.handleToolsList(ctx, apiKeyID, groupSlug)
 	case "tools/call":
@@ -82,14 +82,18 @@ func (h *GatewayHandler) handleInitialize(req *JSONRPCRequest) *JSONRPCResponse 
 
 func (h *GatewayHandler) handleToolsList(ctx context.Context, apiKeyID int64, groupSlug string) *JSONRPCResponse {
 	if groupSlug == "" {
-		// Main endpoint: fixed Smart mode
+		// Main endpoint: fixed Smart mode (mcp.search scopes by API key permissions)
 		return h.smartToolsResponse(nil)
 	}
 
-	// Group endpoint: check expose_mode
+	// Group endpoint: verify API key has access, then check expose_mode
 	group, err := model.GetGroupBySlug(groupSlug)
 	if err != nil {
 		return h.errorResponse(nil, -32602, "Group not found: "+groupSlug)
+	}
+
+	if !h.hasGroupAccess(apiKeyID, group.Name) {
+		return h.errorResponse(nil, -32602, "API key does not have access to group: "+groupSlug)
 	}
 
 	switch group.ExposeMode {
@@ -118,14 +122,25 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 		return h.errorResponse(req.ID, -32602, "Invalid params")
 	}
 
-	// Smart mode meta-tools
+	// Smart mode meta-tools (work regardless of group slug)
 	switch params.Name {
 	case "mcp.search":
 		return h.handleSearch(ctx, req.ID, apiKeyID, params.Arguments)
 	case "mcp.describe":
 		return h.handleDescribe(ctx, req.ID, apiKeyID, params.Arguments)
 	case "mcp.execute":
-		return h.handleExecute(ctx, req.ID, apiKeyID, params.Arguments)
+		return h.handleExecute(ctx, req.ID, apiKeyID, groupSlug, params.Arguments)
+	}
+
+	// Verify group access for direct tool calls
+	if groupSlug != "" {
+		group, err := model.GetGroupBySlug(groupSlug)
+		if err != nil {
+			return h.errorResponse(req.ID, -32602, "Group not found: "+groupSlug)
+		}
+		if !h.hasGroupAccess(apiKeyID, group.Name) {
+			return h.errorResponse(req.ID, -32602, "API key does not have access to group: "+groupSlug)
+		}
 	}
 
 	// Direct mode: route to upstream service
@@ -223,7 +238,7 @@ func (h *GatewayHandler) handleDescribe(ctx context.Context, reqID interface{}, 
 	}
 }
 
-func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, apiKeyID int64, args json.RawMessage) *JSONRPCResponse {
+func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, apiKeyID int64, groupSlug string, args json.RawMessage) *JSONRPCResponse {
 	var params struct {
 		ToolID    string          `json:"tool_id"`
 		Arguments json.RawMessage `json:"arguments"`
@@ -263,6 +278,24 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, a
 	}
 }
 
+func (h *GatewayHandler) hasGroupAccess(apiKeyID int64, groupName string) bool {
+	var apiKey model.ApiKey
+	if err := model.DB.First(&apiKey, apiKeyID).Error; err != nil {
+		return false
+	}
+	var permissions struct {
+		Groups []string `json:"groups"`
+	}
+	_ = json.Unmarshal([]byte(apiKey.Permissions), &permissions)
+
+	for _, g := range permissions.Groups {
+		if g == "*" || g == groupName {
+			return true
+		}
+	}
+	return false
+}
+
 func (h *GatewayHandler) smartToolsResponse(id interface{}) *JSONRPCResponse {
 	return &JSONRPCResponse{
 		JSONRPC: "2.0",
@@ -279,7 +312,7 @@ func (h *GatewayHandler) getDirectTools(ctx context.Context, groupID int64) ([]m
 
 	var allTools []map[string]interface{}
 	for _, gs := range groupServices {
-		svc, err := model.GetServiceByID(0, gs.ServiceID)
+		svc, err := model.GetServiceByIDWithoutUser(gs.ServiceID)
 		if err != nil {
 			continue
 		}

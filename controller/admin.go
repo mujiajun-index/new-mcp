@@ -54,3 +54,30 @@ func AdminGetLogs(c *gin.Context) {
 	}
 	common.PageOf(c, items, page, pageSize, total)
 }
+
+// --- Admin service management ---
+
+func AdminListServices(c *gin.Context) {
+	page, pageSize := common.GetPagination(c)
+	items, total, err := mcpServiceService.ListAdminServices(page, pageSize)
+	if err != nil {
+		common.Error(c, http.StatusInternalServerError, "获取服务列表失败")
+		return
+	}
+	common.PageOf(c, items, page, pageSize, total)
+}
+
+func AdminCreateService(c *gin.Context) {
+	adminID := c.GetInt64("user_id")
+	var req dto.CreateServiceReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	resp, err := mcpServiceService.CreateAdminService(adminID, &req)
+	if err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Created(c, resp)
+}

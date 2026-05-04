@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/mujkjk/newmcp/common"
@@ -28,14 +30,25 @@ func (s *ApiKeyService) List(userID int64) ([]dto.ApiKeyListItem, error) {
 		if k.LastUsedAt != nil {
 			lastUsedAt = k.LastUsedAt.Format("2006-01-02T15:04:05Z")
 		}
+
+		var groups []string
+		var perms struct {
+			Groups []string `json:"groups"`
+		}
+		_ = json.Unmarshal([]byte(k.Permissions), &perms)
+		if len(perms.Groups) > 0 {
+			groups = perms.Groups
+		}
+
 		items[i] = dto.ApiKeyListItem{
-			ID:        k.ID,
-			Name:      k.Name,
-			KeyPrefix: k.KeyPrefix,
-			Status:    k.Status,
-			ExpiresAt: expiresAt,
+			ID:         k.ID,
+			Name:       k.Name,
+			KeyPrefix:  k.KeyPrefix,
+			Status:     k.Status,
+			Groups:     groups,
+			ExpiresAt:  expiresAt,
 			LastUsedAt: lastUsedAt,
-			CreatedAt: k.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:  k.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		}
 	}
 	return items, nil
@@ -47,9 +60,20 @@ func (s *ApiKeyService) Create(userID int64, req *dto.CreateApiKeyReq) (*dto.Api
 	keyHash := hex.EncodeToString(hash[:])
 	keyPrefix := key[:8]
 
+	// Build permissions JSON from groups
+	var groups []string
+	if len(req.Groups) > 0 {
+		validated, err := s.validateGroups(userID, req.Groups)
+		if err != nil {
+			return nil, err
+		}
+		groups = validated
+	}
+
 	permissionsJSON := "{}"
-	if req.Permissions != nil {
-		b, _ := common.Marshal(req.Permissions)
+	if len(groups) > 0 {
+		perms := map[string]interface{}{"groups": groups}
+		b, _ := common.Marshal(perms)
 		permissionsJSON = string(b)
 	}
 
@@ -82,6 +106,7 @@ func (s *ApiKeyService) Create(userID int64, req *dto.CreateApiKeyReq) (*dto.Api
 		Name:      apiKey.Name,
 		Key:       key,
 		KeyPrefix: keyPrefix,
+		Groups:    groups,
 		ExpiresAt: expiresAt,
 	}, nil
 }
@@ -97,6 +122,20 @@ func (s *ApiKeyService) Delete(userID, keyID int64) error {
 		}
 	}
 	return nil
+}
+
+func (s *ApiKeyService) validateGroups(userID int64, groupNames []string) ([]string, error) {
+	if len(groupNames) == 1 && groupNames[0] == "*" {
+		return []string{"*"}, nil
+	}
+	var count int64
+	model.DB.Model(&model.McpGroup{}).
+		Where("user_id = ? AND name IN ? AND status = ?", userID, groupNames, common.StatusEnabled).
+		Count(&count)
+	if int(count) != len(groupNames) {
+		return nil, fmt.Errorf("one or more groups not found")
+	}
+	return groupNames, nil
 }
 
 func generateRandomHex(n int) string {

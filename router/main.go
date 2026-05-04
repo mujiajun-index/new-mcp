@@ -21,6 +21,7 @@ func InitGateway() {
 
 	CloudManager = cloud.NewManager(SessionPool, toolRouter)
 	service.CloudManager = CloudManager
+	service.SessionPool = SessionPool
 }
 
 func SetRouter(engine *gin.Engine) {

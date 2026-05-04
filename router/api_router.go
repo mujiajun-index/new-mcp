@@ -14,6 +14,10 @@ func SetApiRouter(engine *gin.Engine) {
 	api.POST("/auth/register", controller.Register)
 	api.POST("/auth/login", controller.Login)
 
+	// Public marketplace browsing
+	api.GET("/marketplace", controller.BrowseMarketplace)
+	api.GET("/marketplace/:id", controller.GetMarketplaceItem)
+
 	// User-authenticated endpoints
 	auth := api.Group("")
 	auth.Use(middleware.UserAuth())
@@ -60,6 +64,10 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.POST("/connections/:id/connect", controller.ConnectConnection)
 		auth.POST("/connections/:id/disconnect", controller.DisconnectConnection)
 		auth.PUT("/connections/:id/bind-apikey", controller.BindConnectionApiKey)
+
+		// Marketplace user actions
+		auth.POST("/marketplace/install", controller.InstallFromMarketplace)
+		auth.POST("/marketplace/:id/review", controller.CreateMarketplaceReview)
 	}
 
 	// Admin endpoints
@@ -70,6 +78,17 @@ func SetApiRouter(engine *gin.Engine) {
 		admin.PUT("/users/:id", controller.AdminUpdateUser)
 		admin.GET("/stats", controller.AdminGetStats)
 		admin.GET("/logs", controller.AdminGetLogs)
+
+		// Admin: Platform services
+		admin.GET("/services", controller.AdminListServices)
+		admin.POST("/services", controller.AdminCreateService)
+
+		// Admin: Marketplace management
+		admin.GET("/marketplace", controller.AdminListMarketplaceItems)
+		admin.POST("/marketplace", controller.AdminCreateMarketplaceItem)
+		admin.GET("/marketplace/:id", controller.AdminGetMarketplaceItem)
+		admin.PUT("/marketplace/:id", controller.AdminUpdateMarketplaceItem)
+		admin.DELETE("/marketplace/:id", controller.AdminDeleteMarketplaceItem)
 	}
 
 	// Health check
