@@ -1,6 +1,6 @@
 import { createLazyFileRoute } from '@tanstack/react-router'
-import { PlaceholderPage } from '@/components/layout/placeholder-page'
+import { MarketplaceDetailPage } from '@/features/marketplace/components/marketplace-detail-page'
 
 export const Route = createLazyFileRoute('/_authenticated/marketplace/$id')({
-  component: () => <PlaceholderPage title="nav.marketplace" subtitle="市场服务详情" icon="Store" />,
+  component: MarketplaceDetailPage,
 })

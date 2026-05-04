@@ -1,6 +1,6 @@
 import { createLazyFileRoute } from '@tanstack/react-router'
-import { PlaceholderPage } from '@/components/layout/placeholder-page'
+import { ServiceListPage } from '@/features/services/components/service-list-page'
 
 export const Route = createLazyFileRoute('/_authenticated/services/')({
-  component: () => <PlaceholderPage title="nav.services" icon="Server" />,
+  component: ServiceListPage,
 })

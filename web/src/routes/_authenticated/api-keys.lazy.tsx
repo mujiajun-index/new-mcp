@@ -1,6 +1,6 @@
 import { createLazyFileRoute } from '@tanstack/react-router'
-import { PlaceholderPage } from '@/components/layout/placeholder-page'
+import { ApiKeyPage } from '@/features/api-keys/components/api-key-page'
 
 export const Route = createLazyFileRoute('/_authenticated/api-keys')({
-  component: () => <PlaceholderPage title="nav.apiKeys" icon="Key" />,
+  component: ApiKeyPage,
 })
