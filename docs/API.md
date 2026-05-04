@@ -555,7 +555,7 @@ passive-ws (被动连接):
     "name": "客厅小智 Agent",
     "cloud_type": "xiaozhi",
     "wss_url": "wss://api.xiaozhi.me/mcp/?token=eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "group_id": 1,
+    "api_key_id": 1,
     "auto_connect": true
 }
 ```
@@ -569,7 +569,7 @@ passive-ws (被动连接):
     "cloud_config": {
         "headers": {}
     },
-    "group_id": 2,
+    "api_key_id": 2,
     "auto_connect": true
 }
 ```
@@ -579,6 +579,24 @@ passive-ws (被动连接):
 |------------|------|----------|
 | xiaozhi | 小智云平台 | 自动解析 JWT 获取 Agent ID 和过期时间 |
 | custom | 自定义 WSS 端点 | 无特殊处理 |
+| ssh | SSH 远程连接 | 配置主机/端口/认证方式 |
+
+**Request Body (SSH):**
+```json
+{
+    "name": "远程服务器",
+    "cloud_type": "ssh",
+    "cloud_config": {
+        "host": "192.168.1.100",
+        "port": 22,
+        "user": "ubuntu",
+        "auth_type": "key",
+        "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\n..."
+    },
+    "api_key_id": 1,
+    "auto_connect": true
+}
+```
 
 **Response:** `201 Created`
 ```json
@@ -591,7 +609,7 @@ passive-ws (被动连接):
         "wss_url": "wss://api.xiaozhi.me/mcp/?token=eyJ...",
         "remote_id": "104304",
         "token_expires_at": "2027-05-03T00:00:00Z",
-        "group_id": 1,
+        "api_key_id": 1,
         "connection_status": "connecting",
         "auto_connect": true
     }
@@ -599,6 +617,7 @@ passive-ws (被动连接):
 ```
 
 > **说明**: cloud_type 为 xiaozhi 时，创建后自动解析 JWT 获取 remote_id (Agent ID) 和 token_expires_at，并尝试连接。
+> **API Key 绑定**: `api_key_id` 关联一个已有 API Key，该 Key 的 `permissions.groups` 决定此连接可暴露的 MCP 分组和工具范围。
 
 ### GET /connections/:id
 获取连接详情（含连接状态）。
@@ -626,17 +645,17 @@ passive-ws (被动连接):
 ### POST /connections/:id/disconnect
 手动断开连接。
 
-### PUT /connections/:id/bind-group
-更换绑定的分组。
+### PUT /connections/:id/bind-apikey
+更换绑定的 API Key。
 
 **Request Body:**
 ```json
 {
-    "group_id": 2
+    "api_key_id": 2
 }
 ```
 
-> 更换分组后自动重新向远端平台注册工具列表。
+> 更换 API Key 后自动重新向远端平台注册工具列表（按新 Key 的权限范围）。
 
 ---
 

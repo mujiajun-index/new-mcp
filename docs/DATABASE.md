@@ -263,18 +263,20 @@ CREATE TABLE `cloud_endpoints` (
     `name`              VARCHAR(128)    NOT NULL COMMENT '连接名称 (如"客厅小智")',
 
     -- 云平台类型
-    `cloud_type`        VARCHAR(32)     NOT NULL DEFAULT 'custom' COMMENT '云平台类型: xiaozhi, custom',
+    `cloud_type`        VARCHAR(32)     NOT NULL DEFAULT 'custom' COMMENT '云平台类型: xiaozhi, custom, ssh',
 
     -- 连接配置
-    `wss_url`           VARCHAR(1024)   NOT NULL COMMENT '完整 WSS URL (含 token)',
-    `cloud_config`      TEXT            DEFAULT '{}' COMMENT '平台特定配置 JSON',
+    `wss_url`           VARCHAR(1024)   DEFAULT '' COMMENT '完整 WSS URL (含 token, cloud_type=xiaozhi/custom 时使用)',
+    `cloud_config`      TEXT            DEFAULT '{}' COMMENT '平台特定配置 JSON (SSH: {host, port, user, auth_type, private_key})',
 
     -- 云平台解析信息 (如小智 JWT 解析)
     `remote_id`         VARCHAR(128)    DEFAULT '' COMMENT '远端 ID (如小智 Agent ID)',
     `token_expires_at`  DATETIME        DEFAULT NULL COMMENT 'Token 过期时间',
 
-    -- 绑定分组 (此连接暴露该分组内的工具给远端平台)
-    `group_id`          BIGINT UNSIGNED DEFAULT NULL COMMENT '绑定的 MCP 分组 ID',
+    -- 绑定 API Key (通过 API Key 的权限决定可暴露的 MCP 分组/服务)
+    `api_key_id`        BIGINT UNSIGNED DEFAULT NULL COMMENT '绑定的 API Key ID',
+    -- 废弃 group_id，改为通过 API Key 权限关联分组
+    `group_id`          BIGINT UNSIGNED DEFAULT NULL COMMENT '(已废弃) 绑定的 MCP 分组 ID，迁移为 api_key_id',
 
     -- 连接状态
     `auto_connect`      TINYINT         DEFAULT 1 COMMENT '1=自动连接, 0=手动连接',
@@ -288,6 +290,7 @@ CREATE TABLE `cloud_endpoints` (
     `deleted_at`        DATETIME        DEFAULT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_user_id` (`user_id`),
+    KEY `idx_api_key_id` (`api_key_id`),
     KEY `idx_group_id` (`group_id`),
     KEY `idx_cloud_type` (`cloud_type`),
     KEY `idx_connection_status` (`connection_status`),
