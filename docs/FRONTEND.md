@@ -91,7 +91,7 @@ routes/
 │   │   ├── index.lazy.tsx
 │   │   └── $id.lazy.tsx
 │   ├── settings.lazy.tsx               ← 个人设置
-│   └── _admin/                         ← 管理员路由组 (嵌套)
+│   └── admin/                          ← 管理员路由 (/admin/*, 含权限守卫)
 │       ├── route.tsx                   ← 管理员权限守卫
 │       ├── users.lazy.tsx
 │       ├── logs.lazy.tsx
@@ -141,8 +141,8 @@ export const Route = createFileRoute('/_authenticated')({
 **管理员路由守卫**:
 
 ```typescript
-// routes/_authenticated/_admin/route.tsx
-export const Route = createFileRoute('/_authenticated/_admin')({
+// routes/_authenticated/admin/route.tsx
+export const Route = createFileRoute('/_authenticated/admin')({
   beforeLoad: async () => {
     const { auth } = useAuthStore.getState()
     if (auth.user?.role !== 'admin') {
@@ -212,13 +212,13 @@ export const Route = createFileRoute('/_authenticated/_admin')({
 | `/settings` | `_authenticated/settings.lazy.tsx` | 个人设置 | 登录 |
 | `/marketplace` | `_authenticated/marketplace/index.lazy.tsx` | 平台市场 | 登录 |
 | `/marketplace/:id` | `_authenticated/marketplace/$id.lazy.tsx` | 市场服务详情 | 登录 |
-| `/admin/users` | `_authenticated/_admin/users.lazy.tsx` | 用户管理 | admin |
-| `/admin/logs` | `_authenticated/_admin/logs.lazy.tsx` | 调用日志 | admin |
-| `/admin/marketplace` | `_authenticated/_admin/marketplace/index.lazy.tsx` | 市场管理 | admin |
-| `/admin/marketplace/create` | `_authenticated/_admin/marketplace/create.lazy.tsx` | 上架服务 | admin |
-| `/admin/marketplace/:id` | `_authenticated/_admin/marketplace/$id.lazy.tsx` | 编辑服务 | admin |
-| `/admin/reviews` | `_authenticated/_admin/reviews.lazy.tsx` | 审核列表 | admin |
-| `/admin/system` | `_authenticated/_admin/system.lazy.tsx` | 系统设置 | admin |
+| `/admin/users` | `_authenticated/admin/users.lazy.tsx` | 用户管理 | admin |
+| `/admin/logs` | `_authenticated/admin/logs.lazy.tsx` | 调用日志 | admin |
+| `/admin/marketplace` | `_authenticated/admin/marketplace/index.lazy.tsx` | 市场管理 | admin |
+| `/admin/marketplace/create` | `_authenticated/admin/marketplace/create.lazy.tsx` | 上架服务 | admin |
+| `/admin/marketplace/:id` | `_authenticated/admin/marketplace/$id.lazy.tsx` | 编辑服务 | admin |
+| `/admin/reviews` | `_authenticated/admin/reviews.lazy.tsx` | 审核列表 | admin |
+| `/admin/system` | `_authenticated/admin/system.lazy.tsx` | 系统设置 | admin |
 
 ---
 
