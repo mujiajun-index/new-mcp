@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { api } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,6 +12,7 @@ import { Loader2 } from 'lucide-react'
 export function SignUpPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const { auth } = useAuthStore()
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({ username: '', email: '', password: '', confirmPassword: '' })
 
@@ -22,14 +24,17 @@ export function SignUpPage() {
     }
     setLoading(true)
     try {
-      const res = await api.post('/api/auth/register', {
+      const res = await api.post('/auth/register', {
         username: form.username,
         email: form.email,
         password: form.password,
       })
-      if (res.data?.success !== false) {
-        toast.success('注册成功，请登录')
-        navigate({ to: '/sign-in' })
+      const { data } = res.data
+      if (data?.token) {
+        localStorage.setItem('newmcp-token', data.token)
+        auth.setUser({ id: data.id, username: data.username, role: data.role })
+        toast.success('注册成功')
+        navigate({ to: '/dashboard' })
       }
     } catch {
       // handled by interceptor

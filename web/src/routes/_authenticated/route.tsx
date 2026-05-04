@@ -16,8 +16,12 @@ export const Route = createFileRoute('/_authenticated')({
       try {
         const { getSelf } = await import('@/lib/api')
         const res = await getSelf()
-        if (res?.success !== false && res?.data) {
-          auth.setUser(res.data)
+        if (res?.success && res?.data) {
+          auth.setUser({
+            id: res.data.id,
+            username: res.data.username,
+            role: res.data.role,
+          })
           sessionVerified = true
         } else {
           auth.reset()

@@ -9,12 +9,16 @@ function getRequestKey(config: { method?: string; url?: string; params?: unknown
 }
 
 export const api = axios.create({
-  baseURL: '',
-  withCredentials: true,
+  baseURL: '/api/v1',
   headers: { 'Cache-Control': 'no-store' },
 })
 
 api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('newmcp-token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+
   if (config.method === 'get' && !(config as any).disableDuplicate) {
     const key = getRequestKey(config)
     if (pendingRequests.has(key)) {
@@ -44,16 +48,24 @@ api.interceptors.response.use(
     return response
   },
   (error) => {
-    if (error.response?.status === 401) {
+    const status = error.response?.status
+    const message = error.response?.data?.message
+
+    if (status === 401) {
       useAuthStore.getState().auth.reset()
+      localStorage.removeItem('newmcp-token')
       toast.error('会话已过期')
       window.location.href = '/sign-in'
+    } else if (message) {
+      toast.error(message)
+    } else if (!axios.isCancel(error)) {
+      toast.error('网络错误，请稍后重试')
     }
     return Promise.reject(error)
   }
 )
 
 export async function getSelf() {
-  const res = await api.get('/api/user/self', { skipErrorHandler: true } as any)
+  const res = await api.get('/auth/profile')
   return res.data
 }

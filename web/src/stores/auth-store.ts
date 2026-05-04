@@ -4,7 +4,6 @@ import { persist } from 'zustand/middleware'
 interface AuthUser {
   id: number
   username: string
-  email: string
   role: 'user' | 'admin'
 }
 
@@ -29,8 +28,10 @@ export const useAuthStore = create<AuthState>()(
         ...initialAuth,
         setUser: (user) =>
           set((state) => ({ auth: { ...state.auth, user } })),
-        reset: () =>
-          set((state) => ({ auth: { ...state.auth, user: null } })),
+        reset: () => {
+          localStorage.removeItem('newmcp-token')
+          set((state) => ({ auth: { ...state.auth, user: null } }))
+        },
       },
     }),
     {

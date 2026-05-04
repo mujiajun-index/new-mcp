@@ -21,10 +21,11 @@ export function SignInPage() {
     e.preventDefault()
     setLoading(true)
     try {
-      const res = await api.post('/api/auth/login', form)
-      if (res.data?.success !== false) {
-        const user = res.data?.data || res.data
-        auth.setUser(user)
+      const res = await api.post('/auth/login', form)
+      const { data } = res.data
+      if (data?.token) {
+        localStorage.setItem('newmcp-token', data.token)
+        auth.setUser({ id: data.id, username: data.username, role: data.role })
         toast.success(t('common.success'))
         navigate({ to: search.redirect || '/dashboard' })
       }
