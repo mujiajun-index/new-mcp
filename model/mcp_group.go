@@ -8,8 +8,8 @@ import (
 
 type McpGroup struct {
 	ID               int64          `json:"id" gorm:"primaryKey;autoIncrement"`
-	UserID           int64          `json:"user_id" gorm:"not null;uniqueIndex:idx_user_name"`
-	Name             string         `json:"name" gorm:"size:128;not null;uniqueIndex:idx_user_name"`
+	UserID           int64          `json:"user_id" gorm:"not null;uniqueIndex:idx_grp_user_name"`
+	Name             string         `json:"name" gorm:"size:128;not null;uniqueIndex:idx_grp_user_name"`
 	DisplayName      string         `json:"display_name" gorm:"size:255"`
 	Description      string         `json:"description" gorm:"type:text"`
 	IconURL          string         `json:"icon_url" gorm:"size:512"`

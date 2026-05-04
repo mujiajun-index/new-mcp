@@ -8,7 +8,6 @@ import (
 	"io"
 	"os/exec"
 	"sync"
-	"time"
 )
 
 type StdioAdapter struct {
