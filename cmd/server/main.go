@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -31,9 +35,34 @@ func main() {
 
 	router.SetRouter(engine)
 
+	// Start cloud connections (XiaoZhi, custom WSS)
+	router.StartCloudConnections()
+	defer router.StopCloudConnections()
+
 	addr := fmt.Sprintf(":%d", common.Port)
 	log.Printf("NewMCP server starting on %s", addr)
-	if err := engine.Run(addr); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+
+	// Graceful shutdown
+	srvCtx, srvCancel := context.WithCancel(context.Background())
+	defer srvCancel()
+
+	go func() {
+		if err := engine.Run(addr); err != nil {
+			log.Printf("Server stopped: %v", err)
+			srvCancel()
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	select {
+	case <-quit:
+		log.Println("Shutting down server...")
+	case <-srvCtx.Done():
 	}
+
+	router.StopCloudConnections()
+	model.CloseDB()
+	log.Println("Server exited")
 }

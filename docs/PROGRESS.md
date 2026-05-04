@@ -19,7 +19,7 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 | MCP 服务管理 | ✅ 已完成 | 90% | CRUD 完整，测试/刷新工具需接入传输层 |
 | MCP 分组管理 | ✅ 已完成 | 95% | CRUD + 工具聚合完整，刷新需接入传输层 |
 | API Key 管理 | ✅ 已完成 | 100% | 创建/列表/删除/权限 |
-| 云端连接 | 🔧 部分完成 | 40% | CRUD 完整，实际 WSS 连接未实现 |
+| 云端连接 | ✅ 已完成 | 85% | XiaoZhi JWT 解析 + WSS 连接 + 自动重连 |
 | 管理员接口 | ✅ 已完成 | 100% | 用户管理/统计/日志 |
 | MCP 协议网关 | 🔧 部分完成 | 65% | Smart 模式完整，Direct 模式完整，传输层不全 |
 | 视觉配置 | ❌ 未开始 | 5% | 仅 Model 层 |
@@ -130,18 +130,30 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 | `POST /api/v1/api-keys` | ✅ | ✅ nm- 前缀，SHA256 存储 | 已测试通过 |
 | `DELETE /api/v1/api-keys/:id` | ✅ | ✅ | |
 
-#### 云端连接管理 🔧 40%
+#### 云端连接管理 ✅ 85%
 
 | 端点 | 控制器 | 服务 | 状态 |
 |------|--------|------|------|
 | `GET /api/v1/connections` | ✅ | ✅ | |
-| `POST /api/v1/connections` | ✅ | ⚠️ CRUD 完整，XiaoZhi JWT 解析未实现 | 待完善 |
+| `POST /api/v1/connections` | ✅ | ✅ XiaoZhi JWT 解析 + 自动连接 | 已测试通过 |
 | `GET /api/v1/connections/:id` | ✅ | ✅ | |
 | `PUT /api/v1/connections/:id` | ✅ | ✅ | |
-| `DELETE /api/v1/connections/:id` | ✅ | ✅ | |
-| `POST /api/v1/connections/:id/connect` | ✅ | ⚠️ 仅更新状态，未建立实际连接 | 待完善 |
-| `POST /api/v1/connections/:id/disconnect` | ✅ | ⚠️ 仅更新状态 | 待完善 |
-| `PUT /api/v1/connections/:id/bind-apikey` | ✅ | ✅ | |
+| `DELETE /api/v1/connections/:id` | ✅ | ✅ 断开 WSS 连接 | |
+| `POST /api/v1/connections/:id/connect` | ✅ | ✅ 建立实际 WSS 连接 | 已测试通过 |
+| `POST /api/v1/connections/:id/disconnect` | ✅ | ✅ 断开 WSS 连接 | |
+| `PUT /api/v1/connections/:id/bind-apikey` | ✅ | ✅ 重连并重新注册工具 | |
+
+**小智云 (XiaoZhi) 集成**:
+| 组件 | 文件 | 状态 |
+|------|------|------|
+| JWT Token 解析 | `service/connection.go` | ✅ 提取 agentId/userId/exp/endpointId |
+| WSS 客户端 | `internal/mcp/cloud/xiaozhi_client.go` | ✅ WebSocket 连接 + MCP 消息循环 |
+| 连接管理器 | `internal/mcp/cloud/manager.go` | ✅ 启动/停止/重连 + 指数退避 |
+| 心跳保活 | `xiaozhi_client.go pingLoop` | ✅ 30s ping |
+| MCP 协议响应 | `xiaozhi_client.go` | ✅ initialize + tools/list + tools/call |
+| Smart/Direct 双模式 | `xiaozhi_client.go` | ✅ 按分组 expose_mode 切换 |
+| 自动重连 | `manager.go connectWithRetry` | ✅ 指数退避 2s→30s，最多 10 次 |
+| 应用生命周期集成 | `router/main.go`, `cmd/server/main.go` | ✅ 启动时自动连接，关闭时优雅断开 |
 
 #### 管理员接口 ✅ 100%
 
@@ -234,15 +246,17 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 以下流程已通过 curl 手动测试验证：
 
 ```
-1. 注册用户 POST /auth/register ✅
-2. 用户登录 POST /auth/login ✅ → 获取 JWT Token
-3. 获取资料 GET /auth/profile ✅ → JWT 鉴权通过
-4. 创建 MCP 服务 POST /services ✅ → streamable-http 类型
-5. 创建 MCP 分组 POST /groups ✅ → 含 endpoint_slug
-6. 创建 API Key POST /api-keys ✅ → nm- 前缀，仅创建时返回完整 key
-7. MCP 协议握手 POST /mcp (initialize) ✅ → JSON-RPC 响应
-8. 获取工具列表 POST /mcp (tools/list) ✅ → 返回 3 个元工具（Smart 模式）
-9. 分组工具列表 POST /mcp/group/search (tools/list) ✅ → 按 expose_mode 返回
+ 1. 注册用户 POST /auth/register ✅
+ 2. 用户登录 POST /auth/login ✅ → 获取 JWT Token
+ 3. 获取资料 GET /auth/profile ✅ → JWT 鉴权通过
+ 4. 创建 MCP 服务 POST /services ✅ → streamable-http 类型
+ 5. 创建 MCP 分组 POST /groups ✅ → 含 endpoint_slug
+ 6. 创建 API Key POST /api-keys ✅ → nm- 前缀，仅创建时返回完整 key
+ 7. MCP 协议握手 POST /mcp (initialize) ✅ → JSON-RPC 响应
+ 8. 获取工具列表 POST /mcp (tools/list) ✅ → 返回 3 个元工具（Smart 模式）
+ 9. 分组工具列表 POST /mcp/group/search (tools/list) ✅ → 按 expose_mode 返回
+10. 创建小智连接 POST /connections ✅ → JWT 解析提取 agentId=104304, exp=2027-05-03
+11. MCP 搜索工具 POST /mcp (tools/call mcp.search) ✅ → BM25 搜索引擎响应
 ```
 
 ---
@@ -262,11 +276,11 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 
 ### P1 — 云端连接
 
-| # | 事项 | 涉及文件 | 优先级 |
-|---|------|----------|--------|
-| 7 | XiaoZhi JWT 解析（提取 Agent ID + 过期时间） | `service/connection.go` | 中 |
-| 8 | WSS 主动连接管理器 | `internal/mcp/cloud/` (新建) | 中 |
-| 9 | 云端连接：NewMCP 作为 MCP Server 向远端注册工具 | 新文件 | 中 |
+| # | 事项 | 涉及文件 | 状态 |
+|---|------|----------|------|
+| 7 | ~~XiaoZhi JWT 解析（提取 Agent ID + 过期时间）~~ | `service/connection.go` | ✅ 已完成 |
+| 8 | ~~WSS 主动连接管理器~~ | `internal/mcp/cloud/manager.go` | ✅ 已完成 |
+| 9 | ~~NewMCP 作为 MCP Server 向远端注册工具~~ | `internal/mcp/cloud/xiaozhi_client.go` | ✅ 已完成 |
 | 10 | SSH 隧道连接支持 | 新文件 | 低 |
 
 ### P2 — 视觉与摄像头
