@@ -47,12 +47,64 @@ func AdminGetStats(c *gin.Context) {
 
 func AdminGetLogs(c *gin.Context) {
 	page, pageSize := common.GetPagination(c)
-	items, total, err := adminService.GetLogs(page, pageSize)
+	var filter dto.LogFilter
+	if err := c.ShouldBindQuery(&filter); err != nil {
+		common.Error(c, http.StatusBadRequest, "筛选参数错误")
+		return
+	}
+	items, total, err := adminService.GetLogs(&filter, page, pageSize)
 	if err != nil {
 		common.Error(c, http.StatusInternalServerError, "获取日志失败")
 		return
 	}
 	common.PageOf(c, items, page, pageSize, total)
+}
+
+func AdminGetLogStats(c *gin.Context) {
+	var filter dto.LogFilter
+	if err := c.ShouldBindQuery(&filter); err != nil {
+		common.Error(c, http.StatusBadRequest, "筛选参数错误")
+		return
+	}
+	stats, err := adminService.GetLogStats(&filter)
+	if err != nil {
+		common.Error(c, http.StatusInternalServerError, "获取日志统计失败")
+		return
+	}
+	common.Success(c, stats)
+}
+
+// --- User log endpoints ---
+
+func GetUserLogs(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	page, pageSize := common.GetPagination(c)
+	var filter dto.LogFilter
+	if err := c.ShouldBindQuery(&filter); err != nil {
+		common.Error(c, http.StatusBadRequest, "筛选参数错误")
+		return
+	}
+	items, total, err := adminService.GetUserLogs(userID, &filter, page, pageSize)
+	if err != nil {
+		common.Error(c, http.StatusInternalServerError, "获取日志失败")
+		return
+	}
+	common.PageOf(c, items, page, pageSize, total)
+}
+
+func GetUserLogStats(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	var filter dto.LogFilter
+	if err := c.ShouldBindQuery(&filter); err != nil {
+		common.Error(c, http.StatusBadRequest, "筛选参数错误")
+		return
+	}
+	stats, err := adminService.GetUserLogStats(userID, &filter)
+	if err != nil {
+		common.Error(c, http.StatusInternalServerError, "获取日志统计失败")
+		return
+	}
+	common.Success(c, stats)
 }
 
 // --- Admin service management ---

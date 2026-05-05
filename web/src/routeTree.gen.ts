@@ -22,6 +22,9 @@ const PublicSignInLazyRouteImport = createFileRoute('/_public/sign-in')()
 const AuthenticatedSettingsLazyRouteImport = createFileRoute(
   '/_authenticated/settings',
 )()
+const AuthenticatedLogsLazyRouteImport = createFileRoute(
+  '/_authenticated/logs',
+)()
 const AuthenticatedDashboardLazyRouteImport = createFileRoute(
   '/_authenticated/dashboard',
 )()
@@ -141,6 +144,13 @@ const AuthenticatedSettingsLazyRoute =
   } as any).lazy(() =>
     import('./routes/_authenticated/settings.lazy').then((d) => d.Route),
   )
+const AuthenticatedLogsLazyRoute = AuthenticatedLogsLazyRouteImport.update({
+  id: '/logs',
+  path: '/logs',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any).lazy(() =>
+  import('./routes/_authenticated/logs.lazy').then((d) => d.Route),
+)
 const AuthenticatedDashboardLazyRoute =
   AuthenticatedDashboardLazyRouteImport.update({
     id: '/dashboard',
@@ -373,6 +383,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthenticatedAdminRouteRouteWithChildren
   '/api-keys': typeof AuthenticatedApiKeysLazyRoute
   '/dashboard': typeof AuthenticatedDashboardLazyRoute
+  '/logs': typeof AuthenticatedLogsLazyRoute
   '/settings': typeof AuthenticatedSettingsLazyRoute
   '/sign-in': typeof PublicSignInLazyRoute
   '/sign-up': typeof PublicSignUpLazyRoute
@@ -407,6 +418,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AuthenticatedAdminRouteRouteWithChildren
   '/api-keys': typeof AuthenticatedApiKeysLazyRoute
   '/dashboard': typeof AuthenticatedDashboardLazyRoute
+  '/logs': typeof AuthenticatedLogsLazyRoute
   '/settings': typeof AuthenticatedSettingsLazyRoute
   '/sign-in': typeof PublicSignInLazyRoute
   '/sign-up': typeof PublicSignUpLazyRoute
@@ -444,6 +456,7 @@ export interface FileRoutesById {
   '/_authenticated/admin': typeof AuthenticatedAdminRouteRouteWithChildren
   '/_authenticated/api-keys': typeof AuthenticatedApiKeysLazyRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardLazyRoute
+  '/_authenticated/logs': typeof AuthenticatedLogsLazyRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsLazyRoute
   '/_public/sign-in': typeof PublicSignInLazyRoute
   '/_public/sign-up': typeof PublicSignUpLazyRoute
@@ -480,6 +493,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/api-keys'
     | '/dashboard'
+    | '/logs'
     | '/settings'
     | '/sign-in'
     | '/sign-up'
@@ -514,6 +528,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/api-keys'
     | '/dashboard'
+    | '/logs'
     | '/settings'
     | '/sign-in'
     | '/sign-up'
@@ -550,6 +565,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin'
     | '/_authenticated/api-keys'
     | '/_authenticated/dashboard'
+    | '/_authenticated/logs'
     | '/_authenticated/settings'
     | '/_public/sign-in'
     | '/_public/sign-up'
@@ -635,6 +651,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof AuthenticatedSettingsLazyRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/logs': {
+      id: '/_authenticated/logs'
+      path: '/logs'
+      fullPath: '/logs'
+      preLoaderRoute: typeof AuthenticatedLogsLazyRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/dashboard': {
@@ -862,6 +885,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAdminRouteRoute: typeof AuthenticatedAdminRouteRouteWithChildren
   AuthenticatedApiKeysLazyRoute: typeof AuthenticatedApiKeysLazyRoute
   AuthenticatedDashboardLazyRoute: typeof AuthenticatedDashboardLazyRoute
+  AuthenticatedLogsLazyRoute: typeof AuthenticatedLogsLazyRoute
   AuthenticatedSettingsLazyRoute: typeof AuthenticatedSettingsLazyRoute
   AuthenticatedCamerasIdLazyRoute: typeof AuthenticatedCamerasIdLazyRoute
   AuthenticatedCamerasCreateLazyRoute: typeof AuthenticatedCamerasCreateLazyRoute
@@ -886,6 +910,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAdminRouteRoute: AuthenticatedAdminRouteRouteWithChildren,
   AuthenticatedApiKeysLazyRoute: AuthenticatedApiKeysLazyRoute,
   AuthenticatedDashboardLazyRoute: AuthenticatedDashboardLazyRoute,
+  AuthenticatedLogsLazyRoute: AuthenticatedLogsLazyRoute,
   AuthenticatedSettingsLazyRoute: AuthenticatedSettingsLazyRoute,
   AuthenticatedCamerasIdLazyRoute: AuthenticatedCamerasIdLazyRoute,
   AuthenticatedCamerasCreateLazyRoute: AuthenticatedCamerasCreateLazyRoute,

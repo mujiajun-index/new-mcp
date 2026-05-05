@@ -65,6 +65,10 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.POST("/connections/:id/disconnect", controller.DisconnectConnection)
 		auth.PUT("/connections/:id/bind-apikey", controller.BindConnectionApiKey)
 
+		// User logs
+		auth.GET("/logs", controller.GetUserLogs)
+		auth.GET("/logs/stats", controller.GetUserLogStats)
+
 		// Marketplace user actions
 		auth.POST("/marketplace/install", controller.InstallFromMarketplace)
 		auth.POST("/marketplace/:id/review", controller.CreateMarketplaceReview)
@@ -78,6 +82,7 @@ func SetApiRouter(engine *gin.Engine) {
 		admin.PUT("/users/:id", controller.AdminUpdateUser)
 		admin.GET("/stats", controller.AdminGetStats)
 		admin.GET("/logs", controller.AdminGetLogs)
+		admin.GET("/logs/stats", controller.AdminGetLogStats)
 
 		// Admin: Platform services
 		admin.GET("/services", controller.AdminListServices)

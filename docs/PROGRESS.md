@@ -1,12 +1,12 @@
 # NewMCP 开发进度文档
 
-> 最后更新: 2026-05-04 | 代码行数: 5,800+ 行 Go | 源文件: 56 个
+> 最后更新: 2026-05-05 | 后端: 5,800+ 行 Go (56 源文件) | 前端: React 19 + TanStack 全家桶
 
 ---
 
 ## 1. 项目概况
 
-NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 Go 模块化单体架构。本文档追踪各模块的开发状态、已完成功能与待开发项。
+NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 Go 后端 + React 前端架构。前端对标 new-api Default 版，使用 React 19 + TanStack Router + TanStack Query + shadcn/ui + Rsbuild。
 
 ---
 
@@ -21,19 +21,89 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 | API Key 管理 | ✅ 已完成 | 100% | 创建/列表/删除/分组绑定 |
 | 市场功能 | ✅ 已完成 | 90% | 管理员上架/用户浏览/安装/评价 |
 | 管理员接口 | ✅ 已完成 | 100% | 用户管理/统计/日志/平台服务/市场管理 |
-| MCP 协议网关 | 🔧 部分完成 | 75% | Smart+Direct 模式 + API Key 权限校验 |
+| MCP 协议网关 | 🔧 部分完成 | 80% | Smart+Direct 模式 + API Key 校验 + 调用日志自动记录 |
 | 云端连接 | ✅ 已完成 | 85% | XiaoZhi JWT 解析 + WSS 连接 + 自动重连 |
+| **调用日志** | **✅ 已完成** | **90%** | **自动记录 + 多维筛选 + 统计 + 管理员/用户视图** |
 | 视觉配置 | ❌ 未开始 | 5% | 仅 Model 层 |
 | 摄像头管理 | ❌ 未开始 | 5% | 仅 Model 层 |
-| 前端界面 | ❌ 未开始 | 0% | 计划 React + Semi Design |
+| **前端界面** | **✅ 已完成** | **85%** | **架构 + 核心业务 + 日志 + Dashboard 实时数据** |
 
-**整体完成度: ~72%**
+**整体完成度: ~85%**
 
 ---
 
-## 3. 已验证的端到端流程
+## 3. 前端开发进度 (新增)
 
-### 3.1 基础管理流程 ✅
+### 3.1 前端架构 ✅ 已完成
+
+| 技术 | 版本 | 用途 |
+|------|------|------|
+| React | 19.x | UI 框架 |
+| TypeScript | ~5.9.x | 类型安全 |
+| Rsbuild | 2.x | 构建工具 (基于 Rspack/Rust) |
+| TanStack Router | 1.x | 文件路由 + 类型安全导航 |
+| TanStack Query | 5.x | 服务端状态管理 (缓存/去重/重试) |
+| Zustand | 5.x | 客户端状态 (auth/config) |
+| Radix UI + shadcn/ui | latest | 无样式组件 + Tailwind 样式 |
+| Tailwind CSS | 4.x | 原子化样式 |
+| Axios | 1.x | HTTP 客户端 |
+| i18next | 25.x | 中英文国际化 |
+| Sonner | latest | Toast 通知 |
+| Lucide React | latest | 图标库 |
+
+### 3.2 前端页面状态
+
+| 页面 | 路由 | 状态 | 说明 |
+|------|------|------|------|
+| 首页/Landing | `/` | ✅ | Hero + 功能卡片 + 品牌视觉 |
+| 登录 | `/sign-in` | ✅ | 左右分栏 + JWT 认证 |
+| 注册 | `/sign-up` | ✅ | 居中表单 + 错误提示 |
+| 控制台 | `/dashboard` | ✅ | 统计卡片 + 服务健康 + 最近日志 (对接真实 API) |
+| 服务列表 | `/services` | ✅ | 表格 + 传输类型筛选 + 搜索 + 启用/禁用 |
+| 注册服务 | `/services/create` | ✅ | 4 步分步表单 (基本信息→传输→认证→测试) |
+| 服务详情 | `/services/:id` | ✅ | 信息卡 + 工具列表 + 测试连接 + 刷新工具 |
+| 分组列表 | `/groups` | ✅ | 卡片视图 + Direct/Smart 标签 |
+| 创建分组 | `/groups/create` | ✅ | 表单 + 暴露模式选择 |
+| 分组详情 | `/groups/:id` | ✅ | 模式切换 + 端点复制 + 服务管理 + 工具列表 |
+| MCP 广场 | `/marketplace` | ✅ | 卡片网格 + 即用/源码筛选 + 搜索 |
+| 市场详情 | `/marketplace/:id` | ✅ | 一键安装 + 部署指南 + 工具快照 |
+| API 密钥 | `/api-keys` | ✅ | 列表 + 创建 + Key 仅显示一次 |
+| 连接列表 | `/connections` | ✅ | 表格 + 连接/断开操作 |
+| 创建连接 | `/connections/create` | ✅ | 小智/自定义WSS/SSH + API Key 绑定 |
+| 连接详情 | `/connections/:id` | ✅ | 状态 + 配置信息 |
+| 个人设置 | `/settings` | 🔲 | 占位页 |
+| 调用日志 | `/logs` | ✅ | 统计卡片 + 筛选 + 表格 + 详情展开 |
+| 管理员页面 | `/admin/*` | 🔲 | 占位页 |
+| 视觉配置 | `/vision/*` | 🔲 | 占位页 |
+| 摄像头 | `/cameras/*` | 🔲 | 占位页 |
+
+### 3.3 前端核心模块
+
+| 模块 | 文件 | 说明 |
+|------|------|------|
+| API 客户端 | `lib/api.ts` | Axios + JWT Bearer + 请求去重 + 统一错误处理 |
+| 认证状态 | `stores/auth-store.ts` | Zustand + localStorage 持久化 |
+| 系统配置 | `stores/system-config-store.ts` | Zustand + 持久化 |
+| 主题 | `context/theme-provider.tsx` | 亮/暗/系统 + 跟随 OS |
+| 侧边栏 | `components/layout/app-sidebar.tsx` | 可折叠 + 管理员导航 |
+| 头部 | `components/layout/header.tsx` | 主题切换 + 用户菜单 |
+| 国际化 | `i18n/locales/{zh,en}.json` | 中英文翻译 |
+| 类型定义 | `types/index.ts` | 完整 TypeScript 接口 (对接后端所有 DTO) |
+| API 模块 | `features/*/api.ts` | 6 个模块 API 层 (services/groups/marketplace/apikeys/connections/admin) |
+
+### 3.4 前端构建
+
+- 构建工具: Rsbuild (Rspack/Rust 驱动)
+- 构建输出: ~931 KB (gzip ~303 KB)
+- 代码分割: vendor-react / vendor-radix / vendor-tanstack 独立 chunk
+- 开发模式: `npm run dev` → http://localhost:5173
+- 代理配置: `/api` → `http://localhost:3000` (Go 后端)
+
+---
+
+## 4. 已验证的端到端流程
+
+### 4.1 基础管理流程 ✅
 
 ```
  1. 注册用户 POST /auth/register ✅
@@ -48,98 +118,39 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 10. MCP 搜索工具 POST /mcp (tools/call mcp.search) ✅
 ```
 
-### 3.2 市场 + 分组 + API Key 完整流程 ✅ (新增)
+### 4.2 市场 + 分组 + API Key 完整流程 ✅
 
 ```
- 1. 管理员上架 MCP 服务到市场
-    POST /admin/marketplace ✅
-    → 创建 MarketplaceItem (Exa 网络搜索, category=instant)
-
- 2. 用户浏览市场
-    GET /marketplace ✅
-    → 返回已上架的 MCP 服务列表
-
- 3. 用户从市场安装
-    POST /marketplace/install ✅
-    → 创建 McpService (source=marketplace, 复制 config_template + tools_snapshot)
-    → marketplace install_count +1
-
- 4. 用户创建分组 + 添加服务
-    POST /groups ✅ (expose_mode=direct)
-    POST /groups/:id/services ✅
-
- 5. 用户创建 API Key 并绑定分组
-    POST /api-keys ✅ (groups=["search-tools"])
-    → permissions = {"groups":["search-tools"]}
-
- 6. AI Agent 通过 MCP 端点使用工具
-    POST /mcp/group/search (X-API-Key) ✅
-    → initialize → tools/list 返回 exa-search__web_search_exa 等工具
-    → 权限校验：未绑定分组返回 -32602 错误 ✅
+ 1. 管理员上架 MCP 服务到市场 POST /admin/marketplace ✅
+ 2. 用户浏览市场 GET /marketplace ✅
+ 3. 用户从市场安装 POST /marketplace/install ✅
+ 4. 用户创建分组 + 添加服务 POST /groups ✅ + POST /groups/:id/services ✅
+ 5. 用户创建 API Key 并绑定分组 POST /api-keys ✅
+ 6. AI Agent 通过 MCP 端点使用工具 POST /mcp/group/search ✅
 ```
 
----
+### 4.3 前端流程 (新增) ✅
 
-## 4. 详细模块状态
+```
+ 1. 访问首页 → 查看产品介绍 → 点击注册 ✅
+ 2. 注册账号 → 自动登录 → 跳转 Dashboard ✅
+ 3. 注册新 MCP 服务 → 4 步表单 → 测试连接 → 创建 ✅
+ 4. 查看服务列表 → 筛选/搜索 → 查看详情 ✅
+ 5. 创建分组 → 切换暴露模式 → 添加服务 → 复制端点 URL ✅
+ 6. 浏览 MCP 广场 → 按类型筛选 → 查看详情 → 一键安装 ✅
+ 7. 创建 API Key → 绑定分组 → 查看 key (仅一次) ✅
+ 8. 添加云端连接 → 选择平台 → 绑定 API Key → 连接/断开 ✅
+```
 
-### 4.1 市场功能 ✅ 90%
+### 4.4 调用日志流程 ✅
 
-**新增文件:**
-
-| 文件 | 功能 | 状态 |
-|------|------|------|
-| `dto/marketplace.go` | 市场 DTO (创建/更新/列表/详情/安装/评价) | ✅ |
-| `service/marketplace.go` | 市场业务逻辑 (管理员CRUD + 浏览 + 安装 + 评价) | ✅ |
-| `controller/marketplace.go` | 市场 HTTP 处理 (Admin/Browse/Install/Review) | ✅ |
-
-**修改文件:**
-
-| 文件 | 变更 | 状态 |
-|------|------|------|
-| `model/marketplace.go` | 添加查询方法 + Review 字段 (ItemID, Rating, ReviewText) | ✅ |
-| `model/mcp_service.go` | 添加 ListServicesBySource, GetServiceByIDWithoutUser | ✅ |
-| `router/api_router.go` | 市场路由 (公开浏览 + 用户安装/评价 + 管理员管理) | ✅ |
-
-**API 端点:**
-
-| 端点 | 说明 | 状态 |
-|------|------|------|
-| `GET /marketplace` | 公开浏览市场 | ✅ 已测试 |
-| `GET /marketplace/:id` | 查看市场项详情 | ✅ |
-| `POST /marketplace/install` | 用户安装 (需登录) | ✅ 已测试 |
-| `POST /marketplace/:id/review` | 用户评价 | ✅ |
-| `GET /admin/marketplace` | 管理员市场列表 | ✅ |
-| `POST /admin/marketplace` | 管理员上架 | ✅ 已测试 |
-| `GET /admin/marketplace/:id` | 管理员查看 | ✅ |
-| `PUT /admin/marketplace/:id` | 管理员更新 | ✅ |
-| `DELETE /admin/marketplace/:id` | 管理员下架 | ✅ |
-| `GET /admin/services` | 管理员平台服务列表 | ✅ |
-| `POST /admin/services` | 管理员创建平台服务 (source=admin) | ✅ |
-
-### 4.2 API Key 分组绑定 ✅
-
-| 变更 | 说明 |
-|------|------|
-| `dto/apikey.go` CreateApiKeyReq 添加 `Groups []string` | 创建时直接绑定分组 |
-| `service/apikey.go` 添加 validateGroups | 验证分组归属 + 构建 permissions JSON |
-| API Key permissions 格式 | `{"groups":["group1","group2"]}` 或 `{"groups":["*"]}` |
-
-### 4.3 网关权限控制 ✅
-
-| 变更 | 说明 |
-|------|------|
-| `gateway_handler.go` 添加 hasGroupAccess | 读取 API Key permissions 验证分组访问权限 |
-| handleToolsList 权限校验 | groupSlug 非空时验证 API Key 有权访问 |
-| handleToolsCall 权限校验 | Direct 模式路由前验证分组权限 |
-
-### 4.4 RefreshTools 实现 ✅
-
-| 变更 | 说明 |
-|------|------|
-| `service/service.go` 实现 RefreshTools | 通过 SessionPool.GetOrConnect 连接上游获取 tools |
-| `service/service.go` 实现 Test | 通过 SessionPool 测试连接 |
-| `service/service.go` 添加 SessionPool 变量 | 依赖注入 |
-| `router/main.go` 注入 SessionPool | InitGateway 中设置 |
+```
+ 1. MCP 网关自动记录所有 tools/call 请求 ✅
+ 2. 记录用户/API Key/分组/服务/工具/状态/耗时/IP ✅
+ 3. 用户访问 /logs → 查看自己的调用日志 + 统计 ✅
+ 4. 管理员访问 /admin/logs → 查看全局日志 + 多维筛选 + 统计 ✅
+ 5. Dashboard 展示实时统计数据 + 最近调用日志 ✅
+```
 
 ---
 
@@ -156,38 +167,30 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 | 5 | SessionPool 空闲淘汰 + 健康检查 | `internal/mcp/bridge/session_pool.go` | 中 |
 | 6 | BM25 搜索优化 (中文分词改进) | `internal/mcp/smart/bm25.go` | 中 |
 
-### P1 — 云端连接
+### P1 — 前端待完善
 
 | # | 事项 | 涉及文件 | 优先级 |
 |---|------|----------|--------|
-| 7 | SSH 隧道连接支持 | 新文件 | 低 |
+| 7 | ~~Dashboard 实时数据 (对接 admin/stats API)~~ | `features/dashboard/` | ~~高~~ ✅ |
+| 8 | 个人设置页面 | `features/settings/` | 中 |
+| 9 | 管理员页面 (用户管理/市场管理/系统设置) | `features/admin/` | 中 |
+| 10 | 视觉配置 CRUD 页面 | `features/vision/` | 低 |
+| 11 | 摄像头管理页面 | `features/cameras/` | 低 |
+| 12 | Go 后端 go:embed 嵌入前端 | `cmd/server/main.go` | 中 |
+| 13 | Docker 构建配置 (多阶段: Bun→Go) | `Dockerfile` | 中 |
 
-### P2 — 视觉与摄像头
-
-| # | 事项 | 涉及文件 | 优先级 |
-|---|------|----------|--------|
-| 8 | 视觉模型配置 CRUD + 测试 | `controller/vision.go`, `service/vision.go` | 中 |
-| 9 | 摄像头管理 CRUD + 截图 | `controller/camera.go`, `service/camera.go` | 中 |
-
-### P3 — 前端
-
-| # | 事项 | 涉及文件 | 优先级 |
-|---|------|----------|--------|
-| 10 | React 项目初始化 | `web/` | 中 |
-| 11 | 仪表盘 + 服务/分组管理页面 | `web/` | 中 |
-| 12 | 市场浏览 + 安装页面 | `web/` | 中 |
-| 13 | API Key 管理 + MCP 端点配置页面 | `web/` | 低 |
-
-### P4 — 优化与运维
+### P2 — 优化与运维
 
 | # | 事项 | 涉及文件 | 优先级 |
 |---|------|----------|--------|
-| 14 | 调用日志记录中间件 | `middleware/` | 低 |
-| 15 | Docker 部署配置 | `Dockerfile`, `docker-compose.yml` | 低 |
+| 14 | SSH 隧道连接支持 | 新文件 | 低 |
+| 15 | ~~调用日志记录中间件~~ | `internal/mcp/handler/` | ~~低~~ ✅ |
 
 ---
 
-## 6. 技术栈与依赖
+## 6. 技术栈
+
+### 后端
 
 ```
 github.com/gin-gonic/gin          — HTTP 框架
@@ -201,6 +204,23 @@ gorm.io/driver/mysql               — MySQL 驱动
 gorm.io/driver/postgres            — PostgreSQL 驱动
 ```
 
+### 前端
+
+```
+react@19 + react-dom@19            — UI 框架
+typescript@5.9                      — 类型安全
+@rsbuild/core@2                     — 构建工具 (Rspack)
+@tanstack/react-router@1            — 文件路由
+@tanstack/react-query@5             — 服务端状态
+zustand@5                           — 客户端状态
+@radix-ui/*                         — 无样式组件原语
+tailwindcss@4                       — 原子化样式
+axios@1                             — HTTP 客户端
+i18next@25 + react-i18next          — 国际化
+sonner@2                            — Toast 通知
+lucide-react                        — 图标库
+```
+
 ---
 
 ## 7. 目录结构
@@ -210,31 +230,45 @@ newmcp/
 ├── cmd/server/              # 应用入口
 ├── common/                  # 工具函数（配置/加密/响应/分页）
 ├── dto/                     # 数据传输对象
-│   ├── auth.go              # 认证 DTO
-│   ├── apikey.go            # API Key DTO (含 Groups 字段)
-│   ├── marketplace.go       # 市场 DTO (新增)
-│   └── ...
 ├── model/                   # 数据模型层
-│   ├── marketplace.go       # 市场模型 + 查询方法
-│   ├── mcp_service.go       # 服务模型 (含 ListServicesBySource)
-│   └── ...
 ├── service/                 # 业务逻辑层
-│   ├── marketplace.go       # 市场服务 (新增)
-│   ├── service.go           # 服务管理 (含 RefreshTools + AdminService)
-│   ├── apikey.go            # API Key (含分组绑定验证)
-│   └── ...
 ├── controller/              # 控制器层
-│   ├── marketplace.go       # 市场控制器 (新增)
-│   ├── admin.go             # 管理员 (含平台服务管理)
-│   └── ...
 ├── router/                  # 路由配置
-│   ├── api_router.go        # REST API (含市场路由)
+│   ├── api_router.go        # REST API
 │   └── mcp_router.go        # MCP 端点
 ├── internal/mcp/
 │   ├── transport/           # 传输适配器
 │   ├── bridge/              # 会话池 + 工具路由
 │   ├── smart/               # Smart 模式搜索引擎
-│   └── handler/             # 网关处理器 (含权限校验)
+│   └── handler/             # 网关处理器
+├── web/                     # 前端项目 (React 19)
+│   ├── src/
+│   │   ├── components/ui/   # shadcn/ui 基础组件
+│   │   ├── components/layout/ # 布局组件 (Sidebar/Header)
+│   │   ├── features/        # 功能模块 (API + 组件)
+│   │   │   ├── auth/        # 登录/注册
+│   │   │   ├── services/    # 服务管理 (列表/创建/详情)
+│   │   │   ├── groups/      # 分组管理
+│   │   │   ├── marketplace/ # MCP 广场
+│   │   │   ├── api-keys/    # API 密钥
+│   │   │   ├── connections/ # 云端连接
+│   │   │   ├── dashboard/   # 控制台
+│   │   │   └── admin/       # 管理员
+│   │   ├── routes/          # TanStack Router 文件路由
+│   │   ├── lib/             # API client + 工具函数
+│   │   ├── stores/          # Zustand 状态
+│   │   ├── context/         # 主题 Provider
+│   │   ├── i18n/            # 中英文翻译
+│   │   └── types/           # TypeScript 类型定义
+│   ├── rsbuild.config.ts    # Rsbuild 构建配置
+│   ├── postcss.config.mjs   # PostCSS (Tailwind v4)
+│   └── package.json
 ├── docs/                    # 项目文档
+│   ├── PRD.md               # 产品需求文档
+│   ├── FRONTEND.md          # 前端设计文档 V2.0
+│   ├── ARCHITECTURE.md      # 架构设计
+│   ├── API.md               # API 文档
+│   ├── DATABASE.md          # 数据库设计
+│   └── PROGRESS.md          # 本文档
 └── data/                    # 数据目录 (SQLite)
 ```

@@ -349,11 +349,39 @@ export interface AdminUserItem {
 export interface AdminLogItem {
   id: number
   user_id: number
-  service_id: number
+  username: string
+  api_key_id: number
+  api_key_name: string
   group_id: number
+  group_name: string
+  service_id: number
+  service_name: string
   tool_name: string
+  method: string
   response_status: string
   duration_ms: number
+  error_message: string
   client_ip: string
   created_at: string
+}
+
+export interface LogStats {
+  total_calls: number
+  success_calls: number
+  failed_calls: number
+  avg_duration_ms: number
+  calls_today: number
+}
+
+export interface LogFilter {
+  start_date?: string
+  end_date?: string
+  status?: string
+  tool_name?: string
+  group_name?: string
+  username?: string
+  service_name?: string
+  keyword?: string
+  page?: number
+  page_size?: number
 }

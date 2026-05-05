@@ -30,6 +30,16 @@ type RPCError struct {
 	Message string `json:"message"`
 }
 
+type LogContext struct {
+	ApiKeyID   int64
+	UserID     int64
+	Username   string
+	ApiKeyName string
+	GroupSlug  string
+	ClientIP   string
+	UserAgent  string
+}
+
 type GatewayHandler struct {
 	pool         *bridge.SessionPool
 	toolRouter   *bridge.ToolRouter
@@ -44,16 +54,16 @@ func NewGatewayHandler(pool *bridge.SessionPool, toolRouter *bridge.ToolRouter) 
 	}
 }
 
-func (h *GatewayHandler) HandleRequest(ctx context.Context, req *JSONRPCRequest, apiKeyID int64, groupSlug string) *JSONRPCResponse {
+func (h *GatewayHandler) HandleRequest(ctx context.Context, req *JSONRPCRequest, logCtx *LogContext) *JSONRPCResponse {
 	switch req.Method {
 	case "initialize":
 		return h.handleInitialize(req)
 	case "notifications/initialized":
 		return nil
 	case "tools/list":
-		return h.handleToolsList(ctx, apiKeyID, groupSlug)
+		return h.handleToolsList(ctx, req, logCtx)
 	case "tools/call":
-		return h.handleToolsCall(ctx, req, apiKeyID, groupSlug)
+		return h.handleToolsCall(ctx, req, logCtx)
 	default:
 		return &JSONRPCResponse{
 			JSONRPC: "2.0",
@@ -80,40 +90,40 @@ func (h *GatewayHandler) handleInitialize(req *JSONRPCRequest) *JSONRPCResponse 
 	}
 }
 
-func (h *GatewayHandler) handleToolsList(ctx context.Context, apiKeyID int64, groupSlug string) *JSONRPCResponse {
+func (h *GatewayHandler) handleToolsList(ctx context.Context, req *JSONRPCRequest, logCtx *LogContext) *JSONRPCResponse {
+	groupSlug := logCtx.GroupSlug
 	if groupSlug == "" {
-		// Main endpoint: fixed Smart mode (mcp.search scopes by API key permissions)
-		return h.smartToolsResponse(nil)
+		return h.smartToolsResponse(req.ID)
 	}
 
-	// Group endpoint: verify API key has access, then check expose_mode
 	group, err := model.GetGroupBySlug(groupSlug)
 	if err != nil {
-		return h.errorResponse(nil, -32602, "Group not found: "+groupSlug)
+		return h.errorResponse(req.ID, -32602, "Group not found: "+groupSlug)
 	}
 
-	if !h.hasGroupAccess(apiKeyID, group.Name) {
-		return h.errorResponse(nil, -32602, "API key does not have access to group: "+groupSlug)
+	if !h.hasGroupAccess(logCtx.ApiKeyID, group.Name) {
+		return h.errorResponse(req.ID, -32602, "API key does not have access to group: "+groupSlug)
 	}
 
 	switch group.ExposeMode {
 	case "smart":
-		return h.smartToolsResponse(nil)
+		return h.smartToolsResponse(req.ID)
 	case "direct":
 		tools, err := h.getDirectTools(ctx, group.ID)
 		if err != nil {
-			return h.errorResponse(nil, -32603, "Failed to get tools")
+			return h.errorResponse(req.ID, -32603, "Failed to get tools")
 		}
 		return &JSONRPCResponse{
 			JSONRPC: "2.0",
+			ID:      req.ID,
 			Result:  map[string]interface{}{"tools": tools},
 		}
 	default:
-		return h.smartToolsResponse(nil)
+		return h.smartToolsResponse(req.ID)
 	}
 }
 
-func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCRequest, apiKeyID int64, groupSlug string) *JSONRPCResponse {
+func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCRequest, logCtx *LogContext) *JSONRPCResponse {
 	var params struct {
 		Name      string          `json:"name"`
 		Arguments json.RawMessage `json:"arguments"`
@@ -122,51 +132,99 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 		return h.errorResponse(req.ID, -32602, "Invalid params")
 	}
 
-	// Smart mode meta-tools (work regardless of group slug)
+	start := time.Now()
+	var resp *JSONRPCResponse
+	var groupID int64
+	var groupName string
+	var serviceID int64
+	var serviceName string
+
+	// Resolve group info
+	if logCtx.GroupSlug != "" {
+		if group, err := model.GetGroupBySlug(logCtx.GroupSlug); err == nil {
+			groupID = group.ID
+			groupName = group.Name
+		}
+	}
+
+	// Smart mode meta-tools
 	switch params.Name {
 	case "mcp.search":
-		return h.handleSearch(ctx, req.ID, apiKeyID, params.Arguments)
+		resp = h.handleSearch(ctx, req.ID, logCtx, params.Arguments)
 	case "mcp.describe":
-		return h.handleDescribe(ctx, req.ID, apiKeyID, params.Arguments)
+		resp = h.handleDescribe(ctx, req.ID, logCtx, params.Arguments)
 	case "mcp.execute":
-		return h.handleExecute(ctx, req.ID, apiKeyID, groupSlug, params.Arguments)
-	}
-
-	// Verify group access for direct tool calls
-	if groupSlug != "" {
-		group, err := model.GetGroupBySlug(groupSlug)
-		if err != nil {
-			return h.errorResponse(req.ID, -32602, "Group not found: "+groupSlug)
+		resp = h.handleExecute(ctx, req.ID, logCtx, params.Arguments)
+	default:
+		// Verify group access for direct tool calls
+		if logCtx.GroupSlug != "" {
+			group, err := model.GetGroupBySlug(logCtx.GroupSlug)
+			if err != nil {
+				resp = h.errorResponse(req.ID, -32602, "Group not found: "+logCtx.GroupSlug)
+			} else if !h.hasGroupAccess(logCtx.ApiKeyID, group.Name) {
+				resp = h.errorResponse(req.ID, -32602, "API key does not have access to group: "+logCtx.GroupSlug)
+			}
 		}
-		if !h.hasGroupAccess(apiKeyID, group.Name) {
-			return h.errorResponse(req.ID, -32602, "API key does not have access to group: "+groupSlug)
+
+		if resp == nil {
+			session, toolName, err := h.toolRouter.Route(params.Name)
+			if err != nil {
+				resp = h.errorResponse(req.ID, -32602, err.Error())
+			} else {
+				serviceID = session.ServiceID
+				serviceName = session.ServiceName
+
+				callParams := map[string]interface{}{
+					"name":      toolName,
+					"arguments": params.Arguments,
+				}
+
+				result, err := session.Adapter.Call(ctx, "tools/call", callParams)
+				if err != nil {
+					resp = h.errorResponse(req.ID, -32603, "Tool execution failed: "+err.Error())
+				} else {
+					resp = &JSONRPCResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result:  json.RawMessage(result),
+					}
+				}
+			}
 		}
 	}
 
-	// Direct mode: route to upstream service
-	session, toolName, err := h.toolRouter.Route(params.Name)
-	if err != nil {
-		return h.errorResponse(req.ID, -32602, err.Error())
+	duration := time.Since(start)
+	status := "success"
+	var errMsg string
+	if resp.Error != nil {
+		status = "error"
+		errMsg = resp.Error.Message
 	}
 
-	callParams := map[string]interface{}{
-		"name":      toolName,
-		"arguments": params.Arguments,
-	}
+	// Async log
+	go h.recordLog(&model.McpCallLog{
+		UserID:         logCtx.UserID,
+		Username:       logCtx.Username,
+		ApiKeyID:       logCtx.ApiKeyID,
+		ApiKeyName:     logCtx.ApiKeyName,
+		GroupID:        groupID,
+		GroupName:      groupName,
+		ServiceID:      serviceID,
+		ServiceName:    serviceName,
+		ToolName:       params.Name,
+		Method:         "tools/call",
+		RequestPayload: truncate(string(params.Arguments), 65535),
+		ResponseStatus: status,
+		DurationMs:     int(duration.Milliseconds()),
+		ErrorMessage:   truncate(errMsg, 65535),
+		ClientIP:       logCtx.ClientIP,
+		UserAgent:      truncate(logCtx.UserAgent, 512),
+	})
 
-	result, err := session.Adapter.Call(ctx, "tools/call", callParams)
-	if err != nil {
-		return h.errorResponse(req.ID, -32603, "Tool execution failed: "+err.Error())
-	}
-
-	return &JSONRPCResponse{
-		JSONRPC: "2.0",
-		ID:      req.ID,
-		Result:  json.RawMessage(result),
-	}
+	return resp
 }
 
-func (h *GatewayHandler) handleSearch(ctx context.Context, reqID interface{}, apiKeyID int64, args json.RawMessage) *JSONRPCResponse {
+func (h *GatewayHandler) handleSearch(ctx context.Context, reqID interface{}, logCtx *LogContext, args json.RawMessage) *JSONRPCResponse {
 	var params struct {
 		Query string `json:"query"`
 		Scope string `json:"scope"`
@@ -182,7 +240,7 @@ func (h *GatewayHandler) handleSearch(ctx context.Context, reqID interface{}, ap
 		params.Limit = 10
 	}
 
-	results, err := h.searchEngine.Search(ctx, apiKeyID, params.Query, smart.SearchOptions{
+	results, err := h.searchEngine.Search(ctx, logCtx.ApiKeyID, params.Query, smart.SearchOptions{
 		Scope: params.Scope,
 		Group: params.Group,
 		Limit: params.Limit,
@@ -216,13 +274,13 @@ func (h *GatewayHandler) handleSearch(ctx context.Context, reqID interface{}, ap
 	}
 }
 
-func (h *GatewayHandler) handleDescribe(ctx context.Context, reqID interface{}, apiKeyID int64, args json.RawMessage) *JSONRPCResponse {
+func (h *GatewayHandler) handleDescribe(ctx context.Context, reqID interface{}, logCtx *LogContext, args json.RawMessage) *JSONRPCResponse {
 	var params struct {
 		Targets []string `json:"targets"`
 	}
 	_ = json.Unmarshal(args, &params)
 
-	results, err := h.searchEngine.Describe(params.Targets, apiKeyID)
+	results, err := h.searchEngine.Describe(params.Targets, logCtx.ApiKeyID)
 	if err != nil {
 		return h.errorResponse(reqID, -32603, "Describe failed: "+err.Error())
 	}
@@ -238,7 +296,7 @@ func (h *GatewayHandler) handleDescribe(ctx context.Context, reqID interface{}, 
 	}
 }
 
-func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, apiKeyID int64, groupSlug string, args json.RawMessage) *JSONRPCResponse {
+func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, logCtx *LogContext, args json.RawMessage) *JSONRPCResponse {
 	var params struct {
 		ToolID    string          `json:"tool_id"`
 		Arguments json.RawMessage `json:"arguments"`
@@ -335,4 +393,15 @@ func (h *GatewayHandler) errorResponse(id interface{}, code int, message string)
 		ID:      id,
 		Error:   &RPCError{Code: code, Message: message},
 	}
+}
+
+func (h *GatewayHandler) recordLog(log *model.McpCallLog) {
+	_ = log.Insert()
+}
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen]
 }

@@ -33,7 +33,8 @@
     "adminLogs": "Call Logs",
     "adminMarketplace": "Marketplace Mgmt",
     "adminReviews": "Reviews",
-    "adminSystem": "System"
+    "adminSystem": "System",
+    "logs": "Call Logs"
   },
   "auth": {
     "signIn": "Sign In",
@@ -82,5 +83,30 @@
     "feature3Desc": "Actively connect to cloud platforms and push MCP services to remote agents.",
     "feature4Title": "Secure Access",
     "feature4Desc": "API Key permission control, group isolation, and call audit logging."
+  },
+  "logs": {
+    "title": "Call Logs",
+    "subtitle": "View MCP service call records for your API Keys",
+    "totalCalls": "Total Calls",
+    "successCalls": "Success",
+    "failedCalls": "Failed",
+    "avgDuration": "Avg Duration",
+    "todayCalls": "Today's Calls",
+    "searchPlaceholder": "Search tools, groups, services...",
+    "status": "Status",
+    "allStatus": "All Status",
+    "success": "Success",
+    "error": "Error",
+    "toolName": "Tool",
+    "groupName": "Group",
+    "serviceName": "Service",
+    "username": "User",
+    "reset": "Reset",
+    "duration": "Duration",
+    "time": "Time",
+    "errorMessage": "Error",
+    "method": "Method",
+    "total": "Total",
+    "records": "records"
   }
 }

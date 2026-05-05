@@ -1,8 +1,6 @@
 package service
 
 import (
-	"time"
-
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
 	"github.com/mujkjk/newmcp/model"
@@ -61,28 +59,32 @@ func (s *AdminService) GetStats() (*dto.AdminStats, error) {
 	model.DB.Model(&model.McpGroup{}).Count(&groupsCount)
 	model.DB.Model(&model.CloudEndpoint{}).Count(&connectionsCount)
 
-	var callsToday int64
-	today := time.Now().Truncate(24 * time.Hour)
-	model.DB.Model(&model.McpCallLog{}).Where("created_at >= ?", today).Count(&callsToday)
+	stats, err := model.GetCallLogStats(nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var successRate float64
+	if stats.TotalCalls > 0 {
+		successRate = float64(stats.SuccessCalls) / float64(stats.TotalCalls) * 100
+	}
 
 	return &dto.AdminStats{
 		UsersCount:       usersCount,
 		ServicesCount:    servicesCount,
 		GroupsCount:      groupsCount,
 		ConnectionsCount: connectionsCount,
-		CallsToday:       callsToday,
+		CallsToday:       stats.CallsToday,
+		CallsSuccessRate: successRate,
+		AvgLatencyMs:     stats.AvgDurationMs,
 	}, nil
 }
 
-func (s *AdminService) GetLogs(page, pageSize int) ([]dto.LogItem, int64, error) {
-	var logs []model.McpCallLog
-	var total int64
+func (s *AdminService) GetLogs(filter *dto.LogFilter, page, pageSize int) ([]dto.LogItem, int64, error) {
 	offset := common.GetOffset(page, pageSize)
-	query := model.DB.Model(&model.McpCallLog{})
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-	err := query.Offset(offset).Limit(pageSize).Order("created_at DESC").Find(&logs).Error
+	modelFilter := dtoToModelFilter(filter)
+
+	logs, total, err := model.GetCallLogs(modelFilter, offset, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -92,14 +94,100 @@ func (s *AdminService) GetLogs(page, pageSize int) ([]dto.LogItem, int64, error)
 		items[i] = dto.LogItem{
 			ID:             l.ID,
 			UserID:         l.UserID,
-			ServiceID:      l.ServiceID,
+			Username:       l.Username,
+			ApiKeyID:       l.ApiKeyID,
+			ApiKeyName:     l.ApiKeyName,
 			GroupID:        l.GroupID,
+			GroupName:      l.GroupName,
+			ServiceID:      l.ServiceID,
+			ServiceName:    l.ServiceName,
 			ToolName:       l.ToolName,
+			Method:         l.Method,
 			ResponseStatus: l.ResponseStatus,
 			DurationMs:     l.DurationMs,
+			ErrorMessage:   l.ErrorMessage,
 			ClientIP:       l.ClientIP,
 			CreatedAt:      l.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		}
 	}
 	return items, total, nil
+}
+
+func (s *AdminService) GetLogStats(filter *dto.LogFilter) (*dto.LogStats, error) {
+	modelFilter := dtoToModelFilter(filter)
+	stats, err := model.GetCallLogStats(modelFilter)
+	if err != nil {
+		return nil, err
+	}
+	return &dto.LogStats{
+		TotalCalls:    stats.TotalCalls,
+		SuccessCalls:  stats.SuccessCalls,
+		FailedCalls:   stats.FailedCalls,
+		AvgDurationMs: stats.AvgDurationMs,
+		CallsToday:    stats.CallsToday,
+	}, nil
+}
+
+func (s *AdminService) GetUserLogs(userID int64, filter *dto.LogFilter, page, pageSize int) ([]dto.LogItem, int64, error) {
+	offset := common.GetOffset(page, pageSize)
+	modelFilter := dtoToModelFilter(filter)
+
+	logs, total, err := model.GetCallLogsByUser(userID, modelFilter, offset, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	items := make([]dto.LogItem, len(logs))
+	for i, l := range logs {
+		items[i] = dto.LogItem{
+			ID:             l.ID,
+			UserID:         l.UserID,
+			Username:       l.Username,
+			ApiKeyID:       l.ApiKeyID,
+			ApiKeyName:     l.ApiKeyName,
+			GroupID:        l.GroupID,
+			GroupName:      l.GroupName,
+			ServiceID:      l.ServiceID,
+			ServiceName:    l.ServiceName,
+			ToolName:       l.ToolName,
+			Method:         l.Method,
+			ResponseStatus: l.ResponseStatus,
+			DurationMs:     l.DurationMs,
+			ErrorMessage:   l.ErrorMessage,
+			ClientIP:       l.ClientIP,
+			CreatedAt:      l.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		}
+	}
+	return items, total, nil
+}
+
+func (s *AdminService) GetUserLogStats(userID int64, filter *dto.LogFilter) (*dto.LogStats, error) {
+	modelFilter := dtoToModelFilter(filter)
+	stats, err := model.GetCallLogStatsByUser(userID, modelFilter)
+	if err != nil {
+		return nil, err
+	}
+	return &dto.LogStats{
+		TotalCalls:    stats.TotalCalls,
+		SuccessCalls:  stats.SuccessCalls,
+		FailedCalls:   stats.FailedCalls,
+		AvgDurationMs: stats.AvgDurationMs,
+		CallsToday:    stats.CallsToday,
+	}, nil
+}
+
+func dtoToModelFilter(f *dto.LogFilter) *model.LogFilter {
+	if f == nil {
+		return nil
+	}
+	return &model.LogFilter{
+		StartDate:   f.StartDate,
+		EndDate:     f.EndDate,
+		Status:      f.Status,
+		ToolName:    f.ToolName,
+		GroupName:   f.GroupName,
+		Username:    f.Username,
+		ServiceName: f.ServiceName,
+		Keyword:     f.Keyword,
+	}
 }

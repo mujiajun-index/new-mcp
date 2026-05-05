@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/mujkjk/newmcp/internal/mcp/handler"
 	"github.com/mujkjk/newmcp/middleware"
+	"github.com/mujkjk/newmcp/model"
 )
 
 var gatewayHandler *handler.GatewayHandler
@@ -28,9 +29,34 @@ func SetMCPRouter(engine *gin.Engine, h *handler.GatewayHandler) {
 	engine.GET("/mcp/ws/group/:slug", middleware.APIKeyAuth(), handleWebSocketWithSlug())
 }
 
+func buildLogContext(c *gin.Context, slug string) *handler.LogContext {
+	apiKeyID := c.GetInt64("api_key_id")
+	userID := c.GetInt64("api_key_user_id")
+
+	var username, apiKeyName string
+	var user model.User
+	if err := model.DB.Select("username").First(&user, userID).Error; err == nil {
+		username = user.Username
+	}
+	var apiKey model.ApiKey
+	if err := model.DB.Select("name").First(&apiKey, apiKeyID).Error; err == nil {
+		apiKeyName = apiKey.Name
+	}
+
+	return &handler.LogContext{
+		ApiKeyID:   apiKeyID,
+		UserID:     userID,
+		Username:   username,
+		ApiKeyName: apiKeyName,
+		GroupSlug:  slug,
+		ClientIP:   c.ClientIP(),
+		UserAgent:  c.Request.UserAgent(),
+	}
+}
+
 func handleStreamableHTTP(defaultSlug string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		apiKeyID := c.GetInt64("api_key_id")
+		logCtx := buildLogContext(c, defaultSlug)
 
 		body, err := io.ReadAll(c.Request.Body)
 		if err != nil {
@@ -44,7 +70,7 @@ func handleStreamableHTTP(defaultSlug string) gin.HandlerFunc {
 			return
 		}
 
-		resp := gatewayHandler.HandleRequest(c.Request.Context(), &req, apiKeyID, defaultSlug)
+		resp := gatewayHandler.HandleRequest(c.Request.Context(), &req, logCtx)
 		if resp == nil {
 			c.Status(http.StatusNoContent)
 			return
@@ -55,8 +81,8 @@ func handleStreamableHTTP(defaultSlug string) gin.HandlerFunc {
 
 func handleStreamableHTTPWithSlug() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		apiKeyID := c.GetInt64("api_key_id")
 		slug := c.Param("slug")
+		logCtx := buildLogContext(c, slug)
 
 		body, err := io.ReadAll(c.Request.Body)
 		if err != nil {
@@ -70,7 +96,7 @@ func handleStreamableHTTPWithSlug() gin.HandlerFunc {
 			return
 		}
 
-		resp := gatewayHandler.HandleRequest(c.Request.Context(), &req, apiKeyID, slug)
+		resp := gatewayHandler.HandleRequest(c.Request.Context(), &req, logCtx)
 		if resp == nil {
 			c.Status(http.StatusNoContent)
 			return
@@ -81,8 +107,6 @@ func handleStreamableHTTPWithSlug() gin.HandlerFunc {
 
 func handleWebSocket(defaultSlug string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// WebSocket upgrade and message loop will be implemented
-		// when gorilla/websocket is integrated
 		c.JSON(http.StatusNotImplemented, gin.H{"error": "WebSocket transport coming soon"})
 	}
 }

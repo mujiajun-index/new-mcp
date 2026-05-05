@@ -37,6 +37,13 @@ export const useAuthStore = create<AuthState>()(
     {
       name: 'newmcp-auth',
       partialize: (state) => ({ auth: { user: state.auth.user } }),
+      merge: (persistedState, currentState) => ({
+        ...currentState,
+        auth: {
+          ...currentState.auth,
+          ...((persistedState as AuthState).auth || {}),
+        },
+      }),
     }
   )
 )

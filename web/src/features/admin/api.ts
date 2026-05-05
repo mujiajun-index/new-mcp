@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import type { ListParams } from '@/types'
+import type { ListParams, LogFilter } from '@/types'
 
 export async function getAdminStats() {
   const res = await api.get('/admin/stats')
@@ -16,7 +16,12 @@ export async function updateAdminUser(id: number, data: { status?: number; role?
   return res.data
 }
 
-export async function getAdminLogs(params?: ListParams) {
+export async function getAdminLogs(params?: LogFilter) {
   const res = await api.get('/admin/logs', { params })
+  return res.data
+}
+
+export async function getAdminLogStats(params?: LogFilter) {
+  const res = await api.get('/admin/logs/stats', { params })
   return res.data
 }

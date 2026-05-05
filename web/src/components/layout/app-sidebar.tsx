@@ -7,7 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/comp
 import {
   LayoutDashboard, Server, FolderTree, Cloud, Eye, Camera,
   Key, Store, Settings, Shield, Users, FileText, Wrench,
-  ClipboardCheck, ChevronLeft,
+  ClipboardCheck, ChevronLeft, Activity,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -26,6 +26,7 @@ const mainNav: NavItem[] = [
   { label: 'nav.vision', icon: Eye, href: '/vision' },
   { label: 'nav.cameras', icon: Camera, href: '/cameras' },
   { label: 'nav.apiKeys', icon: Key, href: '/api-keys' },
+  { label: 'nav.logs', icon: Activity, href: '/logs' },
   { label: 'nav.marketplace', icon: Store, href: '/marketplace' },
   { label: 'nav.settings', icon: Settings, href: '/settings' },
 ]
