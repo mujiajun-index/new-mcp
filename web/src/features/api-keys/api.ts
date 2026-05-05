@@ -1,8 +1,8 @@
 import { api } from '@/lib/api'
 import type { CreateApiKeyReq, UpdateApiKeyReq } from '@/types'
 
-export async function getApiKeys() {
-  const res = await api.get('/api-keys')
+export async function getApiKeys(keyword?: string) {
+  const res = await api.get('/api-keys', { params: keyword ? { keyword } : {} })
   return res.data
 }
 
@@ -18,5 +18,20 @@ export async function updateApiKey(id: number, data: UpdateApiKeyReq) {
 
 export async function deleteApiKey(id: number) {
   const res = await api.delete(`/api-keys/${id}`)
+  return res.data
+}
+
+export async function getApiKeyFullKey(id: number) {
+  const res = await api.post(`/api-keys/${id}/key`)
+  return res.data
+}
+
+export async function batchDeleteApiKeys(ids: number[]) {
+  const res = await api.post('/api-keys/batch-delete', { ids })
+  return res.data
+}
+
+export async function batchUpdateApiKeyStatus(ids: number[], status: number) {
+  const res = await api.post('/api-keys/batch-status', { ids, status })
   return res.data
 }

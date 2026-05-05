@@ -8,10 +8,10 @@ import {
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
-import { Moon, Sun, LogOut, User, Monitor } from 'lucide-react'
+import { Moon, Sun, LogOut, User, Monitor, Languages, Check } from 'lucide-react'
 
 export function Header() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const { auth } = useAuthStore()
   const { theme, setTheme } = useTheme()
@@ -48,6 +48,25 @@ export function Header() {
             <Monitor className="h-4 w-4" />
           )}
         </Button>
+
+        {/* Language toggle */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-8 w-8">
+              <Languages className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => i18n.changeLanguage('zh')}>
+              <span className="flex-1">中文</span>
+              {i18n.language === 'zh' && <Check className="h-4 w-4 text-primary" />}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => i18n.changeLanguage('en')}>
+              <span className="flex-1">English</span>
+              {i18n.language === 'en' && <Check className="h-4 w-4 text-primary" />}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {/* User menu */}
         <DropdownMenu>

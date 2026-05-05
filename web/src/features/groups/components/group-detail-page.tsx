@@ -68,7 +68,18 @@ export function GroupDetailPage() {
   const availableServices = allServices.filter((s: { id: number }) => !existingIds.has(s.id))
 
   const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text)
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text)
+    } else {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
     toast.success('已复制到剪贴板')
   }
 

@@ -55,6 +55,9 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.POST("/api-keys", controller.CreateApiKey)
 		auth.PUT("/api-keys/:id", controller.UpdateApiKey)
 		auth.DELETE("/api-keys/:id", controller.DeleteApiKey)
+		auth.POST("/api-keys/:id/key", controller.GetApiKeyFullKey)
+		auth.POST("/api-keys/batch-delete", controller.BatchDeleteApiKeys)
+		auth.POST("/api-keys/batch-status", controller.BatchUpdateApiKeyStatus)
 
 		// Cloud Connections
 		auth.GET("/connections", controller.ListConnections)

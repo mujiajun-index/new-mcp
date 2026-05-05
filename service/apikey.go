@@ -15,8 +15,8 @@ import (
 
 type ApiKeyService struct{}
 
-func (s *ApiKeyService) List(userID int64) ([]dto.ApiKeyListItem, error) {
-	keys, err := model.ListApiKeysByUser(userID)
+func (s *ApiKeyService) List(userID int64, keyword string) ([]dto.ApiKeyListItem, error) {
+	keys, err := model.ListApiKeysByUser(userID, keyword)
 	if err != nil {
 		return nil, err
 	}
@@ -59,23 +59,28 @@ func (s *ApiKeyService) List(userID int64) ([]dto.ApiKeyListItem, error) {
 }
 
 func (s *ApiKeyService) Create(userID int64, req *dto.CreateApiKeyReq) (*dto.ApiKeyCreateResult, error) {
+	if len(req.Groups) == 0 {
+		return nil, fmt.Errorf("必须绑定至少一个分组")
+	}
+
+	existing, _ := model.GetApiKeyByName(userID, req.Name)
+	if existing != nil {
+		return nil, fmt.Errorf("密钥名称已存在")
+	}
+
 	key := common.ApiKeyPrefix + generateRandomHex(32)
 	hash := sha256.Sum256([]byte(key))
 	keyHash := hex.EncodeToString(hash[:])
 	keyPrefix := key[:8]
 
-	var groups []string
-	if len(req.Groups) > 0 {
-		validated, err := s.validateGroups(userID, req.Groups)
-		if err != nil {
-			return nil, err
-		}
-		groups = validated
+	validated, err := s.validateGroups(userID, req.Groups)
+	if err != nil {
+		return nil, err
 	}
 
 	permissionsJSON := "{}"
-	if len(groups) > 0 {
-		perms := map[string]interface{}{"groups": groups}
+	if len(validated) > 0 {
+		perms := map[string]interface{}{"groups": validated}
 		b, _ := common.Marshal(perms)
 		permissionsJSON = string(b)
 	}
@@ -93,6 +98,7 @@ func (s *ApiKeyService) Create(userID int64, req *dto.CreateApiKeyReq) (*dto.Api
 	apiKey := &model.ApiKey{
 		UserID:         userID,
 		Name:           req.Name,
+		Key:            key,
 		KeyHash:        keyHash,
 		KeyPrefix:      keyPrefix,
 		Permissions:    permissionsJSON,
@@ -101,7 +107,7 @@ func (s *ApiKeyService) Create(userID int64, req *dto.CreateApiKeyReq) (*dto.Api
 		UnlimitedQuota: unlimitedQuota,
 		AllowIPs:       req.AllowIPs,
 	}
-	if req.ExpiresAt != nil {
+	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
 		t, err := parseTime(*req.ExpiresAt)
 		if err == nil {
 			apiKey.ExpiresAt = &t
@@ -122,7 +128,7 @@ func (s *ApiKeyService) Create(userID int64, req *dto.CreateApiKeyReq) (*dto.Api
 		Name:           apiKey.Name,
 		Key:            key,
 		KeyPrefix:      keyPrefix,
-		Groups:         groups,
+		Groups:         validated,
 		Quota:          quota,
 		UnlimitedQuota: unlimitedQuota,
 		ExpiresAt:      expiresAt,
@@ -154,12 +160,19 @@ func (s *ApiKeyService) Update(userID, keyID int64, req *dto.UpdateApiKeyReq) er
 		apiKey.AllowIPs = *req.AllowIPs
 	}
 	if req.ExpiresAt != nil {
-		t, err := parseTime(*req.ExpiresAt)
-		if err == nil {
-			apiKey.ExpiresAt = &t
+		if *req.ExpiresAt == "" {
+			apiKey.ExpiresAt = nil
+		} else {
+			t, err := parseTime(*req.ExpiresAt)
+			if err == nil {
+				apiKey.ExpiresAt = &t
+			}
 		}
 	}
 	if req.Groups != nil {
+		if len(req.Groups) == 0 {
+			return fmt.Errorf("必须绑定至少一个分组")
+		}
 		validated, err := s.validateGroups(userID, req.Groups)
 		if err != nil {
 			return err
@@ -177,7 +190,7 @@ func (s *ApiKeyService) Update(userID, keyID int64, req *dto.UpdateApiKeyReq) er
 }
 
 func (s *ApiKeyService) Delete(userID, keyID int64) error {
-	keys, err := model.ListApiKeysByUser(userID)
+	keys, err := model.ListApiKeysByUser(userID, "")
 	if err != nil {
 		return err
 	}
@@ -187,6 +200,31 @@ func (s *ApiKeyService) Delete(userID, keyID int64) error {
 		}
 	}
 	return nil
+}
+
+func (s *ApiKeyService) GetKey(userID, keyID int64) (string, error) {
+	apiKey, err := model.GetApiKeyByID(keyID)
+	if err != nil {
+		return "", fmt.Errorf("API Key 不存在")
+	}
+	if apiKey.UserID != userID {
+		return "", fmt.Errorf("无权操作")
+	}
+	return apiKey.GetFullKey(), nil
+}
+
+func (s *ApiKeyService) BatchDelete(userID int64, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return model.BatchDeleteApiKeys(userID, ids)
+}
+
+func (s *ApiKeyService) BatchUpdateStatus(userID int64, ids []int64, status int) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return model.BatchUpdateApiKeyStatus(userID, ids, status)
 }
 
 func (s *ApiKeyService) validateGroups(userID int64, groupNames []string) ([]string, error) {
@@ -210,5 +248,9 @@ func generateRandomHex(n int) string {
 }
 
 func parseTime(s string) (time.Time, error) {
-	return time.Parse("2006-01-02T15:04:05Z", s)
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		t, err = time.Parse("2006-01-02T15:04:05Z", s)
+	}
+	return t, err
 }
