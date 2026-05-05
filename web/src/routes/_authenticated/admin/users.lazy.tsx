@@ -1,6 +1,6 @@
 import { createLazyFileRoute } from '@tanstack/react-router'
-import { PlaceholderPage } from '@/components/layout/placeholder-page'
+import { AdminUsersPage } from '@/features/admin/components/admin-users-page'
 
 export const Route = createLazyFileRoute('/_authenticated/admin/users')({
-  component: () => <PlaceholderPage title="nav.adminUsers" icon="Users" />,
+  component: AdminUsersPage,
 })

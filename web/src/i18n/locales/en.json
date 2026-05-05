@@ -107,6 +107,14 @@
     "errorMessage": "Error",
     "method": "Method",
     "total": "Total",
-    "records": "records"
+    "records": "records",
+    "dateRange": "Date Range",
+    "startTime": "Start Time",
+    "endTime": "End Time",
+    "presetToday": "Today",
+    "preset7d": "7 Days",
+    "presetWeek": "This Week",
+    "preset30d": "30 Days",
+    "presetMonth": "This Month"
   }
 }

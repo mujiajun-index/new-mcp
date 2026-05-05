@@ -53,6 +53,7 @@ func SetApiRouter(engine *gin.Engine) {
 		// API Keys
 		auth.GET("/api-keys", controller.ListApiKeys)
 		auth.POST("/api-keys", controller.CreateApiKey)
+		auth.PUT("/api-keys/:id", controller.UpdateApiKey)
 		auth.DELETE("/api-keys/:id", controller.DeleteApiKey)
 
 		// Cloud Connections
@@ -79,6 +80,7 @@ func SetApiRouter(engine *gin.Engine) {
 	admin.Use(middleware.AdminAuth())
 	{
 		admin.GET("/users", controller.AdminListUsers)
+		admin.POST("/users", controller.AdminCreateUser)
 		admin.PUT("/users/:id", controller.AdminUpdateUser)
 		admin.GET("/stats", controller.AdminGetStats)
 		admin.GET("/logs", controller.AdminGetLogs)

@@ -1,12 +1,14 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
+import dayjs from 'dayjs'
 import { getUserLogs, getUserLogStats } from '@/features/logs/api'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { CompactDateTimeRangePicker } from '@/components/ui/date-time-range-picker'
 import { Activity, CheckCircle, XCircle, Clock, Zap, Search, RotateCw, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { LogFilter } from '@/types'
 
@@ -15,15 +17,23 @@ export function UserLogsPage() {
   const [page, setPage] = useState(1)
   const pageSize = 20
   const [filter, setFilter] = useState<LogFilter>({})
+  const [dateRange, setDateRange] = useState<{ start?: Date; end?: Date }>({})
+
+  const apiFilter = useMemo(() => {
+    const f: LogFilter = { ...filter }
+    if (dateRange.start) f.start_date = dayjs(dateRange.start).format('YYYY-MM-DD HH:mm:ss')
+    if (dateRange.end) f.end_date = dayjs(dateRange.end).format('YYYY-MM-DD HH:mm:ss')
+    return f
+  }, [filter, dateRange])
 
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ['user-log-stats', filter],
-    queryFn: () => getUserLogStats(filter),
+    queryKey: ['user-log-stats', apiFilter],
+    queryFn: () => getUserLogStats(apiFilter),
   })
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['user-logs', page, filter],
-    queryFn: () => getUserLogs({ ...filter, page, page_size: pageSize }),
+    queryKey: ['user-logs', page, apiFilter],
+    queryFn: () => getUserLogs({ ...apiFilter, page, page_size: pageSize }),
   })
 
   const logs = data?.data ?? []
@@ -37,6 +47,12 @@ export function UserLogsPage() {
 
   const resetFilters = () => {
     setFilter({})
+    setDateRange({})
+    setPage(1)
+  }
+
+  const handleDateRangeChange = (range: { start?: Date; end?: Date }) => {
+    setDateRange(range)
     setPage(1)
   }
 
@@ -106,6 +122,12 @@ export function UserLogsPage() {
             <SelectItem value="error">{t('logs.error')}</SelectItem>
           </SelectContent>
         </Select>
+
+        <CompactDateTimeRangePicker
+          start={dateRange.start}
+          end={dateRange.end}
+          onChange={handleDateRangeChange}
+        />
 
         <Input
           placeholder={t('logs.toolName')}

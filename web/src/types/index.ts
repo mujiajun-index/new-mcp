@@ -1,9 +1,14 @@
 export interface User {
   id: number
   username: string
+  display_name: string
   email: string
   role: 'user' | 'admin'
   status: number
+  quota: number
+  used_quota: number
+  request_count: number
+  group: string
   created_at: string
 }
 
@@ -41,10 +46,15 @@ export interface AuthResp {
 export interface ProfileResp {
   id: number
   username: string
+  display_name: string
   email: string
   role: string
   avatar_url: string
   status: number
+  quota: number
+  used_quota: number
+  request_count: number
+  group: string
   created_at: string
 }
 
@@ -206,6 +216,10 @@ export interface ApiKeyListItem {
   key_prefix: string
   status: number
   groups: string[]
+  quota: number
+  used_quota: number
+  unlimited_quota: boolean
+  allow_ips: string
   expires_at: string
   last_used_at: string
   created_at: string
@@ -215,6 +229,19 @@ export interface CreateApiKeyReq {
   name: string
   groups: string[]
   expires_at?: string
+  quota?: number
+  unlimited_quota?: boolean
+  allow_ips?: string
+}
+
+export interface UpdateApiKeyReq {
+  name?: string
+  groups?: string[]
+  status?: number
+  quota?: number
+  unlimited_quota?: boolean
+  allow_ips?: string
+  expires_at?: string
 }
 
 export interface CreateApiKeyResp {
@@ -223,6 +250,8 @@ export interface CreateApiKeyResp {
   key: string
   key_prefix: string
   groups: string[]
+  quota: number
+  unlimited_quota: boolean
   expires_at: string
 }
 
@@ -340,10 +369,37 @@ export interface AdminStats {
 export interface AdminUserItem {
   id: number
   username: string
+  display_name: string
   email: string
   role: string
   status: number
+  quota: number
+  used_quota: number
+  request_count: number
+  group: string
+  remark: string
   created_at: string
+}
+
+export interface AdminCreateUserReq {
+  username: string
+  password: string
+  email?: string
+  display_name?: string
+  role?: string
+  quota?: number
+  group?: string
+}
+
+export interface AdminUpdateUserReq {
+  display_name?: string
+  status?: number
+  role?: string
+  email?: string
+  quota?: number
+  group?: string
+  remark?: string
+  password?: string
 }
 
 export interface AdminLogItem {

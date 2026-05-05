@@ -19,8 +19,9 @@ type AuthResp struct {
 }
 
 type UpdateProfileReq struct {
-	Email     string `json:"email" binding:"omitempty,email"`
-	AvatarURL string `json:"avatar_url" binding:"omitempty,max=512"`
+	DisplayName *string `json:"display_name"`
+	Email       *string `json:"email" binding:"omitempty,email"`
+	AvatarURL   *string `json:"avatar_url" binding:"omitempty,max=512"`
 }
 
 type ChangePasswordReq struct {
@@ -29,11 +30,16 @@ type ChangePasswordReq struct {
 }
 
 type ProfileResp struct {
-	ID        int64  `json:"id"`
-	Username  string `json:"username"`
-	Email     string `json:"email"`
-	Role      string `json:"role"`
-	AvatarURL string `json:"avatar_url"`
-	Status    int    `json:"status"`
-	CreatedAt string `json:"created_at"`
+	ID           int64  `json:"id"`
+	Username     string `json:"username"`
+	DisplayName  string `json:"display_name"`
+	Email        string `json:"email"`
+	Role         string `json:"role"`
+	AvatarURL    string `json:"avatar_url"`
+	Status       int    `json:"status"`
+	Quota        int64  `json:"quota"`
+	UsedQuota    int64  `json:"used_quota"`
+	RequestCount int64  `json:"request_count"`
+	Group        string `json:"group"`
+	CreatedAt    string `json:"created_at"`
 }

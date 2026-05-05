@@ -31,6 +31,7 @@ func (s *AuthService) Register(req *dto.RegisterReq) (*dto.AuthResp, error) {
 		Email:    req.Email,
 		Role:     common.RoleCommonUser,
 		Status:   common.StatusEnabled,
+		Group:    "default",
 	}
 	if err := user.Insert(); err != nil {
 		return nil, err
@@ -80,13 +81,18 @@ func (s *AuthService) GetProfile(userID int64) (*dto.ProfileResp, error) {
 		return nil, err
 	}
 	return &dto.ProfileResp{
-		ID:        user.ID,
-		Username:  user.Username,
-		Email:     user.Email,
-		Role:      user.Role,
-		AvatarURL: user.AvatarURL,
-		Status:    user.Status,
-		CreatedAt: user.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		ID:           user.ID,
+		Username:     user.Username,
+		DisplayName:  user.DisplayName,
+		Email:        user.Email,
+		Role:         user.Role,
+		AvatarURL:    user.AvatarURL,
+		Status:       user.Status,
+		Quota:        user.Quota,
+		UsedQuota:    user.UsedQuota,
+		RequestCount: user.RequestCount,
+		Group:        user.Group,
+		CreatedAt:    user.CreatedAt.Format("2006-01-02T15:04:05Z"),
 	}, nil
 }
 
@@ -95,11 +101,14 @@ func (s *AuthService) UpdateProfile(userID int64, req *dto.UpdateProfileReq) err
 	if err != nil {
 		return err
 	}
-	if req.Email != "" {
-		user.Email = req.Email
+	if req.Email != nil {
+		user.Email = *req.Email
 	}
-	if req.AvatarURL != "" {
-		user.AvatarURL = req.AvatarURL
+	if req.AvatarURL != nil {
+		user.AvatarURL = *req.AvatarURL
+	}
+	if req.DisplayName != nil {
+		user.DisplayName = *req.DisplayName
 	}
 	return user.Update()
 }

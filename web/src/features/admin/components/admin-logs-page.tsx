@@ -1,12 +1,14 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
+import dayjs from 'dayjs'
 import { getAdminLogs, getAdminLogStats } from '@/features/admin/api'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { CompactDateTimeRangePicker } from '@/components/ui/date-time-range-picker'
 import { Activity, CheckCircle, XCircle, Clock, Zap, Search, RotateCw, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { LogFilter } from '@/types'
 
@@ -15,15 +17,23 @@ export function AdminLogsPage() {
   const [page, setPage] = useState(1)
   const pageSize = 20
   const [filter, setFilter] = useState<LogFilter>({})
+  const [dateRange, setDateRange] = useState<{ start?: Date; end?: Date }>({})
+
+  const apiFilter = useMemo(() => {
+    const f: LogFilter = { ...filter }
+    if (dateRange.start) f.start_date = dayjs(dateRange.start).format('YYYY-MM-DD HH:mm:ss')
+    if (dateRange.end) f.end_date = dayjs(dateRange.end).format('YYYY-MM-DD HH:mm:ss')
+    return f
+  }, [filter, dateRange])
 
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ['admin-log-stats', filter],
-    queryFn: () => getAdminLogStats(filter),
+    queryKey: ['admin-log-stats', apiFilter],
+    queryFn: () => getAdminLogStats(apiFilter),
   })
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['admin-logs', page, filter],
-    queryFn: () => getAdminLogs({ ...filter, page, page_size: pageSize }),
+    queryKey: ['admin-logs', page, apiFilter],
+    queryFn: () => getAdminLogs({ ...apiFilter, page, page_size: pageSize }),
   })
 
   const logs = data?.data ?? []
@@ -37,6 +47,12 @@ export function AdminLogsPage() {
 
   const resetFilters = () => {
     setFilter({})
+    setDateRange({})
+    setPage(1)
+  }
+
+  const handleDateRangeChange = (range: { start?: Date; end?: Date }) => {
+    setDateRange(range)
     setPage(1)
   }
 
@@ -108,6 +124,12 @@ export function AdminLogsPage() {
             <SelectItem value="error">{t('logs.error')}</SelectItem>
           </SelectContent>
         </Select>
+
+        <CompactDateTimeRangePicker
+          start={dateRange.start}
+          end={dateRange.end}
+          onChange={handleDateRangeChange}
+        />
 
         <Input
           placeholder={t('logs.toolName')}

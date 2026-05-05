@@ -11,18 +11,39 @@ type AdminStats struct {
 }
 
 type AdminUpdateUserReq struct {
-	Status *int    `json:"status"`
-	Role   *string `json:"role"`
-	Email  *string `json:"email"`
+	DisplayName *string `json:"display_name"`
+	Status      *int    `json:"status"`
+	Role        *string `json:"role"`
+	Email       *string `json:"email"`
+	Quota       *int64  `json:"quota"`
+	Group       *string `json:"group"`
+	Remark      *string `json:"remark"`
+	Password    *string `json:"password"`
+}
+
+type AdminCreateUserReq struct {
+	Username    string `json:"username" binding:"required,min=3,max=64"`
+	Password    string `json:"password" binding:"required,min=6,max=128"`
+	Email       string `json:"email" binding:"omitempty,email"`
+	DisplayName string `json:"display_name"`
+	Role        string `json:"role"`
+	Quota       int64  `json:"quota"`
+	Group       string `json:"group"`
 }
 
 type UserListItem struct {
-	ID        int64  `json:"id"`
-	Username  string `json:"username"`
-	Email     string `json:"email"`
-	Role      string `json:"role"`
-	Status    int    `json:"status"`
-	CreatedAt string `json:"created_at"`
+	ID           int64  `json:"id"`
+	Username     string `json:"username"`
+	DisplayName  string `json:"display_name"`
+	Email        string `json:"email"`
+	Role         string `json:"role"`
+	Status       int    `json:"status"`
+	Quota        int64  `json:"quota"`
+	UsedQuota    int64  `json:"used_quota"`
+	RequestCount int64  `json:"request_count"`
+	Group        string `json:"group"`
+	Remark       string `json:"remark"`
+	CreatedAt    string `json:"created_at"`
 }
 
 type LogItem struct {

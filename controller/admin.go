@@ -14,7 +14,8 @@ var adminService = &service.AdminService{}
 
 func AdminListUsers(c *gin.Context) {
 	page, pageSize := common.GetPagination(c)
-	items, total, err := adminService.ListUsers(page, pageSize)
+	keyword := c.Query("keyword")
+	items, total, err := adminService.ListUsers(page, pageSize, keyword)
 	if err != nil {
 		common.Error(c, http.StatusInternalServerError, "获取用户列表失败")
 		return
@@ -34,6 +35,20 @@ func AdminUpdateUser(c *gin.Context) {
 		return
 	}
 	common.Success(c, nil)
+}
+
+func AdminCreateUser(c *gin.Context) {
+	var req dto.AdminCreateUserReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	user, err := adminService.CreateUser(&req)
+	if err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Created(c, user)
 }
 
 func AdminGetStats(c *gin.Context) {

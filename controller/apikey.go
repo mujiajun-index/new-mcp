@@ -31,10 +31,25 @@ func CreateApiKey(c *gin.Context) {
 	}
 	resp, err := apiKeyService.Create(userID, &req)
 	if err != nil {
-		common.Error(c, http.StatusInternalServerError, "创建 API Key 失败")
+		common.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	common.Created(c, resp)
+}
+
+func UpdateApiKey(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	var req dto.UpdateApiKeyReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	if err := apiKeyService.Update(userID, id, &req); err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, nil)
 }
 
 func DeleteApiKey(c *gin.Context) {

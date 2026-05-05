@@ -107,6 +107,14 @@
     "errorMessage": "错误信息",
     "method": "方法",
     "total": "共",
-    "records": "条记录"
+    "records": "条记录",
+    "dateRange": "时间段",
+    "startTime": "开始时间",
+    "endTime": "结束时间",
+    "presetToday": "今天",
+    "preset7d": "近7天",
+    "presetWeek": "本周",
+    "preset30d": "近30天",
+    "presetMonth": "本月"
   }
 }
