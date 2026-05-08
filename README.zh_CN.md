@@ -212,7 +212,7 @@ make build
 
 本项目基于 [GNU Affero General Public License v3.0 (AGPLv3)](./LICENSE) 开源协议。
 
-如果您的组织不允许使用 AGPLv3 授权的软件，或希望避免 AGPLv3 的开源义务以用于商业用途，请联系：[mujkjk](https://github.com/mujiajun-index)
+如果您的组织不允许使用 AGPLv3 授权的软件，或希望避免 AGPLv3 的开源义务以用于商业用途，请联系：jiajun25701@gmail.com
 
 ---
 
