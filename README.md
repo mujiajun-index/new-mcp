@@ -208,6 +208,12 @@ make build
 
 ---
 
+## 🌟 Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=mujiajun-index/new-mcp&type=Date)](https://star-history.com/#mujiajun-index/new-mcp&Date)
+
+---
+
 ## 📜 License
 
 This project is licensed under the [GNU Affero General Public License v3.0 (AGPLv3)](./LICENSE).
