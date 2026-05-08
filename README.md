@@ -210,7 +210,9 @@ make build
 
 ## 📜 License
 
-This project is for personal learning and research purposes.
+This project is licensed under the [GNU Affero General Public License v3.0 (AGPLv3)](./LICENSE).
+
+If your organization's policies do not permit the use of AGPLv3-licensed software, or if you wish to avoid the open-source obligations of AGPLv3 for commercial use, please contact: [mujkjk](https://github.com/mujiajun-index)
 
 ---
 
