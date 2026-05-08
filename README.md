@@ -101,7 +101,7 @@ NewMCP is a unified MCP (Model Context Protocol) service management platform. It
 
 | Layer | Technology |
 |-------|-----------|
-| **Backend** | Go 1.22+, Gin, GORM v2 |
+| **Backend** | Go 1.26+, Gin, GORM v2 |
 | **Frontend** | React 19, TypeScript, Rsbuild, Radix UI, Tailwind CSS 4 |
 | **Database** | SQLite (default), MySQL, PostgreSQL |
 | **Cache** | Redis (optional), in-memory cache |
@@ -131,7 +131,7 @@ NewMCP is a unified MCP (Model Context Protocol) service management platform. It
 
 ### Prerequisites
 
-- Go 1.22+
+- Go 1.26+
 - Node.js 18+ (for frontend development)
 
 ### Build & Run
@@ -151,7 +151,7 @@ Or run directly in development mode:
 make dev
 ```
 
-The service will start on `http://localhost:8080` by default.
+The service will start on `http://localhost:3000` by default.
 
 ### Frontend Development
 
