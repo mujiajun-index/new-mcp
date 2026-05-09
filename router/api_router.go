@@ -29,6 +29,7 @@ func SetApiRouter(engine *gin.Engine) {
 		// MCP Services
 		auth.GET("/services", controller.ListServices)
 		auth.POST("/services", controller.CreateService)
+		auth.POST("/services/test-connection", controller.TestConnection)
 		auth.GET("/services/:id", controller.GetService)
 		auth.PUT("/services/:id", controller.UpdateService)
 		auth.DELETE("/services/:id", controller.DeleteService)

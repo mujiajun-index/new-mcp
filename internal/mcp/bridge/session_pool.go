@@ -54,7 +54,7 @@ func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (
 		return session, nil
 	}
 
-	adapter := createAdapter(svc)
+	adapter := CreateAdapter(svc)
 	if adapter == nil {
 		return nil, nil
 	}
@@ -133,7 +133,7 @@ func (p *SessionPool) GetAllSessions() []*McpSession {
 	return result
 }
 
-func createAdapter(svc *model.McpService) transport.TransportAdapter {
+func CreateAdapter(svc *model.McpService) transport.TransportAdapter {
 	var config map[string]interface{}
 	_ = json.Unmarshal([]byte(svc.Config), &config)
 

@@ -34,6 +34,11 @@ export async function testService(id: number) {
   return res.data
 }
 
+export async function testConnection(data: { transport_type: string; config: Record<string, unknown> }) {
+  const res = await api.post('/services/test-connection', data)
+  return res.data
+}
+
 export async function refreshTools(id: number) {
   const res = await api.post(`/services/${id}/refresh-tools`)
   return res.data

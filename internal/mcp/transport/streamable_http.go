@@ -1,12 +1,14 @@
 package transport
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -97,7 +99,7 @@ func (a *StreamableHTTPAdapter) callUnlocked(ctx context.Context, method string,
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json")
+	httpReq.Header.Set("Accept", "application/json, text/event-stream")
 	for k, v := range a.headers {
 		httpReq.Header.Set(k, v)
 	}
@@ -117,6 +119,12 @@ func (a *StreamableHTTPAdapter) callUnlocked(ctx context.Context, method string,
 		return nil, fmt.Errorf("http %d: %s", resp.StatusCode, string(respBody))
 	}
 
+	// 服务端可能返回纯 JSON 或 SSE 流，根据 Content-Type 判断
+	contentType := resp.Header.Get("Content-Type")
+	if strings.Contains(contentType, "text/event-stream") {
+		respBody = extractSSEData(respBody)
+	}
+
 	var jsonResp struct {
 		Result json.RawMessage `json:"result"`
 		Error  *struct {
@@ -131,6 +139,18 @@ func (a *StreamableHTTPAdapter) callUnlocked(ctx context.Context, method string,
 		return nil, fmt.Errorf("MCP error %d: %s", jsonResp.Error.Code, jsonResp.Error.Message)
 	}
 	return jsonResp.Result, nil
+}
+
+// extractSSEData 从 SSE 流中提取第一个 data 字段的 JSON 内容
+func extractSSEData(raw []byte) []byte {
+	scanner := bufio.NewScanner(bytes.NewReader(raw))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "data: ") {
+			return []byte(strings.TrimPrefix(line, "data: "))
+		}
+	}
+	return raw
 }
 
 func (a *StreamableHTTPAdapter) IsConnected() bool {

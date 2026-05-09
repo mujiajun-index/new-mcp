@@ -2,8 +2,6 @@ package model
 
 import (
 	"time"
-
-	"gorm.io/gorm"
 )
 
 type McpService struct {
@@ -33,7 +31,6 @@ type McpService struct {
 	Status           int            `json:"status" gorm:"default:1"`
 	CreatedAt        time.Time      `json:"created_at"`
 	UpdatedAt        time.Time      `json:"updated_at"`
-	DeletedAt        gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 func (McpService) TableName() string { return "mcp_services" }

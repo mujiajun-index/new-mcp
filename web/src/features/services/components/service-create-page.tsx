@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation } from '@tanstack/react-query'
-import { createService, testService } from '../api'
+import { createService, testConnection } from '../api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -77,25 +77,9 @@ export function ServiceCreatePage() {
 
   const testMutation = useMutation({
     mutationFn: async () => {
-      // Create first, then test
       const config = buildConfig()
-      const authConfig = buildAuthConfig()
-      const res = await createService({
-        name: form.name,
-        display_name: form.display_name || undefined,
-        description: form.description || undefined,
-        transport_type: form.transport_type,
-        config,
-        auth_type: form.auth_type === 'none' ? undefined : form.auth_type,
-        auth_config: Object.keys(authConfig).length > 0 ? authConfig : undefined,
-      })
-      const id = res.data?.id
-      if (id) {
-        const testRes = await testService(id)
-        setTestResult(testRes.data)
-        return { created: true, id }
-      }
-      return { created: false }
+      const testRes = await testConnection({ transport_type: form.transport_type, config })
+      setTestResult(testRes.data as TestResult)
     },
   })
 
@@ -294,7 +278,7 @@ export function ServiceCreatePage() {
       {/* Step 3: Test & confirm */}
       {step === 3 && (
         <div className="space-y-4 rounded-xl border bg-card p-6">
-          <p className="text-sm text-muted-foreground">点击"测试并创建"验证连接后提交，或直接创建。</p>
+          <p className="text-sm text-muted-foreground">可选：先测试连接是否正常，再点击创建提交。</p>
 
           {testResult && (
             <div className={`rounded-lg p-4 ${testResult.connected ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}>
@@ -318,16 +302,16 @@ export function ServiceCreatePage() {
             >
               {testMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               <Zap className="h-4 w-4" />
-              测试并创建
+              测试连接
             </Button>
             <Button
-              className="gap-2"
+              className={`gap-2 ${testResult?.connected ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`}
               onClick={() => createMutation.mutate()}
               disabled={createMutation.isPending}
             >
               {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               <Check className="h-4 w-4" />
-              直接创建
+              创建服务
             </Button>
           </div>
         </div>

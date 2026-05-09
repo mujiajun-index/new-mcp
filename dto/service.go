@@ -54,8 +54,14 @@ type ServiceDetail struct {
 	PassiveConnected bool                   `json:"passive_connected,omitempty"`
 }
 
+type TestConnectionReq struct {
+	TransportType string                 `json:"transport_type" binding:"required,oneof=stdio sse streamable-http websocket passive-ws"`
+	Config        map[string]interface{} `json:"config"`
+}
+
 type TestResult struct {
 	Connected  bool                   `json:"connected"`
+	Error      string                 `json:"error,omitempty"`
 	ServerInfo map[string]interface{} `json:"server_info"`
 	ToolsCount int                    `json:"tools_count"`
 	LatencyMs  int64                  `json:"latency_ms"`

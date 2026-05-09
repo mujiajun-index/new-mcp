@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
@@ -43,6 +45,13 @@ func (s *McpServiceService) List(userID int64, page, pageSize int, filters map[s
 }
 
 func (s *McpServiceService) Create(userID int64, req *dto.CreateServiceReq) (*dto.ServiceDetail, error) {
+	// 检查同名服务是否已存在
+	var count int64
+	model.DB.Model(&model.McpService{}).Where("user_id = ? AND name = ?", userID, req.Name).Count(&count)
+	if count > 0 {
+		return nil, fmt.Errorf("服务名称 %q 已存在", req.Name)
+	}
+
 	configJSON, _ := json.Marshal(req.Config)
 	authConfigJSON, _ := json.Marshal(req.AuthConfig)
 	tags := strings.Join(req.Tags, ",")
@@ -69,6 +78,44 @@ func (s *McpServiceService) Create(userID int64, req *dto.CreateServiceReq) (*dt
 	}
 
 	return s.toDetail(svc), nil
+}
+
+// TestConnection 测试连接但不创建服务，用于注册前的预验证
+func (s *McpServiceService) TestConnection(req *dto.TestConnectionReq) (*dto.TestResult, error) {
+	configJSON, _ := json.Marshal(req.Config)
+
+	// 构造临时 McpService 用于创建 adapter
+	svc := &model.McpService{
+		ID:            -1,
+		TransportType: req.TransportType,
+		Config:        string(configJSON),
+	}
+
+	adapter := bridge.CreateAdapter(svc)
+	if adapter == nil {
+		return &dto.TestResult{Connected: false, Error: "不支持的传输类型"}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	if err := adapter.Connect(ctx); err != nil {
+		return &dto.TestResult{
+			Connected: false,
+			Error:     err.Error(),
+			LatencyMs: time.Since(start).Milliseconds(),
+		}, nil
+	}
+	defer adapter.Close()
+
+	tools := adapter.GetTools()
+
+	return &dto.TestResult{
+		Connected:  true,
+		ToolsCount: len(tools),
+		LatencyMs:  time.Since(start).Milliseconds(),
+	}, nil
 }
 
 func (s *McpServiceService) GetByID(userID, serviceID int64) (*dto.ServiceDetail, error) {
@@ -153,16 +200,32 @@ func (s *McpServiceService) Test(userID, serviceID int64) (*dto.TestResult, erro
 		return nil, err
 	}
 
-	if SessionPool == nil {
-		return &dto.TestResult{Connected: false}, nil
+
+	adapter := bridge.CreateAdapter(svc)
+	if adapter == nil {
+		return &dto.TestResult{Connected: false, Error: "不支持的传输类型"}, nil
 	}
 
-	session, err := SessionPool.GetOrConnect(context.Background(), svc)
-	if err != nil {
-		return &dto.TestResult{Connected: false}, nil
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
 
-	return &dto.TestResult{Connected: session.Adapter.IsConnected()}, nil
+	start := time.Now()
+	if err := adapter.Connect(ctx); err != nil {
+		return &dto.TestResult{
+			Connected: false,
+			Error:     err.Error(),
+			LatencyMs: time.Since(start).Milliseconds(),
+		}, nil
+	}
+	defer adapter.Close()
+
+	tools := adapter.GetTools()
+
+	return &dto.TestResult{
+		Connected:  true,
+		ToolsCount: len(tools),
+		LatencyMs:  time.Since(start).Milliseconds(),
+	}, nil
 }
 
 func (s *McpServiceService) GetTools(userID, serviceID int64) ([]interface{}, error) {
