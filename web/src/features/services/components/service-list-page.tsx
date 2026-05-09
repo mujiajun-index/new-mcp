@@ -2,12 +2,12 @@ import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { getServices, deleteService, updateService } from '../api'
+import { getServices, deleteService, updateService, testService } from '../api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { TransportType, ServiceListItem } from '@/types'
 import {
-  Plus, Search, Server, Trash2, RefreshCw,
+  Plus, Search, Server, Trash2, RefreshCw, Zap, Loader2,
   Wifi, Terminal, Globe, Radio, Plug,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -63,6 +63,22 @@ export function ServiceListPage() {
     mutationFn: ({ id, status }: { id: number; status: number }) => updateService(id, { status }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['services'] })
+    },
+  })
+
+  const testMutation = useMutation({
+    mutationFn: testService,
+    onSuccess: (res) => {
+      const result = res.data
+      if (result?.connected) {
+        toast.success(`连接成功，${result.tools_count ?? 0} 个工具，延迟 ${result.latency_ms ?? 0}ms`)
+      } else {
+        toast.error(`连接失败: ${result?.error || '未知错误'}`)
+      }
+      queryClient.invalidateQueries({ queryKey: ['services'] })
+    },
+    onError: () => {
+      toast.error('测试请求失败')
     },
   })
 
@@ -171,6 +187,18 @@ export function ServiceListPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1"
+                            disabled={testMutation.isPending}
+                            onClick={() => testMutation.mutate(s.id)}
+                          >
+                            {testMutation.isPending && testMutation.variables === s.id
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              : <Zap className="h-3.5 w-3.5" />}
+                            测试
+                          </Button>
                           <Link to="/services/$id" params={{ id: String(s.id) }}>
                             <Button variant="ghost" size="sm">详情</Button>
                           </Link>
