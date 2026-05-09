@@ -63,17 +63,20 @@ export function AppSidebar() {
         )}
       >
         {/* Logo */}
-        <div className={cn(
-          'flex h-14 items-center border-b border-sidebar-border px-4',
-          collapsed ? 'justify-center' : 'gap-3'
-        )}>
+        <Link
+          to="/"
+          className={cn(
+            'flex h-14 items-center border-b border-sidebar-border px-4',
+            collapsed ? 'justify-center' : 'gap-3'
+          )}
+        >
           <div className="flex h-8 w-8 items-center justify-center rounded-lg overflow-hidden">
             <img src="/favicon.svg" alt="Logo" className="h-8 w-8" />
           </div>
           {!collapsed && (
             <span className="text-base font-semibold tracking-tight">NewMCP</span>
           )}
-        </div>
+        </Link>
 
         {/* Navigation */}
         <ScrollArea className="flex-1 py-3">

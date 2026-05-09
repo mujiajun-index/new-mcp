@@ -19,6 +19,7 @@
     "status": "状态"
   },
   "nav": {
+    "home": "主页",
     "dashboard": "控制台",
     "services": "服务管理",
     "groups": "分组管理",

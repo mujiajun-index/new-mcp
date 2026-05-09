@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from '@tanstack/react-router'
+import { Link, useLocation, useNavigate } from '@tanstack/react-router'
 import { useAuthStore } from '@/stores/auth-store'
 import { useTheme } from '@/context/theme-provider'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { Moon, Sun, LogOut, User, Monitor, Languages, Check } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 export function Header() {
   const { t, i18n } = useTranslation()
@@ -21,13 +22,36 @@ export function Header() {
     navigate({ to: '/sign-in' })
   }
 
+  const location = useLocation()
   const themeIcon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor
+
+  const navItems = [
+    { label: t('nav.home'), to: '/' as const },
+    { label: t('nav.dashboard'), to: '/dashboard' as const },
+    { label: t('nav.marketplace'), to: '/marketplace' as const },
+  ]
 
   return (
     <header className="flex h-14 items-center justify-between border-b bg-background/80 backdrop-blur-sm px-6">
-      <div className="flex items-center gap-2">
-        {/* Breadcrumb area — can be enhanced later */}
-      </div>
+      <nav className="flex items-center gap-1">
+        {navItems.map((item) => {
+          const isActive = item.to === '/'
+            ? location.pathname === '/'
+            : location.pathname.startsWith(item.to)
+          return (
+            <Link
+              key={item.to}
+              to={item.to}
+              className={cn(
+                'px-3 py-1.5 text-sm font-medium transition-colors hover:text-foreground',
+                isActive ? 'text-foreground' : 'text-muted-foreground',
+              )}
+            >
+              {item.label}
+            </Link>
+          )
+        })}
+      </nav>
 
       <div className="flex items-center gap-2">
         {/* Theme toggle */}

@@ -49,12 +49,12 @@ export function SignInPage() {
           <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:48px_48px]" />
         </div>
         <div className="relative z-10 flex flex-col justify-between p-12 text-primary-foreground">
-          <div className="flex items-center gap-3">
+          <Link to="/" className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl overflow-hidden">
               <img src="/favicon.svg" alt="Logo" className="h-10 w-10" />
             </div>
             <span className="text-xl font-semibold">NewMCP</span>
-          </div>
+          </Link>
           <div>
             <h2 className="text-3xl font-bold leading-tight">
               统一的 MCP<br />服务网关平台
@@ -71,12 +71,12 @@ export function SignInPage() {
       <div className="flex flex-1 items-center justify-center p-8">
         <div className="w-full max-w-sm">
           <div className="mb-8">
-            <div className="flex items-center gap-2 lg:hidden mb-8">
+            <Link to="/" className="flex items-center gap-2 lg:hidden mb-8">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg overflow-hidden">
                 <img src="/favicon.svg" alt="Logo" className="h-8 w-8" />
               </div>
               <span className="text-lg font-semibold">NewMCP</span>
-            </div>
+            </Link>
             <h1 className="text-2xl font-semibold tracking-tight">{t('auth.welcomeBack')}</h1>
             <p className="mt-2 text-sm text-muted-foreground">{t('auth.signInDesc')}</p>
           </div>

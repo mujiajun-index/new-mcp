@@ -44,12 +44,15 @@ export function SignUpPage() {
   }
 
   return (
-    <div className="flex min-h-svh items-center justify-center p-8">
+    <div className="relative flex min-h-svh items-center justify-center p-8">
+      <Link to="/" className="absolute top-6 left-8 flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl overflow-hidden">
+          <img src="/favicon.svg" alt="Logo" className="h-10 w-10" />
+        </div>
+        <span className="text-xl font-semibold">NewMCP</span>
+      </Link>
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl overflow-hidden mb-4">
-            <img src="/favicon.svg" alt="Logo" className="h-10 w-10" />
-          </div>
           <h1 className="text-2xl font-semibold tracking-tight">{t('auth.createAccount')}</h1>
           <p className="mt-2 text-sm text-muted-foreground">{t('auth.signUpDesc')}</p>
         </div>

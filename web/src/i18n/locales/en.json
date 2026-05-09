@@ -19,6 +19,7 @@
     "status": "Status"
   },
   "nav": {
+    "home": "Home",
     "dashboard": "Dashboard",
     "services": "Services",
     "groups": "Groups",

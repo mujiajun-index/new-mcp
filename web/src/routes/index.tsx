@@ -1,21 +1,45 @@
-import { createFileRoute, redirect, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate, useLocation } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
+import { useTheme } from '@/context/theme-provider'
 import { Button } from '@/components/ui/button'
-import { Server, GitBranch, Cloud, Shield, ArrowRight, Zap } from 'lucide-react'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Server, GitBranch, Cloud, Shield, ArrowRight, Zap, Moon, Sun, Monitor, Languages, LogOut, User, Check } from 'lucide-react'
 
 export const Route = createFileRoute('/')({
-  beforeLoad: () => {
-    const { auth } = useAuthStore.getState()
-    if (auth.user) {
-      throw redirect({ to: '/dashboard' })
-    }
-  },
   component: LandingPage,
 })
 
 function LandingPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const { auth } = useAuthStore()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { theme, setTheme } = useTheme()
+  const isLoggedIn = !!auth.user
+
+  const navItems = [
+    { label: t('nav.home'), to: '/' as const },
+    { label: t('nav.dashboard'), to: '/dashboard' as const },
+    { label: t('nav.marketplace'), to: '/marketplace' as const },
+  ]
+
+  const handleNavClick = (to: string) => {
+    if (to !== '/' && !isLoggedIn) {
+      navigate({ to: '/sign-in' })
+      return
+    }
+    navigate({ to: to as never })
+  }
+
+  const handleSignOut = () => {
+    auth.reset()
+    navigate({ to: '/sign-in' })
+  }
 
   const features = [
     { icon: Server, title: t('landing.feature1Title'), desc: t('landing.feature1Desc'), accent: 'from-sky-500/20 to-blue-500/20' },
@@ -29,19 +53,128 @@ function LandingPage() {
       {/* Nav */}
       <nav className="fixed top-0 z-50 w-full border-b bg-background/60 backdrop-blur-xl">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg overflow-hidden">
-              <img src="/favicon.svg" alt="Logo" className="h-8 w-8" />
+          <div className="flex items-center gap-6">
+            <Link to="/" className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg overflow-hidden">
+                <img src="/favicon.svg" alt="Logo" className="h-8 w-8" />
+              </div>
+              <span className="text-lg font-semibold tracking-tight">NewMCP</span>
+            </Link>
+            <div className="flex items-center gap-1">
+              {navItems.map((item) => {
+                const isActive = item.to === '/'
+                  ? location.pathname === '/'
+                  : location.pathname.startsWith(item.to)
+                if (item.to === '/') {
+                  return (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className={cn(
+                        'px-3 py-1.5 text-sm font-medium transition-colors hover:text-foreground',
+                        isActive ? 'text-foreground' : 'text-muted-foreground',
+                      )}
+                    >
+                      {item.label}
+                    </Link>
+                  )
+                }
+                return (
+                  <button
+                    key={item.to}
+                    onClick={() => handleNavClick(item.to)}
+                    className={cn(
+                      'px-3 py-1.5 text-sm font-medium transition-colors hover:text-foreground',
+                      isActive ? 'text-foreground' : 'text-muted-foreground',
+                    )}
+                  >
+                    {item.label}
+                  </button>
+                )
+              })}
             </div>
-            <span className="text-lg font-semibold tracking-tight">NewMCP</span>
           </div>
-          <div className="flex items-center gap-3">
-            <Link to="/sign-in">
-              <Button variant="ghost" size="sm">{t('auth.signIn')}</Button>
-            </Link>
-            <Link to="/sign-up">
-              <Button size="sm">{t('auth.signUp')}</Button>
-            </Link>
+
+          <div className="flex items-center gap-2">
+            {/* Theme toggle */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                const next = theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light'
+                setTheme(next)
+              }}
+              className="h-8 w-8"
+            >
+              {theme === 'dark' ? (
+                <Moon className="h-4 w-4" />
+              ) : theme === 'light' ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Monitor className="h-4 w-4" />
+              )}
+            </Button>
+
+            {/* Language toggle */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <Languages className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => i18n.changeLanguage('zh')}>
+                  <span className="flex-1">中文</span>
+                  {i18n.language === 'zh' && <Check className="h-4 w-4 text-primary" />}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => i18n.changeLanguage('en')}>
+                  <span className="flex-1">English</span>
+                  {i18n.language === 'en' && <Check className="h-4 w-4 text-primary" />}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Auth section */}
+            {isLoggedIn ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" className="relative h-8 gap-2 rounded-full pl-2 pr-3">
+                    <Avatar className="h-6 w-6">
+                      <AvatarFallback className="bg-primary/10 text-primary text-[10px]">
+                        {auth.user?.username?.charAt(0)?.toUpperCase() || 'U'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="text-sm font-medium">{auth.user?.username}</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-48" align="end">
+                  <DropdownMenuLabel className="font-normal">
+                    <div className="flex flex-col gap-1">
+                      <p className="text-sm font-medium">{auth.user?.username}</p>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => navigate({ to: '/settings' })}>
+                    <User className="mr-2 h-4 w-4" />
+                    {t('nav.settings')}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    {t('auth.signOut')}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <div className="flex items-center gap-3">
+                <Link to="/sign-in">
+                  <Button variant="ghost" size="sm">{t('auth.signIn')}</Button>
+                </Link>
+                <Link to="/sign-up">
+                  <Button size="sm">{t('auth.signUp')}</Button>
+                </Link>
+              </div>
+            )}
           </div>
         </div>
       </nav>
@@ -75,15 +208,24 @@ function LandingPage() {
           </p>
 
           <div className="mt-10 flex items-center justify-center gap-4">
-            <Link to="/sign-up">
-              <Button size="lg" className="gap-2 rounded-full px-6">
-                {t('landing.getStarted')}
+            {isLoggedIn ? (
+              <Button size="lg" className="gap-2 rounded-full px-6" onClick={() => navigate({ to: '/dashboard' })}>
+                {t('nav.dashboard')}
                 <ArrowRight className="h-4 w-4" />
               </Button>
-            </Link>
-            <Button variant="outline" size="lg" className="rounded-full px-6">
-              {t('landing.viewDocs')}
-            </Button>
+            ) : (
+              <>
+                <Link to="/sign-up">
+                  <Button size="lg" className="gap-2 rounded-full px-6">
+                    {t('landing.getStarted')}
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                </Link>
+                <Button variant="outline" size="lg" className="rounded-full px-6">
+                  {t('landing.viewDocs')}
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </section>
