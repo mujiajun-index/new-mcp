@@ -56,5 +56,6 @@ __pycache__/
 # Build output
 /newmcp
 /newmcp-server
+/server
 
 /reference
