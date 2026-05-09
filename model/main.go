@@ -5,10 +5,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/glebarez/sqlite"
 	"github.com/mujkjk/newmcp/common"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
-	sqlite "github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
