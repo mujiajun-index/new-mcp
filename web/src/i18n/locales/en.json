@@ -159,5 +159,22 @@
     "presetWeek": "This Week",
     "preset30d": "30 Days",
     "presetMonth": "This Month"
+  },
+  "setup": {
+    "title": "Initialize System",
+    "description": "Create an admin account to complete system setup. You can log in after initialization.",
+    "heroTitle": "Welcome to NewMCP",
+    "heroDesc": "Before getting started, create an admin account to manage the system.",
+    "adminUsername": "Admin Username",
+    "usernamePlaceholder": "Enter admin username",
+    "password": "Password",
+    "passwordPlaceholder": "At least 8 characters",
+    "confirmPassword": "Confirm Password",
+    "confirmPasswordPlaceholder": "Re-enter password",
+    "initialize": "Initialize System",
+    "success": "System initialized successfully, redirecting to login...",
+    "usernameRequired": "Please enter an admin username",
+    "passwordMinLength": "Password must be at least 8 characters",
+    "passwordMismatch": "Passwords do not match"
   }
 }

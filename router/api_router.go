@@ -13,6 +13,8 @@ func SetApiRouter(engine *gin.Engine) {
 	// Public endpoints
 	api.POST("/auth/register", controller.Register)
 	api.POST("/auth/login", controller.Login)
+	api.GET("/setup", controller.GetSetup)
+	api.POST("/setup", controller.PostSetup)
 
 	// Public marketplace browsing
 	api.GET("/marketplace", controller.BrowseMarketplace)

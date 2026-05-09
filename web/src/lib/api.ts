@@ -52,10 +52,15 @@ api.interceptors.response.use(
     const message = error.response?.data?.message
 
     if (status === 401) {
-      useAuthStore.getState().auth.reset()
-      localStorage.removeItem('newmcp-token')
-      toast.error('会话已过期')
-      window.location.href = '/sign-in'
+      const hasToken = !!localStorage.getItem('newmcp-token')
+      if (hasToken) {
+        useAuthStore.getState().auth.reset()
+        localStorage.removeItem('newmcp-token')
+        toast.error('会话已过期')
+        window.location.href = '/sign-in'
+      } else if (message) {
+        toast.error(message)
+      }
     } else if (message) {
       toast.error(message)
     } else if (!axios.isCancel(error)) {

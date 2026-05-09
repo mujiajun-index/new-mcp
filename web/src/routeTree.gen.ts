@@ -16,6 +16,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedAdminRouteRouteImport } from './routes/_authenticated/admin/route'
 
+const SetupLazyRouteImport = createFileRoute('/setup')()
 const R500LazyRouteImport = createFileRoute('/500')()
 const PublicSignUpLazyRouteImport = createFileRoute('/_public/sign-up')()
 const PublicSignInLazyRouteImport = createFileRoute('/_public/sign-in')()
@@ -104,6 +105,11 @@ const AuthenticatedAdminMarketplaceIdLazyRouteImport = createFileRoute(
   '/_authenticated/admin/marketplace/$id',
 )()
 
+const SetupLazyRoute = SetupLazyRouteImport.update({
+  id: '/setup',
+  path: '/setup',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/setup.lazy').then((d) => d.Route))
 const R500LazyRoute = R500LazyRouteImport.update({
   id: '/500',
   path: '/500',
@@ -380,6 +386,7 @@ const AuthenticatedAdminMarketplaceIdLazyRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/500': typeof R500LazyRoute
+  '/setup': typeof SetupLazyRoute
   '/admin': typeof AuthenticatedAdminRouteRouteWithChildren
   '/api-keys': typeof AuthenticatedApiKeysLazyRoute
   '/dashboard': typeof AuthenticatedDashboardLazyRoute
@@ -415,6 +422,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/500': typeof R500LazyRoute
+  '/setup': typeof SetupLazyRoute
   '/admin': typeof AuthenticatedAdminRouteRouteWithChildren
   '/api-keys': typeof AuthenticatedApiKeysLazyRoute
   '/dashboard': typeof AuthenticatedDashboardLazyRoute
@@ -453,6 +461,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/_public': typeof PublicRouteRouteWithChildren
   '/500': typeof R500LazyRoute
+  '/setup': typeof SetupLazyRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteRouteWithChildren
   '/_authenticated/api-keys': typeof AuthenticatedApiKeysLazyRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardLazyRoute
@@ -490,6 +499,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/500'
+    | '/setup'
     | '/admin'
     | '/api-keys'
     | '/dashboard'
@@ -525,6 +535,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/500'
+    | '/setup'
     | '/admin'
     | '/api-keys'
     | '/dashboard'
@@ -562,6 +573,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/_public'
     | '/500'
+    | '/setup'
     | '/_authenticated/admin'
     | '/_authenticated/api-keys'
     | '/_authenticated/dashboard'
@@ -600,10 +612,18 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   PublicRouteRoute: typeof PublicRouteRouteWithChildren
   R500LazyRoute: typeof R500LazyRoute
+  SetupLazyRoute: typeof SetupLazyRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupLazyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/500': {
       id: '/500'
       path: '/500'
@@ -956,6 +976,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   PublicRouteRoute: PublicRouteRouteWithChildren,
   R500LazyRoute: R500LazyRoute,
+  SetupLazyRoute: SetupLazyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

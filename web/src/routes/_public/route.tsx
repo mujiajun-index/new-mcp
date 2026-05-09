@@ -1,6 +1,13 @@
-import { createFileRoute, Outlet } from '@tanstack/react-router'
+import { createFileRoute, redirect, Outlet } from '@tanstack/react-router'
+import { useAuthStore } from '@/stores/auth-store'
 
 export const Route = createFileRoute('/_public')({
+  beforeLoad: async () => {
+    const { auth } = useAuthStore.getState()
+    if (auth.user) {
+      throw redirect({ to: '/dashboard' })
+    }
+  },
   component: PublicLayout,
 })
 

@@ -1,5 +1,7 @@
 package common
 
+var SystemInitialized = true
+
 const (
 	Version = "v1.0.0"
 

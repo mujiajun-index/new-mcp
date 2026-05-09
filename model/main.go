@@ -66,6 +66,7 @@ func InitDB() error {
 
 func migrateDB() error {
 	return DB.AutoMigrate(
+		&Setup{},
 		&User{},
 		&ApiKey{},
 		&McpService{},

@@ -26,6 +26,8 @@ func main() {
 	}
 	defer model.CloseDB()
 
+	model.CheckSetup()
+
 	gin.SetMode(common.GinMode)
 
 	engine := gin.New()

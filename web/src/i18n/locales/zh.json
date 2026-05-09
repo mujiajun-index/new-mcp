@@ -159,5 +159,22 @@
     "presetWeek": "本周",
     "preset30d": "近30天",
     "presetMonth": "本月"
+  },
+  "setup": {
+    "title": "初始化系统",
+    "description": "创建管理员账号以完成系统初始化。初始化后可正常登录使用。",
+    "heroTitle": "欢迎使用 NewMCP",
+    "heroDesc": "开始使用前，需要创建一个管理员账号来管理系统。",
+    "adminUsername": "管理员用户名",
+    "usernamePlaceholder": "输入管理员用户名",
+    "password": "密码",
+    "passwordPlaceholder": "至少 8 个字符",
+    "confirmPassword": "确认密码",
+    "confirmPasswordPlaceholder": "再次输入密码",
+    "initialize": "初始化系统",
+    "success": "系统初始化成功，正在跳转到登录页...",
+    "usernameRequired": "请输入管理员用户名",
+    "passwordMinLength": "密码长度至少为 8 个字符",
+    "passwordMismatch": "两次输入的密码不一致"
   }
 }
