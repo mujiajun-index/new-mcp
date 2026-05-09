@@ -12,7 +12,20 @@
 
 ## 2. 完整建表 SQL (MySQL 语法)
 
-### 2.1 users - 用户表
+### 2.1 setup - 系统初始化表
+
+```sql
+CREATE TABLE `setup` (
+    `id`             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `version`        VARCHAR(50)     NOT NULL COMMENT '初始化时的系统版本号',
+    `initialized_at` BIGINT          NOT NULL COMMENT '初始化时间 (Unix 时间戳)',
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统初始化记录表';
+```
+
+> 此表最多只有一条记录。系统首次启动时检测此表是否为空，为空则进入 Setup 引导流程，引导完成后写入一条记录。后续访问 Setup 接口返回 403。
+
+### 2.2 users - 用户表
 
 ```sql
 CREATE TABLE `users` (
@@ -32,7 +45,7 @@ CREATE TABLE `users` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
 ```
 
-### 2.2 api_keys - API 密钥表
+### 2.3 api_keys - API 密钥表
 
 ```sql
 CREATE TABLE `api_keys` (
@@ -56,7 +69,7 @@ CREATE TABLE `api_keys` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='API 密钥表';
 ```
 
-### 2.3 mcp_services - MCP 服务注册表
+### 2.4 mcp_services - MCP 服务注册表
 
 ```sql
 CREATE TABLE `mcp_services` (
@@ -113,7 +126,7 @@ CREATE TABLE `mcp_services` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP 服务注册表';
 ```
 
-### 2.4 mcp_groups - MCP 分组表
+### 2.5 mcp_groups - MCP 分组表
 
 ```sql
 CREATE TABLE `mcp_groups` (
@@ -149,7 +162,7 @@ CREATE TABLE `mcp_groups` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP 分组表';
 ```
 
-### 2.5 mcp_group_services - 分组-服务关联表
+### 2.6 mcp_group_services - 分组-服务关联表
 
 ```sql
 CREATE TABLE `mcp_group_services` (
@@ -165,7 +178,7 @@ CREATE TABLE `mcp_group_services` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分组-服务关联表';
 ```
 
-### 2.6 mcp_group_tools - 分组工具过滤表
+### 2.7 mcp_group_tools - 分组工具过滤表
 
 ```sql
 CREATE TABLE `mcp_group_tools` (
@@ -184,7 +197,7 @@ CREATE TABLE `mcp_group_tools` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分组工具过滤表';
 ```
 
-### 2.7 vision_configs - 视觉模型配置表
+### 2.8 vision_configs - 视觉模型配置表
 
 ```sql
 CREATE TABLE `vision_configs` (
@@ -216,7 +229,7 @@ CREATE TABLE `vision_configs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='视觉模型配置表';
 ```
 
-### 2.8 cameras - 摄像头表
+### 2.9 cameras - 摄像头表
 
 ```sql
 CREATE TABLE `cameras` (
@@ -254,7 +267,7 @@ CREATE TABLE `cameras` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='摄像头表';
 ```
 
-### 2.9 cloud_endpoints - 云端主动连接表
+### 2.10 cloud_endpoints - 云端主动连接表
 
 ```sql
 CREATE TABLE `cloud_endpoints` (
@@ -298,7 +311,7 @@ CREATE TABLE `cloud_endpoints` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='云端主动连接表';
 ```
 
-### 2.10 mcp_call_logs - MCP 调用日志表
+### 2.11 mcp_call_logs - MCP 调用日志表
 
 ```sql
 CREATE TABLE `mcp_call_logs` (
@@ -332,7 +345,7 @@ CREATE TABLE `mcp_call_logs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP 调用日志表';
 ```
 
-### 2.11 marketplace_items - 平台市场服务表
+### 2.12 marketplace_items - 平台市场服务表
 
 ```sql
 CREATE TABLE `marketplace_items` (
@@ -379,7 +392,7 @@ CREATE TABLE `marketplace_items` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='平台市场服务表';
 ```
 
-### 2.12 marketplace_reviews - 市场服务审核表（后期）
+### 2.13 marketplace_reviews - 市场服务审核表（后期）
 
 ```sql
 CREATE TABLE `marketplace_reviews` (
@@ -410,6 +423,8 @@ CREATE TABLE `marketplace_reviews` (
 ## 3. ER 关系图
 
 ```
+setup (独立表，最多一条记录，标记系统是否已初始化)
+
 users (1) ──< (N) api_keys
 users (1) ──< (N) mcp_services
 users (1) ──< (N) mcp_groups

@@ -64,7 +64,71 @@ GET /api/v1/services?page=1&page_size=20&sort=created_at&order=desc
 
 ---
 
-## 2. 认证接口
+## 2. 系统初始化接口
+
+> 以下接口为公开接口，无需认证。系统初始化完成后（Setup 记录存在），两个接口均返回 `403 Forbidden`。
+
+### GET /setup
+查询系统初始化状态。
+
+**Response (未初始化):** `200 OK`
+```json
+{
+    "success": true,
+    "data": {
+        "status": false,
+        "admin_init": false,
+        "database_type": "sqlite"
+    }
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| status | bool | 是否已初始化 |
+| admin_init | bool | 是否已存在管理员账号 |
+| database_type | string | 数据库类型: sqlite / mysql / postgres |
+
+**Response (已初始化):** `403 Forbidden`
+```json
+{
+    "success": false,
+    "message": "系统已经初始化完成"
+}
+```
+
+### POST /setup
+执行系统初始化，创建管理员账号。
+
+**Request Body:**
+```json
+{
+    "username": "string (1-64字符, 必填)",
+    "password": "string (至少8字符, 必填)",
+    "confirm_password": "string (必须与password一致, 必填)"
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+    "success": true,
+    "message": "success"
+}
+```
+
+**错误响应:**
+| HTTP 状态码 | message | 说明 |
+|-------------|---------|------|
+| 403 | 系统已经初始化完成 | 重复初始化 |
+| 400 | 用户名长度应在1-64个字符之间 | 用户名校验失败 |
+| 400 | 密码长度至少为8个字符 | 密码过短 |
+| 400 | 两次输入的密码不一致 | 密码确认不匹配 |
+| 500 | 创建管理员账号失败 | 数据库写入异常 |
+
+---
+
+## 3. 认证接口
 
 ### POST /auth/register
 注册新用户。
@@ -157,7 +221,7 @@ GET /api/v1/services?page=1&page_size=20&sort=created_at&order=desc
 
 ---
 
-## 3. MCP 服务接口
+## 4. MCP 服务接口
 
 ### GET /services
 获取当前用户的 MCP 服务列表。
@@ -390,7 +454,7 @@ passive-ws (被动连接):
 
 ---
 
-## 4. MCP 分组接口
+## 5. MCP 分组接口
 
 ### GET /groups
 获取分组列表。
@@ -541,7 +605,7 @@ passive-ws (被动连接):
 
 ---
 
-## 5. 云端主动连接接口
+## 6. 云端主动连接接口
 
 ### GET /connections
 获取云端主动连接列表。
@@ -659,7 +723,7 @@ passive-ws (被动连接):
 
 ---
 
-## 6. 视觉配置接口
+## 7. 视觉配置接口
 
 ### GET /vision/configs
 获取视觉配置列表。
@@ -714,7 +778,7 @@ passive-ws (被动连接):
 
 ---
 
-## 7. 摄像头接口
+## 8. 摄像头接口
 
 ### GET /cameras
 获取摄像头列表。
@@ -766,7 +830,7 @@ passive-ws (被动连接):
 
 ---
 
-## 8. API Key 接口
+## 9. API Key 接口
 
 ### GET /api-keys
 获取 API Key 列表。
@@ -808,7 +872,7 @@ passive-ws (被动连接):
 
 ---
 
-## 9. 管理员接口
+## 10. 管理员接口
 
 > 以下接口需要 admin 角色。
 
@@ -855,7 +919,7 @@ passive-ws (被动连接):
 
 ---
 
-## 10. MCP 协议端点
+## 11. MCP 协议端点
 
 这些端点遵循 MCP 协议规范，不使用上述 REST 响应格式。
 

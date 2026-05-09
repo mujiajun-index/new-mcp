@@ -15,7 +15,7 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 | 模块 | 状态 | 完成度 | 说明 |
 |------|------|--------|------|
 | 项目基础设施 | ✅ 已完成 | 100% | 入口、配置、工具函数、数据库 |
-| 认证系统 | ✅ 已完成 | 100% | 注册/登录/JWT/API Key |
+| 认证系统 | ✅ 已完成 | 100% | 注册/登录/JWT/API Key + 首次运行引导 |
 | MCP 服务管理 | ✅ 已完成 | 95% | CRUD + RefreshTools 接入传输层 |
 | MCP 分组管理 | ✅ 已完成 | 95% | CRUD + 工具聚合完整 |
 | API Key 管理 | ✅ 已完成 | 100% | 创建/编辑/删除/额度/有效期/IP白名单/分组绑定 |
@@ -58,6 +58,7 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 | 首页/Landing | `/` | ✅ | Hero + 功能卡片 + 品牌视觉 |
 | 登录 | `/sign-in` | ✅ | 左右分栏 + JWT 认证 |
 | 注册 | `/sign-up` | ✅ | 居中表单 + 错误提示 |
+| 系统初始化 | `/setup` | ✅ | 首次运行引导 + 创建管理员 + 路由保护 |
 | 控制台 | `/dashboard` | ✅ | 统计卡片 + 服务健康 + 最近日志 (对接真实 API) |
 | 服务列表 | `/services` | ✅ | 表格 + 传输类型筛选 + 搜索 + 启用/禁用 |
 | 注册服务 | `/services/create` | ✅ | 4 步分步表单 (基本信息→传输→认证→测试) |
@@ -82,6 +83,7 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 | 模块 | 文件 | 说明 |
 |------|------|------|
 | API 客户端 | `lib/api.ts` | Axios + JWT Bearer + 请求去重 + 统一错误处理 |
+| Setup 检测 | `lib/setup-check.ts` | 首次运行状态检测 + 缓存 |
 | 认证状态 | `stores/auth-store.ts` | Zustand + localStorage 持久化 |
 | 系统配置 | `stores/system-config-store.ts` | Zustand + 持久化 |
 | 主题 | `context/theme-provider.tsx` | 亮/暗/系统 + 跟随 OS |
@@ -89,7 +91,7 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 | 头部 | `components/layout/header.tsx` | 主题切换 + 用户菜单 |
 | 国际化 | `i18n/locales/{zh,en}.json` | 中英文翻译 |
 | 类型定义 | `types/index.ts` | 完整 TypeScript 接口 (对接后端所有 DTO) |
-| API 模块 | `features/*/api.ts` | 6 个模块 API 层 (services/groups/marketplace/apikeys/connections/admin) |
+| API 模块 | `features/*/api.ts` | 7 个模块 API 层 (services/groups/marketplace/apikeys/connections/admin/setup) |
 
 ### 3.4 前端构建
 
@@ -104,6 +106,10 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 ## 4. 已验证的端到端流程
 
 ### 4.1 基础管理流程 ✅
+
+```
+ 0. 系统首次启动 (空数据库) → 自动跳转 /setup → 创建管理员 → 跳转登录页 ✅
+ 1. 注册用户 POST /auth/register ✅
 
 ```
  1. 注册用户 POST /auth/register ✅
@@ -132,6 +138,7 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 ### 4.3 前端流程 (新增) ✅
 
 ```
+ 0. 首次访问 (空数据库) → 自动跳转 /setup → 填写管理员信息 → 初始化成功 → 跳转登录 ✅
  1. 访问首页 → 查看产品介绍 → 点击注册 ✅
  2. 注册账号 → 自动登录 → 跳转 Dashboard ✅
  3. 注册新 MCP 服务 → 4 步表单 → 测试连接 → 创建 ✅
