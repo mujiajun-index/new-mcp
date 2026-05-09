@@ -10,10 +10,10 @@ import { ArrowLeft, ArrowRight, Check, Loader2, Zap } from 'lucide-react'
 import type { TransportType, AuthType, TestResult } from '@/types'
 
 const transportOptions: { value: TransportType; label: string; desc: string }[] = [
-  { value: 'sse', label: 'SSE', desc: 'Server-Sent Events，适合远程 HTTP 服务' },
   { value: 'streamable-http', label: 'Streamable HTTP', desc: 'MCP 推荐的 HTTP 传输方式' },
-  { value: 'websocket', label: 'WebSocket', desc: '全双工通信，适合实时场景' },
+  { value: 'sse', label: 'SSE', desc: 'Server-Sent Events，适合远程 HTTP 服务' },
   { value: 'stdio', label: 'Stdio', desc: '本地命令行启动，适合自建部署' },
+  { value: 'websocket', label: 'WebSocket', desc: '全双工通信，适合实时场景' },
   { value: 'passive-ws', label: 'Passive WS', desc: '被动 WebSocket 接入' },
 ]
 
@@ -35,7 +35,7 @@ export function ServiceCreatePage() {
     name: '',
     display_name: '',
     description: '',
-    transport_type: 'sse' as TransportType,
+    transport_type: 'streamable-http' as TransportType,
     config: {} as Record<string, unknown>,
     auth_type: 'none' as AuthType,
     auth_config: {} as Record<string, unknown>,
