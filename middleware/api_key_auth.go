@@ -16,6 +16,12 @@ func APIKeyAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		keyStr := c.GetHeader("X-API-Key")
 		if keyStr == "" {
+			auth := c.GetHeader("Authorization")
+			if after, ok := strings.CutPrefix(auth, "Bearer "); ok {
+				keyStr = strings.TrimSpace(after)
+			}
+		}
+		if keyStr == "" {
 			common.Error(c, http.StatusUnauthorized, "缺少 API Key")
 			c.Abort()
 			return
