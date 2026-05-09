@@ -41,6 +41,8 @@
     "signIn": "登录",
     "signUp": "注册",
     "signOut": "退出登录",
+    "confirmSignOut": "确认退出登录",
+    "confirmSignOutDesc": "您确定要退出登录吗？",
     "username": "用户名",
     "password": "密码",
     "email": "邮箱",

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { createFileRoute, Link, useNavigate, useLocation } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
@@ -8,6 +9,10 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
+} from '@/components/ui/alert-dialog'
 import { Server, GitBranch, Cloud, Shield, ArrowRight, Zap, Moon, Sun, Monitor, Languages, LogOut, User, Check } from 'lucide-react'
 
 export const Route = createFileRoute('/')({
@@ -21,6 +26,7 @@ function LandingPage() {
   const location = useLocation()
   const { theme, setTheme } = useTheme()
   const isLoggedIn = !!auth.user
+  const [showSignOutDialog, setShowSignOutDialog] = useState(false)
 
   const navItems = [
     { label: t('nav.home'), to: '/' as const },
@@ -136,6 +142,7 @@ function LandingPage() {
 
             {/* Auth section */}
             {isLoggedIn ? (
+              <>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" className="relative h-8 gap-2 rounded-full pl-2 pr-3">
@@ -159,12 +166,28 @@ function LandingPage() {
                     {t('nav.settings')}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
+                  <DropdownMenuItem onClick={() => setShowSignOutDialog(true)} className="text-destructive focus:text-destructive">
                     <LogOut className="mr-2 h-4 w-4" />
                     {t('auth.signOut')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+
+              <AlertDialog open={showSignOutDialog} onOpenChange={setShowSignOutDialog}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{t('auth.confirmSignOut')}</AlertDialogTitle>
+                    <AlertDialogDescription>{t('auth.confirmSignOutDesc')}</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleSignOut} className="bg-destructive text-white hover:bg-destructive/90">
+                      {t('auth.signOut')}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              </>
             ) : (
               <div className="flex items-center gap-3">
                 <Link to="/sign-in">
