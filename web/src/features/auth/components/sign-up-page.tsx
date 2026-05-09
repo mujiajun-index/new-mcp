@@ -47,11 +47,8 @@ export function SignUpPage() {
     <div className="flex min-h-svh items-center justify-center p-8">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary mb-4">
-            <svg viewBox="0 0 32 32" className="h-6 w-6" fill="none">
-              <path d="M6 8h4l4 8-4 8H6l4-8-4-8Z" fill="currentColor" className="text-primary-foreground" />
-              <path d="M14 8h4l4 8-4 8h-4l4-8-4-8Z" fill="currentColor" className="text-primary-foreground/60" />
-            </svg>
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl overflow-hidden mb-4">
+            <img src="/favicon.svg" alt="Logo" className="h-10 w-10" />
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">{t('auth.createAccount')}</h1>
           <p className="mt-2 text-sm text-muted-foreground">{t('auth.signUpDesc')}</p>

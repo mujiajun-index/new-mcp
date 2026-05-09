@@ -50,11 +50,8 @@ export function SignInPage() {
         </div>
         <div className="relative z-10 flex flex-col justify-between p-12 text-primary-foreground">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 backdrop-blur-sm">
-              <svg viewBox="0 0 32 32" className="h-6 w-6" fill="none">
-                <path d="M6 8h4l4 8-4 8H6l4-8-4-8Z" fill="currentColor" />
-                <path d="M14 8h4l4 8-4 8h-4l4-8-4-8Z" fill="currentColor" opacity={0.6} />
-              </svg>
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl overflow-hidden">
+              <img src="/favicon.svg" alt="Logo" className="h-10 w-10" />
             </div>
             <span className="text-xl font-semibold">NewMCP</span>
           </div>
@@ -75,11 +72,8 @@ export function SignInPage() {
         <div className="w-full max-w-sm">
           <div className="mb-8">
             <div className="flex items-center gap-2 lg:hidden mb-8">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-                <svg viewBox="0 0 32 32" className="h-5 w-5" fill="none">
-                  <path d="M6 8h4l4 8-4 8H6l4-8-4-8Z" fill="currentColor" className="text-primary-foreground" />
-                  <path d="M14 8h4l4 8-4 8h-4l4-8-4-8Z" fill="currentColor" className="text-primary-foreground/60" />
-                </svg>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg overflow-hidden">
+                <img src="/favicon.svg" alt="Logo" className="h-8 w-8" />
               </div>
               <span className="text-lg font-semibold">NewMCP</span>
             </div>

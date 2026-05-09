@@ -67,11 +67,8 @@ export function AppSidebar() {
           'flex h-14 items-center border-b border-sidebar-border px-4',
           collapsed ? 'justify-center' : 'gap-3'
         )}>
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-            <svg viewBox="0 0 32 32" className="h-5 w-5" fill="none">
-              <path d="M6 8h4l4 8-4 8H6l4-8-4-8Z" fill="currentColor" className="text-primary-foreground" />
-              <path d="M14 8h4l4 8-4 8h-4l4-8-4-8Z" fill="currentColor" className="text-primary-foreground/60" />
-            </svg>
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg overflow-hidden">
+            <img src="/favicon.svg" alt="Logo" className="h-8 w-8" />
           </div>
           {!collapsed && (
             <span className="text-base font-semibold tracking-tight">NewMCP</span>

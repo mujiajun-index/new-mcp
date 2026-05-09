@@ -30,11 +30,8 @@ function LandingPage() {
       <nav className="fixed top-0 z-50 w-full border-b bg-background/60 backdrop-blur-xl">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-              <svg viewBox="0 0 32 32" className="h-5 w-5" fill="none">
-                <path d="M6 8h4l4 8-4 8H6l4-8-4-8Z" fill="currentColor" className="text-primary-foreground" />
-                <path d="M14 8h4l4 8-4 8h-4l4-8-4-8Z" fill="currentColor" className="text-primary-foreground/60" />
-              </svg>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg overflow-hidden">
+              <img src="/favicon.svg" alt="Logo" className="h-8 w-8" />
             </div>
             <span className="text-lg font-semibold tracking-tight">NewMCP</span>
           </div>
