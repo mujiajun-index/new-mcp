@@ -43,6 +43,7 @@ func SetApiRouter(engine *gin.Engine) {
 		// MCP Groups
 		auth.GET("/groups", controller.ListGroups)
 		auth.POST("/groups", controller.CreateGroup)
+		auth.GET("/groups/check-name", controller.CheckGroupName)
 		auth.GET("/groups/:id", controller.GetGroup)
 		auth.PUT("/groups/:id", controller.UpdateGroup)
 		auth.DELETE("/groups/:id", controller.DeleteGroup)

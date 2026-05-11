@@ -38,6 +38,22 @@ func CreateGroup(c *gin.Context) {
 	common.Created(c, resp)
 }
 
+func CheckGroupName(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	name := c.Query("name")
+	if name == "" {
+		common.Error(c, http.StatusBadRequest, "name 参数不能为空")
+		return
+	}
+	excludeID, _ := strconv.ParseInt(c.Query("exclude_id"), 10, 64)
+	exists, err := groupService.CheckName(userID, name, excludeID)
+	if err != nil {
+		common.Error(c, http.StatusInternalServerError, "检查失败")
+		return
+	}
+	common.Success(c, map[string]bool{"exists": exists})
+}
+
 func GetGroup(c *gin.Context) {
 	userID := c.GetInt64("user_id")
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)

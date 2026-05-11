@@ -9,6 +9,13 @@ export async function getGroups(params?: ListParams) {
   return res.data
 }
 
+export async function checkGroupName(name: string, excludeId?: number) {
+  const params: Record<string, string | number> = { name }
+  if (excludeId) params.exclude_id = excludeId
+  const res = await api.get('/groups/check-name', { params })
+  return res.data
+}
+
 export async function getGroup(id: number) {
   const res = await api.get(`/groups/${id}`)
   return res.data

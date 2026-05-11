@@ -1,6 +1,6 @@
 # NewMCP API 接口文档
 
-> 版本: V1.0 | 状态: 草案 | 更新日期: 2026-05-11
+> 版本: V1.0 | 状态: 草案 | 更新日期: 2026-05-11 (更新分组接口)
 
 ## 1. 概述
 
@@ -468,9 +468,27 @@ passive-ws (被动连接):
     "name": "robot-control",
     "display_name": "机器人控制",
     "description": "海陆空机器人统一控制分组",
-    "endpoint_slug": "robot",
     "visibility": "private",
     "endpoint_auth": "api_key"
+}
+```
+
+### GET /groups/check-name
+检查分组标识是否重复。
+
+**Query Parameters:**
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| name | string | 要检查的分组标识（必填） |
+| exclude_id | int | 排除的分组 ID，用于编辑场景（可选） |
+
+**Response:** `200 OK`
+```json
+{
+    "success": true,
+    "data": {
+        "exists": false
+    }
 }
 ```
 
@@ -485,8 +503,7 @@ passive-ws (被动连接):
         "id": 1,
         "name": "robot-control",
         "display_name": "机器人控制",
-        "endpoint_slug": "robot",
-        "endpoint_url": "http://localhost:3000/mcp/group/robot",
+        "endpoint_url": "http://localhost:3000/mcp/group/robot-control",
         "services": [
             {
                 "id": 1,
@@ -508,7 +525,19 @@ passive-ws (被动连接):
 ```
 
 ### PUT /groups/:id
-更新分组。
+更新分组（可修改分组标识、显示名称、描述、暴露模式等）。
+
+**Request Body:**
+```json
+{
+    "name": "robot-control-v2",
+    "display_name": "机器人控制 V2",
+    "description": "更新后的描述",
+    "expose_mode": "direct"
+}
+```
+
+> 修改分组标识（name）后会同步更新端点 URL 路径。
 
 ### DELETE /groups/:id
 删除分组。

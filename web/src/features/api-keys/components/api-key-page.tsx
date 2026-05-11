@@ -370,12 +370,12 @@ export function ApiKeyPage() {
                       key={g.id}
                       type="button"
                       className={`rounded px-2 py-0.5 text-xs transition-colors ${
-                        form.groups.split(',').map(s => s.trim()).includes(g.endpoint_slug || g.name)
+                        form.groups.split(',').map(s => s.trim()).includes(g.name)
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-muted hover:bg-muted/80'
                       }`}
                       onClick={() => {
-                        const slug = g.endpoint_slug || g.name
+                        const slug = g.name
                         const current = form.groups ? form.groups.split(',').map(s => s.trim()).filter(Boolean) : []
                         const idx = current.indexOf(slug)
                         if (idx >= 0) {

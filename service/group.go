@@ -41,7 +41,7 @@ func (s *GroupService) Create(userID int64, req *dto.CreateGroupReq) (*dto.Group
 		Name:         req.Name,
 		DisplayName:  req.DisplayName,
 		Description:  req.Description,
-		EndpointSlug: req.EndpointSlug,
+		EndpointSlug: req.Name,
 		Visibility:   req.Visibility,
 		EndpointAuth: req.EndpointAuth,
 		ExposeMode:   req.ExposeMode,
@@ -82,6 +82,10 @@ func (s *GroupService) Update(userID, groupID int64, req *dto.UpdateGroupReq) er
 	if req.Description != nil {
 		group.Description = *req.Description
 	}
+	if req.Name != nil && *req.Name != "" {
+		group.Name = *req.Name
+		group.EndpointSlug = *req.Name
+	}
 	if req.Visibility != nil {
 		group.Visibility = *req.Visibility
 	}
@@ -100,6 +104,10 @@ func (s *GroupService) Delete(userID, groupID int64) error {
 		return err
 	}
 	return group.Delete()
+}
+
+func (s *GroupService) CheckName(userID int64, name string, excludeID int64) (bool, error) {
+	return model.CheckGroupNameExists(userID, name, excludeID)
 }
 
 func (s *GroupService) AddServices(userID, groupID int64, serviceIDs []int64) error {
@@ -275,12 +283,11 @@ func (s *GroupService) toDetail(group *model.McpGroup) (*dto.GroupDetail, error)
 	toolsCount, _ := s.getToolsCount(group.ID)
 
 	return &dto.GroupDetail{
-		ID:           group.ID,
-		Name:         group.Name,
-		DisplayName:  group.DisplayName,
-		Description:  group.Description,
-		EndpointSlug: group.EndpointSlug,
-		EndpointURL:  common.BaseURL + "/mcp/group/" + group.EndpointSlug,
+		ID:          group.ID,
+		Name:        group.Name,
+		DisplayName: group.DisplayName,
+		Description: group.Description,
+		EndpointURL: common.BaseURL + "/mcp/group/" + group.Name,
 		Visibility:   group.Visibility,
 		ExposeMode:   group.ExposeMode,
 		Services:     services,
@@ -290,8 +297,8 @@ func (s *GroupService) toDetail(group *model.McpGroup) (*dto.GroupDetail, error)
 }
 
 func (s *GroupService) buildEndpointInfo(group *model.McpGroup) (*dto.EndpointInfo, error) {
-	httpURL := common.BaseURL + "/mcp/group/" + group.EndpointSlug
-	wsURL := common.BaseURL + "/mcp/ws/group/" + group.EndpointSlug
+	httpURL := common.BaseURL + "/mcp/group/" + group.Name
+	wsURL := common.BaseURL + "/mcp/ws/group/" + group.Name
 
 	return &dto.EndpointInfo{
 		StreamableHTTPURL: httpURL,

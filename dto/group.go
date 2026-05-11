@@ -4,18 +4,18 @@ type CreateGroupReq struct {
 	Name         string `json:"name" binding:"required,min=1,max=128"`
 	DisplayName  string `json:"display_name" binding:"omitempty,max=255"`
 	Description  string `json:"description"`
-	EndpointSlug string `json:"endpoint_slug" binding:"required,min=1,max=128"`
 	Visibility   string `json:"visibility" binding:"omitempty,oneof=private public"`
 	EndpointAuth string `json:"endpoint_auth" binding:"omitempty,oneof=api_key jwt none"`
 	ExposeMode   string `json:"expose_mode" binding:"omitempty,oneof=smart direct"`
 }
 
 type UpdateGroupReq struct {
-	DisplayName  *string `json:"display_name"`
-	Description  *string `json:"description"`
-	Visibility   *string `json:"visibility"`
-	ExposeMode   *string `json:"expose_mode"`
-	Status       *int    `json:"status"`
+	Name        *string `json:"name"`
+	DisplayName *string `json:"display_name"`
+	Description *string `json:"description"`
+	Visibility  *string `json:"visibility"`
+	ExposeMode  *string `json:"expose_mode"`
+	Status      *int    `json:"status"`
 }
 
 type AddGroupServicesReq struct {
@@ -51,17 +51,16 @@ type GroupListItem struct {
 }
 
 type GroupDetail struct {
-	ID          int64               `json:"id"`
-	Name        string              `json:"name"`
-	DisplayName string              `json:"display_name"`
-	Description string              `json:"description"`
-	EndpointSlug string             `json:"endpoint_slug"`
-	EndpointURL string              `json:"endpoint_url"`
-	Visibility  string              `json:"visibility"`
-	ExposeMode  string              `json:"expose_mode"`
-	Services    []GroupServiceItem  `json:"services"`
-	ToolsCount  int                 `json:"tools_count"`
-	Status      int                 `json:"status"`
+	ID           int64              `json:"id"`
+	Name         string             `json:"name"`
+	DisplayName  string             `json:"display_name"`
+	Description  string             `json:"description"`
+	EndpointURL  string             `json:"endpoint_url"`
+	Visibility   string             `json:"visibility"`
+	ExposeMode   string             `json:"expose_mode"`
+	Services     []GroupServiceItem `json:"services"`
+	ToolsCount   int                `json:"tools_count"`
+	Status       int                `json:"status"`
 }
 
 type GroupServiceItem struct {
@@ -72,14 +71,14 @@ type GroupServiceItem struct {
 }
 
 type GroupToolItem struct {
-	ServiceID   int64       `json:"service_id"`
-	Name        string      `json:"name"`
-	OriginalName string     `json:"original_name"`
-	ServiceName string      `json:"service_name"`
-	Description string      `json:"description"`
-	Enabled     bool        `json:"enabled"`
-	NameOverride string     `json:"name_override"`
-	InputSchema interface{} `json:"inputSchema"`
+	ServiceID    int64       `json:"service_id"`
+	Name         string      `json:"name"`
+	OriginalName string      `json:"original_name"`
+	ServiceName  string      `json:"service_name"`
+	Description  string      `json:"description"`
+	Enabled      bool        `json:"enabled"`
+	NameOverride string      `json:"name_override"`
+	InputSchema  interface{} `json:"inputSchema"`
 }
 
 type EndpointInfo struct {

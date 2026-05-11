@@ -157,7 +157,6 @@ export interface GroupDetail {
   name: string
   display_name: string
   description: string
-  endpoint_slug: string
   endpoint_url: string
   visibility: string
   expose_mode: 'direct' | 'smart'
@@ -194,13 +193,13 @@ export interface CreateGroupReq {
   name: string
   display_name?: string
   description?: string
-  endpoint_slug: string
   visibility?: 'private' | 'public'
   endpoint_auth?: 'api_key' | 'jwt' | 'none'
   expose_mode?: 'direct' | 'smart'
 }
 
 export interface UpdateGroupReq {
+  name?: string
   display_name?: string
   description?: string
   visibility?: string

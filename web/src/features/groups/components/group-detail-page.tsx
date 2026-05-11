@@ -1,10 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from '@tanstack/react-router'
-import { getGroup, deleteGroup, removeGroupService, getGroupTools, getGroupEndpoint, updateGroup, batchUpdateGroupTools } from '../api'
+import { getGroup, deleteGroup, removeGroupService, getGroupTools, getGroupEndpoint, updateGroup, batchUpdateGroupTools, checkGroupName } from '../api'
 import { getServices } from '@/features/services/api'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
-import { ArrowLeft, Trash2, Copy, Plus, X, Globe, Radio, Settings2, ChevronDown, ChevronRight, Check } from 'lucide-react'
+import { ArrowLeft, Trash2, Copy, Plus, X, Globe, Radio, Settings2, ChevronDown, ChevronRight, Check, Pencil, Loader2 } from 'lucide-react'
 import { useState, useMemo, useCallback } from 'react'
 import type { BatchToolUpdate } from '@/types'
 
@@ -14,6 +15,10 @@ export function GroupDetailPage() {
   const queryClient = useQueryClient()
   const groupId = Number(id)
   const [showAddService, setShowAddService] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editForm, setEditForm] = useState({ name: '', display_name: '', description: '' })
+  const [nameChecking, setNameChecking] = useState(false)
+  const [nameExists, setNameExists] = useState(false)
   const [showToolManager, setShowToolManager] = useState(false)
   const [toolStates, setToolStates] = useState<Record<string, boolean>>({})
   const [expandedServices, setExpandedServices] = useState<Set<string>>(new Set())
@@ -61,6 +66,19 @@ export function GroupDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['group', id] })
       toast.success('模式已切换')
+    },
+  })
+
+  const updateInfoMutation = useMutation({
+    mutationFn: () => updateGroup(groupId, {
+      name: editForm.name || undefined,
+      display_name: editForm.display_name || undefined,
+      description: editForm.description || undefined,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['group', id] })
+      setEditing(false)
+      toast.success('分组信息已更新')
     },
   })
 
@@ -210,18 +228,86 @@ export function GroupDetailPage() {
     <div className="p-6 lg:p-8 space-y-6 max-w-6xl">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-3 flex-1 min-w-0">
           <Button variant="ghost" size="icon" onClick={() => navigate({ to: '/groups' })}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <div>
-            <h1 className="text-xl font-semibold">{group.display_name || group.name}</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground font-mono">{group.name}</p>
+          <div className="flex-1 min-w-0 space-y-2">
+            {editing ? (
+              <div className="space-y-2">
+                <div>
+                  <label className="text-xs text-muted-foreground">分组标识</label>
+                  <div className="flex gap-2 items-center">
+                    <Input
+                      value={editForm.name}
+                      onChange={(e) => { setEditForm(f => ({ ...f, name: e.target.value })); setNameExists(false) }}
+                      onBlur={async () => {
+                        if (editForm.name.trim() && editForm.name.trim() !== group.name) {
+                          setNameChecking(true)
+                          try {
+                            const res = await checkGroupName(editForm.name.trim(), groupId)
+                            setNameExists(res.data?.exists ?? false)
+                          } catch { setNameExists(false) }
+                          finally { setNameChecking(false) }
+                        } else { setNameExists(false) }
+                      }}
+                      className="h-8 text-sm font-mono"
+                    />
+                    {nameChecking && <span className="text-xs text-muted-foreground shrink-0">检查中...</span>}
+                    {nameExists && <span className="text-xs text-destructive shrink-0">标识已存在</span>}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">显示名称</label>
+                  <Input
+                    value={editForm.display_name}
+                    onChange={(e) => setEditForm(f => ({ ...f, display_name: e.target.value }))}
+                    placeholder={editForm.name}
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">描述</label>
+                  <Input
+                    value={editForm.description}
+                    onChange={(e) => setEditForm(f => ({ ...f, description: e.target.value }))}
+                    placeholder="分组用途说明"
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <Button size="sm" disabled={updateInfoMutation.isPending || nameExists || !editForm.name.trim()} onClick={() => updateInfoMutation.mutate()}>
+                    {updateInfoMutation.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+                    保存
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setEditing(false)}>取消</Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <h1 className="text-xl font-semibold">{group.display_name || group.name}</h1>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span>标识: <code className="font-mono bg-muted px-1 rounded">{group.name}</code></span>
+                </div>
+                {group.description && <p className="text-sm text-muted-foreground">{group.description}</p>}
+              </>
+            )}
           </div>
         </div>
-        <Button variant="outline" size="sm" className="text-destructive" onClick={() => { if (confirm('确定删除此分组？')) deleteMutation.mutate() }}>
-          <Trash2 className="h-3.5 w-3.5 mr-1.5" />删除
-        </Button>
+        <div className="flex gap-2 shrink-0">
+          {!editing && (
+            <Button variant="outline" size="sm" onClick={() => {
+              setEditForm({ name: group.name, display_name: group.display_name || '', description: group.description || '' })
+              setNameExists(false)
+              setEditing(true)
+            }}>
+              <Pencil className="h-3.5 w-3.5 mr-1.5" />编辑
+            </Button>
+          )}
+          <Button variant="outline" size="sm" className="text-destructive" onClick={() => { if (confirm('确定删除此分组？')) deleteMutation.mutate() }}>
+            <Trash2 className="h-3.5 w-3.5 mr-1.5" />删除
+          </Button>
+        </div>
       </div>
 
       {/* Mode switch */}

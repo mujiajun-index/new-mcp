@@ -59,6 +59,16 @@ func (g *McpGroup) Update() error {
 	return DB.Save(g).Error
 }
 
+func CheckGroupNameExists(userID int64, name string, excludeID int64) (bool, error) {
+	var count int64
+	query := DB.Model(&McpGroup{}).Where("user_id = ? AND name = ?", userID, name)
+	if excludeID > 0 {
+		query = query.Where("id != ?", excludeID)
+	}
+	err := query.Count(&count).Error
+	return count > 0, err
+}
+
 func (g *McpGroup) Delete() error {
 	return DB.Delete(g).Error
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation } from '@tanstack/react-query'
-import { createGroup } from '../api'
+import { createGroup, checkGroupName } from '../api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,16 +14,16 @@ export function GroupCreatePage() {
     name: '',
     display_name: '',
     description: '',
-    endpoint_slug: '',
     expose_mode: 'direct' as 'direct' | 'smart',
   })
+  const [nameExists, setNameExists] = useState(false)
+  const [checking, setChecking] = useState(false)
 
   const createMutation = useMutation({
     mutationFn: () => createGroup({
       name: form.name,
       display_name: form.display_name || undefined,
       description: form.description || undefined,
-      endpoint_slug: form.endpoint_slug || form.name,
       expose_mode: form.expose_mode,
     }),
     onSuccess: (res) => {
@@ -31,7 +31,32 @@ export function GroupCreatePage() {
       const id = res.data?.id
       navigate({ to: '/groups/$id', params: { id: String(id) } })
     },
+    onError: () => {
+      toast.error('创建失败，请检查分组标识是否重复')
+    },
   })
+
+  const handleNameBlur = async () => {
+    const name = form.name.trim()
+    if (!name) return
+    setChecking(true)
+    try {
+      const res = await checkGroupName(name)
+      setNameExists(res.data?.exists ?? false)
+    } catch {
+      setNameExists(false)
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const handleCreate = () => {
+    if (nameExists) {
+      toast.error('分组标识已存在，请使用其他名称')
+      return
+    }
+    createMutation.mutate()
+  }
 
   return (
     <div className="p-6 lg:p-8 max-w-2xl mx-auto space-y-6">
@@ -45,16 +70,20 @@ export function GroupCreatePage() {
       <div className="space-y-4 rounded-xl border bg-card p-6">
         <div className="space-y-2">
           <Label htmlFor="name">分组标识 *</Label>
-          <Input id="name" placeholder="my-group" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          <p className="text-xs text-muted-foreground">唯一标识，创建后不可修改</p>
+          <Input
+            id="name"
+            placeholder="my-group"
+            value={form.name}
+            onChange={(e) => { setForm({ ...form, name: e.target.value }); setNameExists(false) }}
+            onBlur={handleNameBlur}
+          />
+          {checking && <p className="text-xs text-muted-foreground">检查中...</p>}
+          {nameExists && <p className="text-xs text-destructive">分组标识已存在</p>}
+          <p className="text-xs text-muted-foreground">唯一标识，同时作为端点路径使用</p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="display_name">显示名称</Label>
           <Input id="display_name" placeholder="我的分组" value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="endpoint_slug">端点 Slug</Label>
-          <Input id="endpoint_slug" placeholder="my-group（留空则使用分组标识）" value={form.endpoint_slug} onChange={(e) => setForm({ ...form, endpoint_slug: e.target.value })} />
         </div>
         <div className="space-y-2">
           <Label htmlFor="description">描述</Label>
@@ -90,8 +119,8 @@ export function GroupCreatePage() {
       <div className="flex justify-end">
         <Button
           className="gap-2"
-          onClick={() => createMutation.mutate()}
-          disabled={!form.name.trim() || createMutation.isPending}
+          onClick={handleCreate}
+          disabled={!form.name.trim() || nameExists || checking || createMutation.isPending}
         >
           {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
           创建分组
