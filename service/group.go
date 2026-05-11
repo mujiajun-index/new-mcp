@@ -127,13 +127,17 @@ func (s *GroupService) UpdateTool(userID, groupID int64, toolName string, req *d
 	if _, err := model.GetGroupByID(userID, groupID); err != nil {
 		return err
 	}
-	// Find existing or create tool filter entry
-	existing, err := model.GetGroupTool(groupID, 0, toolName)
+	serviceID := int64(0)
+	if req.ServiceID != nil {
+		serviceID = *req.ServiceID
+	}
+	existing, err := model.GetGroupTool(groupID, serviceID, toolName)
 	if err != nil {
 		existing = &model.McpGroupTool{
-			GroupID:  groupID,
-			ToolName: toolName,
-			Enabled:  true,
+			GroupID:   groupID,
+			ServiceID: serviceID,
+			ToolName:  toolName,
+			Enabled:   true,
 		}
 	}
 	if req.Enabled != nil {
@@ -146,6 +150,29 @@ func (s *GroupService) UpdateTool(userID, groupID int64, toolName string, req *d
 		existing.DescriptionOverride = *req.DescriptionOverride
 	}
 	return existing.Upsert()
+}
+
+func (s *GroupService) BatchUpdateTools(userID, groupID int64, tools []dto.BatchToolUpdate) error {
+	if _, err := model.GetGroupByID(userID, groupID); err != nil {
+		return err
+	}
+	for _, t := range tools {
+		existing, err := model.GetGroupTool(groupID, t.ServiceID, t.ToolName)
+		if err != nil {
+			existing = &model.McpGroupTool{
+				GroupID:   groupID,
+				ServiceID: t.ServiceID,
+				ToolName:  t.ToolName,
+				Enabled:   t.Enabled,
+			}
+		} else {
+			existing.Enabled = t.Enabled
+		}
+		if err := existing.Upsert(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *GroupService) RefreshAll(userID, groupID int64) error {
@@ -169,7 +196,13 @@ func (s *GroupService) getToolsCount(groupID int64) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return len(tools), nil
+	count := 0
+	for _, t := range tools {
+		if t.Enabled {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func (s *GroupService) getAggregatedTools(groupID int64) ([]dto.GroupToolItem, error) {
@@ -207,6 +240,7 @@ func (s *GroupService) getAggregatedTools(groupID int64) ([]dto.GroupToolItem, e
 				nameOverride = f.NameOverride
 			}
 			result = append(result, dto.GroupToolItem{
+				ServiceID:    gs.ServiceID,
 				Name:         svc.Name + "__" + t.Name,
 				OriginalName: t.Name,
 				ServiceName:  svc.Name,

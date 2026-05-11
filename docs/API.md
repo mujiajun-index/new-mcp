@@ -1,6 +1,6 @@
 # NewMCP API 接口文档
 
-> 版本: V1.0 | 状态: 草案 | 更新日期: 2026-05-03
+> 版本: V1.0 | 状态: 草案 | 更新日期: 2026-05-11
 
 ## 1. 概述
 
@@ -535,6 +535,7 @@ passive-ws (被动连接):
     "success": true,
     "data": [
         {
+            "service_id": 1,
             "name": "sea_bot__navigate",
             "original_name": "navigate",
             "service_name": "sea-bot",
@@ -544,6 +545,7 @@ passive-ws (被动连接):
             "inputSchema": { ... }
         },
         {
+            "service_id": 2,
             "name": "air_drone__takeoff",
             "original_name": "takeoff",
             "service_name": "air-drone",
@@ -561,9 +563,39 @@ passive-ws (被动连接):
 **Request Body:**
 ```json
 {
+    "service_id": 1,
     "enabled": false,
     "name_override": "custom_name",
     "description_override": "自定义描述"
+}
+```
+
+### PUT /groups/:id/tools/batch
+批量更新工具启用/禁用状态。
+
+**Request Body:**
+```json
+{
+    "tools": [
+        {
+            "service_id": 1,
+            "tool_name": "navigate",
+            "enabled": false
+        },
+        {
+            "service_id": 2,
+            "tool_name": "takeoff",
+            "enabled": true
+        }
+    ]
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+    "success": true,
+    "message": "success"
 }
 ```
 

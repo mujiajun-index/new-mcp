@@ -275,6 +275,10 @@ export const Route = createFileRoute('/_authenticated/admin')({
 - 端点信息卡片: Streamable HTTP URL / WebSocket URL / 连接配置 JSON (一键复制)
 - 已添加服务列表 (可拖拽排序、启用/禁用、移除)
 - 聚合工具列表 (带命名空间前缀、可单独启用/禁用/重命名)
+  - "管理工具" 按钮: 点击展开工具管理面板
+  - 工具管理面板: 按服务分组展示所有工具，支持搜索过滤
+  - 每个工具可独立启用/禁用（勾选框），支持按服务批量启用/禁用
+  - 批量保存变更，调用 `PUT /groups/:id/tools/batch` 接口
 - Smart 模式下额外显示: 搜索引擎状态、已索引文档数
 - "添加服务" 按钮 (弹出服务选择器)
 

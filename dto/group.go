@@ -23,9 +23,20 @@ type AddGroupServicesReq struct {
 }
 
 type UpdateToolReq struct {
-	Enabled            *bool   `json:"enabled"`
-	NameOverride       *string `json:"name_override"`
+	ServiceID           *int64  `json:"service_id"`
+	Enabled             *bool   `json:"enabled"`
+	NameOverride        *string `json:"name_override"`
 	DescriptionOverride *string `json:"description_override"`
+}
+
+type BatchToolUpdate struct {
+	ServiceID int64  `json:"service_id" binding:"required"`
+	ToolName  string `json:"tool_name" binding:"required"`
+	Enabled   bool   `json:"enabled"`
+}
+
+type BatchUpdateToolsReq struct {
+	Tools []BatchToolUpdate `json:"tools" binding:"required,min=1"`
 }
 
 type GroupListItem struct {
@@ -61,6 +72,7 @@ type GroupServiceItem struct {
 }
 
 type GroupToolItem struct {
+	ServiceID   int64       `json:"service_id"`
 	Name        string      `json:"name"`
 	OriginalName string     `json:"original_name"`
 	ServiceName string      `json:"service_name"`

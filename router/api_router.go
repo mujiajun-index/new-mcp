@@ -50,6 +50,7 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.DELETE("/groups/:id/services/:serviceId", controller.RemoveGroupService)
 		auth.GET("/groups/:id/tools", controller.GetGroupTools)
 		auth.PUT("/groups/:id/tools/:toolName", controller.UpdateGroupTool)
+		auth.PUT("/groups/:id/tools/batch", controller.BatchUpdateGroupTools)
 		auth.POST("/groups/:id/refresh", controller.RefreshGroup)
 		auth.GET("/groups/:id/endpoint", controller.GetGroupEndpoint)
 

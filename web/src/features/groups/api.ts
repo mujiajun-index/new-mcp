@@ -1,7 +1,7 @@
 import { api } from '@/lib/api'
 import type {
-  ListParams, GroupListItem, GroupDetail,
-  CreateGroupReq, UpdateGroupReq, GroupToolItem, EndpointInfo,
+  ListParams,
+  CreateGroupReq, UpdateGroupReq, BatchToolUpdate,
 } from '@/types'
 
 export async function getGroups(params?: ListParams) {
@@ -45,11 +45,17 @@ export async function getGroupTools(groupId: number) {
 }
 
 export async function updateGroupTool(groupId: number, toolName: string, data: {
+  service_id?: number
   enabled?: boolean
   name_override?: string
   description_override?: string
 }) {
   const res = await api.put(`/groups/${groupId}/tools/${encodeURIComponent(toolName)}`, data)
+  return res.data
+}
+
+export async function batchUpdateGroupTools(groupId: number, tools: BatchToolUpdate[]) {
+  const res = await api.put(`/groups/${groupId}/tools/batch`, { tools })
   return res.data
 }
 

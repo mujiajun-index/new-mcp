@@ -368,6 +368,13 @@ func (h *GatewayHandler) getDirectTools(ctx context.Context, groupID int64) ([]m
 		return nil, err
 	}
 
+	toolFilters, _ := model.GetGroupTools(groupID)
+	filterMap := make(map[string]bool)
+	for _, f := range toolFilters {
+		key := fmt.Sprintf("%d:%s", f.ServiceID, f.ToolName)
+		filterMap[key] = f.Enabled
+	}
+
 	var allTools []map[string]interface{}
 	for _, gs := range groupServices {
 		svc, err := model.GetServiceByIDWithoutUser(gs.ServiceID)
@@ -380,6 +387,10 @@ func (h *GatewayHandler) getDirectTools(ctx context.Context, groupID int64) ([]m
 
 		for _, t := range tools {
 			name, _ := t["name"].(string)
+			key := fmt.Sprintf("%d:%s", gs.ServiceID, name)
+			if enabled, ok := filterMap[key]; ok && !enabled {
+				continue
+			}
 			t["name"] = svc.Name + "__" + name
 			allTools = append(allTools, t)
 		}

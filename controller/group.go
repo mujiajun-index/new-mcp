@@ -127,6 +127,21 @@ func UpdateGroupTool(c *gin.Context) {
 	common.Success(c, nil)
 }
 
+func BatchUpdateGroupTools(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	var req dto.BatchUpdateToolsReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误")
+		return
+	}
+	if err := groupService.BatchUpdateTools(userID, id, req.Tools); err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, nil)
+}
+
 func RefreshGroup(c *gin.Context) {
 	userID := c.GetInt64("user_id")
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)

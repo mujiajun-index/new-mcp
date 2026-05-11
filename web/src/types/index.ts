@@ -174,6 +174,7 @@ export interface GroupServiceItem {
 }
 
 export interface GroupToolItem {
+  service_id: number
   name: string
   original_name: string
   service_name: string
@@ -181,6 +182,12 @@ export interface GroupToolItem {
   enabled: boolean
   name_override: string
   inputSchema: Record<string, unknown>
+}
+
+export interface BatchToolUpdate {
+  service_id: number
+  tool_name: string
+  enabled: boolean
 }
 
 export interface CreateGroupReq {
