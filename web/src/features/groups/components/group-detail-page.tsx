@@ -311,7 +311,7 @@ export function GroupDetailPage() {
                   <span className="text-sm font-medium">{s.name}</span>
                   <span className="text-xs text-muted-foreground">{s.tools_count} 工具</span>
                 </div>
-                <Button variant="ghost" size="sm" className="text-destructive h-7" onClick={() => removeServiceMutation.mutate(s.id)}>
+                <Button variant="ghost" size="sm" className="text-destructive h-7" onClick={() => { if (confirm(`确定移除服务「${s.name}」？移除后该服务的工具将从分组中消失。`)) removeServiceMutation.mutate(s.id) }}>
                   <X className="h-3.5 w-3.5" />
                 </Button>
               </div>
