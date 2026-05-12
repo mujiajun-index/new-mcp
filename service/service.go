@@ -77,6 +77,13 @@ func (s *McpServiceService) Create(userID int64, req *dto.CreateServiceReq) (*dt
 		return nil, err
 	}
 
+	// 异步加载工具
+	if SessionPool != nil {
+		go func() {
+			SessionPool.GetOrConnect(context.Background(), svc)
+		}()
+	}
+
 	return s.toDetail(svc), nil
 }
 
@@ -276,6 +283,14 @@ func (s *McpServiceService) CreateAdminService(adminID int64, req *dto.CreateSer
 	if err := svc.Insert(); err != nil {
 		return nil, err
 	}
+
+	// 异步加载工具
+	if SessionPool != nil {
+		go func() {
+			SessionPool.GetOrConnect(context.Background(), svc)
+		}()
+	}
+
 	return s.toDetail(svc), nil
 }
 
