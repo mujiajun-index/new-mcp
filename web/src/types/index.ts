@@ -60,7 +60,7 @@ export interface ProfileResp {
 
 // --- Services ---
 export type TransportType = 'stdio' | 'sse' | 'streamable-http' | 'websocket' | 'passive-ws'
-export type AuthType = 'none' | 'api_key' | 'bearer' | 'basic' | 'oauth'
+export type AuthType = 'none' | 'api_key' | 'bearer' | 'custom'
 
 export interface ServiceListItem {
   id: number

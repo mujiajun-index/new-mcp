@@ -6,7 +6,7 @@ type CreateServiceReq struct {
 	Description   string                 `json:"description"`
 	TransportType string                 `json:"transport_type" binding:"required,oneof=stdio sse streamable-http websocket passive-ws"`
 	Config        map[string]interface{} `json:"config"`
-	AuthType      string                 `json:"auth_type" binding:"omitempty,oneof=none api_key bearer basic oauth"`
+	AuthType      string                 `json:"auth_type" binding:"omitempty,oneof=none api_key bearer custom"`
 	AuthConfig    map[string]interface{} `json:"auth_config"`
 	Tags          []string               `json:"tags"`
 }

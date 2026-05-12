@@ -21,6 +21,7 @@ const authOptions: { value: AuthType; label: string }[] = [
   { value: 'none', label: '无需认证' },
   { value: 'api_key', label: 'API Key' },
   { value: 'bearer', label: 'Bearer Token' },
+  { value: 'custom', label: '自定义配置' },
 ]
 
 const steps = ['基本信息', '传输配置', '认证配置', '连接测试']
@@ -47,6 +48,8 @@ export function ServiceCreatePage() {
     // Auth fields
     api_key: '',
     bearer_token: '',
+    custom_header_key: '',
+    custom_header_value: '',
   })
 
   const createMutation = useMutation({
@@ -84,6 +87,8 @@ export function ServiceCreatePage() {
       headers['X-API-Key'] = form.api_key
     } else if (form.auth_type === 'bearer' && form.bearer_token) {
       headers['Authorization'] = `Bearer ${form.bearer_token}`
+    } else if (form.auth_type === 'custom' && form.custom_header_key) {
+      headers[form.custom_header_key] = form.custom_header_value
     }
 
     switch (form.transport_type) {
@@ -253,6 +258,16 @@ export function ServiceCreatePage() {
           )}
           {form.auth_type === 'none' && (
             <p className="text-sm text-muted-foreground">该服务无需认证</p>
+          )}
+          {form.auth_type === 'custom' && (
+            <div className="space-y-2">
+              <Label>自定义请求头</Label>
+              <div className="flex gap-2">
+                <Input placeholder="Header Key，如 CONTEXT7_API_KEY" value={form.custom_header_key} onChange={(e) => setForm({ ...form, custom_header_key: e.target.value })} />
+                <Input placeholder="Value" value={form.custom_header_value} onChange={(e) => setForm({ ...form, custom_header_value: e.target.value })} />
+              </div>
+              <p className="text-xs text-muted-foreground">将自动设置为请求头 {`{`}"Key": "Value"{`}`}</p>
+            </div>
           )}
         </div>
       )}
