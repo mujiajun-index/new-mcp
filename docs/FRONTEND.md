@@ -251,9 +251,13 @@ export const Route = createFileRoute('/_authenticated/admin')({
        - 被动接入 → passive-ws
   2. 传输配置: 选择传输类型 → 动态显示对应配置表单
      - stdio: 命令、参数、环境变量
-     - sse/http: URL、请求头
+     - sse/http: URL
      - websocket: URL
-  3. 认证配置: 认证类型 → 对应的凭证输入
+  3. 认证配置: 认证类型 → 对应的凭证输入，自动生成请求头
+     - 无需认证: 不设置请求头
+     - API Key: 输入 key → 自动设置 `X-API-Key` 请求头
+     - Bearer Token: 输入 token → 自动设置 `Authorization: Bearer <token>` 请求头
+     - 自定义配置: 输入 Key/Value → 自动设置自定义请求头
   4. 连接测试: 显示测试结果，确认后提交
 
 ### 4.5 服务详情 `/services/:id`

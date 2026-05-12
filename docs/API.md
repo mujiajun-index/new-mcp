@@ -271,7 +271,9 @@ GET /api/v1/services?page=1&page_size=20&sort=created_at&order=desc
     "transport_type": "streamable-http",
     "config": {
         "url": "https://mcp.exa.ai/mcp",
-        "headers": {}
+        "headers": {
+            "Authorization": "Bearer exa-xxxxx"
+        }
     },
     "auth_type": "bearer",
     "auth_config": {
@@ -280,6 +282,17 @@ GET /api/v1/services?page=1&page_size=20&sort=created_at&order=desc
     "tags": ["search", "web"]
 }
 ```
+
+**auth_type 可选值:**
+
+| auth_type | 说明 | headers 自动生成规则 |
+|-----------|------|---------------------|
+| none | 无需认证 | `{}` |
+| api_key | API Key 认证 | `{"X-API-Key": "<用户输入>"}` |
+| bearer | Bearer Token 认证 | `{"Authorization": "Bearer <用户输入>"}` |
+| custom | 自定义请求头 | `{"<用户输入Key>": "<用户输入Value>"}` |
+
+> 认证信息会自动写入 `config.headers`，由后端 Transport Adapter 在每次 HTTP 请求时携带。
 
 **config 格式按 transport_type 不同:**
 
@@ -304,15 +317,16 @@ streamable-http:
 ```json
 {
     "url": "http://localhost:3000/mcp",
-    "headers": {}
+    "headers": {
+        "Authorization": "Bearer exa-xxxxx"
+    }
 }
 ```
 
 websocket:
 ```json
 {
-    "url": "wss://remote-server.com/mcp",
-    "headers": {}
+    "url": "wss://remote-server.com/mcp"
 }
 ```
 
