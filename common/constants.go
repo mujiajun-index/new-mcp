@@ -14,7 +14,7 @@ const (
 	StatusDisabled = 2
 
 	// API Key
-	ApiKeyPrefix = "nm-"
+	ApiKeyPrefix = "sk-"
 
 	// Transport types
 	TransportStdio          = "stdio"

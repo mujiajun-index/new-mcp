@@ -646,7 +646,7 @@ passive-ws (被动连接):
             "type": "streamable-http",
             "url": "http://localhost:3000/mcp/group/robot",
             "headers": {
-                "X-API-Key": "nm-xxxxxxxxxxxx"
+                "X-API-Key": "sk-xxxxxxxxxxxx"
             }
         },
         "mcp_client_config": {
@@ -655,7 +655,7 @@ passive-ws (被动连接):
                     "type": "streamable-http",
                     "url": "http://localhost:3000/mcp/group/robot",
                     "headers": {
-                        "X-API-Key": "nm-xxxxxxxxxxxx"
+                        "X-API-Key": "sk-xxxxxxxxxxxx"
                     }
                 }
             }
@@ -918,8 +918,8 @@ passive-ws (被动连接):
     "data": {
         "id": 1,
         "name": "Claude Code Key",
-        "key": "nm-a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
-        "key_prefix": "nm-a1b2c3d4",
+        "key": "sk-a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
+        "key_prefix": "sk-a1b2c3d4",
         "permissions": { ... },
         "expires_at": "2027-01-01T00:00:00Z"
     }

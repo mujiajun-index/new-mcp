@@ -117,7 +117,7 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
  3. 获取资料 GET /auth/profile ✅ → JWT 鉴权通过
  4. 创建 MCP 服务 POST /services ✅
  5. 创建 MCP 分组 POST /groups ✅
- 6. 创建 API Key POST /api-keys ✅ → nm- 前缀，仅创建时返回完整 key
+ 6. 创建 API Key POST /api-keys ✅ → sk- 前缀，仅创建时返回完整 key
  7. MCP 协议握手 POST /mcp (initialize) ✅
  8. 获取工具列表 POST /mcp (tools/list) ✅ → Smart 模式 3 个元工具
  9. 创建小智连接 POST /connections ✅ → JWT 解析

@@ -354,7 +354,7 @@ server {
             "type": "streamable-http",
             "url": "http://localhost:3000/mcp/group/robot",
             "headers": {
-                "X-API-Key": "nm-your-api-key"
+                "X-API-Key": "sk-your-api-key"
             }
         }
     }
@@ -372,7 +372,7 @@ server {
             "type": "streamable-http",
             "url": "http://localhost:3000/mcp",
             "headers": {
-                "X-API-Key": "nm-your-api-key"
+                "X-API-Key": "sk-your-api-key"
             }
         }
     }

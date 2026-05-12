@@ -307,14 +307,14 @@ func (s *GroupService) buildEndpointInfo(group *model.McpGroup) (*dto.EndpointIn
 		ConnectionConfig: map[string]interface{}{
 			"type":    "streamable-http",
 			"url":     httpURL,
-			"headers": map[string]string{"X-API-Key": "nm-xxxxxxxxxxxx"},
+			"headers": map[string]string{"X-API-Key": "sk-xxxxxxxxxxxx"},
 		},
 		McpClientConfig: map[string]interface{}{
 			"mcpServers": map[string]interface{}{
 				group.Name: map[string]interface{}{
 					"type":    "streamable-http",
 					"url":     httpURL,
-					"headers": map[string]string{"X-API-Key": "nm-xxxxxxxxxxxx"},
+					"headers": map[string]string{"X-API-Key": "sk-xxxxxxxxxxxx"},
 				},
 			},
 		},
