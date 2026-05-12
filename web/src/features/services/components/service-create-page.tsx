@@ -21,8 +21,6 @@ const authOptions: { value: AuthType; label: string }[] = [
   { value: 'none', label: '无需认证' },
   { value: 'api_key', label: 'API Key' },
   { value: 'bearer', label: 'Bearer Token' },
-  { value: 'basic', label: 'Basic Auth' },
-  { value: 'oauth', label: 'OAuth' },
 ]
 
 const steps = ['基本信息', '传输配置', '认证配置', '连接测试']
@@ -46,12 +44,9 @@ export function ServiceCreatePage() {
     env: '',
     // HTTP/SSE/WS fields
     url: '',
-    headers: '',
     // Auth fields
     api_key: '',
     bearer_token: '',
-    basic_user: '',
-    basic_pass: '',
   })
 
   const createMutation = useMutation({
@@ -84,6 +79,13 @@ export function ServiceCreatePage() {
   })
 
   function buildConfig(): Record<string, unknown> {
+    const headers: Record<string, string> = {}
+    if (form.auth_type === 'api_key' && form.api_key) {
+      headers['X-API-Key'] = form.api_key
+    } else if (form.auth_type === 'bearer' && form.bearer_token) {
+      headers['Authorization'] = `Bearer ${form.bearer_token}`
+    }
+
     switch (form.transport_type) {
       case 'stdio':
         return {
@@ -93,10 +95,7 @@ export function ServiceCreatePage() {
         }
       case 'sse':
       case 'streamable-http':
-        return {
-          url: form.url,
-          headers: form.headers ? JSON.parse(form.headers) : {},
-        }
+        return { url: form.url, headers }
       case 'websocket':
       case 'passive-ws':
         return { url: form.url }
@@ -109,7 +108,6 @@ export function ServiceCreatePage() {
     switch (form.auth_type) {
       case 'api_key': return { key: form.api_key }
       case 'bearer': return { token: form.bearer_token }
-      case 'basic': return { username: form.basic_user, password: form.basic_pass }
       default: return {}
     }
   }
@@ -211,12 +209,6 @@ export function ServiceCreatePage() {
                 <Label htmlFor="url">服务 URL *</Label>
                 <Input id="url" placeholder="https://example.com/mcp" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
               </div>
-              {(form.transport_type === 'sse' || form.transport_type === 'streamable-http') && (
-                <div className="space-y-2">
-                  <Label htmlFor="headers">请求头 (JSON)</Label>
-                  <Input id="headers" placeholder='{"Authorization": "Bearer xxx"}' value={form.headers} onChange={(e) => setForm({ ...form, headers: e.target.value })} />
-                </div>
-              )}
             </>
           )}
         </div>
@@ -249,25 +241,15 @@ export function ServiceCreatePage() {
             <div className="space-y-2">
               <Label>API Key</Label>
               <Input placeholder="sk-xxx" value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} />
+              <p className="text-xs text-muted-foreground">将自动设置为请求头 X-API-Key</p>
             </div>
           )}
           {form.auth_type === 'bearer' && (
             <div className="space-y-2">
               <Label>Token</Label>
               <Input placeholder="eyJhbGci..." value={form.bearer_token} onChange={(e) => setForm({ ...form, bearer_token: e.target.value })} />
+              <p className="text-xs text-muted-foreground">将自动设置为请求头 Authorization: Bearer &lt;token&gt;</p>
             </div>
-          )}
-          {form.auth_type === 'basic' && (
-            <>
-              <div className="space-y-2">
-                <Label>用户名</Label>
-                <Input value={form.basic_user} onChange={(e) => setForm({ ...form, basic_user: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label>密码</Label>
-                <Input type="password" value={form.basic_pass} onChange={(e) => setForm({ ...form, basic_pass: e.target.value })} />
-              </div>
-            </>
           )}
           {form.auth_type === 'none' && (
             <p className="text-sm text-muted-foreground">该服务无需认证</p>
