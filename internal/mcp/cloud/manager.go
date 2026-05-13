@@ -2,6 +2,7 @@ package cloud
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -108,6 +109,15 @@ func (m *Manager) startXiaoZhi(ep *model.CloudEndpoint) error {
 	m.mu.Unlock()
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[cloud] endpoint %d (%s) panic: %v", ep.ID, ep.Name, r)
+				client.updateStatus(common.ConnDisconnected, fmt.Sprintf("panic: %v", r))
+				m.mu.Lock()
+				delete(m.clients, ep.ID)
+				m.mu.Unlock()
+			}
+		}()
 		if err := m.connectWithRetry(client); err != nil {
 			log.Printf("[cloud] endpoint %d (%s) connect failed: %v", ep.ID, ep.Name, err)
 			m.mu.Lock()
@@ -120,8 +130,6 @@ func (m *Manager) startXiaoZhi(ep *model.CloudEndpoint) error {
 }
 
 func (m *Manager) startCustom(ep *model.CloudEndpoint) error {
-	// Custom WSS endpoints follow the same pattern as XiaoZhi
-	// but without XiaoZhi-specific JWT parsing
 	client := NewXiaoZhiClient(ep, m.pool, m.toolRouter)
 
 	m.mu.Lock()
@@ -129,6 +137,15 @@ func (m *Manager) startCustom(ep *model.CloudEndpoint) error {
 	m.mu.Unlock()
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[cloud] endpoint %d (%s) panic: %v", ep.ID, ep.Name, r)
+				client.updateStatus(common.ConnDisconnected, fmt.Sprintf("panic: %v", r))
+				m.mu.Lock()
+				delete(m.clients, ep.ID)
+				m.mu.Unlock()
+			}
+		}()
 		if err := m.connectWithRetry(client); err != nil {
 			log.Printf("[cloud] endpoint %d (%s) connect failed: %v", ep.ID, ep.Name, err)
 			m.mu.Lock()
@@ -144,7 +161,7 @@ func (m *Manager) startCustom(ep *model.CloudEndpoint) error {
 func (m *Manager) connectWithRetry(client *XiaoZhiClient) error {
 	backoff := 2 * time.Second
 	maxBackoff := 30 * time.Second
-	maxRetries := 10
+	maxRetries := 1
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		select {
@@ -167,6 +184,7 @@ func (m *Manager) connectWithRetry(client *XiaoZhiClient) error {
 			backoff = 2 * time.Second
 		} else {
 			log.Printf("[cloud] endpoint %d connect attempt %d failed: %v", client.endpointID, attempt+1, err)
+			client.updateStatus(common.ConnDisconnected, err.Error())
 		}
 
 		select {
@@ -181,5 +199,7 @@ func (m *Manager) connectWithRetry(client *XiaoZhiClient) error {
 		}
 	}
 
+	// Exhausted all retries, mark as disconnected
+	client.updateStatus(common.ConnDisconnected, "max retries exceeded")
 	return nil
 }

@@ -49,6 +49,7 @@ type XiaoZhiClient struct {
 	connected bool
 	cancel    context.CancelFunc
 	done      chan struct{}
+	closeOnce sync.Once
 }
 
 func NewXiaoZhiClient(ep *model.CloudEndpoint, pool *bridge.SessionPool, router *bridge.ToolRouter) *XiaoZhiClient {
@@ -80,6 +81,8 @@ func (c *XiaoZhiClient) Connect(ctx context.Context) error {
 	c.mu.Lock()
 	c.conn = conn
 	c.connected = true
+	c.done = make(chan struct{})
+	c.closeOnce = sync.Once{}
 	c.mu.Unlock()
 
 	// Update DB status
@@ -120,6 +123,9 @@ func (c *XiaoZhiClient) Done() <-chan struct{} {
 
 func (c *XiaoZhiClient) messageLoop(ctx context.Context) {
 	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[xiaozhi:%d] messageLoop panic: %v", c.endpointID, r)
+		}
 		c.mu.Lock()
 		c.connected = false
 		if c.conn != nil {
@@ -127,7 +133,7 @@ func (c *XiaoZhiClient) messageLoop(ctx context.Context) {
 		}
 		c.mu.Unlock()
 		c.updateStatus(common.ConnDisconnected, "connection lost")
-		close(c.done)
+		c.closeOnce.Do(func() { close(c.done) })
 	}()
 
 	for {

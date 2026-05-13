@@ -37,6 +37,13 @@ export function ConnectionCreatePage() {
 
   const apiKeys = (keysData?.data || []).filter((k: { status: number }) => k.status === 1)
 
+  const canSubmit =
+    form.name.trim() !== '' &&
+    form.api_key_id !== 0 &&
+    (form.cloud_type === 'ssh'
+      ? form.host.trim() !== ''
+      : form.wss_url.trim() !== '')
+
   const createMutation = useMutation({
     mutationFn: () => {
       const config: Record<string, unknown> = {}
@@ -124,9 +131,9 @@ export function ConnectionCreatePage() {
         )}
 
         <div className="space-y-2">
-          <Label>绑定 API Key</Label>
+          <Label>绑定 API Key *</Label>
           {apiKeys.length === 0 ? (
-            <p className="text-xs text-muted-foreground">请先创建 API Key</p>
+            <p className="text-xs text-muted-foreground">请先创建 API Key 后再添加连接</p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {apiKeys.map((k: { id: number; name: string; key_prefix: string }) => (
@@ -149,7 +156,7 @@ export function ConnectionCreatePage() {
       <div className="flex justify-end">
         <Button
           onClick={() => createMutation.mutate()}
-          disabled={!form.name.trim() || createMutation.isPending}
+          disabled={!canSubmit || createMutation.isPending}
         >
           {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           创建连接
