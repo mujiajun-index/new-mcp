@@ -11,39 +11,17 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
-	"github.com/mujkjk/newmcp/internal/mcp/smart"
+	"github.com/mujkjk/newmcp/internal/mcp/handler"
 	"github.com/mujkjk/newmcp/model"
 )
-
-type jsonRPCRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      interface{}     `json:"id"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params"`
-}
-
-type jsonRPCResponse struct {
-	JSONRPC string      `json:"jsonrpc"`
-	ID      interface{} `json:"id"`
-	Result  interface{} `json:"result,omitempty"`
-	Error   *rpcError   `json:"error,omitempty"`
-}
-
-type rpcError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
 
 type XiaoZhiClient struct {
 	endpointID int64
 	wssURL     string
-	groupID    int64
 	apiKeyID   int64
 
-	conn        *websocket.Conn
-	pool        *bridge.SessionPool
-	toolRouter  *bridge.ToolRouter
-	search      *smart.SearchEngine
+	conn    *websocket.Conn
+	handler *handler.GatewayHandler
 
 	mu        sync.Mutex
 	connected bool
@@ -60,11 +38,8 @@ func NewXiaoZhiClient(ep *model.CloudEndpoint, pool *bridge.SessionPool, router 
 	return &XiaoZhiClient{
 		endpointID: ep.ID,
 		wssURL:     ep.WssURL,
-		groupID:    derefInt64(ep.GroupID),
 		apiKeyID:   apiKeyID,
-		pool:       pool,
-		toolRouter: router,
-		search:     smart.NewSearchEngine(),
+		handler:    handler.NewGatewayHandler(pool, router),
 		done:       make(chan struct{}),
 	}
 }
@@ -78,6 +53,11 @@ func (c *XiaoZhiClient) Connect(ctx context.Context) error {
 		return fmt.Errorf("dial xiaozhi: %w", err)
 	}
 
+	// Auto-respond to pings from the server
+	conn.SetPingHandler(func(appData string) error {
+		return conn.WriteMessage(websocket.PongMessage, []byte(appData))
+	})
+
 	c.mu.Lock()
 	c.conn = conn
 	c.connected = true
@@ -85,10 +65,9 @@ func (c *XiaoZhiClient) Connect(ctx context.Context) error {
 	c.closeOnce = sync.Once{}
 	c.mu.Unlock()
 
-	// Update DB status
 	c.updateStatus(common.ConnConnected, "")
 
-	ctx, c.cancel = context.WithCancel(ctx)
+	ctx, c.cancel = context.WithCancel(context.Background())
 	go c.messageLoop(ctx)
 	go c.pingLoop(ctx)
 
@@ -121,6 +100,22 @@ func (c *XiaoZhiClient) Done() <-chan struct{} {
 	return c.done
 }
 
+func (c *XiaoZhiClient) buildLogCtx() *handler.LogContext {
+	logCtx := &handler.LogContext{
+		ApiKeyID: c.apiKeyID,
+	}
+	var apiKey model.ApiKey
+	if err := model.DB.First(&apiKey, c.apiKeyID).Error; err == nil {
+		logCtx.UserID = apiKey.UserID
+		logCtx.ApiKeyName = apiKey.Name
+		var user model.User
+		if err := model.DB.Select("username").First(&user, apiKey.UserID).Error; err == nil {
+			logCtx.Username = user.Username
+		}
+	}
+	return logCtx
+}
+
 func (c *XiaoZhiClient) messageLoop(ctx context.Context) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -136,6 +131,8 @@ func (c *XiaoZhiClient) messageLoop(ctx context.Context) {
 		c.closeOnce.Do(func() { close(c.done) })
 	}()
 
+	logCtx := c.buildLogCtx()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -146,35 +143,82 @@ func (c *XiaoZhiClient) messageLoop(ctx context.Context) {
 		c.conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
-				log.Printf("[xiaozhi:%d] read error: %v", c.endpointID, err)
-			}
+			log.Printf("[xiaozhi:%d] read error: %v", c.endpointID, err)
 			return
 		}
 
-		var req jsonRPCRequest
+		log.Printf("[xiaozhi:%d] recv: %s", c.endpointID, string(message))
+
+		var req handler.JSONRPCRequest
 		if err := json.Unmarshal(message, &req); err != nil {
 			continue
 		}
 
-		resp := c.handleRequest(ctx, &req)
+		// Handle initialize with dynamic protocol version
+		if req.Method == "initialize" {
+			resp := c.handleInitialize(&req)
+			c.sendResponse(resp)
+			continue
+		}
 
-		// Notifications have no response
+		// MCP ping: respond with empty result
+		if req.Method == "ping" {
+			c.sendResponse(&handler.JSONRPCResponse{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Result:  map[string]interface{}{},
+			})
+			continue
+		}
+
+		// Delegate everything else to GatewayHandler (same logic as /mcp)
+		resp := c.handler.HandleRequest(ctx, &req, logCtx)
 		if resp == nil {
 			continue
 		}
 
-		data, err := json.Marshal(resp)
-		if err != nil {
-			continue
-		}
-
-		c.mu.Lock()
-		if c.conn != nil {
-			c.conn.WriteMessage(websocket.TextMessage, data)
-		}
-		c.mu.Unlock()
+		c.sendResponse(resp)
 	}
+}
+
+func (c *XiaoZhiClient) handleInitialize(req *handler.JSONRPCRequest) *handler.JSONRPCResponse {
+	var params struct {
+		ProtocolVersion string `json:"protocolVersion"`
+	}
+	_ = json.Unmarshal(req.Params, &params)
+	if params.ProtocolVersion == "" {
+		params.ProtocolVersion = "2024-11-05"
+	}
+
+	return &handler.JSONRPCResponse{
+		JSONRPC: "2.0",
+		ID:      req.ID,
+		Result: map[string]interface{}{
+			"protocolVersion": params.ProtocolVersion,
+			"capabilities": map[string]interface{}{
+				"tools": map[string]interface{}{},
+			},
+			"serverInfo": map[string]interface{}{
+				"name":    "newmcp-gateway",
+				"version": "1.0.0",
+			},
+		},
+	}
+}
+
+func (c *XiaoZhiClient) sendResponse(resp *handler.JSONRPCResponse) {
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return
+	}
+
+	log.Printf("[xiaozhi:%d] send: %s", c.endpointID, string(data))
+
+	c.mu.Lock()
+	if c.conn != nil {
+		c.conn.WriteMessage(websocket.TextMessage, data)
+	}
+	c.mu.Unlock()
 }
 
 func (c *XiaoZhiClient) pingLoop(ctx context.Context) {
@@ -192,250 +236,6 @@ func (c *XiaoZhiClient) pingLoop(ctx context.Context) {
 			}
 			c.mu.Unlock()
 		}
-	}
-}
-
-func (c *XiaoZhiClient) handleRequest(ctx context.Context, req *jsonRPCRequest) *jsonRPCResponse {
-	switch req.Method {
-	case "initialize":
-		return c.handleInitialize(req)
-	case "notifications/initialized":
-		return nil
-	case "tools/list":
-		return c.handleToolsList(ctx, req)
-	case "tools/call":
-		return c.handleToolsCall(ctx, req)
-	default:
-		return c.errorResponse(req.ID, -32601, "method not found: "+req.Method)
-	}
-}
-
-func (c *XiaoZhiClient) handleInitialize(req *jsonRPCRequest) *jsonRPCResponse {
-	return &jsonRPCResponse{
-		ID: req.ID,
-		Result: map[string]interface{}{
-			"protocolVersion": "2025-03-26",
-			"capabilities": map[string]interface{}{
-				"tools": map[string]interface{}{},
-			},
-			"serverInfo": map[string]interface{}{
-				"name":    "newmcp-gateway",
-				"version": "1.0.0",
-			},
-		},
-	}
-}
-
-func (c *XiaoZhiClient) handleToolsList(ctx context.Context, req *jsonRPCRequest) *jsonRPCResponse {
-	if c.groupID == 0 {
-		return c.errorResponse(req.ID, -32602, "no group bound to this connection")
-	}
-
-	group, err := model.GetGroupByID(0, c.groupID)
-	if err != nil {
-		return c.errorResponse(req.ID, -32602, "group not found")
-	}
-
-	switch group.ExposeMode {
-	case common.ExposeModeSmart:
-		return c.smartToolsResponse(req.ID)
-	case common.ExposeModeDirect:
-		tools, err := c.getDirectTools(ctx)
-		if err != nil {
-			return c.errorResponse(req.ID, -32603, "failed to get tools: "+err.Error())
-		}
-		return &jsonRPCResponse{ID: req.ID, Result: map[string]interface{}{"tools": tools}}
-	default:
-		return c.smartToolsResponse(req.ID)
-	}
-}
-
-func (c *XiaoZhiClient) handleToolsCall(ctx context.Context, req *jsonRPCRequest) *jsonRPCResponse {
-	var params struct {
-		Name      string          `json:"name"`
-		Arguments json.RawMessage `json:"arguments"`
-	}
-	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return c.errorResponse(req.ID, -32602, "invalid params")
-	}
-
-	// Smart mode meta-tools
-	switch params.Name {
-	case "mcp.search":
-		return c.handleSearch(ctx, req.ID, params.Arguments)
-	case "mcp.describe":
-		return c.handleDescribe(ctx, req.ID, params.Arguments)
-	case "mcp.execute":
-		return c.handleExecute(ctx, req.ID, params.Arguments)
-	}
-
-	// Direct mode: route to upstream service via tool router
-	session, toolName, err := c.toolRouter.Route(params.Name)
-	if err != nil {
-		return c.errorResponse(req.ID, -32602, err.Error())
-	}
-
-	callParams := map[string]interface{}{
-		"name":      toolName,
-		"arguments": params.Arguments,
-	}
-	result, err := session.Adapter.Call(ctx, "tools/call", callParams)
-	if err != nil {
-		return c.errorResponse(req.ID, -32603, "tool call failed: "+err.Error())
-	}
-
-	var parsed interface{}
-	json.Unmarshal(result, &parsed)
-	return &jsonRPCResponse{ID: req.ID, Result: parsed}
-}
-
-func (c *XiaoZhiClient) handleSearch(ctx context.Context, reqID interface{}, args json.RawMessage) *jsonRPCResponse {
-	var params struct {
-		Query string `json:"query"`
-		Scope string `json:"scope"`
-		Group string `json:"group"`
-		Limit int    `json:"limit"`
-	}
-	_ = json.Unmarshal(args, &params)
-	if params.Scope == "" {
-		params.Scope = "all"
-	}
-	if params.Limit <= 0 {
-		params.Limit = 10
-	}
-
-	results, err := c.search.Search(ctx, c.apiKeyID, params.Query, smart.SearchOptions{
-		Scope: params.Scope,
-		Group: params.Group,
-		Limit: params.Limit,
-	})
-	if err != nil {
-		return c.errorResponse(reqID, -32603, "search failed: "+err.Error())
-	}
-
-	var lines []string
-	for _, r := range results {
-		if r.Doc.Type == "mcp" {
-			lines = append(lines, fmt.Sprintf("- **%s** (服务, %d 工具) %s",
-				r.Doc.Name, r.Doc.ToolCount, r.Doc.Description))
-		} else {
-			lines = append(lines, fmt.Sprintf("- **%s.%s** (工具) %s",
-				r.Doc.ServiceName, r.Doc.Name, r.Doc.Description))
-		}
-	}
-
-	text := fmt.Sprintf("找到 %d 个结果:\n", len(lines))
-	for _, l := range lines {
-		text += l + "\n"
-	}
-
-	return &jsonRPCResponse{
-		ID: reqID,
-		Result: map[string]interface{}{
-			"content": []map[string]interface{}{
-				{"type": "text", "text": text},
-			},
-		},
-	}
-}
-
-func (c *XiaoZhiClient) handleDescribe(ctx context.Context, reqID interface{}, args json.RawMessage) *jsonRPCResponse {
-	var params struct {
-		Targets []string `json:"targets"`
-	}
-	_ = json.Unmarshal(args, &params)
-
-	results, err := c.search.Describe(params.Targets, c.apiKeyID)
-	if err != nil {
-		return c.errorResponse(reqID, -32603, "describe failed: "+err.Error())
-	}
-
-	text := ""
-	for _, r := range results {
-		b, _ := json.MarshalIndent(r, "", "  ")
-		text += string(b) + "\n\n"
-	}
-
-	return &jsonRPCResponse{
-		ID: reqID,
-		Result: map[string]interface{}{
-			"content": []map[string]interface{}{
-				{"type": "text", "text": text},
-			},
-		},
-	}
-}
-
-func (c *XiaoZhiClient) handleExecute(ctx context.Context, reqID interface{}, args json.RawMessage) *jsonRPCResponse {
-	var params struct {
-		ToolID    string          `json:"tool_id"`
-		Arguments json.RawMessage `json:"arguments"`
-		TimeoutMs int             `json:"timeout_ms"`
-	}
-	_ = json.Unmarshal(args, &params)
-	if params.TimeoutMs <= 0 {
-		params.TimeoutMs = 30000
-	}
-
-	session, toolName, err := c.toolRouter.Route(params.ToolID)
-	if err != nil {
-		return c.errorResponse(reqID, -32602, err.Error())
-	}
-
-	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(params.TimeoutMs)*time.Millisecond)
-	defer cancel()
-
-	callParams := map[string]interface{}{
-		"name":      toolName,
-		"arguments": params.Arguments,
-	}
-	result, err := session.Adapter.Call(timeoutCtx, "tools/call", callParams)
-	if err != nil {
-		return c.errorResponse(reqID, -32603, "execution failed: "+err.Error())
-	}
-
-	var parsed interface{}
-	json.Unmarshal(result, &parsed)
-	return &jsonRPCResponse{ID: reqID, Result: parsed}
-}
-
-func (c *XiaoZhiClient) smartToolsResponse(id interface{}) *jsonRPCResponse {
-	return &jsonRPCResponse{
-		ID:     id,
-		Result: map[string]interface{}{"tools": smart.MetaTools},
-	}
-}
-
-func (c *XiaoZhiClient) getDirectTools(ctx context.Context) ([]map[string]interface{}, error) {
-	groupServices, err := model.GetEnabledGroupServices(c.groupID)
-	if err != nil {
-		return nil, err
-	}
-
-	var allTools []map[string]interface{}
-	for _, gs := range groupServices {
-		svc, err := model.GetServiceByIDWithoutUser(gs.ServiceID)
-		if err != nil {
-			continue
-		}
-		var tools []map[string]interface{}
-		_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
-		for _, t := range tools {
-			name, _ := t["name"].(string)
-			t["name"] = svc.Name + "__" + name
-			allTools = append(allTools, t)
-		}
-	}
-	return allTools, nil
-}
-
-func (c *XiaoZhiClient) errorResponse(id interface{}, code int, message string) *jsonRPCResponse {
-	return &jsonRPCResponse{
-		ID: id,
-		Error: &rpcError{
-			Code:    code,
-			Message: message,
-		},
 	}
 }
 
