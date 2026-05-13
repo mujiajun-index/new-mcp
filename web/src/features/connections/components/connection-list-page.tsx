@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getConnections, deleteConnection, connectConnection, disconnectConnection } from '../api'
 import { Button } from '@/components/ui/button'
-import { Plus, Trash2, Cloud, Wifi, WifiOff, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Cloud, Wifi, WifiOff, Eye } from 'lucide-react'
 import { toast } from 'sonner'
 
 const statusColors: Record<string, string> = {
@@ -85,11 +85,7 @@ export function ConnectionListPage() {
             <tbody>
               {connections.map((c: { id: number; name: string; cloud_type: string; connection_status: string; remote_id: string }) => (
                 <tr key={c.id} className="border-b last:border-0 hover:bg-muted/30">
-                  <td className="px-4 py-3">
-                    <Link to="/connections/$id" params={{ id: String(c.id) }} className="font-medium hover:text-primary">
-                      {c.name}
-                    </Link>
-                  </td>
+                  <td className="px-4 py-3 font-medium">{c.name}</td>
                   <td className="px-4 py-3">{cloudTypeLabels[c.cloud_type] || c.cloud_type}</td>
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center gap-1.5">
@@ -100,6 +96,11 @@ export function ConnectionListPage() {
                   <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{c.remote_id || '-'}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-1">
+                      <Link to="/connections/$id" params={{ id: String(c.id) }}>
+                        <Button variant="ghost" size="sm" className="gap-1">
+                          <Eye className="h-3.5 w-3.5" />详情
+                        </Button>
+                      </Link>
                       <Button
                         variant="outline"
                         size="sm"
