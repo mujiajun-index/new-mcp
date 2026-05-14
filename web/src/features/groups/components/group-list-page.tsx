@@ -47,12 +47,10 @@ export function GroupListPage() {
                     </h3>
                     <p className="mt-0.5 text-xs text-muted-foreground font-mono">{g.name}</p>
                   </div>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                    g.expose_mode === 'smart'
-                      ? 'bg-violet-500/10 text-violet-600 dark:text-violet-400'
-                      : 'bg-sky-500/10 text-sky-600 dark:text-sky-400'
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                    g.expose_mode === 'direct' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
                   }`}>
-                    {g.expose_mode === 'smart' ? 'Smart' : 'Direct'}
+                    {g.expose_mode === 'direct' ? '直接' : '智能'}
                   </span>
                 </div>
                 {g.description && (

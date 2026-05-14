@@ -201,7 +201,7 @@ export function ConnectionDetailPage() {
                   type="button"
                   onClick={() => setForm({ ...form, expose_mode: 'smart' })}
                   className={`rounded-lg border px-3 py-1.5 text-sm transition-all ${
-                    form.expose_mode === 'smart' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:border-primary/30'
+                    form.expose_mode === 'smart' ? 'border-purple-200 bg-purple-100 text-purple-700 dark:border-purple-800 dark:bg-purple-900/30 dark:text-purple-300' : 'hover:border-primary/30'
                   }`}
                 >
                   智能模式
@@ -210,7 +210,7 @@ export function ConnectionDetailPage() {
                   type="button"
                   onClick={() => setForm({ ...form, expose_mode: 'direct' })}
                   className={`rounded-lg border px-3 py-1.5 text-sm transition-all ${
-                    form.expose_mode === 'direct' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:border-primary/30'
+                    form.expose_mode === 'direct' ? 'border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300' : 'hover:border-primary/30'
                   }`}
                 >
                   直接模式
