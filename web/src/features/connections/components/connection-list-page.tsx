@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getConnections, deleteConnection, connectConnection, disconnectConnection } from '../api'
 import { Button } from '@/components/ui/button'
-import { Plus, Trash2, Cloud, Wifi, WifiOff, Eye } from 'lucide-react'
+import { Plus, Trash2, Cloud, Wifi, WifiOff, Eye, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 const statusColors: Record<string, string> = {
@@ -44,7 +44,8 @@ export function ConnectionListPage() {
     mutationFn: async ({ id, action }: { id: number; action: 'connect' | 'disconnect' }) => {
       return action === 'connect' ? connectConnection(id) : disconnectConnection(id)
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      toast.success(variables.action === 'connect' ? '已连接' : '已断开')
       queryClient.invalidateQueries({ queryKey: ['connections'] })
     },
   })
@@ -111,8 +112,8 @@ export function ConnectionListPage() {
                         })}
                         disabled={toggleMutation.isPending}
                       >
-                        {c.connection_status === 'connected' ? <WifiOff className="h-3.5 w-3.5" /> : <Wifi className="h-3.5 w-3.5" />}
-                        {c.connection_status === 'connected' ? '断开' : '连接'}
+                        {toggleMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : c.connection_status === 'connected' ? <WifiOff className="h-3.5 w-3.5" /> : <Wifi className="h-3.5 w-3.5" />}
+                        {toggleMutation.isPending ? '处理中...' : c.connection_status === 'connected' ? '断开' : '连接'}
                       </Button>
                       <Button variant="ghost" size="sm" className="text-destructive" onClick={() => {
                         if (confirm(`确定删除连接 "${c.name}"？`)) deleteMutation.mutate(c.id)

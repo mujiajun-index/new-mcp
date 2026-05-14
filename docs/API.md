@@ -768,21 +768,26 @@ passive-ws (被动连接):
 删除连接（同时断开 WSS 连接）。
 
 ### POST /connections/:id/connect
-手动触发连接。
+手动触发连接。**同步操作**：等待 WebSocket 握手完成后才返回响应（超时 15 秒）。
 
 **Response:** `200 OK`
 ```json
 {
     "success": true,
     "data": {
-        "connection_status": "connected",
-        "tools_registered": 5
+        "connection_status": "connected"
     }
 }
 ```
 
+**错误响应:**
+| HTTP 状态码 | message | 说明 |
+|-------------|---------|------|
+| 400 | 连接超时 | WebSocket 握手超过 15 秒 |
+| 400 | ... | WebSocket 连接失败（具体错误信息） |
+
 ### POST /connections/:id/disconnect
-手动断开连接。
+手动断开连接。**同步操作**：连接关闭并更新数据库状态后返回。
 
 ### PUT /connections/:id/bind-apikey
 更换绑定的 API Key。

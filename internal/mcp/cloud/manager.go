@@ -29,7 +29,7 @@ func NewManager(pool *bridge.SessionPool, toolRouter *bridge.ToolRouter) *Manage
 	}
 }
 
-// StartAll connects all auto-connect cloud endpoints
+// StartAll connects all auto-connect cloud endpoints (async)
 func (m *Manager) StartAll() {
 	m.ctx, m.cancel = context.WithCancel(context.Background())
 
@@ -38,7 +38,8 @@ func (m *Manager) StartAll() {
 		Find(&endpoints)
 
 	for _, ep := range endpoints {
-		m.startEndpoint(&ep)
+		ep := ep
+		go m.startEndpointAsync(&ep)
 	}
 
 	log.Printf("[cloud] started %d auto-connect endpoints", len(endpoints))
@@ -60,6 +61,27 @@ func (m *Manager) StopAll() {
 // StartEndpoint connects a specific endpoint
 func (m *Manager) StartEndpoint(ep *model.CloudEndpoint) error {
 	return m.startEndpoint(ep)
+}
+
+// startEndpointAsync is used by StartAll for background auto-connect (async)
+func (m *Manager) startEndpointAsync(ep *model.CloudEndpoint) {
+	client := NewXiaoZhiClient(ep, m.pool, m.toolRouter)
+
+	m.mu.Lock()
+	m.clients[ep.ID] = client
+	m.mu.Unlock()
+
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[cloud] endpoint %d (%s) panic: %v", ep.ID, ep.Name, r)
+			client.updateStatus(common.ConnDisconnected, fmt.Sprintf("panic: %v", r))
+			m.mu.Lock()
+			delete(m.clients, ep.ID)
+			m.mu.Unlock()
+		}
+	}()
+
+	m.connectWithRetry(client)
 }
 
 // StopEndpoint disconnects a specific endpoint
@@ -102,39 +124,21 @@ func (m *Manager) startEndpoint(ep *model.CloudEndpoint) error {
 }
 
 func (m *Manager) startXiaoZhi(ep *model.CloudEndpoint) error {
-	client := NewXiaoZhiClient(ep, m.pool, m.toolRouter)
-
-	m.mu.Lock()
-	m.clients[ep.ID] = client
-	m.mu.Unlock()
-
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("[cloud] endpoint %d (%s) panic: %v", ep.ID, ep.Name, r)
-				client.updateStatus(common.ConnDisconnected, fmt.Sprintf("panic: %v", r))
-				m.mu.Lock()
-				delete(m.clients, ep.ID)
-				m.mu.Unlock()
-			}
-		}()
-		if err := m.connectWithRetry(client); err != nil {
-			log.Printf("[cloud] endpoint %d (%s) connect failed: %v", ep.ID, ep.Name, err)
-			m.mu.Lock()
-			delete(m.clients, ep.ID)
-			m.mu.Unlock()
-		}
-	}()
-
-	return nil
+	return m.startClient(ep)
 }
 
 func (m *Manager) startCustom(ep *model.CloudEndpoint) error {
+	return m.startClient(ep)
+}
+
+func (m *Manager) startClient(ep *model.CloudEndpoint) error {
 	client := NewXiaoZhiClient(ep, m.pool, m.toolRouter)
 
 	m.mu.Lock()
 	m.clients[ep.ID] = client
 	m.mu.Unlock()
+
+	firstConnect := make(chan error, 1)
 
 	go func() {
 		defer func() {
@@ -146,19 +150,45 @@ func (m *Manager) startCustom(ep *model.CloudEndpoint) error {
 				m.mu.Unlock()
 			}
 		}()
-		if err := m.connectWithRetry(client); err != nil {
+
+		// 首次连接尝试
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		err := client.Connect(ctx)
+		cancel()
+
+		if err != nil {
 			log.Printf("[cloud] endpoint %d (%s) connect failed: %v", ep.ID, ep.Name, err)
+			client.updateStatus(common.ConnDisconnected, err.Error())
 			m.mu.Lock()
 			delete(m.clients, ep.ID)
 			m.mu.Unlock()
+			firstConnect <- err
+			return
 		}
+
+		log.Printf("[cloud] endpoint %d connected", ep.ID)
+		firstConnect <- nil
+
+		// goroutine 继续维护连接生命周期
+		<-client.Done()
+		log.Printf("[cloud] endpoint %d disconnected", ep.ID)
+		client.updateStatus(common.ConnDisconnected, "")
+		m.mu.Lock()
+		delete(m.clients, ep.ID)
+		m.mu.Unlock()
 	}()
 
-	return nil
+	// 同步等待首次连接结果
+	select {
+	case err := <-firstConnect:
+		return err
+	case <-time.After(15 * time.Second):
+		return fmt.Errorf("连接超时")
+	}
 }
 
-// connectWithRetry connects with exponential backoff
-func (m *Manager) connectWithRetry(client *XiaoZhiClient) error {
+// connectWithRetry is used by StartAll for auto-connect endpoints (async)
+func (m *Manager) connectWithRetry(client *XiaoZhiClient) {
 	backoff := 2 * time.Second
 	maxBackoff := 30 * time.Second
 	maxRetries := 1
@@ -166,7 +196,7 @@ func (m *Manager) connectWithRetry(client *XiaoZhiClient) error {
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		select {
 		case <-m.ctx.Done():
-			return m.ctx.Err()
+			return
 		default:
 		}
 
@@ -176,11 +206,8 @@ func (m *Manager) connectWithRetry(client *XiaoZhiClient) error {
 
 		if err == nil {
 			log.Printf("[cloud] endpoint %d connected", client.endpointID)
-			// Wait for disconnect
 			<-client.Done()
 			log.Printf("[cloud] endpoint %d disconnected, will retry", client.endpointID)
-
-			// Reset backoff on successful connect
 			backoff = 2 * time.Second
 		} else {
 			log.Printf("[cloud] endpoint %d connect attempt %d failed: %v", client.endpointID, attempt+1, err)
@@ -189,7 +216,7 @@ func (m *Manager) connectWithRetry(client *XiaoZhiClient) error {
 
 		select {
 		case <-m.ctx.Done():
-			return m.ctx.Err()
+			return
 		case <-time.After(backoff):
 		}
 
@@ -199,7 +226,5 @@ func (m *Manager) connectWithRetry(client *XiaoZhiClient) error {
 		}
 	}
 
-	// Exhausted all retries, mark as disconnected
 	client.updateStatus(common.ConnDisconnected, "max retries exceeded")
-	return nil
 }
