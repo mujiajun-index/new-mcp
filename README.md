@@ -180,6 +180,70 @@ make build
 ./build/newmcp
 ```
 
+### Docker
+
+Build and run with Docker (frontend and backend on port 3000):
+
+```bash
+# Build image
+docker build -t newmcp .
+
+# Run container
+docker run --name new-mcp -d --restart always \
+  -p 3000:3000 \
+  -e TZ=Asia/Shanghai \
+  -v /home/data/newmcp:/app/data \
+  newmcp
+```
+
+#### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3000` | Server port |
+| `GIN_MODE` | `release` | Gin mode (`debug`/`release`) |
+| `DB_TYPE` | `sqlite` | Database type (`sqlite`/`mysql`/`postgres`) |
+| `DB_PATH` | `/app/data/newmcp.db` | SQLite database path |
+| `SQL_DSN` | — | MySQL/PostgreSQL connection string |
+| `REDIS_CONN_STRING` | — | Redis connection string (optional) |
+| `SESSION_SECRET` | — | JWT session secret |
+| `CRYPTO_SECRET` | — | Encryption key for sensitive data |
+| `BASE_URL` | `http://localhost:3000` | External base URL |
+
+#### Using MySQL / PostgreSQL
+
+```bash
+docker run --name new-mcp -d --restart always \
+  -p 3000:3000 \
+  -e DB_TYPE=mysql \
+  -e "SQL_DSN=user:password@tcp(mysql-host:3306)/newmcp" \
+  -e TZ=Asia/Shanghai \
+  -e SESSION_SECRET=your-secret \
+  -e CRYPTO_SECRET=your-crypto-key \
+  newmcp
+```
+
+#### Docker Compose
+
+```yaml
+version: "3.8"
+services:
+  newmcp:
+    build: .
+    restart: always
+    ports:
+      - "3000:3000"
+    volumes:
+      - newmcp-data:/app/data
+    environment:
+      - TZ=Asia/Shanghai
+      - SESSION_SECRET=your-session-secret
+      - CRYPTO_SECRET=your-crypto-secret
+
+volumes:
+  newmcp-data:
+```
+
 ### Available Make Commands
 
 | Command | Description |

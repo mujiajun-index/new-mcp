@@ -1,0 +1,30 @@
+# Build artifacts
+build/
+web/dist/
+web/node_modules/
+data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Documentation
+docs/
+reference/
+*.md
+LICENSE
+
+# OS
+.DS_Store
+Thumbs.db
