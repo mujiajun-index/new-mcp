@@ -34,7 +34,7 @@ export function ConnectionDetailPage() {
   const connId = Number(id)
 
   const [editing, setEditing] = useState(false)
-  const [form, setForm] = useState({ name: '', wss_url: '', api_key_id: 0 })
+  const [form, setForm] = useState({ name: '', wss_url: '', api_key_id: 0, expose_mode: 'smart' as 'smart' | 'direct' })
 
   const { data, isLoading } = useQuery({
     queryKey: ['connection', id],
@@ -55,6 +55,7 @@ export function ConnectionDetailPage() {
         name: conn.name || '',
         wss_url: conn.wss_url || '',
         api_key_id: conn.api_key_id || 0,
+        expose_mode: conn.expose_mode || 'smart',
       })
     }
   }, [conn, editing])
@@ -75,6 +76,7 @@ export function ConnectionDetailPage() {
       name: form.name,
       wss_url: form.wss_url,
       api_key_id: form.api_key_id,
+      expose_mode: form.expose_mode,
     }),
     onSuccess: () => {
       toast.success('更新成功')
@@ -187,6 +189,35 @@ export function ConnectionDetailPage() {
               )
             ) : (
               <p className="text-sm">{boundKey ? `${boundKey.name} (${boundKey.key_prefix}...)` : '-'}</p>
+            )}
+          </div>
+
+          {/* Expose Mode */}
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">暴露模式-重新链接后生效</Label>
+            {editing ? (
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, expose_mode: 'smart' })}
+                  className={`rounded-lg border px-3 py-1.5 text-sm transition-all ${
+                    form.expose_mode === 'smart' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:border-primary/30'
+                  }`}
+                >
+                  智能模式
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, expose_mode: 'direct' })}
+                  className={`rounded-lg border px-3 py-1.5 text-sm transition-all ${
+                    form.expose_mode === 'direct' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:border-primary/30'
+                  }`}
+                >
+                  直接模式
+                </button>
+              </div>
+            ) : (
+              <p className="text-sm">{conn.expose_mode === 'direct' ? '直接模式' : '智能模式'}</p>
             )}
           </div>
 

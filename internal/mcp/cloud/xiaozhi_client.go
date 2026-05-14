@@ -19,6 +19,7 @@ type XiaoZhiClient struct {
 	endpointID int64
 	wssURL     string
 	apiKeyID   int64
+	exposeMode string
 
 	conn    *websocket.Conn
 	handler *handler.GatewayHandler
@@ -39,6 +40,7 @@ func NewXiaoZhiClient(ep *model.CloudEndpoint, pool *bridge.SessionPool, router 
 		endpointID: ep.ID,
 		wssURL:     ep.WssURL,
 		apiKeyID:   apiKeyID,
+		exposeMode: ep.ExposeMode,
 		handler:    handler.NewGatewayHandler(pool, router),
 		done:       make(chan struct{}),
 	}
@@ -102,7 +104,8 @@ func (c *XiaoZhiClient) Done() <-chan struct{} {
 
 func (c *XiaoZhiClient) buildLogCtx() *handler.LogContext {
 	logCtx := &handler.LogContext{
-		ApiKeyID: c.apiKeyID,
+		ApiKeyID:   c.apiKeyID,
+		ExposeMode: c.exposeMode,
 	}
 	var apiKey model.ApiKey
 	if err := model.DB.First(&apiKey, c.apiKeyID).Error; err == nil {

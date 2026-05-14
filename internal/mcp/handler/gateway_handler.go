@@ -38,6 +38,7 @@ type LogContext struct {
 	GroupSlug  string
 	ClientIP   string
 	UserAgent  string
+	ExposeMode string
 }
 
 type GatewayHandler struct {
@@ -93,6 +94,18 @@ func (h *GatewayHandler) handleInitialize(req *JSONRPCRequest) *JSONRPCResponse 
 func (h *GatewayHandler) handleToolsList(ctx context.Context, req *JSONRPCRequest, logCtx *LogContext) *JSONRPCResponse {
 	groupSlug := logCtx.GroupSlug
 	if groupSlug == "" {
+		// Cloud connection: use expose_mode from log context
+		if logCtx.ExposeMode == "direct" {
+			tools, err := h.getDirectToolsForApiKey(ctx, logCtx.ApiKeyID)
+			if err != nil {
+				return h.errorResponse(req.ID, -32603, "Failed to get tools")
+			}
+			return &JSONRPCResponse{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Result:  map[string]interface{}{"tools": tools},
+			}
+		}
 		return h.smartToolsResponse(req.ID)
 	}
 
@@ -363,38 +376,78 @@ func (h *GatewayHandler) smartToolsResponse(id interface{}) *JSONRPCResponse {
 }
 
 func (h *GatewayHandler) getDirectTools(ctx context.Context, groupID int64) ([]map[string]interface{}, error) {
-	groupServices, err := model.GetEnabledGroupServices(groupID)
-	if err != nil {
+	return h.collectDirectTools([]int64{groupID}, false)
+}
+
+func (h *GatewayHandler) getDirectToolsForApiKey(ctx context.Context, apiKeyID int64) ([]map[string]interface{}, error) {
+	var apiKey model.ApiKey
+	if err := model.DB.First(&apiKey, apiKeyID).Error; err != nil {
 		return nil, err
 	}
 
-	toolFilters, _ := model.GetGroupTools(groupID)
-	filterMap := make(map[string]bool)
-	for _, f := range toolFilters {
-		key := fmt.Sprintf("%d:%s", f.ServiceID, f.ToolName)
-		filterMap[key] = f.Enabled
+	var permissions struct {
+		Groups []string `json:"groups"`
+	}
+	_ = json.Unmarshal([]byte(apiKey.Permissions), &permissions)
+
+	if len(permissions.Groups) == 0 {
+		return nil, nil
 	}
 
+	var groups []model.McpGroup
+	if err := model.DB.Where("name IN ?", permissions.Groups).Find(&groups).Error; err != nil {
+		return nil, err
+	}
+
+	groupIDs := make([]int64, len(groups))
+	for i, g := range groups {
+		groupIDs[i] = g.ID
+	}
+	return h.collectDirectTools(groupIDs, true)
+}
+
+func (h *GatewayHandler) collectDirectTools(groupIDs []int64, dedupService bool) ([]map[string]interface{}, error) {
+	seen := make(map[int64]bool)
 	var allTools []map[string]interface{}
-	for _, gs := range groupServices {
-		svc, err := model.GetServiceByIDWithoutUser(gs.ServiceID)
+
+	for _, gid := range groupIDs {
+		groupServices, err := model.GetEnabledGroupServices(gid)
 		if err != nil {
 			continue
 		}
 
-		var tools []map[string]interface{}
-		_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
+		toolFilters, _ := model.GetGroupTools(gid)
+		filterMap := make(map[string]bool)
+		for _, f := range toolFilters {
+			key := fmt.Sprintf("%d:%s", f.ServiceID, f.ToolName)
+			filterMap[key] = f.Enabled
+		}
 
-		for _, t := range tools {
-			name, _ := t["name"].(string)
-			key := fmt.Sprintf("%d:%s", gs.ServiceID, name)
-			if enabled, ok := filterMap[key]; ok && !enabled {
+		for _, gs := range groupServices {
+			if dedupService && seen[gs.ServiceID] {
 				continue
 			}
-			t["name"] = svc.Name + "__" + name
-			allTools = append(allTools, t)
+			seen[gs.ServiceID] = true
+
+			svc, err := model.GetServiceByIDWithoutUser(gs.ServiceID)
+			if err != nil {
+				continue
+			}
+
+			var tools []map[string]interface{}
+			_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
+
+			for _, t := range tools {
+				name, _ := t["name"].(string)
+				key := fmt.Sprintf("%d:%s", gs.ServiceID, name)
+				if enabled, ok := filterMap[key]; ok && !enabled {
+					continue
+				}
+				allTools = append(allTools, t)
+			}
 		}
 	}
+
 	return allTools, nil
 }
 

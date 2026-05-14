@@ -34,6 +34,7 @@ func (s *ConnectionService) List(userID int64) ([]dto.ConnectionListItem, error)
 			CloudType:        c.CloudType,
 			RemoteID:         c.RemoteID,
 			ConnectionStatus: c.ConnectionStatus,
+			ExposeMode:       c.ExposeMode,
 			AutoConnect:      c.AutoConnect,
 			CreatedAt:        c.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		}
@@ -61,8 +62,13 @@ func (s *ConnectionService) Create(userID int64, req *dto.CreateConnectionReq) (
 		CloudConfig:      cloudConfigJSON,
 		ApiKeyID:         req.ApiKeyID,
 		AutoConnect:      autoConnect,
+		ExposeMode:       req.ExposeMode,
 		ConnectionStatus: common.ConnDisconnected,
 		Status:           common.StatusEnabled,
+	}
+
+	if conn.ExposeMode == "" {
+		conn.ExposeMode = "smart"
 	}
 
 	if req.CloudType == "xiaozhi" && req.WssURL != "" {
@@ -105,6 +111,9 @@ func (s *ConnectionService) Update(userID, connID int64, req *dto.UpdateConnecti
 	}
 	if req.Status != nil {
 		conn.Status = *req.Status
+	}
+	if req.ExposeMode != nil {
+		conn.ExposeMode = *req.ExposeMode
 	}
 	return conn.Update()
 }
@@ -259,6 +268,7 @@ func (s *ConnectionService) toDetail(conn *model.CloudEndpoint) *dto.ConnectionD
 		AutoConnect:      conn.AutoConnect,
 		ConnectionStatus: conn.ConnectionStatus,
 		LastConnectedAt:  lastConnectedAt,
+		ExposeMode:       conn.ExposeMode,
 		LastError:        conn.LastError,
 	}
 }

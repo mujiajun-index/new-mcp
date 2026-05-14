@@ -18,6 +18,7 @@ type CloudEndpoint struct {
 	ApiKeyID         *int64         `json:"api_key_id" gorm:"index"`
 	GroupID          *int64         `json:"group_id" gorm:"index"`
 	AutoConnect      bool           `json:"auto_connect" gorm:"default:true"`
+	ExposeMode       string         `json:"expose_mode" gorm:"size:16;default:smart"`
 	ConnectionStatus string         `json:"connection_status" gorm:"size:16;default:disconnected;index"`
 	LastConnectedAt  *time.Time     `json:"last_connected_at"`
 	LastError        string         `json:"last_error" gorm:"type:text"`

@@ -23,6 +23,7 @@ export function ConnectionCreatePage() {
     wss_url: '',
     api_key_id: 0,
     auto_connect: true,
+    expose_mode: 'smart' as 'smart' | 'direct',
     // SSH fields
     host: '',
     port: '22',
@@ -59,6 +60,7 @@ export function ConnectionCreatePage() {
         wss_url: form.cloud_type !== 'ssh' ? form.wss_url : undefined,
         api_key_id: form.api_key_id,
         auto_connect: form.auto_connect,
+        expose_mode: form.expose_mode,
         cloud_config: form.cloud_type === 'ssh' ? config : undefined,
       })
     },
@@ -150,6 +152,32 @@ export function ConnectionCreatePage() {
               ))}
             </div>
           )}
+        </div>
+
+        <div className="space-y-2">
+          <Label>暴露模式</Label>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, expose_mode: 'smart' })}
+              className={`rounded-lg border p-3 text-left transition-all ${
+                form.expose_mode === 'smart' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:border-primary/30'
+              }`}
+            >
+              <p className="text-sm font-medium">智能模式</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">3 个元工具智能搜索</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, expose_mode: 'direct' })}
+              className={`rounded-lg border p-3 text-left transition-all ${
+                form.expose_mode === 'direct' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:border-primary/30'
+              }`}
+            >
+              <p className="text-sm font-medium">直接模式</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">暴露所有工具</p>
+            </button>
+          </div>
         </div>
       </div>
 

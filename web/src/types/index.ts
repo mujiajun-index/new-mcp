@@ -270,6 +270,7 @@ export interface ConnectionListItem {
   cloud_type: CloudType
   remote_id: string
   connection_status: string
+  expose_mode: 'direct' | 'smart'
   auto_connect: boolean
   created_at: string
 }
@@ -285,6 +286,7 @@ export interface ConnectionDetail {
   api_key_id: number
   auto_connect: boolean
   connection_status: string
+  expose_mode: 'direct' | 'smart'
   last_connected_at: string
   last_error: string
 }
@@ -296,6 +298,7 @@ export interface CreateConnectionReq {
   cloud_config?: Record<string, unknown>
   api_key_id: number
   auto_connect?: boolean
+  expose_mode?: 'direct' | 'smart'
 }
 
 export interface UpdateConnectionReq {
@@ -303,6 +306,7 @@ export interface UpdateConnectionReq {
   wss_url?: string
   api_key_id?: number
   status?: number
+  expose_mode?: 'direct' | 'smart'
 }
 
 // --- Marketplace ---

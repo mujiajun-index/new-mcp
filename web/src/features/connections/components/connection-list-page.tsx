@@ -78,16 +78,24 @@ export function ConnectionListPage() {
               <tr className="border-b bg-muted/50">
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">名称</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">平台</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">暴露模式</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">状态</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">远程 ID</th>
                 <th className="px-4 py-3 text-right font-medium text-muted-foreground">操作</th>
               </tr>
             </thead>
             <tbody>
-              {connections.map((c: { id: number; name: string; cloud_type: string; connection_status: string; remote_id: string }) => (
+              {connections.map((c: { id: number; name: string; cloud_type: string; connection_status: string; remote_id: string; expose_mode: string }) => (
                 <tr key={c.id} className="border-b last:border-0 hover:bg-muted/30">
                   <td className="px-4 py-3 font-medium">{c.name}</td>
                   <td className="px-4 py-3">{cloudTypeLabels[c.cloud_type] || c.cloud_type}</td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                      c.expose_mode === 'direct' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
+                    }`}>
+                      {c.expose_mode === 'direct' ? '直接' : '智能'}
+                    </span>
+                  </td>
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center gap-1.5">
                       <span className={`h-2 w-2 rounded-full ${statusColors[c.connection_status] || 'bg-zinc-400'}`} />

@@ -7,13 +7,15 @@ type CreateConnectionReq struct {
 	CloudConfig map[string]interface{} `json:"cloud_config"`
 	ApiKeyID    *int64                 `json:"api_key_id"`
 	AutoConnect *bool                  `json:"auto_connect"`
+	ExposeMode  string                 `json:"expose_mode" binding:"omitempty,oneof=smart direct"`
 }
 
 type UpdateConnectionReq struct {
-	Name      *string `json:"name"`
-	WssURL    *string `json:"wss_url"`
-	ApiKeyID  *int64  `json:"api_key_id"`
-	Status    *int    `json:"status"`
+	Name       *string `json:"name"`
+	WssURL     *string `json:"wss_url"`
+	ApiKeyID   *int64  `json:"api_key_id"`
+	Status     *int    `json:"status"`
+	ExposeMode *string `json:"expose_mode"`
 }
 
 type ConnectionListItem struct {
@@ -22,6 +24,7 @@ type ConnectionListItem struct {
 	CloudType        string `json:"cloud_type"`
 	RemoteID         string `json:"remote_id"`
 	ConnectionStatus string `json:"connection_status"`
+	ExposeMode       string `json:"expose_mode"`
 	AutoConnect      bool   `json:"auto_connect"`
 	CreatedAt        string `json:"created_at"`
 }
@@ -37,6 +40,7 @@ type ConnectionDetail struct {
 	ApiKeyID         *int64                 `json:"api_key_id"`
 	AutoConnect      bool                   `json:"auto_connect"`
 	ConnectionStatus string                 `json:"connection_status"`
+	ExposeMode       string                 `json:"expose_mode"`
 	LastConnectedAt  string                 `json:"last_connected_at"`
 	LastError        string                 `json:"last_error"`
 }
