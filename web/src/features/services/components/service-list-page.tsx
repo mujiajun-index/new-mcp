@@ -190,6 +190,7 @@ export function ServiceListPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {!isVirtual && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -202,6 +203,7 @@ export function ServiceListPage() {
                               : <Zap className="h-3.5 w-3.5" />}
                             测试
                           </Button>
+                          )}
                           <Link to="/services/$id" params={{ id: String(s.id) }}>
                             <Button variant="ghost" size="sm">详情</Button>
                           </Link>

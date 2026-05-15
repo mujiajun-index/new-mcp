@@ -364,27 +364,33 @@ export function GroupDetailPage() {
           </Button>
         </div>
 
-        {showAddService && availableServices.length > 0 && (
+        {showAddService && (
           <div className="mb-4 rounded-lg border bg-muted/30 p-3 space-y-2">
-            <p className="text-xs text-muted-foreground">选择要添加的服务：</p>
-            <div className="flex flex-wrap gap-2">
-              {availableServices.map((s: { id: number; name: string; display_name: string }) => (
-                <Button
-                  key={s.id}
-                  variant="outline"
-                  size="sm"
-                  onClick={async () => {
-                    const { addGroupServices } = await import('../api')
-                    await addGroupServices(groupId, [s.id])
-                    toast.success(`已添加 ${s.display_name || s.name}`)
-                    queryClient.invalidateQueries({ queryKey: ['group', id] })
-                    queryClient.invalidateQueries({ queryKey: ['group-tools', id] })
-                  }}
-                >
-                  {s.display_name || s.name}
-                </Button>
-              ))}
-            </div>
+            {availableServices.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-3">所有服务已添加，无可用服务</p>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground">选择要添加的服务：</p>
+                <div className="flex flex-wrap gap-2">
+                  {availableServices.map((s: { id: number; name: string; display_name: string }) => (
+                    <Button
+                      key={s.id}
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        const { addGroupServices } = await import('../api')
+                        await addGroupServices(groupId, [s.id])
+                        toast.success(`已添加 ${s.display_name || s.name}`)
+                        queryClient.invalidateQueries({ queryKey: ['group', id] })
+                        queryClient.invalidateQueries({ queryKey: ['group-tools', id] })
+                      }}
+                    >
+                      {s.display_name || s.name}
+                    </Button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
 
