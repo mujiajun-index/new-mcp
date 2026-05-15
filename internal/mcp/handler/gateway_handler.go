@@ -202,7 +202,7 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 				serviceID = virtualSvc.ID
 				serviceName = virtualSvc.Name
 			} else {
-				session, toolName, err := h.toolRouter.Route(params.Name)
+				session, toolName, err := h.routeOrConnect(ctx, params.Name, logCtx.UserID)
 				if err != nil {
 					resp = h.errorResponse(req.ID, -32602, err.Error())
 				} else {
@@ -270,7 +270,7 @@ func (h *GatewayHandler) handleSearch(ctx context.Context, reqID interface{}, lo
 	_ = json.Unmarshal(args, &params)
 
 	if params.Scope == "" {
-		params.Scope = "mcp"
+		params.Scope = "all"
 	}
 	if params.Limit <= 0 {
 		params.Limit = 10
@@ -344,7 +344,7 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 		params.TimeoutMs = 30000
 	}
 
-	session, toolName, err := h.toolRouter.Route(params.ToolID)
+	session, toolName, err := h.routeOrConnect(ctx, params.ToolID, logCtx.UserID)
 	if err != nil {
 		return h.errorResponse(reqID, -32602, err.Error())
 	}
@@ -466,12 +466,56 @@ func (h *GatewayHandler) collectDirectTools(groupIDs []int64, dedupService bool)
 				if enabled, ok := filterMap[key]; ok && !enabled {
 					continue
 				}
+				t["name"] = svc.Name + "__" + name
 				allTools = append(allTools, t)
 			}
 		}
 	}
 
 	return allTools, nil
+}
+
+func (h *GatewayHandler) routeOrConnect(ctx context.Context, namespacedTool string, userID int64) (*bridge.McpSession, string, error) {
+	session, toolName, err := h.toolRouter.Route(namespacedTool)
+	if err == nil {
+		return session, toolName, nil
+	}
+
+	svcName, parsedToolName := bridge.ParseNamespacedName(namespacedTool)
+	if svcName != "" {
+		// Namespaced: look up service by name and connect
+		var svc model.McpService
+		if dbErr := model.DB.Where("name = ?", svcName).First(&svc).Error; dbErr != nil {
+			return nil, "", err
+		}
+		session, connErr := h.pool.GetOrConnect(ctx, &svc)
+		if connErr != nil {
+			return nil, "", fmt.Errorf("failed to connect service %s: %v", svcName, connErr)
+		}
+		return session, parsedToolName, nil
+	}
+
+	// Non-namespaced: search DB for a service that has this tool
+	var services []model.McpService
+	model.DB.Where("user_id = ?", userID).Find(&services)
+	for i := range services {
+		var tools []struct {
+			Name string `json:"name"`
+		}
+		if json.Unmarshal([]byte(services[i].ToolsCache), &tools) == nil {
+			for _, t := range tools {
+				if t.Name == namespacedTool {
+					session, connErr := h.pool.GetOrConnect(ctx, &services[i])
+					if connErr != nil {
+						return nil, "", fmt.Errorf("failed to connect service %s: %v", services[i].Name, connErr)
+					}
+					return session, namespacedTool, nil
+				}
+			}
+		}
+	}
+
+	return nil, "", fmt.Errorf("tool not found: %s", namespacedTool)
 }
 
 func (h *GatewayHandler) errorResponse(id interface{}, code int, message string) *JSONRPCResponse {

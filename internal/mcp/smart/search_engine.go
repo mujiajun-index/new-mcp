@@ -40,13 +40,25 @@ func (e *SearchEngine) Search(ctx context.Context, apiKeyID int64, query string,
 	_ = json.Unmarshal([]byte(apiKey.Permissions), &permissions)
 
 	// Get services from bound groups
-	docs := e.buildSearchDocs(apiKey.UserID, permissions.Groups, opts.Group)
+	docs := e.buildSearchDocs(apiKey.UserID, permissions.Groups, opts.Group, opts.Scope)
+
+	if query == "" {
+		limit := opts.Limit
+		if limit > len(docs) {
+			limit = len(docs)
+		}
+		results := make([]SearchResult, limit)
+		for i := 0; i < limit; i++ {
+			results[i] = SearchResult{Doc: docs[i], Score: 1.0}
+		}
+		return results, nil
+	}
 
 	idx := buildIndex(docs)
 	return idx.search(query, opts.Limit), nil
 }
 
-func (e *SearchEngine) buildSearchDocs(userID int64, groups []string, scopeGroup string) []SearchDoc {
+func (e *SearchEngine) buildSearchDocs(userID int64, groups []string, scopeGroup string, scope string) []SearchDoc {
 	var docs []SearchDoc
 
 	query := model.DB.Where("user_id = ?", userID)
@@ -63,38 +75,40 @@ func (e *SearchEngine) buildSearchDocs(userID int64, groups []string, scopeGroup
 		groupServices, _ := model.GetEnabledGroupServices(g.ID)
 
 		for _, gs := range groupServices {
-			svc, err := model.GetServiceByID(0, gs.ServiceID)
+			svc, err := model.GetServiceByIDWithoutUser(gs.ServiceID)
 			if err != nil {
 				continue
 			}
 
-			// Service-level doc
 			var tools []struct {
 				Name        string `json:"name"`
 				Description string `json:"description"`
 			}
 			_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
 
-			docs = append(docs, SearchDoc{
-				ID:          "svc:" + svc.Name,
-				Type:        "mcp",
-				Name:        svc.DisplayName,
-				Description: svc.Description,
-				GroupName:   g.Name,
-				ServiceName: svc.Name,
-				ToolCount:   len(tools),
-			})
-
-			// Tool-level docs
-			for _, t := range tools {
+			if scope == "" || scope == "mcp" || scope == "all" {
 				docs = append(docs, SearchDoc{
-					ID:          "tool:" + svc.Name + "." + t.Name,
-					Type:        "tool",
-					Name:        t.Name,
-					Description: t.Description,
+					ID:          "svc:" + svc.Name,
+					Type:        "mcp",
+					Name:        svc.DisplayName,
+					Description: svc.Description,
 					GroupName:   g.Name,
 					ServiceName: svc.Name,
+					ToolCount:   len(tools),
 				})
+			}
+
+			if scope == "tool" || scope == "all" {
+				for _, t := range tools {
+					docs = append(docs, SearchDoc{
+						ID:          "tool:" + svc.Name + "." + t.Name,
+						Type:        "tool",
+						Name:        t.Name,
+						Description: t.Description,
+						GroupName:   g.Name,
+						ServiceName: svc.Name,
+					})
+				}
 			}
 		}
 	}
@@ -129,12 +143,12 @@ func (e *SearchEngine) Describe(targets []string, apiKeyID int64) ([]map[string]
 			var tools []interface{}
 			_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
 			results = append(results, map[string]interface{}{
-				"type":        "service",
-				"name":        svc.Name,
+				"type":         "service",
+				"name":         svc.Name,
 				"display_name": svc.DisplayName,
-				"description": svc.Description,
-				"tools_count": len(tools),
-				"tools":       tools,
+				"description":  svc.Description,
+				"tools_count":  len(tools),
+				"tools":        tools,
 			})
 		} else {
 			// Describe a specific tool

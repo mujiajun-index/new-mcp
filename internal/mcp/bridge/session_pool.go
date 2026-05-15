@@ -3,6 +3,7 @@ package bridge
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
@@ -56,7 +57,7 @@ func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (
 
 	adapter := CreateAdapter(svc)
 	if adapter == nil {
-		return nil, nil
+		return nil, fmt.Errorf("unsupported transport type: %s", svc.TransportType)
 	}
 
 	if err := adapter.Connect(ctx); err != nil {
@@ -121,6 +122,19 @@ func (p *SessionPool) CloseAll() {
 		s.Adapter.Close()
 		delete(p.sessions, id)
 	}
+}
+
+func (p *SessionPool) FindByToolName(toolName string) *McpSession {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, s := range p.sessions {
+		for _, t := range s.Tools {
+			if t.Name == toolName {
+				return s
+			}
+		}
+	}
+	return nil
 }
 
 func (p *SessionPool) GetAllSessions() []*McpSession {

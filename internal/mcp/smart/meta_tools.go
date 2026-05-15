@@ -18,7 +18,7 @@ var MetaTools = []struct {
 				"group": {"type": "string", "description": "限定分组"},
 				"limit": {"type": "number", "default": 10, "maximum": 50}
 			},
-			"required": ["query"]
+			"required": []
 		}`),
 	},
 	{
