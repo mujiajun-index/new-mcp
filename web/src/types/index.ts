@@ -68,6 +68,7 @@ export interface ServiceListItem {
   display_name: string
   description: string
   transport_type: TransportType
+  source: string
   health_status: string
   tools_count: number
   status: number
@@ -80,6 +81,7 @@ export interface ServiceDetail {
   display_name: string
   description: string
   transport_type: TransportType
+  source: string
   config: Record<string, unknown>
   auth_type: AuthType
   health_status: string

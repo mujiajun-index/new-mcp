@@ -1,6 +1,6 @@
 # NewMCP 技术架构文档
 
-> 版本: V1.0 | 状态: 草案 | 更新日期: 2026-05-03
+> 版本: V1.1 | 状态: 草案 | 更新日期: 2026-05-15
 
 ## 1. 架构概述
 
@@ -21,8 +21,9 @@
 | 认证 | JWT + API Key | 双重认证机制 |
 | WebSocket | gorilla/websocket | 设备长链接、MCP WS 传输 |
 | MCP 协议 | go-sdk/mcp + 自定义适配器 | 官方 SDK + 协议桥接 |
-| 前端 | React 18 + Vite + Semi Design | 管理界面 |
-| 状态管理 | Zustand | 轻量级前端状态 |
+| 前端 | React 19 + Vite + Radix UI + Tailwind CSS | 管理界面 |
+| 路由 | TanStack Router | 类型安全路由 |
+| 数据请求 | TanStack Query | 服务端状态管理 |
 | 部署 | Docker / 单二进制 | 灵活部署选项 |
 
 ---
@@ -63,10 +64,10 @@
 │  │  │ - 健康检查 │  │ - 过滤控制 │  │ - 会话池管理     │  │   │
 │  │  └────────────┘  └────────────┘  └──────────────────┘  │   │
 │  │  ┌────────────┐  ┌────────────┐  ┌──────────────────┐  │   │
-│  │  │ Smart      │  │ Cloud      │  │ Vision           │  │   │
-│  │  │ - BM25搜索 │  │ - 主动连接 │  │ - 模型配置       │  │   │
-│  │  │ - 元工具   │  │ - 多平台   │  │ - 摄像头         │  │   │
-│  │  │ - 范围收敛 │  │ - 状态监控 │  │ - 帧处理         │  │   │
+│  │  │ Smart      │  │ Cloud      │  │ Virtual          │  │   │
+│  │  │ - BM25搜索 │  │ - 主动连接 │  │ - VirtualToolReg │  │   │
+│  │  │ - 元工具   │  │ - 多平台   │  │ - VisionClient   │  │   │
+│  │  │ - 范围收敛 │  │ - 状态监控 │  │ - CameraStream   │  │   │
 │  │  └────────────┘  └────────────┘  └──────────────────┘  │   │
 │  └──────────────────────┬──────────────────────────────────┘   │
 │                         │                                      │
@@ -75,7 +76,7 @@
 │  │                                                          │   │
 │  │  ┌──────────────────────────────────────────────────┐  │   │
 │  │  │  Transport Adapters                               │  │   │
-│  │  │  Stdio │ SSE │ HTTP │ WS │ PassiveWS                    │  │
+│  │  │  Stdio │ SSE │ HTTP │ WS │ PassiveWS │ Virtual                    │  │
 │  │  └──────────────────────────────────────────────────┘  │   │
 │  │                                                          │   │
 │  │  ┌──────────────┐  ┌──────────────┐                     │   │
@@ -219,6 +220,100 @@ NewMCP 支持两种连接方向:
 - 类似小智云的注册模式：服务提供方连接平台，而非平台连接服务
 - 适合外部服务在 NAT/防火墙后的场景（服务主动连出）
 
+### 3.4 虚拟工具调用流程（Vision/Camera）
+
+```
+时序图: MCP 客户端调用虚拟工具
+
+┌────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│MCP     │    │Gateway   │    │Virtual   │    │Vision/   │    │外部 AI   │
+│Client  │    │Handler   │    │Registry  │    │Camera    │    │API       │
+│        │    │          │    │          │    │Handler   │    │(OpenAI等)│
+└───┬────┘    └────┬─────┘    └────┬─────┘    └────┬─────┘    └────┬─────┘
+    │              │               │               │               │
+    │ POST /mcp/group/xxx          │               │               │
+    │ {method: "tools/call",       │               │               │
+    │  name: "vision_1.analyze_image"}             │               │
+    │─────────────>│               │               │               │
+    │              │               │               │               │
+    │              │ 解析: vision_1 = serviceName   │               │
+    │              │ 查询 mcp_services              │               │
+    │              │ (transport_type="virtual")     │               │
+    │              │───┐           │               │               │
+    │              │<──┘           │               │               │
+    │              │               │               │               │
+    │              │ VirtualRegistry.Handle()       │               │
+    │              │──────────────>│               │               │
+    │              │               │               │               │
+    │              │               │ 查找 handler (serviceID=5)    │
+    │              │               │──────────────>│               │
+    │              │               │               │               │
+    │              │               │               │ 查 VisionConfig│
+    │              │               │               │───┐           │
+    │              │               │               │<──┘           │
+    │              │               │               │               │
+    │              │               │               │ 调用 AI API   │
+    │              │               │               │──────────────>│
+    │              │               │               │               │
+    │              │               │               │  返回识别结果  │
+    │              │               │               │<──────────────│
+    │              │               │               │               │
+    │              │               │<──────────────│               │
+    │              │<──────────────│               │               │
+    │              │               │               │               │
+    │ 返回结果     │               │               │               │
+    │<─────────────│               │               │               │
+```
+
+### 3.5 摄像头帧推送与调用流程
+
+```
+时序图: 浏览器推流 + MCP 工具调用摄像头
+
+┌────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│浏览器  │    │NewMCP    │    │Camera    │    │MCP       │    │AI API    │
+│摄像头  │    │WebSocket │    │Stream    │    │Client    │    │(Vision)  │
+└───┬────┘    └────┬─────┘    └────┬─────┘    └────┬─────┘    └────┬─────┘
+    │              │               │               │               │
+    │ ① WebSocket 连接             │               │               │
+    │ /api/v1/cameras/1/stream     │               │               │
+    │─────────────>│               │               │               │
+    │              │               │               │               │
+    │ ② canvas 截帧 (JPEG)         │               │               │
+    │ (每2秒)      │               │               │               │
+    │─────────────>│               │               │               │
+    │              │               │               │               │
+    │              │ HandleFrame()  │               │               │
+    │              │──────────────>│               │               │
+    │              │               │               │               │
+    │              │               │ 缓存最新帧    │               │
+    │              │               │───┐           │               │
+    │              │               │<──┘           │               │
+    │              │               │               │               │
+    │ ③ MCP Client 调用 camera.capture              │               │
+    │              │               │               │               │
+    │              │<──────────────────────────────│               │
+    │              │               │               │               │
+    │              │ GetLatestFrame()               │               │
+    │              │──────────────>│               │               │
+    │              │               │               │               │
+    │              │<──────────────│               │               │
+    │              │ (返回 base64)  │               │               │
+    │              │──────────────────────────────>│               │
+    │              │               │               │               │
+    │ ④ MCP Client 调用 camera.analyze             │               │
+    │              │               │               │               │
+    │              │<──────────────────────────────│               │
+    │              │               │               │               │
+    │              │ GetLatestFrame() + VisionClient│               │
+    │              │──────────────>│               │               │
+    │              │               │──────────────────────────────>│
+    │              │               │               │               │
+    │              │               │<──────────────────────────────│
+    │              │<──────────────│               │               │
+    │              │──────────────────────────────>│               │
+```
+
 ---
 
 ## 4. 模块详细设计
@@ -359,7 +454,91 @@ type ToolRouter struct {
 func (r *ToolRouter) Route(namespacedTool string) (*McpSession, string, error)
 ```
 
-### 4.6 MCP Gateway Handler
+### 4.6 VirtualToolRegistry — 虚拟工具注册表
+
+```go
+// internal/mcp/virtual/registry.go
+
+// VirtualToolRegistry 管理虚拟 MCP 工具的内存注册表
+// 虚拟工具不走 SessionPool/TransportAdapter，直接在进程内处理
+type VirtualToolRegistry struct {
+    mu       sync.RWMutex
+    handlers map[int64]VirtualToolHandler  // key: McpService.ID
+}
+
+// VirtualToolHandler 虚拟工具处理函数签名
+type VirtualToolHandler func(ctx context.Context, serviceID int64, config map[string]interface{}, toolName string, args json.RawMessage) (json.RawMessage, error)
+
+// Register 注册虚拟工具处理器
+func (r *VirtualToolRegistry) Register(serviceID int64, handler VirtualToolHandler)
+
+// Unregister 注销虚拟工具处理器
+func (r *VirtualToolRegistry) Unregister(serviceID int64)
+
+// Handle 调用虚拟工具
+func (r *VirtualToolRegistry) Handle(ctx context.Context, serviceID int64, config map[string]interface{}, toolName string, args json.RawMessage) (json.RawMessage, error)
+
+// IsVirtual 检查服务是否为虚拟服务
+func (r *VirtualToolRegistry) IsVirtual(serviceID int64) bool
+```
+
+> **设计思路**: VirtualToolRegistry 绕过现有的 SessionPool/TransportAdapter 架构，为进程内虚拟工具提供直接调用路径。每个虚拟 McpService（Vision/Camera 启用后创建）注册一个 handler，Gateway 在 `tools/call` 时优先检查虚拟服务。
+
+### 4.7 VisionClient — 视觉 API 客户端
+
+```go
+// internal/mcp/vision/client.go
+
+// VisionClient 通用 OpenAI 兼容视觉 API 客户端
+// 支持 OpenAI、GLM、Qwen、Ollama 等兼容端点
+type VisionClient struct {
+    EndpointURL string
+    ApiKey      string
+    ModelName   string
+    MaxTokens   int
+}
+
+// Analyze 调用视觉模型分析图片
+// 使用 OpenAI Chat Completions API 格式，image_url content part 传递 base64 图片
+func (c *VisionClient) Analyze(ctx context.Context, systemPrompt, userPrompt, base64Image string) (string, error)
+```
+
+> **请求格式**: 标准 OpenAI Chat Completions API，content 包含 text 和 image_url 两个 part。`image_url` 使用 `data:image/jpeg;base64,{data}` 格式。
+
+### 4.8 CameraStreamManager — 摄像头帧流管理
+
+```go
+// internal/mcp/camera/stream_manager.go
+
+// CameraStreamManager 管理摄像头实时帧的内存缓存
+// 纯内存结构，不持久化到数据库
+type CameraStreamManager struct {
+    mu      sync.RWMutex
+    streams map[int64]*CameraStream  // key: camera ID
+}
+
+type CameraStream struct {
+    LatestFrame []byte         // 最新帧 JPEG
+    CapturedAt  time.Time      // 捕获时间
+    Conn        *websocket.Conn // WebSocket 连接
+}
+
+// HandleFrame 缓存最新帧（由 WebSocket 端点调用）
+func (m *CameraStreamManager) HandleFrame(cameraID int64, frame []byte)
+
+// GetLatestFrame 获取缓存的最新帧
+func (m *CameraStreamManager) GetLatestFrame(cameraID int64) ([]byte, time.Time, error)
+
+// IsStreaming 检查是否有活跃的 WebSocket 推流连接
+func (m *CameraStreamManager) IsStreaming(cameraID int64) bool
+
+// Cleanup 关闭连接并清理缓存
+func (m *CameraStreamManager) Cleanup(cameraID int64)
+```
+
+> **帧流程**: 浏览器通过 WebRTC `getUserMedia` 获取摄像头 → canvas 截取 JPEG → WebSocket 发送到 `/api/v1/cameras/:id/stream` → 后端缓存最新帧 → MCP 工具调用时返回缓存帧。
+
+### 4.9 MCP Gateway Handler
 
 ```go
 // internal/mcp/handler/gateway_handler.go
@@ -367,15 +546,19 @@ func (r *ToolRouter) Route(namespacedTool string) (*McpSession, string, error)
 // GatewayHandler 处理 MCP 协议请求
 // 同时作为 MCP Server 暴露给下游客户端
 type GatewayHandler struct {
-    toolRouter *ToolRouter
-    pool       *SessionPool
+    toolRouter     *ToolRouter
+    pool           *SessionPool
+    virtualRegistry *VirtualToolRegistry  // 虚拟工具注册表
 }
 
-// 处理 tools/list: 聚合所有活跃服务的工具
+// 处理 tools/list: 聚合所有活跃服务的工具（含虚拟服务）
 func (h *GatewayHandler) HandleToolsList(ctx context.Context, req *Request) (*Response, error)
 
-// 处理 tools/call: 路由到目标上游服务
+// 处理 tools/call: 优先检查虚拟服务，再路由到上游服务
 func (h *GatewayHandler) HandleToolsCall(ctx context.Context, req *Request) (*Response, error)
+```
+
+> **路由优先级**: `handleToolsCall` 的 default 分支先解析 `serviceName.toolName`，查询 `mcp_services` 表是否存在 `transport_type="virtual"` 的记录。如果命中虚拟服务，直接调用 VirtualToolRegistry；否则走 SessionPool 路由到上游 MCP 服务。
 ```
 
 ---
@@ -399,7 +582,7 @@ func (h *GatewayHandler) HandleToolsCall(ctx context.Context, req *Request) (*Re
          ▼                     ▼
 ┌──────────────────────────────────────────────┐
 │ Service Layer (业务逻辑)                      │
-│  Registry │ Group │ Connection │ Vision │ Bridge │
+│  Registry │ Group │ Connection │ Vision │ Camera │ Bridge │
 └──────────────────────┬───────────────────────┘
                        │
          ┌─────────────┼─────────────┐
@@ -427,6 +610,9 @@ func (h *GatewayHandler) HandleToolsCall(ctx context.Context, req *Request) (*Re
 | 状态管理 | Zustand | 比 Redux 轻量，适合中小项目 |
 | 工具暴露 | 双模式 (Direct + Smart) | Direct 适合工具少场景，Smart 适合大量工具/受限设备 |
 | 搜索引擎 | 自实现 BM25Okapi | 零依赖，搜索范围通过 API Key→分组 自然收敛到百级 |
+| 虚拟工具 | VirtualToolRegistry (进程内) | 绕过 SessionPool，支持 Vision/Camera 等非 MCP 协议工具 |
+| 视觉 API | OpenAI 兼容格式 | 一套客户端适配 OpenAI/GLM/Qwen/Ollama 等 |
+| 摄像头帧 | WebSocket 实时推流 + 内存缓存 | 浏览器端推流，后端仅缓存最新帧，被动响应 MCP 调用 |
 
 ---
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/internal/mcp/smart"
+	"github.com/mujkjk/newmcp/internal/mcp/virtual"
 	"github.com/mujkjk/newmcp/model"
 )
 
@@ -42,16 +43,18 @@ type LogContext struct {
 }
 
 type GatewayHandler struct {
-	pool         *bridge.SessionPool
-	toolRouter   *bridge.ToolRouter
-	searchEngine *smart.SearchEngine
+	pool            *bridge.SessionPool
+	toolRouter      *bridge.ToolRouter
+	searchEngine    *smart.SearchEngine
+	virtualRegistry *virtual.VirtualToolRegistry
 }
 
-func NewGatewayHandler(pool *bridge.SessionPool, toolRouter *bridge.ToolRouter) *GatewayHandler {
+func NewGatewayHandler(pool *bridge.SessionPool, toolRouter *bridge.ToolRouter, vr *virtual.VirtualToolRegistry) *GatewayHandler {
 	return &GatewayHandler{
-		pool:         pool,
-		toolRouter:   toolRouter,
-		searchEngine: smart.NewSearchEngine(),
+		pool:            pool,
+		toolRouter:      toolRouter,
+		searchEngine:    smart.NewSearchEngine(),
+		virtualRegistry: vr,
 	}
 }
 
@@ -180,26 +183,46 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 		}
 
 		if resp == nil {
-			session, toolName, err := h.toolRouter.Route(params.Name)
-			if err != nil {
-				resp = h.errorResponse(req.ID, -32602, err.Error())
-			} else {
-				serviceID = session.ServiceID
-				serviceName = session.ServiceName
-
-				callParams := map[string]interface{}{
-					"name":      toolName,
-					"arguments": params.Arguments,
-				}
-
-				result, err := session.Adapter.Call(ctx, "tools/call", callParams)
-				if err != nil {
-					resp = h.errorResponse(req.ID, -32603, "Tool execution failed: "+err.Error())
+			// Check if this is a virtual tool first
+			svcName, tName := bridge.ParseNamespacedName(params.Name)
+			var virtualSvc model.McpService
+			if h.virtualRegistry != nil && model.DB.Where("name = ? AND transport_type = ?", svcName, "virtual").First(&virtualSvc).Error == nil {
+				vConfig := map[string]interface{}{}
+				_ = json.Unmarshal([]byte(virtualSvc.Config), &vConfig)
+				vResult, vErr := h.virtualRegistry.Handle(ctx, virtualSvc.ID, vConfig, tName, params.Arguments)
+				if vErr != nil {
+					resp = h.errorResponse(req.ID, -32603, "Virtual tool failed: "+vErr.Error())
 				} else {
 					resp = &JSONRPCResponse{
 						JSONRPC: "2.0",
 						ID:      req.ID,
-						Result:  json.RawMessage(result),
+						Result:  json.RawMessage(vResult),
+					}
+				}
+				serviceID = virtualSvc.ID
+				serviceName = virtualSvc.Name
+			} else {
+				session, toolName, err := h.toolRouter.Route(params.Name)
+				if err != nil {
+					resp = h.errorResponse(req.ID, -32602, err.Error())
+				} else {
+					serviceID = session.ServiceID
+					serviceName = session.ServiceName
+
+					callParams := map[string]interface{}{
+						"name":      toolName,
+						"arguments": params.Arguments,
+					}
+
+					result, err := session.Adapter.Call(ctx, "tools/call", callParams)
+					if err != nil {
+						resp = h.errorResponse(req.ID, -32603, "Tool execution failed: "+err.Error())
+					} else {
+						resp = &JSONRPCResponse{
+							JSONRPC: "2.0",
+							ID:      req.ID,
+							Result:  json.RawMessage(result),
+						}
 					}
 				}
 			}

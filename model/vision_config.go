@@ -17,8 +17,13 @@ type VisionConfig struct {
 	ApiKey             string         `json:"-" gorm:"column:api_key;size:512"`
 	SystemPrompt       string         `json:"system_prompt" gorm:"type:text"`
 	MaxTokens          int            `json:"max_tokens" gorm:"default:4096"`
-	AutoRegister       bool           `json:"auto_register" gorm:"default:true"`
+	AutoRegister       bool           `json:"auto_register" gorm:"default:false"`
 	RegisteredServiceID *int64        `json:"registered_service_id"`
+	AnalyzeImageName   string         `json:"analyze_image_name" gorm:"size:128;default:vision.analyze_image"`
+	AnalyzeImageDesc   string         `json:"analyze_image_desc" gorm:"type:text;default:分析图片内容，识别其中的物体、文字、场景等"`
+	DescribeSceneName  string         `json:"describe_scene_name" gorm:"size:128;default:vision.describe_scene"`
+	DescribeSceneDesc  string         `json:"describe_scene_desc" gorm:"type:text;default:描述图片中的场景和整体内容"`
+	ExtraConfig        string         `json:"extra_config" gorm:"type:text;default:'{}'"`
 	Status             int            `json:"status" gorm:"default:1"`
 	CreatedAt          time.Time      `json:"created_at"`
 	UpdatedAt          time.Time      `json:"updated_at"`
@@ -31,6 +36,18 @@ func ListVisionConfigsByUser(userID int64) ([]VisionConfig, error) {
 	var configs []VisionConfig
 	err := DB.Where("user_id = ?", userID).Order("created_at DESC").Find(&configs).Error
 	return configs, err
+}
+
+func GetVisionConfigByID(userID, id int64) (*VisionConfig, error) {
+	var config VisionConfig
+	err := DB.Where("id = ? AND user_id = ?", id, userID).First(&config).Error
+	return &config, err
+}
+
+func GetVisionConfigByServiceID(serviceID int64) (*VisionConfig, error) {
+	var config VisionConfig
+	err := DB.Where("registered_service_id = ?", serviceID).First(&config).Error
+	return &config, err
 }
 
 func (v *VisionConfig) Insert() error {

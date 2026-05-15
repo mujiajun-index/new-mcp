@@ -41,7 +41,7 @@ func NewXiaoZhiClient(ep *model.CloudEndpoint, pool *bridge.SessionPool, router 
 		wssURL:     ep.WssURL,
 		apiKeyID:   apiKeyID,
 		exposeMode: ep.ExposeMode,
-		handler:    handler.NewGatewayHandler(pool, router),
+		handler:    handler.NewGatewayHandler(pool, router, nil),
 		done:       make(chan struct{}),
 	}
 }

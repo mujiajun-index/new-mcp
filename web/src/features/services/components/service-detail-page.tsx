@@ -11,7 +11,12 @@ import type { McpTool } from '@/types'
 
 const transportLabels: Record<string, string> = {
   'stdio': 'Stdio', 'sse': 'SSE', 'streamable-http': 'Streamable HTTP',
-  'websocket': 'WebSocket', 'passive-ws': 'Passive WS',
+  'websocket': 'WebSocket', 'passive-ws': 'Passive WS', 'virtual': '虚拟',
+}
+
+const sourceLabels: Record<string, { label: string; color: string }> = {
+  'vision': { label: '视觉', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
+  'camera': { label: '摄像头', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
 }
 
 export function ServiceDetailPage() {
@@ -62,6 +67,8 @@ export function ServiceDetailPage() {
   }
 
   const tools: McpTool[] = service.tools_cache || []
+  const isVirtual = service.transport_type === 'virtual'
+  const virtualSource = isVirtual ? sourceLabels[service.source] : null
 
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-6xl">
@@ -73,24 +80,33 @@ export function ServiceDetailPage() {
           </Button>
           <div>
             <h1 className="text-xl font-semibold">{service.display_name || service.name}</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">{service.name}</p>
+            <div className="mt-0.5 flex items-center gap-2">
+              <p className="text-sm text-muted-foreground">{service.name}</p>
+              {virtualSource && (
+                <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium ${virtualSource.color}`}>
+                  {virtualSource.label}
+                </span>
+              )}
+            </div>
             {service.description && <p className="mt-2 text-sm text-muted-foreground">{service.description}</p>}
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => testMutation.mutate()} disabled={testMutation.isPending}>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => testMutation.mutate()} disabled={testMutation.isPending || isVirtual} title={isVirtual ? '虚拟服务不支持测试连接' : undefined}>
             <Zap className="h-3.5 w-3.5" />
             {testMutation.isPending ? '测试中...' : '测试连接'}
           </Button>
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => refreshMutation.mutate()} disabled={refreshMutation.isPending}>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => refreshMutation.mutate()} disabled={refreshMutation.isPending || isVirtual} title={isVirtual ? '虚拟服务不支持刷新工具' : undefined}>
             <RefreshCw className={`h-3.5 w-3.5 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
             刷新工具
           </Button>
+          {service.transport_type !== 'virtual' && (
           <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => {
             if (confirm('确定删除此服务？')) deleteMutation.mutate()
           }}>
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
+          )}
         </div>
       </div>
 

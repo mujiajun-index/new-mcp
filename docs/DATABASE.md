@@ -214,8 +214,17 @@ CREATE TABLE `vision_configs` (
     `system_prompt`        TEXT            DEFAULT '' COMMENT '系统提示词',
     `max_tokens`           INT             DEFAULT 4096 COMMENT '最大输出 tokens',
 
+    -- 工具自定义名称和描述
+    `analyze_image_name`   VARCHAR(128)    DEFAULT 'vision.analyze_image' COMMENT '工具1名称: analyze_image',
+    `analyze_image_desc`   TEXT            DEFAULT '分析图片内容，识别其中的物体、文字、场景等' COMMENT '工具1描述',
+    `describe_scene_name`  VARCHAR(128)    DEFAULT 'vision.describe_scene' COMMENT '工具2名称: describe_scene',
+    `describe_scene_desc`  TEXT            DEFAULT '描述图片中的场景和整体内容' COMMENT '工具2描述',
+
+    -- 扩展配置
+    `extra_config`         TEXT            DEFAULT '{}' COMMENT '扩展配置 JSON',
+
     -- MCP 集成
-    `auto_register`        TINYINT         DEFAULT 1 COMMENT '自动注册为 MCP 服务',
+    `auto_register`        TINYINT         DEFAULT 0 COMMENT '是否启用(注册为虚拟 MCP 服务): 0=未启用, 1=已启用',
     `registered_service_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '注册的 MCP 服务 ID',
 
     `status`               TINYINT         DEFAULT 1 COMMENT '1=启用, 2=禁用',
@@ -229,6 +238,8 @@ CREATE TABLE `vision_configs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='视觉模型配置表';
 ```
 
+> **启用机制**: 启用 VisionConfig 后，系统自动创建一条 `mcp_services` 记录（`transport_type="virtual"`, `source="vision"`），包含 2 个工具：`analyze_image`（分析图片内容）和 `describe_scene`（描述场景）。工具名称和描述可在详情页自定义编辑。禁用后自动清理关联的 McpService、McpGroupService、McpGroupTool 记录。
+
 ### 2.9 cameras - 摄像头表
 
 ```sql
@@ -238,34 +249,36 @@ CREATE TABLE `cameras` (
     `name`                 VARCHAR(128)    NOT NULL COMMENT '摄像头名称',
     `description`          TEXT            DEFAULT '' COMMENT '描述',
 
-    -- 摄像头源
-    `source_type`          VARCHAR(32)     NOT NULL COMMENT '源类型: http_mjpeg, rtsp, file, v4l2',
-    `source_url`           VARCHAR(512)    NOT NULL COMMENT '源 URL 或设备路径',
+    -- 绑定视觉配置（必选）
+    `vision_config_id`     BIGINT UNSIGNED NOT NULL COMMENT '绑定的视觉配置 ID',
 
-    -- 帧捕获配置
-    `fps`                  DECIMAL(4,1)    DEFAULT 1.0 COMMENT '捕获帧率 (FPS)',
-    `resolution_w`         INT             DEFAULT 640 COMMENT '分辨率宽度',
-    `resolution_h`         INT             DEFAULT 480 COMMENT '分辨率高度',
+    -- 工具自定义名称和描述
+    `capture_name`         VARCHAR(128)    DEFAULT 'camera.capture' COMMENT '工具1名称: capture',
+    `capture_desc`         TEXT            DEFAULT '截取当前摄像头画面并返回图像' COMMENT '工具1描述',
+    `analyze_name`         VARCHAR(128)    DEFAULT 'camera.analyze' COMMENT '工具2名称: analyze',
+    `analyze_desc`         TEXT            DEFAULT '截取当前摄像头画面并识别分析' COMMENT '工具2描述',
 
-    -- 绑定视觉配置
-    `vision_config_id`     BIGINT UNSIGNED DEFAULT NULL COMMENT '绑定的视觉配置 ID',
+    -- 扩展配置
+    `extra_config`         TEXT            DEFAULT '{}' COMMENT '扩展配置 JSON',
 
     -- MCP 集成
-    `auto_register`        TINYINT         DEFAULT 1 COMMENT '自动注册为 MCP 服务',
+    `auto_register`        TINYINT         DEFAULT 0 COMMENT '是否启用(注册为虚拟 MCP 服务): 0=未启用, 1=已启用',
     `registered_service_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '注册的 MCP 服务 ID',
 
-    `status`               TINYINT         DEFAULT 1 COMMENT '1=运行中, 2=暂停, 3=错误',
-    `last_capture_at`      DATETIME        DEFAULT NULL COMMENT '上次捕获时间',
+    `status`               TINYINT         DEFAULT 1 COMMENT '1=启用, 2=禁用',
     `created_at`           DATETIME        DEFAULT CURRENT_TIMESTAMP,
     `updated_at`           DATETIME        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`           DATETIME        DEFAULT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_user_id` (`user_id`),
     KEY `idx_vision_config` (`vision_config_id`),
-    KEY `idx_status` (`status`),
     KEY `idx_deleted_at` (`deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='摄像头表';
 ```
+
+> **启用机制**: 启用 Camera 后，系统自动创建一条 `mcp_services` 记录（`transport_type="virtual"`, `source="camera"`），包含 2 个工具：`capture`（返回最新帧的 base64 图像）和 `analyze`（截取画面并调用关联的 VisionConfig 进行 AI 识别）。
+>
+> **帧获取方式**: 浏览器通过 WebRTC `getUserMedia` 获取摄像头画面，canvas 定时截图后通过 WebSocket (`/api/v1/cameras/:id/stream`) 推送到后端，后端 `CameraStreamManager` 缓存最新帧供 MCP 工具调用。不使用 `source_type`/`source_url`/`fps`/`resolution_*` 等服务端拉流字段，完全由浏览器端推流驱动。
 
 ### 2.10 cloud_endpoints - 云端主动连接表
 
@@ -441,6 +454,8 @@ mcp_groups (1) ──< (N) mcp_group_tools   >── (1) mcp_services
 mcp_groups (1) ──< (N) cloud_endpoints
 
 vision_configs (1) ──< (N) cameras
+vision_configs (1) ──> (0..1) mcp_services (启用时创建虚拟服务, transport_type=virtual)
+cameras (1) ──> (0..1) mcp_services (启用时创建虚拟服务, transport_type=virtual)
 
 mcp_services (1) ──< (N) mcp_call_logs
 mcp_groups   (1) ──< (N) mcp_call_logs

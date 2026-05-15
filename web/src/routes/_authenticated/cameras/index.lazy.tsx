@@ -1,6 +1,6 @@
 import { createLazyFileRoute } from '@tanstack/react-router'
-import { PlaceholderPage } from '@/components/layout/placeholder-page'
+import { CameraListPage } from '@/features/cameras/components/camera-list-page'
 
 export const Route = createLazyFileRoute('/_authenticated/cameras/')({
-  component: () => <PlaceholderPage title="nav.cameras" icon="Camera" />,
+  component: () => <CameraListPage />,
 })

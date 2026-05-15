@@ -1,6 +1,6 @@
 import { createLazyFileRoute } from '@tanstack/react-router'
-import { PlaceholderPage } from '@/components/layout/placeholder-page'
+import { VisionDetailPage } from '@/features/vision/components/vision-detail-page'
 
 export const Route = createLazyFileRoute('/_authenticated/vision/$id')({
-  component: () => <PlaceholderPage title="nav.vision" subtitle="编辑视觉配置" icon="Eye" />,
+  component: () => <VisionDetailPage />,
 })

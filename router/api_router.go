@@ -74,6 +74,26 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.POST("/connections/:id/disconnect", controller.DisconnectConnection)
 		auth.PUT("/connections/:id/bind-apikey", controller.BindConnectionApiKey)
 
+		// Vision Configs
+		auth.GET("/vision", controller.ListVisionConfigs)
+		auth.POST("/vision", controller.CreateVisionConfig)
+		auth.GET("/vision/:id", controller.GetVisionConfig)
+		auth.PUT("/vision/:id", controller.UpdateVisionConfig)
+		auth.DELETE("/vision/:id", controller.DeleteVisionConfig)
+		auth.POST("/vision/test", controller.TestVisionConfig)
+		auth.POST("/vision/:id/enable", controller.EnableVisionConfig)
+		auth.POST("/vision/:id/disable", controller.DisableVisionConfig)
+
+		// Cameras
+		auth.GET("/cameras", controller.ListCameras)
+		auth.POST("/cameras", controller.CreateCamera)
+		auth.GET("/cameras/:id", controller.GetCamera)
+		auth.PUT("/cameras/:id", controller.UpdateCamera)
+		auth.DELETE("/cameras/:id", controller.DeleteCamera)
+		auth.POST("/cameras/:id/enable", controller.EnableCamera)
+		auth.POST("/cameras/:id/disable", controller.DisableCamera)
+		auth.GET("/cameras/:id/stream", HandleCameraStream)
+
 		// User logs
 		auth.GET("/logs", controller.GetUserLogs)
 		auth.GET("/logs/stats", controller.GetUserLogStats)

@@ -17,7 +17,7 @@ func NewToolRouter(pool *SessionPool) *ToolRouter {
 // Direct mode: "serviceName__toolName" (double underscore)
 // Smart mode: "serviceName.toolName" (dot)
 func (r *ToolRouter) Route(namespacedTool string) (*McpSession, string, error) {
-	serviceName, toolName := parseNamespacedName(namespacedTool)
+	serviceName, toolName := ParseNamespacedName(namespacedTool)
 	if serviceName == "" {
 		return nil, "", fmt.Errorf("invalid tool name format: %s", namespacedTool)
 	}
@@ -32,7 +32,7 @@ func (r *ToolRouter) Route(namespacedTool string) (*McpSession, string, error) {
 	return session, toolName, nil
 }
 
-func parseNamespacedName(name string) (serviceName, toolName string) {
+func ParseNamespacedName(name string) (serviceName, toolName string) {
 	if idx := strings.Index(name, "__"); idx >= 0 {
 		return name[:idx], name[idx+2:]
 	}

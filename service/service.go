@@ -10,10 +10,14 @@ import (
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
+	"github.com/mujkjk/newmcp/internal/mcp/camera"
+	"github.com/mujkjk/newmcp/internal/mcp/virtual"
 	"github.com/mujkjk/newmcp/model"
 )
 
 var SessionPool *bridge.SessionPool
+var VirtualRegistry *virtual.VirtualToolRegistry
+var CameraStreamMgr *camera.CameraStreamManager
 
 type McpServiceService struct{}
 
@@ -35,6 +39,7 @@ func (s *McpServiceService) List(userID int64, page, pageSize int, filters map[s
 			DisplayName:   svc.DisplayName,
 			Description:   svc.Description,
 			TransportType: svc.TransportType,
+			Source:        svc.Source,
 			HealthStatus:  svc.HealthStatus,
 			ToolsCount:    len(tools),
 			Status:        svc.Status,
@@ -168,6 +173,13 @@ func (s *McpServiceService) Delete(userID, serviceID int64) error {
 	svc, err := model.GetServiceByID(userID, serviceID)
 	if err != nil {
 		return err
+	}
+	if svc.TransportType == "virtual" {
+		sourceLabel := map[string]string{"vision": "视觉", "camera": "摄像头"}[svc.Source]
+		if sourceLabel == "" {
+			sourceLabel = "对应"
+		}
+		return fmt.Errorf("虚拟服务无法直接删除，请在%s配置页面操作", sourceLabel)
 	}
 	return svc.Delete()
 }
@@ -310,6 +322,7 @@ func (s *McpServiceService) ListAdminServices(page, pageSize int) ([]dto.Service
 			DisplayName:   svc.DisplayName,
 			Description:   svc.Description,
 			TransportType: svc.TransportType,
+			Source:        svc.Source,
 			HealthStatus:  svc.HealthStatus,
 			ToolsCount:    len(tools),
 			Status:        svc.Status,
@@ -349,6 +362,7 @@ func (s *McpServiceService) toDetail(svc *model.McpService) *dto.ServiceDetail {
 		DisplayName:      svc.DisplayName,
 		Description:      svc.Description,
 		TransportType:    svc.TransportType,
+		Source:           svc.Source,
 		Config:           config,
 		AuthType:         svc.AuthType,
 		HealthStatus:     svc.HealthStatus,

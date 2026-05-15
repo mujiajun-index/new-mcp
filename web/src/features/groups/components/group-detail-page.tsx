@@ -398,6 +398,12 @@ export function GroupDetailPage() {
                   <span className={`h-2 w-2 rounded-full ${s.enabled ? 'bg-emerald-500' : 'bg-zinc-400'}`} />
                   <span className="text-sm font-medium">{s.name}</span>
                   <span className="text-xs text-muted-foreground">{s.tools_count} 工具</span>
+                  {s.name.startsWith('vision_') && (
+                    <span className="inline-flex items-center rounded-md bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">视觉</span>
+                  )}
+                  {s.name.startsWith('camera_') && (
+                    <span className="inline-flex items-center rounded-md bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">摄像头</span>
+                  )}
                 </div>
                 <Button variant="ghost" size="sm" className="text-destructive h-7" onClick={() => { if (confirm(`确定移除服务「${s.name}」？移除后该服务的工具将从分组中消失。`)) removeServiceMutation.mutate(s.id) }}>
                   <X className="h-3.5 w-3.5" />
@@ -448,8 +454,8 @@ export function GroupDetailPage() {
                 return (
                   <div key={svcName} className="rounded-lg border">
                     {/* Service header */}
-                    <button
-                      className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-muted/30 transition-colors"
+                    <div
+                      className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-muted/30 transition-colors cursor-pointer"
                       onClick={() => toggleExpandedService(svcName)}
                     >
                       <div className="flex items-center gap-2">
@@ -465,7 +471,7 @@ export function GroupDetailPage() {
                       >
                         {allEnabled ? '全部禁用' : '全部启用'}
                       </Button>
-                    </button>
+                    </div>
 
                     {/* Tool list */}
                     {isExpanded && (

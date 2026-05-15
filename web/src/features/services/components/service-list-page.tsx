@@ -18,6 +18,7 @@ const transportIcons: Record<string, React.ComponentType<{ className?: string }>
   'streamable-http': Wifi,
   'websocket': Radio,
   'passive-ws': Plug,
+  'virtual': Zap,
 }
 
 const transportLabels: Record<string, string> = {
@@ -26,6 +27,7 @@ const transportLabels: Record<string, string> = {
   'streamable-http': 'Streamable HTTP',
   'websocket': 'WebSocket',
   'passive-ws': 'Passive WS',
+  'virtual': '虚拟',
 }
 
 function StatusBadge({ status }: { status: number }) {
@@ -162,6 +164,7 @@ export function ServiceListPage() {
               <tbody>
                 {services.map((s) => {
                   const Icon = transportIcons[s.transport_type] || Globe
+                  const isVirtual = s.transport_type === 'virtual'
                   return (
                     <tr key={s.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-3">
@@ -202,6 +205,7 @@ export function ServiceListPage() {
                           <Link to="/services/$id" params={{ id: String(s.id) }}>
                             <Button variant="ghost" size="sm">详情</Button>
                           </Link>
+                          {!isVirtual && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -214,6 +218,7 @@ export function ServiceListPage() {
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
+                          )}
                         </div>
                       </td>
                     </tr>

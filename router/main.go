@@ -1,14 +1,19 @@
 package router
 
 import (
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"encoding/json"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
+	"github.com/mujkjk/newmcp/internal/mcp/camera"
 	"github.com/mujkjk/newmcp/internal/mcp/cloud"
 	"github.com/mujkjk/newmcp/internal/mcp/handler"
+	"github.com/mujkjk/newmcp/internal/mcp/virtual"
+	"github.com/mujkjk/newmcp/model"
 	"github.com/mujkjk/newmcp/service"
 )
 
@@ -16,16 +21,48 @@ var (
 	GatewayHandler *handler.GatewayHandler
 	SessionPool    *bridge.SessionPool
 	CloudManager   *cloud.Manager
+	VirtualRegistry *virtual.VirtualToolRegistry
+	CameraStream   *camera.CameraStreamManager
 )
 
 func InitGateway() {
 	SessionPool = bridge.NewSessionPool()
 	toolRouter := bridge.NewToolRouter(SessionPool)
-	GatewayHandler = handler.NewGatewayHandler(SessionPool, toolRouter)
+	VirtualRegistry = virtual.NewVirtualToolRegistry()
+	CameraStream = camera.NewCameraStreamManager()
+
+	virtual.StreamManager = CameraStream
+
+	GatewayHandler = handler.NewGatewayHandler(SessionPool, toolRouter, VirtualRegistry)
+
+	loadVirtualServices()
 
 	CloudManager = cloud.NewManager(SessionPool, toolRouter)
 	service.CloudManager = CloudManager
 	service.SessionPool = SessionPool
+	service.VirtualRegistry = VirtualRegistry
+	service.CameraStreamMgr = CameraStream
+}
+
+func loadVirtualServices() {
+	var services []model.McpService
+	model.DB.Where("transport_type = ?", "virtual").Find(&services)
+
+	for _, svc := range services {
+		var config map[string]interface{}
+		_ = json.Unmarshal([]byte(svc.Config), &config)
+
+		virtualType, _ := config["virtual_type"].(string)
+		switch virtualType {
+		case "vision":
+			VirtualRegistry.Register(svc.ID, virtual.VisionHandler)
+		case "camera":
+			VirtualRegistry.Register(svc.ID, virtual.CameraHandler)
+		default:
+			log.Printf("[virtual] unknown virtual_type %q for service %d", virtualType, svc.ID)
+		}
+	}
+	log.Printf("[virtual] loaded %d virtual services", len(services))
 }
 
 func SetRouter(engine *gin.Engine) {

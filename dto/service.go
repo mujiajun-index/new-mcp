@@ -27,6 +27,7 @@ type ServiceListItem struct {
 	DisplayName   string `json:"display_name"`
 	Description   string `json:"description"`
 	TransportType string `json:"transport_type"`
+	Source        string `json:"source"`
 	HealthStatus  string `json:"health_status"`
 	ToolsCount    int    `json:"tools_count"`
 	Status        int    `json:"status"`
@@ -39,6 +40,7 @@ type ServiceDetail struct {
 	DisplayName      string                 `json:"display_name"`
 	Description      string                 `json:"description"`
 	TransportType    string                 `json:"transport_type"`
+	Source           string                 `json:"source"`
 	Config           map[string]interface{} `json:"config"`
 	AuthType         string                 `json:"auth_type"`
 	HealthStatus     string                 `json:"health_status"`

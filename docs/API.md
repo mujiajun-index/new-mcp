@@ -805,23 +805,42 @@ passive-ws (被动连接):
 
 ## 7. 视觉配置接口
 
-### GET /vision/configs
-获取视觉配置列表。
+### GET /vision
+获取当前用户的视觉配置列表。
 
-### POST /vision/configs
-创建视觉配置。
+**Response:** `200 OK`
+```json
+{
+    "success": true,
+    "data": [
+        {
+            "id": 1,
+            "name": "OpenAI Vision",
+            "provider": "openai",
+            "model_name": "gpt-4o",
+            "auto_register": false,
+            "registered_service_id": null,
+            "status": 1,
+            "created_at": "2026-05-15T00:00:00Z"
+        }
+    ]
+}
+```
+
+### POST /vision
+创建视觉配置。创建后默认未启用（`auto_register=false`），需手动调用 enable 接口启用。
 
 **Request Body:**
 ```json
 {
     "name": "OpenAI Vision",
+    "description": "OpenAI 视觉模型",
     "provider": "openai",
     "model_name": "gpt-4o",
     "endpoint_url": "https://api.openai.com/v1",
     "api_key": "sk-xxx",
-    "system_prompt": "Describe this image in detail.",
-    "max_tokens": 4096,
-    "auto_register": true
+    "system_prompt": "You are a helpful vision assistant.",
+    "max_tokens": 4096
 }
 ```
 
@@ -834,14 +853,77 @@ passive-ws (被动连接):
 | ollama | Ollama 本地模型 | llava |
 | custom | 自定义 OpenAI 兼容端点 | - |
 
-### PUT /vision/configs/:id
-更新视觉配置。
+**Response:** `201 Created`
+```json
+{
+    "success": true,
+    "data": {
+        "id": 1,
+        "name": "OpenAI Vision",
+        ...
+    }
+}
+```
 
-### DELETE /vision/configs/:id
-删除视觉配置。
+### GET /vision/:id
+获取视觉配置详情（含工具名称/描述）。
 
-### POST /vision/configs/:id/test
-测试视觉模型。
+**Response:** `200 OK`
+```json
+{
+    "success": true,
+    "data": {
+        "id": 1,
+        "name": "OpenAI Vision",
+        "description": "OpenAI 视觉模型",
+        "provider": "openai",
+        "model_name": "gpt-4o",
+        "endpoint_url": "https://api.openai.com/v1",
+        "api_key": "sk-***",
+        "system_prompt": "You are a helpful vision assistant.",
+        "max_tokens": 4096,
+        "analyze_image_name": "vision.analyze_image",
+        "analyze_image_desc": "分析图片内容，识别其中的物体、文字、场景等",
+        "describe_scene_name": "vision.describe_scene",
+        "describe_scene_desc": "描述图片中的场景和整体内容",
+        "extra_config": "{}",
+        "auto_register": true,
+        "registered_service_id": 5,
+        "status": 1,
+        "created_at": "2026-05-15T00:00:00Z",
+        "updated_at": "2026-05-15T00:00:00Z"
+    }
+}
+```
+
+### PUT /vision/:id
+更新视觉配置。所有字段可选，仅传需要更新的字段。如已启用，自动同步更新关联虚拟 McpService 的 tools_cache。
+
+**Request Body:**
+```json
+{
+    "name": "OpenAI Vision V2",
+    "model_name": "gpt-4o-mini",
+    "analyze_image_name": "custom_analyze",
+    "analyze_image_desc": "自定义分析描述"
+}
+```
+
+### DELETE /vision/:id
+删除视觉配置。自动禁用并清理关联的虚拟 McpService、McpGroupService、McpGroupTool。
+
+### POST /vision/test
+测试视觉模型 API 连通性。发送一个 1x1 测试像素图片验证端点、密钥和模型是否可用。
+
+**Request Body:**
+```json
+{
+    "endpoint_url": "https://api.openai.com/v1",
+    "api_key": "sk-xxx",
+    "model_name": "gpt-4o",
+    "system_prompt": "Describe this image."
+}
+```
 
 **Response:** `200 OK`
 ```json
@@ -850,9 +932,43 @@ passive-ws (被动连接):
     "data": {
         "connected": true,
         "model": "gpt-4o",
-        "test_result": "A test image showing a white cat sitting on a table.",
+        "test_result": "This is a very small, nearly empty image...",
         "latency_ms": 1200
     }
+}
+```
+
+**错误响应:**
+| HTTP 状态码 | message | 说明 |
+|-------------|---------|------|
+| 400 | 连接失败 | API 端点不可达 |
+| 401 | 认证失败 | API Key 无效 |
+| 400 | 模型不存在 | model_name 错误 |
+
+### POST /vision/:id/enable
+启用视觉配置。创建虚拟 McpService（`transport_type="virtual"`, `source="vision"`），注册到 VirtualToolRegistry，生成包含 2 个工具（analyze_image、describe_scene）的 tools_cache。
+
+**Response:** `200 OK`
+```json
+{
+    "success": true,
+    "message": "视觉配置已启用",
+    "data": {
+        "service_id": 5,
+        "service_name": "vision_1",
+        "tools": ["vision.analyze_image", "vision.describe_scene"]
+    }
+}
+```
+
+### POST /vision/:id/disable
+禁用视觉配置。从 VirtualToolRegistry 注销，删除关联的 McpService、McpGroupService、McpGroupTool 记录。
+
+**Response:** `200 OK`
+```json
+{
+    "success": true,
+    "message": "视觉配置已禁用"
 }
 ```
 
@@ -861,52 +977,143 @@ passive-ws (被动连接):
 ## 8. 摄像头接口
 
 ### GET /cameras
-获取摄像头列表。
+获取当前用户的摄像头列表。
+
+**Response:** `200 OK`
+```json
+{
+    "success": true,
+    "data": [
+        {
+            "id": 1,
+            "name": "前门摄像头",
+            "vision_config_id": 1,
+            "vision_config_name": "OpenAI Vision",
+            "auto_register": false,
+            "registered_service_id": null,
+            "streaming": false,
+            "status": 1,
+            "created_at": "2026-05-15T00:00:00Z"
+        }
+    ]
+}
+```
 
 ### POST /cameras
-添加摄像头。
+创建摄像头。`vision_config_id` 为必填字段，指定关联的视觉配置用于 `camera.analyze` 工具。
 
 **Request Body:**
 ```json
 {
     "name": "前门摄像头",
-    "source_type": "rtsp",
-    "source_url": "rtsp://admin:password@192.168.1.100:554/stream1",
-    "fps": 1.0,
-    "resolution_w": 640,
-    "resolution_h": 480,
-    "vision_config_id": 1,
-    "auto_register": true
+    "description": "前门监控",
+    "vision_config_id": 1
+}
+```
+
+**Response:** `201 Created`
+```json
+{
+    "success": true,
+    "data": {
+        "id": 1,
+        "name": "前门摄像头",
+        ...
+    }
 }
 ```
 
 ### GET /cameras/:id
-获取摄像头详情。
-
-### PUT /cameras/:id
-更新摄像头配置。
-
-### DELETE /cameras/:id
-删除摄像头。
-
-### POST /cameras/:id/capture
-手动触发截图。
+获取摄像头详情（含工具名称/描述和流状态）。
 
 **Response:** `200 OK`
 ```json
 {
     "success": true,
     "data": {
-        "image_url": "/api/v1/cameras/1/latest",
-        "captured_at": "2026-05-03T12:00:00Z",
-        "resolution": "640x480",
-        "analysis": "An outdoor scene with a white door..."
+        "id": 1,
+        "name": "前门摄像头",
+        "description": "前门监控",
+        "vision_config_id": 1,
+        "vision_config_name": "OpenAI Vision",
+        "capture_name": "camera.capture",
+        "capture_desc": "截取当前摄像头画面并返回图像",
+        "analyze_name": "camera.analyze",
+        "analyze_desc": "截取当前摄像头画面并识别分析",
+        "extra_config": "{}",
+        "auto_register": true,
+        "registered_service_id": 6,
+        "streaming": true,
+        "status": 1,
+        "created_at": "2026-05-15T00:00:00Z",
+        "updated_at": "2026-05-15T00:00:00Z"
     }
 }
 ```
 
-### GET /cameras/:id/latest
-获取最新捕获的帧。
+### PUT /cameras/:id
+更新摄像头配置。所有字段可选，仅传需要更新的字段。如已启用，自动同步更新关联虚拟 McpService 的 tools_cache。
+
+**Request Body:**
+```json
+{
+    "name": "后门摄像头",
+    "vision_config_id": 2,
+    "capture_name": "custom_capture",
+    "capture_desc": "自定义截取描述"
+}
+```
+
+### DELETE /cameras/:id
+删除摄像头。自动禁用、停止流、清理关联的虚拟 McpService、McpGroupService、McpGroupTool。
+
+### POST /cameras/:id/enable
+启用摄像头。创建虚拟 McpService（`transport_type="virtual"`, `source="camera"`），注册到 VirtualToolRegistry，生成包含 2 个工具（capture、analyze）的 tools_cache。
+
+**Response:** `200 OK`
+```json
+{
+    "success": true,
+    "message": "摄像头已启用",
+    "data": {
+        "service_id": 6,
+        "service_name": "camera_1",
+        "tools": ["camera.capture", "camera.analyze"]
+    }
+}
+```
+
+### POST /cameras/:id/disable
+禁用摄像头。从 VirtualToolRegistry 注销，停止流连接，删除关联的 McpService、McpGroupService、McpGroupTool 记录。
+
+**Response:** `200 OK`
+```json
+{
+    "success": true,
+    "message": "摄像头已禁用"
+}
+```
+
+### WebSocket GET /cameras/:id/stream
+摄像头帧推流端点。浏览器通过此 WebSocket 连接推送摄像头实时画面。
+
+**协议:**
+- 浏览器连接后，定时（默认 2 秒间隔）通过 canvas 截取 JPEG 帧，以二进制消息发送
+- 后端通过 `CameraStreamManager` 缓存最新帧，供 MCP 工具 `camera.capture` 和 `camera.analyze` 调用
+- 连接关闭后自动清理缓存
+
+**连接示例 (浏览器端):**
+```javascript
+const ws = new WebSocket(`ws://localhost:3000/api/v1/cameras/${cameraId}/stream`);
+// Authorization 通过 URL query 参数或 cookie 传递
+
+// canvas 截取 JPEG 帧并发送
+canvas.toBlob(blob => {
+    ws.send(blob);
+}, 'image/jpeg', 0.8);
+```
+
+> **帧缓存**: 后端仅缓存每个摄像头的最新一帧，不存储历史帧。MCP 客户端调用 `camera.capture` 时返回缓存的最新帧（base64），调用 `camera.analyze` 时获取最新帧并调用关联的 VisionConfig 进行 AI 识别。
 
 ---
 
