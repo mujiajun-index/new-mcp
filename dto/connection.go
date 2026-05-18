@@ -26,6 +26,7 @@ type ConnectionListItem struct {
 	ConnectionStatus string `json:"connection_status"`
 	ExposeMode       string `json:"expose_mode"`
 	AutoConnect      bool   `json:"auto_connect"`
+	Status           int    `json:"status"`
 	CreatedAt        string `json:"created_at"`
 }
 
@@ -43,4 +44,5 @@ type ConnectionDetail struct {
 	ExposeMode       string                 `json:"expose_mode"`
 	LastConnectedAt  string                 `json:"last_connected_at"`
 	LastError        string                 `json:"last_error"`
+	Status           int                    `json:"status"`
 }

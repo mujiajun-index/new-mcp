@@ -36,6 +36,7 @@ func (s *ConnectionService) List(userID int64) ([]dto.ConnectionListItem, error)
 			ConnectionStatus: c.ConnectionStatus,
 			ExposeMode:       c.ExposeMode,
 			AutoConnect:      c.AutoConnect,
+			Status:           c.Status,
 			CreatedAt:        c.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		}
 	}
@@ -111,6 +112,9 @@ func (s *ConnectionService) Update(userID, connID int64, req *dto.UpdateConnecti
 	}
 	if req.Status != nil {
 		conn.Status = *req.Status
+		if *req.Status == common.StatusDisabled && CloudManager != nil {
+			CloudManager.StopEndpoint(connID)
+		}
 	}
 	if req.ExposeMode != nil {
 		conn.ExposeMode = *req.ExposeMode
@@ -133,6 +137,9 @@ func (s *ConnectionService) Connect(userID, connID int64) error {
 	conn, err := model.GetConnectionByID(userID, connID)
 	if err != nil {
 		return err
+	}
+	if conn.Status == common.StatusDisabled {
+		return fmt.Errorf("连接已禁用，请先启用后再连接")
 	}
 	if CloudManager == nil {
 		conn.ConnectionStatus = common.ConnConnected
@@ -270,5 +277,6 @@ func (s *ConnectionService) toDetail(conn *model.CloudEndpoint) *dto.ConnectionD
 		LastConnectedAt:  lastConnectedAt,
 		ExposeMode:       conn.ExposeMode,
 		LastError:        conn.LastError,
+		Status:           conn.Status,
 	}
 }

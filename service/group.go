@@ -249,7 +249,7 @@ func (s *GroupService) getAggregatedTools(groupID int64) ([]dto.GroupToolItem, e
 			}
 			result = append(result, dto.GroupToolItem{
 				ServiceID:    gs.ServiceID,
-				Name:         t.Name,
+				Name:         svc.Name + "__" + t.Name,
 				OriginalName: t.Name,
 				ServiceName:  svc.Name,
 				Description:  t.Description,

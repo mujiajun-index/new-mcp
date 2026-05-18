@@ -274,6 +274,7 @@ export interface ConnectionListItem {
   connection_status: string
   expose_mode: 'direct' | 'smart'
   auto_connect: boolean
+  status: number
   created_at: string
 }
 
@@ -291,6 +292,7 @@ export interface ConnectionDetail {
   expose_mode: 'direct' | 'smart'
   last_connected_at: string
   last_error: string
+  status: number
 }
 
 export interface CreateConnectionReq {

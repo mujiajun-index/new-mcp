@@ -48,6 +48,7 @@ export function ConnectionDetailPage() {
 
   const conn = data?.data
   const apiKeys = (keysData?.data || []).filter((k: { status: number }) => k.status === 1)
+  const isDisabled = conn ? conn.status !== 1 : false
 
   useEffect(() => {
     if (conn && !editing) {
@@ -68,6 +69,12 @@ export function ConnectionDetailPage() {
   const toggleMutation = useMutation({
     mutationFn: (action: 'connect' | 'disconnect') =>
       action === 'connect' ? connectConnection(connId) : disconnectConnection(connId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['connection', id] }),
+    onError: (err) => toast.error(err.message || '操作失败'),
+  })
+
+  const statusMutation = useMutation({
+    mutationFn: (status: number) => updateConnection(connId, { status }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['connection', id] }),
   })
 
@@ -94,7 +101,7 @@ export function ConnectionDetailPage() {
   const boundKey = apiKeys.find((k: { id: number }) => k.id === (editing ? form.api_key_id : conn.api_key_id))
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-4xl mx-auto">
+    <div className={`p-6 lg:p-8 space-y-6 max-w-4xl mx-auto${isDisabled ? ' opacity-60' : ''}`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
@@ -105,10 +112,19 @@ export function ConnectionDetailPage() {
             <h1 className="text-xl font-semibold">{conn.name}</h1>
             <p className={`mt-0.5 text-sm font-medium ${statusColors[conn.connection_status] || ''}`}>
               {statusLabels[conn.connection_status] || conn.connection_status}
+              {isDisabled && <span className="ml-2 text-zinc-500">· 已禁用</span>}
             </p>
           </div>
         </div>
         <div className="flex gap-2">
+          {/* Enable/Disable toggle */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => statusMutation.mutate(isDisabled ? 1 : 2)}
+          >
+            {isDisabled ? '启用' : '禁用'}
+          </Button>
           {!editing && (
             <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
               <Pencil className="h-4 w-4 mr-1.5" />编辑
@@ -118,7 +134,7 @@ export function ConnectionDetailPage() {
             variant="outline"
             size="sm"
             onClick={() => toggleMutation.mutate(conn.connection_status === 'connected' ? 'disconnect' : 'connect')}
-            disabled={toggleMutation.isPending}
+            disabled={isDisabled || toggleMutation.isPending}
           >
             {toggleMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> :
               conn.connection_status === 'connected' ? <><WifiOff className="h-4 w-4 mr-1.5" />断开</> : <><Wifi className="h-4 w-4 mr-1.5" />连接</>
