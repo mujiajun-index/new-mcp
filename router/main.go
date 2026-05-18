@@ -37,7 +37,7 @@ func InitGateway() {
 
 	loadVirtualServices()
 
-	CloudManager = cloud.NewManager(SessionPool, toolRouter)
+	CloudManager = cloud.NewManager(SessionPool, toolRouter, GatewayHandler)
 	service.CloudManager = CloudManager
 	service.SessionPool = SessionPool
 	service.VirtualRegistry = VirtualRegistry

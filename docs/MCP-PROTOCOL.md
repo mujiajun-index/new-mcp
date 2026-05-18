@@ -8,12 +8,15 @@ NewMCP 支持两种 MCP 工具暴露模式，**通过端点路由驱动**：
 
 | 端点 | 模式 | 说明 |
 |------|------|------|
-| `POST /mcp` | 固定 Smart | 聚合 API Key 所有分组，工具量大，只能走元工具 |
+| `POST /mcp` | 固定 Direct | 聚合 API Key 所有分组，去重后暴露全部工具（`serviceName__toolName`） |
+| `POST /smart/mcp` | 固定 Smart | 聚合 API Key 所有分组，仅暴露 3 个元工具，渐进发现 |
 | `POST /mcp/group/{slug}` | 由分组的 `expose_mode` 决定 | 端点驱动，每个分组独立配置 |
-| `WS /mcp/ws` | 固定 Smart | 同 POST /mcp |
+| `WS /mcp/ws` | 固定 Direct | 同 POST /mcp |
+| `WS /smart/mcp/ws` | 固定 Smart | 同 POST /smart/mcp |
 | `WS /mcp/ws/group/{slug}` | 由分组的 `expose_mode` 决定 | 端点驱动 |
 
-> **为什么主端点固定 Smart**: 一个 API Key 可绑定多个分组，跨分组聚合后工具数量不可控，只能通过 Smart 模式的 search → describe → execute 渐进发现。
+> **Direct 主端点**: `/mcp` 暴露 API Key 绑定分组的全部工具（去重），适合 Claude Code、Cursor 等支持大量工具的 LLM 客户端。
+> **Smart 主端点**: `/smart/mcp` 仅暴露 3 个元工具，适合小智等上下文受限设备或工具量特别大的场景。
 
 ### 1.1 Direct 模式（直接模式）
 
@@ -955,10 +958,12 @@ LIMIT 20;
 
 | 路径 | 传输 | 模式 | 说明 |
 |------|------|------|------|
+| `/mcp` | Streamable HTTP | 固定 Direct | 主网关，暴露 API Key 绑定分组全部工具 |
+| `/smart/mcp` | Streamable HTTP | 固定 Smart | Smart 网关，仅暴露 3 个元工具 |
 | `/mcp/group/{slug}` | Streamable HTTP | 按 group 配置 | 分组 MCP 端点 |
+| `/mcp/ws` | WebSocket | 固定 Direct | 主网关 WebSocket |
+| `/smart/mcp/ws` | WebSocket | 固定 Smart | Smart 网关 WebSocket |
 | `/mcp/ws/group/{slug}` | WebSocket | 按 group 配置 | 分组 WebSocket 端点 |
-| `/mcp` | Streamable HTTP | 暴露所有工具 | 主网关 (direct 模式) |
-| `/mcp/ws` | WebSocket | 暴露所有工具 | 主网关 WebSocket |
 | `/mcp/passive/` | WebSocket | 被动接入 | 外部 MCP 服务连入注册 (token 认证) |
 
 Smart 模式下的 `tools/list` 永远返回 3 个元工具。

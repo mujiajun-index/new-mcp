@@ -39,7 +39,8 @@
 │  │                                                          │   │
 │  │  ┌──────────────┐  ┌──────────────────────────┐  ┌──────────────┐  │   │
 │  │  │  REST API    │  │  MCP Gateway             │  │  WebSocket   │  │   │
-│  │  │  /api/v1/*   │  │  /mcp        → Smart     │  │  /mcp/ws     → Smart │   │
+│  │  │  /api/v1/*   │  │  /mcp        → Direct    │  │  /mcp/ws     → Direct│   │
+│  │  │              │  │  /smart/mcp  → Smart     │  │  /smart/mcp/ws → Smart│   │
 │  │  │              │  │  /mcp/group/* → 按配置    │  │  /mcp/ws/group/* → 按配置 │   │
 │  │  └──────┬───────┘  └──────┬───────────────────┘  └──────┬───────┘  │   │
 │  └─────────┼─────────────────┼─────────────────┼──────────┘   │
@@ -411,24 +412,23 @@ func (e *SearchEngine) Search(ctx context.Context, store Store, apiKeyID int64, 
 // GatewayHandler 根据端点路由分发请求
 
 // 端点驱动模式选择:
-//   POST /mcp              → 固定 Smart 模式（聚合 API Key 所有分组，工具量大）
+//   POST /mcp              → 固定 Direct 模式（聚合 API Key 所有分组，去重暴露全部工具）
+//   POST /smart/mcp        → 固定 Smart 模式（仅暴露 3 个元工具）
 //   POST /mcp/group/{slug} → 按分组的 expose_mode 决定:
 //     Direct 模式: 聚合分组内所有工具，命名空间前缀 (serviceName__toolName，双下划线)
 //     Smart  模式: 只暴露 3 个固定元工具 (mcp.search, mcp.describe, mcp.execute)
 //                  mcp.execute 的 tool_id 使用 serviceName.toolName 格式（点号）
 
-func (h *GatewayHandler) HandleToolsList(ctx context.Context, groupID int64) ([]Tool, error) {
-    switch group.ExposeMode {
-    case "direct":
-        return h.handleDirectToolsList(ctx, groupID)   // 聚合所有工具
-    case "smart":
-        return h.getMetaTools(), nil                     // 固定 3 个元工具
+// 无 slug 时根据 logCtx.ExposeMode 决定模式
+func (h *GatewayHandler) handleToolsList(ctx context.Context, req *JSONRPCRequest, logCtx *LogContext) *JSONRPCResponse {
+    if logCtx.GroupSlug == "" {
+        if logCtx.ExposeMode == "direct" {
+            tools, _ := h.getDirectToolsForApiKey(logCtx.ApiKeyID)
+            return toolsResponse(tools)
+        }
+        return h.smartToolsResponse(req.ID)
     }
-}
-
-// 主端点 (无 slug): 聚合 API Key 所有分组，固定 Smart 模式
-func (h *GatewayHandler) HandleMainEndpointToolsList(ctx context.Context, apiKeyID int64) ([]Tool, error) {
-    return h.getMetaTools(), nil  // 固定 Smart
+    // /mcp/group/:slug 按 group.ExposeMode 决定
 }
 ```
 
@@ -546,20 +546,40 @@ func (m *CameraStreamManager) Cleanup(cameraID int64)
 // GatewayHandler 处理 MCP 协议请求
 // 同时作为 MCP Server 暴露给下游客户端
 type GatewayHandler struct {
-    toolRouter     *ToolRouter
-    pool           *SessionPool
-    virtualRegistry *VirtualToolRegistry  // 虚拟工具注册表
+    pool            *SessionPool
+    toolRouter      *ToolRouter
+    searchEngine    *SearchEngine
+    virtualRegistry *VirtualToolRegistry
 }
 
-// 处理 tools/list: 聚合所有活跃服务的工具（含虚拟服务）
-func (h *GatewayHandler) HandleToolsList(ctx context.Context, req *Request) (*Response, error)
+// 处理 tools/list: 根据端点模式聚合工具
+func (h *GatewayHandler) handleToolsList(ctx context.Context, req *JSONRPCRequest, logCtx *LogContext) *JSONRPCResponse
 
 // 处理 tools/call: 优先检查虚拟服务，再路由到上游服务
-func (h *GatewayHandler) HandleToolsCall(ctx context.Context, req *Request) (*Response, error)
+func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCRequest, logCtx *LogContext) *JSONRPCResponse
 ```
 
-> **路由优先级**: `handleToolsCall` 的 default 分支先解析 `serviceName.toolName`，查询 `mcp_services` 表是否存在 `transport_type="virtual"` 的记录。如果命中虚拟服务，直接调用 VirtualToolRegistry；否则走 SessionPool 路由到上游 MCP 服务。
+> **路由优先级**: `handleToolsCall` 先检查 Smart 模式元工具 (mcp.search/describe/execute)，再检查虚拟服务，最后走 SessionPool 路由到上游 MCP 服务。所有服务名查找均带 `user_id` 约束确保用户隔离。
+
+### 4.10 ApiKeyResolver — 共享工具函数
+
+```go
+// internal/mcp/bridge/resolver.go
+
+// ResolveApiKeyInfo 一次性获取 APIKey + User 信息
+func ResolveApiKeyInfo(apiKeyID int64) (*ApiKeyInfo, error)
+
+// GetGroupsForApiKey 返回 APIKey 可访问的分组列表（支持 groups: ["*"] 通配）
+func GetGroupsForApiKey(info *ApiKeyInfo) ([]model.McpGroup, error)
+
+// CollectToolsForGroups 聚合多个分组的工具（含去重、过滤、命名空间前缀）
+func CollectToolsForGroups(groups []model.McpGroup, dedup bool) ([]ToolEntry, error)
+
+// HasGroupAccess 检查 APIKey 是否有权限访问指定分组
+func HasGroupAccess(info *ApiKeyInfo, groupName string) bool
 ```
+
+> **设计目的**: 统一 APIKey 权限解析、分组查询、工具聚合逻辑，消除 gateway_handler、search_engine、xiaozhi_client 中的重复代码。
 
 ---
 

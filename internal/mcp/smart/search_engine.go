@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/model"
 )
 
@@ -28,19 +29,12 @@ func (e *SearchEngine) Search(ctx context.Context, apiKeyID int64, query string,
 		opts.Limit = 50
 	}
 
-	// Get groups bound to this API key
-	var apiKey model.ApiKey
-	if err := model.DB.First(&apiKey, apiKeyID).Error; err != nil {
+	info, err := bridge.ResolveApiKeyInfo(apiKeyID)
+	if err != nil {
 		return nil, err
 	}
 
-	var permissions struct {
-		Groups []string `json:"groups"`
-	}
-	_ = json.Unmarshal([]byte(apiKey.Permissions), &permissions)
-
-	// Get services from bound groups
-	docs := e.buildSearchDocs(apiKey.UserID, permissions.Groups, opts.Group, opts.Scope)
+	docs := e.buildSearchDocs(info, opts.Group, opts.Scope)
 
 	if query == "" {
 		limit := opts.Limit
@@ -58,25 +52,30 @@ func (e *SearchEngine) Search(ctx context.Context, apiKeyID int64, query string,
 	return idx.search(query, opts.Limit), nil
 }
 
-func (e *SearchEngine) buildSearchDocs(userID int64, groups []string, scopeGroup string, scope string) []SearchDoc {
-	var docs []SearchDoc
-
-	query := model.DB.Where("user_id = ?", userID)
-	if scopeGroup != "" {
-		query = query.Where("name = ?", scopeGroup)
-	} else if len(groups) > 0 && groups[0] != "*" {
-		query = query.Where("name IN ?", groups)
+func (e *SearchEngine) buildSearchDocs(info *bridge.ApiKeyInfo, scopeGroup string, scope string) []SearchDoc {
+	groups, err := bridge.GetGroupsForApiKey(info)
+	if err != nil || len(groups) == 0 {
+		return nil
 	}
 
-	var mcpGroups []model.McpGroup
-	query.Find(&mcpGroups)
+	if scopeGroup != "" {
+		var filtered []model.McpGroup
+		for _, g := range groups {
+			if g.Name == scopeGroup {
+				filtered = append(filtered, g)
+				break
+			}
+		}
+		groups = filtered
+	}
 
-	for _, g := range mcpGroups {
+	var docs []SearchDoc
+	for _, g := range groups {
 		groupServices, _ := model.GetEnabledGroupServices(g.ID)
 
 		for _, gs := range groupServices {
-			svc, err := model.GetServiceByIDWithoutUser(gs.ServiceID)
-			if err != nil {
+			svc, svcErr := model.GetServiceByIDWithoutUser(gs.ServiceID)
+			if svcErr != nil {
 				continue
 			}
 
@@ -118,15 +117,10 @@ func (e *SearchEngine) buildSearchDocs(userID int64, groups []string, scopeGroup
 
 // Describe returns details about specific services or tools
 func (e *SearchEngine) Describe(targets []string, apiKeyID int64) ([]map[string]interface{}, error) {
-	var apiKey model.ApiKey
-	if err := model.DB.First(&apiKey, apiKeyID).Error; err != nil {
+	info, err := bridge.ResolveApiKeyInfo(apiKeyID)
+	if err != nil {
 		return nil, err
 	}
-
-	var permissions struct {
-		Groups []string `json:"groups"`
-	}
-	_ = json.Unmarshal([]byte(apiKey.Permissions), &permissions)
 
 	results := make([]map[string]interface{}, 0, len(targets))
 	for _, target := range targets {
@@ -134,12 +128,11 @@ func (e *SearchEngine) Describe(targets []string, apiKeyID int64) ([]map[string]
 		serviceName := parts[0]
 
 		var svc model.McpService
-		if err := model.DB.Where("user_id = ? AND name = ?", apiKey.UserID, serviceName).First(&svc).Error; err != nil {
+		if err := model.DB.Where("name = ? AND user_id = ?", serviceName, info.UserID).First(&svc).Error; err != nil {
 			continue
 		}
 
 		if len(parts) == 1 {
-			// Describe the whole service
 			var tools []interface{}
 			_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
 			results = append(results, map[string]interface{}{
@@ -151,7 +144,6 @@ func (e *SearchEngine) Describe(targets []string, apiKeyID int64) ([]map[string]
 				"tools":        tools,
 			})
 		} else {
-			// Describe a specific tool
 			toolName := parts[1]
 			var tools []struct {
 				Name        string          `json:"name"`

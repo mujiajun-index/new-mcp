@@ -1,6 +1,6 @@
 # NewMCP 开发进度文档
 
-> 最后更新: 2026-05-11 | 后端: 5,800+ 行 Go (56 源文件) | 前端: React 19 + TanStack 全家桶
+> 最后更新: 2026-05-18 | 后端: 6,000+ 行 Go (57 源文件) | 前端: React 19 + TanStack 全家桶
 
 ---
 
@@ -21,14 +21,14 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 | API Key 管理 | ✅ 已完成 | 100% | 创建/编辑/删除/额度/有效期/IP白名单/分组绑定 |
 | 市场功能 | ✅ 已完成 | 90% | 管理员上架/用户浏览/安装/评价 |
 | 管理员接口 | ✅ 已完成 | 100% | 用户管理(CRUD+搜索+额度)/统计/日志/平台服务/市场管理 |
-| MCP 协议网关 | 🔧 部分完成 | 80% | Smart+Direct 模式 + API Key 校验 + 调用日志自动记录 |
-| 云端连接 | ✅ 已完成 | 85% | XiaoZhi JWT 解析 + WSS 连接 + 自动重连 |
+| MCP 协议网关 | ✅ 已完成 | 95% | 双端点 Direct/Smart + 用户隔离 + 共享 Resolver + 调用日志 |
+| 云端连接 | ✅ 已完成 | 90% | XiaoZhi JWT 解析 + WSS 连接 + 自动重连 + 复用 GatewayHandler |
 | **调用日志** | **✅ 已完成** | **90%** | **自动记录 + 多维筛选 + 统计 + 管理员/用户视图** |
 | 视觉配置 | ❌ 未开始 | 5% | 仅 Model 层 |
 | 摄像头管理 | ❌ 未开始 | 5% | 仅 Model 层 |
 | **前端界面** | **✅ 已完成** | **90%** | **架构 + 核心业务 + 日志 + Dashboard + 设置 + 管理员** |
 
-**整体完成度: ~88%**
+**整体完成度: ~90%**
 
 ---
 
@@ -119,9 +119,10 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
  5. 创建 MCP 分组 POST /groups ✅
  6. 创建 API Key POST /api-keys ✅ → sk- 前缀，仅创建时返回完整 key
  7. MCP 协议握手 POST /mcp (initialize) ✅
- 8. 获取工具列表 POST /mcp (tools/list) ✅ → Smart 模式 3 个元工具
- 9. 创建小智连接 POST /connections ✅ → JWT 解析
-10. MCP 搜索工具 POST /mcp (tools/call mcp.search) ✅
+ 8. 获取工具列表 POST /mcp (tools/list) ✅ → Direct 模式，全部聚合工具
+ 9. 获取 Smart 元工具 POST /smart/mcp (tools/list) ✅ → 3 个元工具
+10. 创建小智连接 POST /connections ✅ → JWT 解析
+11. MCP 搜索工具 POST /smart/mcp (tools/call mcp.search) ✅
 ```
 
 ### 4.2 市场 + 分组 + API Key 完整流程 ✅
@@ -245,7 +246,7 @@ newmcp/
 │   └── mcp_router.go        # MCP 端点
 ├── internal/mcp/
 │   ├── transport/           # 传输适配器
-│   ├── bridge/              # 会话池 + 工具路由
+│   ├── bridge/              # 会话池 + 工具路由 + ApiKeyResolver
 │   ├── smart/               # Smart 模式搜索引擎
 │   └── handler/             # 网关处理器
 ├── web/                     # 前端项目 (React 19)

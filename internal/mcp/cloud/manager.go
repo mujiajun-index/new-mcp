@@ -9,23 +9,26 @@ import (
 
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
+	"github.com/mujkjk/newmcp/internal/mcp/handler"
 	"github.com/mujkjk/newmcp/model"
 )
 
 type Manager struct {
-	clients    map[int64]*XiaoZhiClient // key: cloud_endpoint ID
+	clients    map[int64]*XiaoZhiClient
 	pool       *bridge.SessionPool
 	toolRouter *bridge.ToolRouter
+	handler    *handler.GatewayHandler
 	mu         sync.RWMutex
 	ctx        context.Context
 	cancel     context.CancelFunc
 }
 
-func NewManager(pool *bridge.SessionPool, toolRouter *bridge.ToolRouter) *Manager {
+func NewManager(pool *bridge.SessionPool, toolRouter *bridge.ToolRouter, h *handler.GatewayHandler) *Manager {
 	return &Manager{
 		clients:    make(map[int64]*XiaoZhiClient),
 		pool:       pool,
 		toolRouter: toolRouter,
+		handler:    h,
 	}
 }
 
@@ -65,7 +68,7 @@ func (m *Manager) StartEndpoint(ep *model.CloudEndpoint) error {
 
 // startEndpointAsync is used by StartAll for background auto-connect (async)
 func (m *Manager) startEndpointAsync(ep *model.CloudEndpoint) {
-	client := NewXiaoZhiClient(ep, m.pool, m.toolRouter)
+	client := NewXiaoZhiClient(ep, m.handler)
 
 	m.mu.Lock()
 	m.clients[ep.ID] = client
@@ -132,7 +135,7 @@ func (m *Manager) startCustom(ep *model.CloudEndpoint) error {
 }
 
 func (m *Manager) startClient(ep *model.CloudEndpoint) error {
-	client := NewXiaoZhiClient(ep, m.pool, m.toolRouter)
+	client := NewXiaoZhiClient(ep, m.handler)
 
 	m.mu.Lock()
 	m.clients[ep.ID] = client
@@ -151,7 +154,6 @@ func (m *Manager) startClient(ep *model.CloudEndpoint) error {
 			}
 		}()
 
-		// 首次连接尝试
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		err := client.Connect(ctx)
 		cancel()
@@ -169,7 +171,6 @@ func (m *Manager) startClient(ep *model.CloudEndpoint) error {
 		log.Printf("[cloud] endpoint %d connected", ep.ID)
 		firstConnect <- nil
 
-		// goroutine 继续维护连接生命周期
 		<-client.Done()
 		log.Printf("[cloud] endpoint %d disconnected", ep.ID)
 		client.updateStatus(common.ConnDisconnected, "")
@@ -178,7 +179,6 @@ func (m *Manager) startClient(ep *model.CloudEndpoint) error {
 		m.mu.Unlock()
 	}()
 
-	// 同步等待首次连接结果
 	select {
 	case err := <-firstConnect:
 		return err

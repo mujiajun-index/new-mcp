@@ -39,7 +39,7 @@ type LogContext struct {
 	GroupSlug  string
 	ClientIP   string
 	UserAgent  string
-	ExposeMode string
+	ExposeMode string // "direct" or "smart"
 }
 
 type GatewayHandler struct {
@@ -95,11 +95,10 @@ func (h *GatewayHandler) handleInitialize(req *JSONRPCRequest) *JSONRPCResponse 
 }
 
 func (h *GatewayHandler) handleToolsList(ctx context.Context, req *JSONRPCRequest, logCtx *LogContext) *JSONRPCResponse {
-	groupSlug := logCtx.GroupSlug
-	if groupSlug == "" {
-		// Cloud connection: use expose_mode from log context
+	if logCtx.GroupSlug == "" {
+		// /mcp or /smart/mcp — mode driven by route, not group config
 		if logCtx.ExposeMode == "direct" {
-			tools, err := h.getDirectToolsForApiKey(ctx, logCtx.ApiKeyID)
+			tools, err := h.getDirectToolsForApiKey(logCtx.ApiKeyID)
 			if err != nil {
 				return h.errorResponse(req.ID, -32603, "Failed to get tools")
 			}
@@ -112,27 +111,30 @@ func (h *GatewayHandler) handleToolsList(ctx context.Context, req *JSONRPCReques
 		return h.smartToolsResponse(req.ID)
 	}
 
-	group, err := model.GetGroupBySlug(groupSlug)
+	// /mcp/group/:slug — mode from group config
+	group, err := model.GetGroupBySlug(logCtx.GroupSlug)
 	if err != nil {
-		return h.errorResponse(req.ID, -32602, "Group not found: "+groupSlug)
+		return h.errorResponse(req.ID, -32602, "Group not found: "+logCtx.GroupSlug)
 	}
 
-	if !h.hasGroupAccess(logCtx.ApiKeyID, group.Name) {
-		return h.errorResponse(req.ID, -32602, "API key does not have access to group: "+groupSlug)
+	info, err := bridge.ResolveApiKeyInfo(logCtx.ApiKeyID)
+	if err != nil {
+		return h.errorResponse(req.ID, -32602, "Invalid API key")
+	}
+	if !bridge.HasGroupAccess(info, group.Name) {
+		return h.errorResponse(req.ID, -32602, "API key does not have access to group: "+logCtx.GroupSlug)
 	}
 
 	switch group.ExposeMode {
-	case "smart":
-		return h.smartToolsResponse(req.ID)
 	case "direct":
-		tools, err := h.getDirectTools(ctx, group.ID)
+		entries, err := bridge.CollectToolsForGroups([]model.McpGroup{*group}, false)
 		if err != nil {
 			return h.errorResponse(req.ID, -32603, "Failed to get tools")
 		}
 		return &JSONRPCResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
-			Result:  map[string]interface{}{"tools": tools},
+			Result:  map[string]interface{}{"tools": bridge.ToolsToMaps(entries)},
 		}
 	default:
 		return h.smartToolsResponse(req.ID)
@@ -172,60 +174,23 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 	case "mcp.execute":
 		resp = h.handleExecute(ctx, req.ID, logCtx, params.Arguments)
 	default:
-		// Verify group access for direct tool calls
+		// Verify group access for group-scoped requests
 		if logCtx.GroupSlug != "" {
-			group, err := model.GetGroupBySlug(logCtx.GroupSlug)
+			info, err := bridge.ResolveApiKeyInfo(logCtx.ApiKeyID)
 			if err != nil {
-				resp = h.errorResponse(req.ID, -32602, "Group not found: "+logCtx.GroupSlug)
-			} else if !h.hasGroupAccess(logCtx.ApiKeyID, group.Name) {
-				resp = h.errorResponse(req.ID, -32602, "API key does not have access to group: "+logCtx.GroupSlug)
+				resp = h.errorResponse(req.ID, -32602, "Invalid API key")
+			} else {
+				group, gErr := model.GetGroupBySlug(logCtx.GroupSlug)
+				if gErr != nil {
+					resp = h.errorResponse(req.ID, -32602, "Group not found: "+logCtx.GroupSlug)
+				} else if !bridge.HasGroupAccess(info, group.Name) {
+					resp = h.errorResponse(req.ID, -32602, "API key does not have access to group: "+logCtx.GroupSlug)
+				}
 			}
 		}
 
 		if resp == nil {
-			// Check if this is a virtual tool first
-			svcName, tName := bridge.ParseNamespacedName(params.Name)
-			var virtualSvc model.McpService
-			if h.virtualRegistry != nil && model.DB.Where("name = ? AND transport_type = ?", svcName, "virtual").First(&virtualSvc).Error == nil {
-				vConfig := map[string]interface{}{}
-				_ = json.Unmarshal([]byte(virtualSvc.Config), &vConfig)
-				vResult, vErr := h.virtualRegistry.Handle(ctx, virtualSvc.ID, vConfig, tName, params.Arguments)
-				if vErr != nil {
-					resp = h.errorResponse(req.ID, -32603, "Virtual tool failed: "+vErr.Error())
-				} else {
-					resp = &JSONRPCResponse{
-						JSONRPC: "2.0",
-						ID:      req.ID,
-						Result:  json.RawMessage(vResult),
-					}
-				}
-				serviceID = virtualSvc.ID
-				serviceName = virtualSvc.Name
-			} else {
-				session, toolName, err := h.routeOrConnect(ctx, params.Name, logCtx.UserID)
-				if err != nil {
-					resp = h.errorResponse(req.ID, -32602, err.Error())
-				} else {
-					serviceID = session.ServiceID
-					serviceName = session.ServiceName
-
-					callParams := map[string]interface{}{
-						"name":      toolName,
-						"arguments": params.Arguments,
-					}
-
-					result, err := session.Adapter.Call(ctx, "tools/call", callParams)
-					if err != nil {
-						resp = h.errorResponse(req.ID, -32603, "Tool execution failed: "+err.Error())
-					} else {
-						resp = &JSONRPCResponse{
-							JSONRPC: "2.0",
-							ID:      req.ID,
-							Result:  json.RawMessage(result),
-						}
-					}
-				}
-			}
+			resp = h.routeAndCall(ctx, req.ID, logCtx, params.Name, params.Arguments, &serviceID, &serviceName)
 		}
 	}
 
@@ -237,7 +202,6 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 		errMsg = resp.Error.Message
 	}
 
-	// Async log
 	go h.recordLog(&model.McpCallLog{
 		UserID:         logCtx.UserID,
 		Username:       logCtx.Username,
@@ -258,6 +222,56 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 	})
 
 	return resp
+}
+
+// routeAndCall handles virtual tool check, session routing, and tool execution.
+func (h *GatewayHandler) routeAndCall(ctx context.Context, reqID interface{}, logCtx *LogContext, toolName string, args json.RawMessage, svcID *int64, svcName *string) *JSONRPCResponse {
+	parsedSvc, parsedTool := bridge.ParseNamespacedName(toolName)
+
+	// Check virtual tools first
+	if h.virtualRegistry != nil && parsedSvc != "" {
+		var virtualSvc model.McpService
+		if model.DB.Where("name = ? AND transport_type = ? AND user_id = ?", parsedSvc, "virtual", logCtx.UserID).First(&virtualSvc).Error == nil {
+			vConfig := map[string]interface{}{}
+			_ = json.Unmarshal([]byte(virtualSvc.Config), &vConfig)
+			vResult, vErr := h.virtualRegistry.Handle(ctx, virtualSvc.ID, vConfig, parsedTool, args)
+			*svcID = virtualSvc.ID
+			*svcName = virtualSvc.Name
+			if vErr != nil {
+				return h.errorResponse(reqID, -32603, "Virtual tool failed: "+vErr.Error())
+			}
+			return &JSONRPCResponse{
+				JSONRPC: "2.0",
+				ID:      reqID,
+				Result:  json.RawMessage(vResult),
+			}
+		}
+	}
+
+	// Route to real MCP service
+	session, resolvedTool, err := h.routeOrConnect(ctx, toolName, logCtx.UserID)
+	if err != nil {
+		return h.errorResponse(reqID, -32602, err.Error())
+	}
+
+	*svcID = session.ServiceID
+	*svcName = session.ServiceName
+
+	callParams := map[string]interface{}{
+		"name":      resolvedTool,
+		"arguments": args,
+	}
+
+	result, err := session.Adapter.Call(ctx, "tools/call", callParams)
+	if err != nil {
+		return h.errorResponse(reqID, -32603, "Tool execution failed: "+err.Error())
+	}
+
+	return &JSONRPCResponse{
+		JSONRPC: "2.0",
+		ID:      reqID,
+		Result:  json.RawMessage(result),
+	}
 }
 
 func (h *GatewayHandler) handleSearch(ctx context.Context, reqID interface{}, logCtx *LogContext, args json.RawMessage) *JSONRPCResponse {
@@ -372,107 +386,23 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 	}
 }
 
-func (h *GatewayHandler) hasGroupAccess(apiKeyID int64, groupName string) bool {
-	var apiKey model.ApiKey
-	if err := model.DB.First(&apiKey, apiKeyID).Error; err != nil {
-		return false
-	}
-	var permissions struct {
-		Groups []string `json:"groups"`
-	}
-	_ = json.Unmarshal([]byte(apiKey.Permissions), &permissions)
-
-	for _, g := range permissions.Groups {
-		if g == "*" || g == groupName {
-			return true
-		}
-	}
-	return false
-}
-
-func (h *GatewayHandler) smartToolsResponse(id interface{}) *JSONRPCResponse {
-	return &JSONRPCResponse{
-		JSONRPC: "2.0",
-		ID:      id,
-		Result:  map[string]interface{}{"tools": smart.MetaTools},
-	}
-}
-
-func (h *GatewayHandler) getDirectTools(ctx context.Context, groupID int64) ([]map[string]interface{}, error) {
-	return h.collectDirectTools([]int64{groupID}, false)
-}
-
-func (h *GatewayHandler) getDirectToolsForApiKey(ctx context.Context, apiKeyID int64) ([]map[string]interface{}, error) {
-	var apiKey model.ApiKey
-	if err := model.DB.First(&apiKey, apiKeyID).Error; err != nil {
+func (h *GatewayHandler) getDirectToolsForApiKey(apiKeyID int64) ([]map[string]interface{}, error) {
+	info, err := bridge.ResolveApiKeyInfo(apiKeyID)
+	if err != nil {
 		return nil, err
 	}
 
-	var permissions struct {
-		Groups []string `json:"groups"`
-	}
-	_ = json.Unmarshal([]byte(apiKey.Permissions), &permissions)
-
-	if len(permissions.Groups) == 0 {
-		return nil, nil
-	}
-
-	var groups []model.McpGroup
-	if err := model.DB.Where("name IN ?", permissions.Groups).Find(&groups).Error; err != nil {
+	groups, err := bridge.GetGroupsForApiKey(info)
+	if err != nil {
 		return nil, err
 	}
 
-	groupIDs := make([]int64, len(groups))
-	for i, g := range groups {
-		groupIDs[i] = g.ID
-	}
-	return h.collectDirectTools(groupIDs, true)
-}
-
-func (h *GatewayHandler) collectDirectTools(groupIDs []int64, dedupService bool) ([]map[string]interface{}, error) {
-	seen := make(map[int64]bool)
-	var allTools []map[string]interface{}
-
-	for _, gid := range groupIDs {
-		groupServices, err := model.GetEnabledGroupServices(gid)
-		if err != nil {
-			continue
-		}
-
-		toolFilters, _ := model.GetGroupTools(gid)
-		filterMap := make(map[string]bool)
-		for _, f := range toolFilters {
-			key := fmt.Sprintf("%d:%s", f.ServiceID, f.ToolName)
-			filterMap[key] = f.Enabled
-		}
-
-		for _, gs := range groupServices {
-			if dedupService && seen[gs.ServiceID] {
-				continue
-			}
-			seen[gs.ServiceID] = true
-
-			svc, err := model.GetServiceByIDWithoutUser(gs.ServiceID)
-			if err != nil {
-				continue
-			}
-
-			var tools []map[string]interface{}
-			_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
-
-			for _, t := range tools {
-				name, _ := t["name"].(string)
-				key := fmt.Sprintf("%d:%s", gs.ServiceID, name)
-				if enabled, ok := filterMap[key]; ok && !enabled {
-					continue
-				}
-				t["name"] = svc.Name + "__" + name
-				allTools = append(allTools, t)
-			}
-		}
+	entries, err := bridge.CollectToolsForGroups(groups, true)
+	if err != nil {
+		return nil, err
 	}
 
-	return allTools, nil
+	return bridge.ToolsToMaps(entries), nil
 }
 
 func (h *GatewayHandler) routeOrConnect(ctx context.Context, namespacedTool string, userID int64) (*bridge.McpSession, string, error) {
@@ -483,10 +413,9 @@ func (h *GatewayHandler) routeOrConnect(ctx context.Context, namespacedTool stri
 
 	svcName, parsedToolName := bridge.ParseNamespacedName(namespacedTool)
 	if svcName != "" {
-		// Namespaced: look up service by name and connect
 		var svc model.McpService
-		if dbErr := model.DB.Where("name = ?", svcName).First(&svc).Error; dbErr != nil {
-			return nil, "", err
+		if dbErr := model.DB.Where("name = ? AND user_id = ?", svcName, userID).First(&svc).Error; dbErr != nil {
+			return nil, "", fmt.Errorf("service not found: %s", svcName)
 		}
 		session, connErr := h.pool.GetOrConnect(ctx, &svc)
 		if connErr != nil {
@@ -528,6 +457,14 @@ func (h *GatewayHandler) errorResponse(id interface{}, code int, message string)
 
 func (h *GatewayHandler) recordLog(log *model.McpCallLog) {
 	_ = log.Insert()
+}
+
+func (h *GatewayHandler) smartToolsResponse(id interface{}) *JSONRPCResponse {
+	return &JSONRPCResponse{
+		JSONRPC: "2.0",
+		ID:      id,
+		Result:  map[string]interface{}{"tools": smart.MetaTools},
+	}
 }
 
 func truncate(s string, maxLen int) string {

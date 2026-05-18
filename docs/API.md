@@ -1273,7 +1273,30 @@ canvas.toBlob(blob => {
 ```
 
 ### POST /mcp
-主网关端点 (Streamable HTTP)。聚合 API Key 绑定的所有分组，**固定 Smart 模式**（因跨分组工具量大，只能通过元工具渐进发现）。
+主网关端点 (Streamable HTTP)。聚合 API Key 绑定的所有分组，**固定 Direct 模式**，去重后暴露全部工具（`serviceName__toolName` 前缀）。
+
+**Headers:**
+```
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2025-03-26
+X-API-Key: <key>
+```
+
+**Request Body (JSON-RPC):**
+```json
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/list",
+    "params": {}
+}
+```
+
+**Response:** 返回 API Key 绑定分组的全部工具（去重后），工具名格式 `serviceName__toolName`。
+
+### POST /smart/mcp
+Smart 网关端点 (Streamable HTTP)。聚合 API Key 绑定的所有分组，**固定 Smart 模式**，仅暴露 3 个元工具。
 
 **Headers:**
 ```
@@ -1302,7 +1325,10 @@ X-API-Key: <key>
 SSE 流 (服务端推送)。
 
 ### WebSocket /mcp/ws
-WebSocket MCP 传输。聚合 API Key 所有分组，**固定 Smart 模式**。
+WebSocket MCP 传输。聚合 API Key 所有分组，**固定 Direct 模式**（同 POST /mcp）。
+
+### WebSocket /smart/mcp/ws
+Smart 模式 WebSocket MCP 传输。聚合 API Key 所有分组，**固定 Smart 模式**。
 
 ### WebSocket /mcp/ws/group/{slug}
 分组 WebSocket MCP 传输。按分组的 `expose_mode` 决定模式（端点驱动）。

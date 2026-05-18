@@ -31,7 +31,7 @@ type XiaoZhiClient struct {
 	closeOnce sync.Once
 }
 
-func NewXiaoZhiClient(ep *model.CloudEndpoint, pool *bridge.SessionPool, router *bridge.ToolRouter) *XiaoZhiClient {
+func NewXiaoZhiClient(ep *model.CloudEndpoint, h *handler.GatewayHandler) *XiaoZhiClient {
 	apiKeyID := int64(0)
 	if ep.ApiKeyID != nil {
 		apiKeyID = *ep.ApiKeyID
@@ -41,7 +41,7 @@ func NewXiaoZhiClient(ep *model.CloudEndpoint, pool *bridge.SessionPool, router 
 		wssURL:     ep.WssURL,
 		apiKeyID:   apiKeyID,
 		exposeMode: ep.ExposeMode,
-		handler:    handler.NewGatewayHandler(pool, router, nil),
+		handler:    h,
 		done:       make(chan struct{}),
 	}
 }
@@ -55,7 +55,6 @@ func (c *XiaoZhiClient) Connect(ctx context.Context) error {
 		return fmt.Errorf("dial xiaozhi: %w", err)
 	}
 
-	// Auto-respond to pings from the server
 	conn.SetPingHandler(func(appData string) error {
 		return conn.WriteMessage(websocket.PongMessage, []byte(appData))
 	})
@@ -103,20 +102,20 @@ func (c *XiaoZhiClient) Done() <-chan struct{} {
 }
 
 func (c *XiaoZhiClient) buildLogCtx() *handler.LogContext {
-	logCtx := &handler.LogContext{
-		ApiKeyID:   c.apiKeyID,
-		ExposeMode: c.exposeMode,
-	}
-	var apiKey model.ApiKey
-	if err := model.DB.First(&apiKey, c.apiKeyID).Error; err == nil {
-		logCtx.UserID = apiKey.UserID
-		logCtx.ApiKeyName = apiKey.Name
-		var user model.User
-		if err := model.DB.Select("username").First(&user, apiKey.UserID).Error; err == nil {
-			logCtx.Username = user.Username
+	info, err := bridge.ResolveApiKeyInfo(c.apiKeyID)
+	if err != nil {
+		return &handler.LogContext{
+			ApiKeyID:   c.apiKeyID,
+			ExposeMode: c.exposeMode,
 		}
 	}
-	return logCtx
+	return &handler.LogContext{
+		ApiKeyID:   info.ApiKeyID,
+		UserID:     info.UserID,
+		Username:   info.Username,
+		ApiKeyName: info.ApiKeyName,
+		ExposeMode: c.exposeMode,
+	}
 }
 
 func (c *XiaoZhiClient) messageLoop(ctx context.Context) {
@@ -157,14 +156,12 @@ func (c *XiaoZhiClient) messageLoop(ctx context.Context) {
 			continue
 		}
 
-		// Handle initialize with dynamic protocol version
 		if req.Method == "initialize" {
 			resp := c.handleInitialize(&req)
 			c.sendResponse(resp)
 			continue
 		}
 
-		// MCP ping: respond with empty result
 		if req.Method == "ping" {
 			c.sendResponse(&handler.JSONRPCResponse{
 				JSONRPC: "2.0",
@@ -174,7 +171,6 @@ func (c *XiaoZhiClient) messageLoop(ctx context.Context) {
 			continue
 		}
 
-		// Delegate everything else to GatewayHandler (same logic as /mcp)
 		resp := c.handler.HandleRequest(ctx, &req, logCtx)
 		if resp == nil {
 			continue
@@ -201,7 +197,7 @@ func (c *XiaoZhiClient) handleInitialize(req *handler.JSONRPCRequest) *handler.J
 			"capabilities": map[string]interface{}{
 				"tools": map[string]interface{}{},
 			},
-			"serverInfo": map[string]interface{}{
+			"serverInfo": map[string]string{
 				"name":    "newmcp-gateway",
 				"version": "1.0.0",
 			},
