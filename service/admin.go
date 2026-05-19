@@ -147,11 +147,11 @@ func (s *AdminService) GetStats() (*dto.AdminStats, error) {
 	}, nil
 }
 
-func (s *AdminService) GetLogs(filter *dto.LogFilter, page, pageSize int) ([]dto.LogItem, int64, error) {
+func (s *AdminService) GetLogsForUser(userID int64, isAdmin bool, filter *dto.LogFilter, page, pageSize int) ([]dto.LogItem, int64, error) {
 	offset := common.GetOffset(page, pageSize)
 	modelFilter := dtoToModelFilter(filter)
 
-	logs, total, err := model.GetCallLogs(modelFilter, offset, pageSize)
+	logs, total, err := model.GetCallLogsForUser(userID, isAdmin, modelFilter, offset, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -180,57 +180,9 @@ func (s *AdminService) GetLogs(filter *dto.LogFilter, page, pageSize int) ([]dto
 	return items, total, nil
 }
 
-func (s *AdminService) GetLogStats(filter *dto.LogFilter) (*dto.LogStats, error) {
+func (s *AdminService) GetLogStatsForUser(userID int64, isAdmin bool, filter *dto.LogFilter) (*dto.LogStats, error) {
 	modelFilter := dtoToModelFilter(filter)
-	stats, err := model.GetCallLogStats(modelFilter)
-	if err != nil {
-		return nil, err
-	}
-	return &dto.LogStats{
-		TotalCalls:    stats.TotalCalls,
-		SuccessCalls:  stats.SuccessCalls,
-		FailedCalls:   stats.FailedCalls,
-		AvgDurationMs: stats.AvgDurationMs,
-		CallsToday:    stats.CallsToday,
-	}, nil
-}
-
-func (s *AdminService) GetUserLogs(userID int64, filter *dto.LogFilter, page, pageSize int) ([]dto.LogItem, int64, error) {
-	offset := common.GetOffset(page, pageSize)
-	modelFilter := dtoToModelFilter(filter)
-
-	logs, total, err := model.GetCallLogsByUser(userID, modelFilter, offset, pageSize)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	items := make([]dto.LogItem, len(logs))
-	for i, l := range logs {
-		items[i] = dto.LogItem{
-			ID:             l.ID,
-			UserID:         l.UserID,
-			Username:       l.Username,
-			ApiKeyID:       l.ApiKeyID,
-			ApiKeyName:     l.ApiKeyName,
-			GroupID:        l.GroupID,
-			GroupName:      l.GroupName,
-			ServiceID:      l.ServiceID,
-			ServiceName:    l.ServiceName,
-			ToolName:       l.ToolName,
-			Method:         l.Method,
-			ResponseStatus: l.ResponseStatus,
-			DurationMs:     l.DurationMs,
-			ErrorMessage:   l.ErrorMessage,
-			ClientIP:       l.ClientIP,
-			CreatedAt:      l.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		}
-	}
-	return items, total, nil
-}
-
-func (s *AdminService) GetUserLogStats(userID int64, filter *dto.LogFilter) (*dto.LogStats, error) {
-	modelFilter := dtoToModelFilter(filter)
-	stats, err := model.GetCallLogStatsByUser(userID, modelFilter)
+	stats, err := model.GetCallLogStatsForUser(userID, isAdmin, modelFilter)
 	if err != nil {
 		return nil, err
 	}

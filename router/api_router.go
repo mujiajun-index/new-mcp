@@ -95,8 +95,8 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.GET("/cameras/:id/stream", HandleCameraStream)
 
 		// User logs
-		auth.GET("/logs", controller.GetUserLogs)
-		auth.GET("/logs/stats", controller.GetUserLogStats)
+		auth.GET("/logs", controller.GetLogs)
+		auth.GET("/logs/stats", controller.GetLogStats)
 
 		// Marketplace user actions
 		auth.POST("/marketplace/install", controller.InstallFromMarketplace)
@@ -111,8 +111,6 @@ func SetApiRouter(engine *gin.Engine) {
 		admin.POST("/users", controller.AdminCreateUser)
 		admin.PUT("/users/:id", controller.AdminUpdateUser)
 		admin.GET("/stats", controller.AdminGetStats)
-		admin.GET("/logs", controller.AdminGetLogs)
-		admin.GET("/logs/stats", controller.AdminGetLogStats)
 
 		// Admin: Platform services
 		admin.GET("/services", controller.AdminListServices)

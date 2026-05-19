@@ -42,6 +42,15 @@ type LogContext struct {
 	ExposeMode string // "direct" or "smart"
 }
 
+type executeResult struct {
+	Resp        *JSONRPCResponse
+	ToolName    string
+	ServiceID   int64
+	ServiceName string
+	GroupID     int64
+	GroupName   string
+}
+
 type GatewayHandler struct {
 	pool            *bridge.SessionPool
 	toolRouter      *bridge.ToolRouter
@@ -156,6 +165,7 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 	var groupName string
 	var serviceID int64
 	var serviceName string
+	originalToolName := "" // records meta-tool name for smart mode
 
 	// Resolve group info
 	if logCtx.GroupSlug != "" {
@@ -168,11 +178,26 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 	// Smart mode meta-tools
 	switch params.Name {
 	case "mcp.search":
+		originalToolName = "mcp.search"
 		resp = h.handleSearch(ctx, req.ID, logCtx, params.Arguments)
 	case "mcp.describe":
+		originalToolName = "mcp.describe"
 		resp = h.handleDescribe(ctx, req.ID, logCtx, params.Arguments)
 	case "mcp.execute":
-		resp = h.handleExecute(ctx, req.ID, logCtx, params.Arguments)
+		originalToolName = "mcp.execute"
+		result := h.handleExecute(ctx, req.ID, logCtx, params.Arguments)
+		resp = result.Resp
+		if result.ToolName != "" {
+			params.Name = result.ToolName
+		}
+		if result.ServiceID != 0 {
+			serviceID = result.ServiceID
+			serviceName = result.ServiceName
+		}
+		if result.GroupID != 0 {
+			groupID = result.GroupID
+			groupName = result.GroupName
+		}
 	default:
 		// Verify group access for group-scoped requests
 		if logCtx.GroupSlug != "" {
@@ -202,6 +227,11 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 		errMsg = resp.Error.Message
 	}
 
+	method := "tools/call"
+	if originalToolName != "" {
+		method = originalToolName
+	}
+
 	go h.recordLog(&model.McpCallLog{
 		UserID:         logCtx.UserID,
 		Username:       logCtx.Username,
@@ -212,7 +242,7 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 		ServiceID:      serviceID,
 		ServiceName:    serviceName,
 		ToolName:       params.Name,
-		Method:         "tools/call",
+		Method:         method,
 		RequestPayload: truncate(string(params.Arguments), 65535),
 		ResponseStatus: status,
 		DurationMs:     int(duration.Milliseconds()),
@@ -356,7 +386,7 @@ func (h *GatewayHandler) handleDescribe(ctx context.Context, reqID interface{}, 
 	}
 }
 
-func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, logCtx *LogContext, args json.RawMessage) *JSONRPCResponse {
+func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, logCtx *LogContext, args json.RawMessage) *executeResult {
 	var params struct {
 		ToolID    string          `json:"tool_id"`
 		Arguments json.RawMessage `json:"arguments"`
@@ -365,7 +395,7 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 	_ = json.Unmarshal(args, &params)
 
 	if params.ToolID == "" {
-		return h.errorResponse(reqID, -32602, "tool_id is required")
+		return &executeResult{Resp: h.errorResponse(reqID, -32602, "tool_id is required")}
 	}
 
 	if params.TimeoutMs <= 0 {
@@ -378,13 +408,15 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 		svcName = params.ToolID // non-namespaced fallback
 	}
 	if !h.isServiceInApiKeyScope(svcName, logCtx) {
-		return h.errorResponse(reqID, -32602, fmt.Sprintf("service '%s' is not accessible with this API key", svcName))
+		return &executeResult{Resp: h.errorResponse(reqID, -32602, fmt.Sprintf("service '%s' is not accessible with this API key", svcName))}
 	}
 
 	session, toolName, err := h.routeOrConnect(ctx, params.ToolID, logCtx.UserID)
 	if err != nil {
-		return h.errorResponse(reqID, -32602, err.Error())
+		return &executeResult{Resp: h.errorResponse(reqID, -32602, err.Error())}
 	}
+
+	gID, gName := h.resolveGroupForService(session.ServiceID, logCtx)
 
 	if params.TimeoutMs > 0 {
 		var cancel context.CancelFunc
@@ -399,14 +431,49 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 
 	result, err := session.Adapter.Call(ctx, "tools/call", callParams)
 	if err != nil {
-		return h.errorResponse(reqID, -32603, "Execution failed: "+err.Error())
+		return &executeResult{
+			Resp:        h.errorResponse(reqID, -32603, "Execution failed: "+err.Error()),
+			ToolName:    toolName,
+			ServiceID:   session.ServiceID,
+			ServiceName: session.ServiceName,
+			GroupID:     gID,
+			GroupName:   gName,
+		}
 	}
 
-	return &JSONRPCResponse{
-		JSONRPC: "2.0",
-		ID:      reqID,
-		Result:  json.RawMessage(result),
+	return &executeResult{
+		Resp: &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      reqID,
+			Result:  json.RawMessage(result),
+		},
+		ToolName:    toolName,
+		ServiceID:   session.ServiceID,
+		ServiceName: session.ServiceName,
+		GroupID:     gID,
+		GroupName:   gName,
 	}
+}
+
+// resolveGroupForService finds the first group containing this service within the API key's scope.
+func (h *GatewayHandler) resolveGroupForService(serviceID int64, logCtx *LogContext) (int64, string) {
+	info, err := bridge.ResolveApiKeyInfo(logCtx.ApiKeyID)
+	if err != nil {
+		return 0, ""
+	}
+	groups, err := bridge.GetGroupsForApiKey(info)
+	if err != nil {
+		return 0, ""
+	}
+	for _, g := range groups {
+		gsList, _ := model.GetEnabledGroupServices(g.ID)
+		for _, gs := range gsList {
+			if gs.ServiceID == serviceID {
+				return g.ID, g.Name
+			}
+		}
+	}
+	return 0, ""
 }
 
 // isServiceInApiKeyScope checks whether a service name is within the API key's group scope.

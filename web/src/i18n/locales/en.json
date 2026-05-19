@@ -144,6 +144,7 @@
     "groupName": "Group",
     "serviceName": "Service",
     "username": "User",
+    "apiKeyName": "API Key",
     "reset": "Reset",
     "duration": "Duration",
     "time": "Time",

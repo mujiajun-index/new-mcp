@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import type { LogFilter, AdminCreateUserReq, AdminUpdateUserReq } from '@/types'
+import type { AdminCreateUserReq, AdminUpdateUserReq } from '@/types'
 
 export async function getAdminStats() {
   const res = await api.get('/admin/stats')
@@ -21,12 +21,3 @@ export async function updateAdminUser(id: number, data: AdminUpdateUserReq) {
   return res.data
 }
 
-export async function getAdminLogs(params?: LogFilter) {
-  const res = await api.get('/admin/logs', { params })
-  return res.data
-}
-
-export async function getAdminLogStats(params?: LogFilter) {
-  const res = await api.get('/admin/logs/stats', { params })
-  return res.data
-}

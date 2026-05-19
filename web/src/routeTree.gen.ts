@@ -92,9 +92,6 @@ const AuthenticatedAdminSystemLazyRouteImport = createFileRoute(
 const AuthenticatedAdminReviewsLazyRouteImport = createFileRoute(
   '/_authenticated/admin/reviews',
 )()
-const AuthenticatedAdminLogsLazyRouteImport = createFileRoute(
-  '/_authenticated/admin/logs',
-)()
 const AuthenticatedAdminMarketplaceIndexLazyRouteImport = createFileRoute(
   '/_authenticated/admin/marketplace/',
 )()
@@ -344,14 +341,6 @@ const AuthenticatedAdminReviewsLazyRoute =
   } as any).lazy(() =>
     import('./routes/_authenticated/admin/reviews.lazy').then((d) => d.Route),
   )
-const AuthenticatedAdminLogsLazyRoute =
-  AuthenticatedAdminLogsLazyRouteImport.update({
-    id: '/logs',
-    path: '/logs',
-    getParentRoute: () => AuthenticatedAdminRouteRoute,
-  } as any).lazy(() =>
-    import('./routes/_authenticated/admin/logs.lazy').then((d) => d.Route),
-  )
 const AuthenticatedAdminMarketplaceIndexLazyRoute =
   AuthenticatedAdminMarketplaceIndexLazyRouteImport.update({
     id: '/marketplace/',
@@ -394,7 +383,6 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsLazyRoute
   '/sign-in': typeof PublicSignInLazyRoute
   '/sign-up': typeof PublicSignUpLazyRoute
-  '/admin/logs': typeof AuthenticatedAdminLogsLazyRoute
   '/admin/reviews': typeof AuthenticatedAdminReviewsLazyRoute
   '/admin/system': typeof AuthenticatedAdminSystemLazyRoute
   '/admin/users': typeof AuthenticatedAdminUsersLazyRoute
@@ -430,7 +418,6 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsLazyRoute
   '/sign-in': typeof PublicSignInLazyRoute
   '/sign-up': typeof PublicSignUpLazyRoute
-  '/admin/logs': typeof AuthenticatedAdminLogsLazyRoute
   '/admin/reviews': typeof AuthenticatedAdminReviewsLazyRoute
   '/admin/system': typeof AuthenticatedAdminSystemLazyRoute
   '/admin/users': typeof AuthenticatedAdminUsersLazyRoute
@@ -469,7 +456,6 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsLazyRoute
   '/_public/sign-in': typeof PublicSignInLazyRoute
   '/_public/sign-up': typeof PublicSignUpLazyRoute
-  '/_authenticated/admin/logs': typeof AuthenticatedAdminLogsLazyRoute
   '/_authenticated/admin/reviews': typeof AuthenticatedAdminReviewsLazyRoute
   '/_authenticated/admin/system': typeof AuthenticatedAdminSystemLazyRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersLazyRoute
@@ -507,7 +493,6 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sign-in'
     | '/sign-up'
-    | '/admin/logs'
     | '/admin/reviews'
     | '/admin/system'
     | '/admin/users'
@@ -543,7 +528,6 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sign-in'
     | '/sign-up'
-    | '/admin/logs'
     | '/admin/reviews'
     | '/admin/system'
     | '/admin/users'
@@ -581,7 +565,6 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/_public/sign-in'
     | '/_public/sign-up'
-    | '/_authenticated/admin/logs'
     | '/_authenticated/admin/reviews'
     | '/_authenticated/admin/system'
     | '/_authenticated/admin/users'
@@ -841,13 +824,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminReviewsLazyRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
-    '/_authenticated/admin/logs': {
-      id: '/_authenticated/admin/logs'
-      path: '/logs'
-      fullPath: '/admin/logs'
-      preLoaderRoute: typeof AuthenticatedAdminLogsLazyRouteImport
-      parentRoute: typeof AuthenticatedAdminRouteRoute
-    }
     '/_authenticated/admin/marketplace/': {
       id: '/_authenticated/admin/marketplace/'
       path: '/marketplace'
@@ -873,7 +849,6 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedAdminRouteRouteChildren {
-  AuthenticatedAdminLogsLazyRoute: typeof AuthenticatedAdminLogsLazyRoute
   AuthenticatedAdminReviewsLazyRoute: typeof AuthenticatedAdminReviewsLazyRoute
   AuthenticatedAdminSystemLazyRoute: typeof AuthenticatedAdminSystemLazyRoute
   AuthenticatedAdminUsersLazyRoute: typeof AuthenticatedAdminUsersLazyRoute
@@ -884,7 +859,6 @@ interface AuthenticatedAdminRouteRouteChildren {
 
 const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren =
   {
-    AuthenticatedAdminLogsLazyRoute: AuthenticatedAdminLogsLazyRoute,
     AuthenticatedAdminReviewsLazyRoute: AuthenticatedAdminReviewsLazyRoute,
     AuthenticatedAdminSystemLazyRoute: AuthenticatedAdminSystemLazyRoute,
     AuthenticatedAdminUsersLazyRoute: AuthenticatedAdminUsersLazyRoute,

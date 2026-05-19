@@ -6,7 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import {
   LayoutDashboard, Server, FolderTree, Cloud, Eye, Camera,
-  Key, Store, Settings, Shield, Users, FileText, Wrench,
+  Key, Store, Settings, Shield, Users, Wrench,
   ClipboardCheck, ChevronLeft, Activity,
 } from 'lucide-react'
 import { useState } from 'react'
@@ -33,7 +33,6 @@ const mainNav: NavItem[] = [
 
 const adminNav: NavItem[] = [
   { label: 'nav.adminUsers', icon: Users, href: '/admin/users', adminOnly: true },
-  { label: 'nav.adminLogs', icon: FileText, href: '/admin/logs', adminOnly: true },
   { label: 'nav.adminMarketplace', icon: Wrench, href: '/admin/marketplace', adminOnly: true },
   { label: 'nav.adminReviews', icon: ClipboardCheck, href: '/admin/reviews', adminOnly: true },
   { label: 'nav.adminSystem', icon: Shield, href: '/admin/system', adminOnly: true },

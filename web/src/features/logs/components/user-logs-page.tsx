@@ -3,17 +3,21 @@ import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import dayjs from 'dayjs'
 import { getUserLogs, getUserLogStats } from '@/features/logs/api'
+import { useAuthStore } from '@/stores/auth-store'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import { CompactDateTimeRangePicker } from '@/components/ui/date-time-range-picker'
 import { Activity, CheckCircle, XCircle, Clock, Zap, Search, RotateCw, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { LogFilter } from '@/types'
 
 export function UserLogsPage() {
   const { t } = useTranslation()
+  const { auth } = useAuthStore()
+  const isAdmin = auth.user?.role === 'admin'
   const [page, setPage] = useState(1)
   const pageSize = 20
   const [filter, setFilter] = useState<LogFilter>({})
@@ -64,7 +68,7 @@ export function UserLogsPage() {
 
   const formatDuration = (ms: number) => {
     if (ms < 1000) return `${ms}ms`
-    return `${(ms / 1000).toFixed(1)}s`
+    return `${(ms / 1000).toFixed(2)}s`
   }
 
   const statCards = [
@@ -75,190 +79,216 @@ export function UserLogsPage() {
     { label: t('logs.todayCalls'), value: stats?.data?.calls_today ?? 0, icon: Zap, color: 'text-amber-500', bg: 'bg-amber-500/10' },
   ]
 
+  const colSpan = isAdmin ? 11 : 8
+
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1400px]">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{t('logs.title')}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{t('logs.subtitle')}</p>
-      </div>
+    <TooltipProvider delayDuration={200}>
+      <div className="p-6 lg:p-8 space-y-6 max-w-[1400px]">
+        {/* Header */}
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('logs.title')}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t('logs.subtitle')}</p>
+        </div>
 
-      {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        {statCards.map((card, i) => (
-          <div key={i} className="rounded-xl border bg-card p-4">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">{card.label}</p>
-              <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${card.bg}`}>
-                <card.icon className={`h-4 w-4 ${card.color}`} />
+        {/* Stats */}
+        <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
+          {statCards.map((card, i) => (
+            <div key={i} className="rounded-xl border bg-card p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">{card.label}</p>
+                <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${card.bg}`}>
+                  <card.icon className={`h-4 w-4 ${card.color}`} />
+                </div>
               </div>
+              <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums">
+                {statsLoading ? '...' : card.value}
+              </p>
             </div>
-            <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums">
-              {statsLoading ? '...' : card.value}
-            </p>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-4">
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder={t('logs.searchPlaceholder')}
-            value={filter.keyword ?? ''}
-            onChange={e => updateFilter('keyword', e.target.value)}
-            className="pl-9 h-9"
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-4">
+          <div className="relative flex-1 min-w-[200px] max-w-xs">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder={t('logs.searchPlaceholder')}
+              value={filter.keyword ?? ''}
+              onChange={e => updateFilter('keyword', e.target.value)}
+              className="pl-9 h-9"
+            />
+          </div>
+
+          <Select value={filter.status ?? 'all'} onValueChange={v => updateFilter('status', v === 'all' ? '' : v)}>
+            <SelectTrigger className="w-[130px] h-9">
+              <SelectValue placeholder={t('logs.status')} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t('logs.allStatus')}</SelectItem>
+              <SelectItem value="success">{t('logs.success')}</SelectItem>
+              <SelectItem value="error">{t('logs.error')}</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <CompactDateTimeRangePicker
+            start={dateRange.start}
+            end={dateRange.end}
+            onChange={handleDateRangeChange}
           />
+
+          <Input
+            placeholder={t('logs.toolName')}
+            value={filter.tool_name ?? ''}
+            onChange={e => updateFilter('tool_name', e.target.value)}
+            className="w-[150px] h-9"
+          />
+
+          <Input
+            placeholder={t('logs.groupName')}
+            value={filter.group_name ?? ''}
+            onChange={e => updateFilter('group_name', e.target.value)}
+            className="w-[150px] h-9"
+          />
+
+          {isAdmin && (
+            <>
+              <Input
+                placeholder={t('logs.serviceName')}
+                value={filter.service_name ?? ''}
+                onChange={e => updateFilter('service_name', e.target.value)}
+                className="w-[150px] h-9"
+              />
+              <Input
+                placeholder={t('logs.username')}
+                value={filter.username ?? ''}
+                onChange={e => updateFilter('username', e.target.value)}
+                className="w-[130px] h-9"
+              />
+            </>
+          )}
+
+          <Button variant="outline" size="sm" onClick={resetFilters} className="h-9">
+            <RotateCw className="mr-1.5 h-3.5 w-3.5" />
+            {t('logs.reset')}
+          </Button>
         </div>
 
-        <Select value={filter.status ?? 'all'} onValueChange={v => updateFilter('status', v === 'all' ? '' : v)}>
-          <SelectTrigger className="w-[130px] h-9">
-            <SelectValue placeholder={t('logs.status')} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t('logs.allStatus')}</SelectItem>
-            <SelectItem value="success">{t('logs.success')}</SelectItem>
-            <SelectItem value="error">{t('logs.error')}</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <CompactDateTimeRangePicker
-          start={dateRange.start}
-          end={dateRange.end}
-          onChange={handleDateRangeChange}
-        />
-
-        <Input
-          placeholder={t('logs.toolName')}
-          value={filter.tool_name ?? ''}
-          onChange={e => updateFilter('tool_name', e.target.value)}
-          className="w-[150px] h-9"
-        />
-
-        <Input
-          placeholder={t('logs.groupName')}
-          value={filter.group_name ?? ''}
-          onChange={e => updateFilter('group_name', e.target.value)}
-          className="w-[150px] h-9"
-        />
-
-        <Button variant="outline" size="sm" onClick={resetFilters} className="h-9">
-          <RotateCw className="mr-1.5 h-3.5 w-3.5" />
-          {t('logs.reset')}
-        </Button>
-      </div>
-
-      {/* Table */}
-      <div className="rounded-xl border bg-card">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[60px]">ID</TableHead>
-              <TableHead>{t('logs.toolName')}</TableHead>
-              <TableHead>{t('logs.groupName')}</TableHead>
-              <TableHead>{t('logs.serviceName')}</TableHead>
-              <TableHead>{t('logs.status')}</TableHead>
-              <TableHead>{t('logs.duration')}</TableHead>
-              <TableHead>IP</TableHead>
-              <TableHead>{t('logs.time')}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
+        {/* Table */}
+        <div className="rounded-xl border bg-card">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
-                  {t('common.loading')}
-                </TableCell>
+                <TableHead className="w-[50px]">ID</TableHead>
+                {isAdmin && <TableHead>{t('logs.username')}</TableHead>}
+                {isAdmin && <TableHead>{t('logs.apiKeyName')}</TableHead>}
+                <TableHead>{t('logs.toolName')}</TableHead>
+                <TableHead>{t('logs.groupName')}</TableHead>
+                {isAdmin && <TableHead>{t('logs.serviceName')}</TableHead>}
+                <TableHead>{t('logs.status')}</TableHead>
+                <TableHead>{t('logs.duration')}</TableHead>
+                <TableHead>{t('logs.errorMessage')}</TableHead>
+                <TableHead>IP</TableHead>
+                <TableHead>{t('logs.time')}</TableHead>
               </TableRow>
-            ) : logs.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
-                  {t('common.noData')}
-                </TableCell>
-              </TableRow>
-            ) : (
-              logs.map((log: any) => (
-                <UserLogRow key={log.id} log={log} formatTime={formatTime} formatDuration={formatDuration} />
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={colSpan} className="h-32 text-center text-muted-foreground">
+                    {t('common.loading')}
+                  </TableCell>
+                </TableRow>
+              ) : logs.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={colSpan} className="h-32 text-center text-muted-foreground">
+                    {t('common.noData')}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                logs.map((log: any) => (
+                  <LogRow key={log.id} log={log} isAdmin={isAdmin} formatTime={formatTime} formatDuration={formatDuration} />
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
 
-      {/* Pagination */}
-      {pagination && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {t('logs.total')} {pagination.total} {t('logs.records')}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1 || isFetching}
-              onClick={() => setPage(p => p - 1)}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="text-sm tabular-nums">{page} / {totalPages}</span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages || isFetching}
-              onClick={() => setPage(p => p + 1)}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+        {/* Pagination */}
+        {pagination && (
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              {t('logs.total')} {pagination.total} {t('logs.records')}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1 || isFetching}
+                onClick={() => setPage(p => p - 1)}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm tabular-nums">{page} / {totalPages}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages || isFetching}
+                onClick={() => setPage(p => p + 1)}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </TooltipProvider>
   )
 }
 
-function UserLogRow({ log, formatTime, formatDuration }: { log: any; formatTime: (s: string) => string; formatDuration: (ms: number) => string }) {
-  const [expanded, setExpanded] = useState(false)
+function LogRow({ log, isAdmin, formatTime, formatDuration }: {
+  log: any
+  isAdmin: boolean
+  formatTime: (s: string) => string
+  formatDuration: (ms: number) => string
+}) {
+  const { t } = useTranslation()
   const isSuccess = log.response_status === 'success'
+  const errorMsg = log.error_message || ''
 
   return (
-    <>
-      <TableRow className="cursor-pointer" onClick={() => setExpanded(!expanded)}>
-        <TableCell className="text-xs text-muted-foreground tabular-nums">{log.id}</TableCell>
-        <TableCell>
-          <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{log.tool_name}</code>
-        </TableCell>
-        <TableCell className="text-sm">{log.group_name || '-'}</TableCell>
-        <TableCell className="text-sm">{log.service_name || '-'}</TableCell>
-        <TableCell>
-          <Badge variant={isSuccess ? 'success' : 'destructive'}>
-            {isSuccess ? '成功' : '失败'}
-          </Badge>
-        </TableCell>
-        <TableCell className="text-sm tabular-nums">{formatDuration(log.duration_ms)}</TableCell>
-        <TableCell className="text-xs text-muted-foreground font-mono">{log.client_ip}</TableCell>
-        <TableCell className="text-xs text-muted-foreground tabular-nums">{formatTime(log.created_at)}</TableCell>
-      </TableRow>
-      {expanded && (
-        <TableRow>
-          <TableCell colSpan={8} className="bg-muted/30 px-6 py-3">
-            <div className="space-y-2 text-sm">
-              {log.error_message && (
-                <div>
-                  <span className="text-muted-foreground">{t('logs.errorMessage')}：</span>
-                  <span className="text-red-500">{log.error_message}</span>
-                </div>
-              )}
-              {log.api_key_name && (
-                <div>
-                  <span className="text-muted-foreground">API Key：</span>
-                  <span className="text-xs">{log.api_key_name}</span>
-                </div>
-              )}
-            </div>
-          </TableCell>
-        </TableRow>
-      )}
-    </>
+    <TableRow>
+      <TableCell className="text-xs text-muted-foreground tabular-nums">{log.id}</TableCell>
+      {isAdmin && <TableCell className="text-sm">{log.username || '-'}</TableCell>}
+      {isAdmin && <TableCell className="text-sm">{log.api_key_name || '-'}</TableCell>}
+      <TableCell>
+        <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{log.tool_name}</code>
+      </TableCell>
+      <TableCell className="text-sm">{log.group_name || '-'}</TableCell>
+      {isAdmin && <TableCell className="text-sm">{log.service_name || '-'}</TableCell>}
+      <TableCell>
+        <Badge variant={isSuccess ? 'success' : 'destructive'}>
+          {isSuccess ? t('logs.success') : t('logs.error')}
+        </Badge>
+      </TableCell>
+      <TableCell className="text-sm tabular-nums">{formatDuration(log.duration_ms)}</TableCell>
+      <TableCell className="max-w-[200px]">
+        {errorMsg ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="text-xs text-red-500 truncate block cursor-default">
+                {errorMsg.length > 30 ? errorMsg.slice(0, 30) + '...' : errorMsg}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-[400px] whitespace-pre-wrap break-all">
+              {errorMsg}
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          <span className="text-xs text-muted-foreground">-</span>
+        )}
+      </TableCell>
+      <TableCell className="text-xs text-muted-foreground font-mono">{log.client_ip}</TableCell>
+      <TableCell className="text-xs text-muted-foreground tabular-nums">{formatTime(log.created_at)}</TableCell>
+    </TableRow>
   )
 }
