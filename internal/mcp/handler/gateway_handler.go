@@ -302,7 +302,11 @@ func (h *GatewayHandler) handleSearch(ctx context.Context, reqID interface{}, lo
 	var textResults []string
 	for _, r := range results {
 		if r.Doc.Type == "mcp" {
-			textResults = append(textResults, fmt.Sprintf("- **%s** (服务, %d 工具) %s [%s]", r.Doc.Name, r.Doc.ToolCount, r.Doc.Description, r.Doc.GroupName))
+			label := r.Doc.Name
+			if r.Doc.Name != r.Doc.ServiceName {
+				label = fmt.Sprintf("%s (%s)", r.Doc.Name, r.Doc.ServiceName)
+			}
+			textResults = append(textResults, fmt.Sprintf("- **%s** (服务, %d 工具) %s [%s]", label, r.Doc.ToolCount, r.Doc.Description, r.Doc.GroupName))
 		} else {
 			textResults = append(textResults, fmt.Sprintf("- **%s.%s** (工具) %s [%s]", r.Doc.ServiceName, r.Doc.Name, r.Doc.Description, r.Doc.GroupName))
 		}
@@ -360,8 +364,21 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 	}
 	_ = json.Unmarshal(args, &params)
 
+	if params.ToolID == "" {
+		return h.errorResponse(reqID, -32602, "tool_id is required")
+	}
+
 	if params.TimeoutMs <= 0 {
 		params.TimeoutMs = 30000
+	}
+
+	// Verify group scope: the service must be in one of the API key's allowed groups
+	svcName, _ := bridge.ParseNamespacedName(params.ToolID)
+	if svcName == "" {
+		svcName = params.ToolID // non-namespaced fallback
+	}
+	if !h.isServiceInApiKeyScope(svcName, logCtx) {
+		return h.errorResponse(reqID, -32602, fmt.Sprintf("service '%s' is not accessible with this API key", svcName))
 	}
 
 	session, toolName, err := h.routeOrConnect(ctx, params.ToolID, logCtx.UserID)
@@ -392,6 +409,28 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 	}
 }
 
+// isServiceInApiKeyScope checks whether a service name is within the API key's group scope.
+func (h *GatewayHandler) isServiceInApiKeyScope(serviceName string, logCtx *LogContext) bool {
+	info, err := bridge.ResolveApiKeyInfo(logCtx.ApiKeyID)
+	if err != nil {
+		return false
+	}
+	groups, err := bridge.GetGroupsForApiKey(info)
+	if err != nil {
+		return false
+	}
+	for _, g := range groups {
+		gsList, _ := model.GetEnabledGroupServices(g.ID)
+		for _, gs := range gsList {
+			svc, svcErr := model.GetServiceByIDWithoutUser(gs.ServiceID)
+			if svcErr == nil && (svc.Name == serviceName || svc.DisplayName == serviceName) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (h *GatewayHandler) getDirectToolsForApiKey(apiKeyID int64) ([]map[string]interface{}, error) {
 	info, err := bridge.ResolveApiKeyInfo(apiKeyID)
 	if err != nil {
@@ -412,7 +451,7 @@ func (h *GatewayHandler) getDirectToolsForApiKey(apiKeyID int64) ([]map[string]i
 }
 
 func (h *GatewayHandler) routeOrConnect(ctx context.Context, namespacedTool string, userID int64) (*bridge.McpSession, string, error) {
-	session, toolName, err := h.toolRouter.Route(namespacedTool)
+	session, toolName, err := h.toolRouter.Route(namespacedTool, userID)
 	if err == nil {
 		return session, toolName, nil
 	}

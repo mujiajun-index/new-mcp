@@ -139,8 +139,14 @@ func (e *SearchEngine) Describe(targets []string, apiKeyID int64) ([]map[string]
 
 	results := make([]map[string]interface{}, 0, len(targets))
 	for _, target := range targets {
+		if target == "" {
+			continue
+		}
 		parts := strings.SplitN(target, ".", 2)
 		serviceName := parts[0]
+		if serviceName == "" {
+			continue
+		}
 
 		var svc model.McpService
 		if err := model.DB.Where("(name = ? OR display_name = ?) AND user_id = ?", serviceName, serviceName, info.UserID).First(&svc).Error; err != nil {

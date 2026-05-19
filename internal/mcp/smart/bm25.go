@@ -3,6 +3,7 @@ package smart
 import (
 	"math"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -41,28 +42,35 @@ func buildIndex(docs []SearchDoc) *bm25Index {
 		docs:      docs,
 		termFreqs: make(map[string]map[int]int),
 		fieldBoost: map[string]float64{
-			"name":        3.0,
+			"name":         3.0,
 			"service_name": 2.0,
-			"description": 1.0,
+			"description":  1.0,
 		},
 	}
 
 	totalLen := 0
 	for i, doc := range docs {
-		terms := tokenize(doc.Name + " " + doc.Description + " " + doc.ServiceName)
-		idx.docLens = append(idx.docLens, len(terms))
-		totalLen += len(terms)
+		fields := map[string]string{
+			"name":         doc.Name,
+			"service_name": doc.ServiceName,
+			"description":  doc.Description,
+		}
 
-		termCount := make(map[string]int)
-		for _, t := range terms {
-			termCount[t]++
-		}
-		for t, c := range termCount {
-			if idx.termFreqs[t] == nil {
-				idx.termFreqs[t] = make(map[int]int)
+		docTermCount := 0
+		for field, text := range fields {
+			tokens := tokenize(text)
+			boost := int(idx.fieldBoost[field] * 10) // scale to avoid float precision issues
+			for _, t := range tokens {
+				if idx.termFreqs[t] == nil {
+					idx.termFreqs[t] = make(map[int]int)
+				}
+				idx.termFreqs[t][i] += boost
 			}
-			idx.termFreqs[t][i] = c
+			docTermCount += len(tokens)
 		}
+
+		idx.docLens = append(idx.docLens, docTermCount)
+		totalLen += docTermCount
 	}
 
 	idx.docCount = len(docs)
@@ -116,14 +124,10 @@ func (idx *bm25Index) search(query string, limit int) []SearchResult {
 		results = append(results, scored{docIdx, score})
 	}
 
-	// Sort by score descending
-	for i := 0; i < len(results); i++ {
-		for j := i + 1; j < len(results); j++ {
-			if results[j].score > results[i].score {
-				results[i], results[j] = results[j], results[i]
-			}
-		}
-	}
+		// Sort by score descending
+		sort.Slice(results, func(i, j int) bool {
+			return results[i].score > results[j].score
+		})
 
 	if limit > len(results) {
 		limit = len(results)

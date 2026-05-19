@@ -14,6 +14,7 @@ import (
 type McpSession struct {
 	ServiceID   int64
 	ServiceName string
+	UserID      int64
 	Adapter     transport.TransportAdapter
 	Tools       []transport.Tool
 	LastUsed    time.Time
@@ -67,6 +68,7 @@ func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (
 	session := &McpSession{
 		ServiceID:   svc.ID,
 		ServiceName: svc.Name,
+		UserID:      svc.UserID,
 		Adapter:     adapter,
 		Tools:       adapter.GetTools(),
 		LastUsed:    time.Now(),
@@ -106,6 +108,17 @@ func (p *SessionPool) GetByName(serviceName string) *McpSession {
 	return nil
 }
 
+func (p *SessionPool) GetByNameForUser(serviceName string, userID int64) *McpSession {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, s := range p.sessions {
+		if s.ServiceName == serviceName && s.UserID == userID {
+			return s
+		}
+	}
+	return nil
+}
+
 func (p *SessionPool) Remove(serviceID int64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -128,6 +141,22 @@ func (p *SessionPool) FindByToolName(toolName string) *McpSession {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	for _, s := range p.sessions {
+		for _, t := range s.Tools {
+			if t.Name == toolName {
+				return s
+			}
+		}
+	}
+	return nil
+}
+
+func (p *SessionPool) FindByToolNameForUser(toolName string, userID int64) *McpSession {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, s := range p.sessions {
+		if s.UserID != userID {
+			continue
+		}
 		for _, t := range s.Tools {
 			if t.Name == toolName {
 				return s

@@ -16,11 +16,10 @@ func NewToolRouter(pool *SessionPool) *ToolRouter {
 // Route parses a namespaced tool name and returns the target session and original tool name.
 // Direct mode: "serviceName__toolName" (double underscore)
 // Smart mode: "serviceName.toolName" (dot)
-func (r *ToolRouter) Route(namespacedTool string) (*McpSession, string, error) {
+func (r *ToolRouter) Route(namespacedTool string, userID int64) (*McpSession, string, error) {
 	serviceName, toolName := ParseNamespacedName(namespacedTool)
 	if serviceName == "" {
-		// Fallback: search all sessions for a matching tool name
-		session := r.pool.FindByToolName(namespacedTool)
+		session := r.pool.FindByToolNameForUser(namespacedTool, userID)
 		if session != nil {
 			if !session.Adapter.IsConnected() {
 				return nil, "", fmt.Errorf("service not connected for tool: %s", namespacedTool)
@@ -30,7 +29,7 @@ func (r *ToolRouter) Route(namespacedTool string) (*McpSession, string, error) {
 		return nil, "", fmt.Errorf("tool not found: %s", namespacedTool)
 	}
 
-	session := r.pool.GetByName(serviceName)
+	session := r.pool.GetByNameForUser(serviceName, userID)
 	if session == nil {
 		return nil, "", fmt.Errorf("service not found: %s", serviceName)
 	}
