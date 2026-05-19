@@ -326,9 +326,15 @@ func (h *GatewayHandler) handleSearch(ctx context.Context, reqID interface{}, lo
 
 func (h *GatewayHandler) handleDescribe(ctx context.Context, reqID interface{}, logCtx *LogContext, args json.RawMessage) *JSONRPCResponse {
 	var params struct {
-		Targets []string `json:"targets"`
+		Targets       []string `json:"targets"`
+		IncludeSchema *bool    `json:"include_schema"`
 	}
 	_ = json.Unmarshal(args, &params)
+
+	includeSchema := true
+	if params.IncludeSchema != nil {
+		includeSchema = *params.IncludeSchema
+	}
 
 	results, err := h.searchEngine.Describe(params.Targets, logCtx.ApiKeyID)
 	if err != nil {
@@ -340,7 +346,7 @@ func (h *GatewayHandler) handleDescribe(ctx context.Context, reqID interface{}, 
 		ID:      reqID,
 		Result: map[string]interface{}{
 			"content": []map[string]interface{}{
-				{"type": "text", "text": fmt.Sprintf("%v", results)},
+				{"type": "text", "text": smart.FormatDescribeResult(results, includeSchema)},
 			},
 		},
 	}
