@@ -47,8 +47,7 @@ func APIKeyAuth() gin.HandlerFunc {
 		}
 
 		now := time.Now()
-		apiKey.LastUsedAt = &now
-		_ = model.DB.Save(apiKey)
+		_ = model.DB.Model(apiKey).Update("last_used_at", now)
 
 		c.Set("api_key_id", apiKey.ID)
 		c.Set("api_key_user_id", apiKey.UserID)
