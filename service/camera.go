@@ -167,7 +167,7 @@ func (s *CameraService) Enable(userID, id int64) error {
 	_ = cam.Update()
 
 	if VirtualRegistry != nil {
-		VirtualRegistry.Register(svc.ID, virtual.CameraHandler)
+		VirtualRegistry.Register(svc.ID, cam.UserID, serviceName, virtual.ParseConfig(svc.Config), virtual.CameraHandler)
 	}
 
 	return nil

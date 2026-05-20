@@ -260,13 +260,10 @@ func (h *GatewayHandler) routeAndCall(ctx context.Context, reqID interface{}, lo
 
 	// Check virtual tools first
 	if h.virtualRegistry != nil && parsedSvc != "" {
-		var virtualSvc model.McpService
-		if model.DB.Where("name = ? AND transport_type = ? AND user_id = ?", parsedSvc, "virtual", logCtx.UserID).First(&virtualSvc).Error == nil {
-			vConfig := map[string]interface{}{}
-			_ = json.Unmarshal([]byte(virtualSvc.Config), &vConfig)
-			vResult, vErr := h.virtualRegistry.Handle(ctx, virtualSvc.ID, vConfig, parsedTool, args)
-			*svcID = virtualSvc.ID
-			*svcName = virtualSvc.Name
+		if vSvcID, entry, ok := h.virtualRegistry.LookupByName(logCtx.UserID, parsedSvc); ok {
+			vResult, vErr := h.virtualRegistry.Handle(ctx, vSvcID, entry.Config, parsedTool, args)
+			*svcID = vSvcID
+			*svcName = entry.Name
 			if vErr != nil {
 				return h.errorResponse(reqID, -32603, "Virtual tool failed: "+vErr.Error())
 			}
@@ -409,6 +406,37 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 	}
 	if !h.isServiceInApiKeyScope(svcName, logCtx) {
 		return &executeResult{Resp: h.errorResponse(reqID, -32602, fmt.Sprintf("service '%s' is not accessible with this API key", svcName))}
+	}
+
+	// Check virtual tools first
+	if h.virtualRegistry != nil {
+		parsedSvc, parsedTool := bridge.ParseNamespacedName(params.ToolID)
+		if parsedSvc != "" {
+			if vSvcID, entry, ok := h.virtualRegistry.LookupByName(logCtx.UserID, parsedSvc); ok {
+				vResult, vErr := h.virtualRegistry.Handle(ctx, vSvcID, entry.Config, parsedTool, params.Arguments)
+				if vErr != nil {
+					return &executeResult{
+						Resp:        h.errorResponse(reqID, -32603, "Virtual tool failed: "+vErr.Error()),
+						ToolName:    parsedTool,
+						ServiceID:   vSvcID,
+						ServiceName: entry.Name,
+					}
+				}
+				gID, gName := h.resolveGroupForService(vSvcID, logCtx)
+				return &executeResult{
+					Resp: &JSONRPCResponse{
+						JSONRPC: "2.0",
+						ID:      reqID,
+						Result:  json.RawMessage(vResult),
+					},
+					ToolName:    parsedTool,
+					ServiceID:   vSvcID,
+					ServiceName: entry.Name,
+					GroupID:     gID,
+					GroupName:   gName,
+				}
+			}
+		}
 	}
 
 	session, toolName, err := h.routeOrConnect(ctx, params.ToolID, logCtx.UserID)

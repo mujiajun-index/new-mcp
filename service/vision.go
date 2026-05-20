@@ -176,7 +176,7 @@ func (s *VisionService) Enable(userID, id int64) error {
 
 	// Register handler
 	if VirtualRegistry != nil {
-		VirtualRegistry.Register(svc.ID, virtual.VisionHandler)
+		VirtualRegistry.Register(svc.ID, vc.UserID, serviceName, virtual.ParseConfig(svc.Config), virtual.VisionHandler)
 	}
 
 	return nil

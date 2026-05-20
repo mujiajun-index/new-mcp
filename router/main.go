@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"encoding/json"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
@@ -49,15 +48,14 @@ func loadVirtualServices() {
 	model.DB.Where("transport_type = ?", "virtual").Find(&services)
 
 	for _, svc := range services {
-		var config map[string]interface{}
-		_ = json.Unmarshal([]byte(svc.Config), &config)
+		config := virtual.ParseConfig(svc.Config)
 
 		virtualType, _ := config["virtual_type"].(string)
 		switch virtualType {
 		case "vision":
-			VirtualRegistry.Register(svc.ID, virtual.VisionHandler)
+			VirtualRegistry.Register(svc.ID, svc.UserID, svc.Name, config, virtual.VisionHandler)
 		case "camera":
-			VirtualRegistry.Register(svc.ID, virtual.CameraHandler)
+			VirtualRegistry.Register(svc.ID, svc.UserID, svc.Name, config, virtual.CameraHandler)
 		default:
 			log.Printf("[virtual] unknown virtual_type %q for service %d", virtualType, svc.ID)
 		}
