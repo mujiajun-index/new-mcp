@@ -1,6 +1,6 @@
 # NewMCP 开发进度文档
 
-> 最后更新: 2026-05-18 | 后端: 6,000+ 行 Go (57 源文件) | 前端: React 19 + TanStack 全家桶
+> 最后更新: 2026-05-20 | 后端: 6,000+ 行 Go (57 源文件) | 前端: React 19 + TanStack 全家桶
 
 ---
 
@@ -24,11 +24,11 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 | MCP 协议网关 | ✅ 已完成 | 95% | 双端点 Direct/Smart + 用户隔离 + 共享 Resolver + 调用日志 |
 | 云端连接 | ✅ 已完成 | 90% | XiaoZhi JWT 解析 + WSS 连接 + 自动重连 + 复用 GatewayHandler |
 | **调用日志** | **✅ 已完成** | **90%** | **自动记录 + 多维筛选 + 统计 + 管理员/用户视图** |
-| 视觉配置 | ❌ 未开始 | 5% | 仅 Model 层 |
-| 摄像头管理 | ❌ 未开始 | 5% | 仅 Model 层 |
-| **前端界面** | **✅ 已完成** | **90%** | **架构 + 核心业务 + 日志 + Dashboard + 设置 + 管理员** |
+| **视觉配置** | **✅ 已完成** | **95%** | **CRUD + 虚拟 MCP 服务注册 + 多供应商支持 + AI 分析工具** |
+| **摄像头管理** | **✅ 已完成** | **95%** | **CRUD + WebRTC 预览 + WebSocket 推流 + capture/analyze 工具** |
+| **前端界面** | **✅ 已完成** | **95%** | **架构 + 核心业务 + 日志 + Dashboard + 设置 + 视觉 + 摄像头** |
 
-**整体完成度: ~90%**
+**整体完成度: ~93%**
 
 ---
 
@@ -75,8 +75,10 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 | 个人设置 | `/settings` | ✅ | 账号信息 + 用量统计 + 编辑资料 + 修改密码 |
 | 调用日志 | `/logs` | ✅ | 统计卡片 + 筛选 + 表格 + 详情展开 |
 | 管理员页面 | `/admin/*` | 🔲 | 占位页 |
-| 视觉配置 | `/vision/*` | 🔲 | 占位页 |
-| 摄像头 | `/cameras/*` | 🔲 | 占位页 |
+| 视觉配置列表 | `/vision` | ✅ | 卡片视图 + 供应商筛选 + 启用/禁用 |
+| 视觉配置详情 | `/vision/:id` | ✅ | 配置编辑 + 测试连接 + 工具自定义名称/描述 |
+| 摄像头列表 | `/cameras` | ✅ | 卡片视图 + 启用/禁用 + 推流状态 |
+| 摄像头详情 | `/cameras/:id` | ✅ | 配置编辑 + WebRTC 预览 + WebSocket 推流 + 工具自定义 |
 
 ### 3.3 前端核心模块
 
@@ -160,6 +162,30 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
  5. Dashboard 展示实时统计数据 + 最近调用日志 ✅
 ```
 
+### 4.5 视觉配置流程 ✅
+
+```
+ 1. 创建视觉配置 → 选择供应商/模型/端点/API Key ✅
+ 2. 测试连通性 → 发送 1x1 测试图片验证配置 ✅
+ 3. 启用视觉配置 → 自动创建虚拟 McpService + 注册 VirtualToolRegistry ✅
+ 4. 自定义工具名称/描述 → 同步更新 tools_cache ✅
+ 5. AI Agent 通过 MCP 端点调用 vision.analyze_image / vision.describe_scene ✅
+ 6. 禁用/删除 → 自动清理虚拟服务、分组关联、工具记录 ✅
+```
+
+### 4.6 摄像头流程 ✅
+
+```
+ 1. 创建摄像头 → 绑定视觉配置 ✅
+ 2. 启用摄像头 → 自动创建虚拟 McpService + 注册 VirtualToolRegistry ✅
+ 3. 开启摄像头 → WebRTC getUserMedia 授权 → 预览画面 ✅
+ 4. WebSocket 推流 → canvas 截帧 → 发送到 /api/v1/cameras/:id/stream ✅
+ 5. AI Agent 调用 camera.capture → 返回最新帧 base64 图像 ✅
+ 6. AI Agent 调用 camera.analyze → 截帧 + 调用视觉模型 AI 识别 ✅
+ 7. 关闭摄像头 → 停止推流 + 清理 WebSocket + 释放摄像头设备 ✅
+ 8. 禁用/删除 → 自动清理虚拟服务、分组关联、工具记录 ✅
+```
+
 ---
 
 ## 5. 待开发事项
@@ -182,8 +208,8 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 | 7 | ~~Dashboard 实时数据 (对接 admin/stats API)~~ | `features/dashboard/` | ~~高~~ ✅ |
 | 8 | ~~个人设置页面~~ | `features/settings/` | ~~中~~ ✅ |
 | 9 | 管理员页面 (市场管理/系统设置) | `features/admin/` | 中 |
-| 10 | 视觉配置 CRUD 页面 | `features/vision/` | 低 |
-| 11 | 摄像头管理页面 | `features/cameras/` | 低 |
+| 10 | ~~视觉配置 CRUD 页面~~ | `features/vision/` | ~~低~~ ✅ |
+| 11 | ~~摄像头管理页面~~ | `features/cameras/` | ~~低~~ ✅ |
 | 12 | Go 后端 go:embed 嵌入前端 | `cmd/server/main.go` | 中 |
 | 13 | Docker 构建配置 (多阶段: Bun→Go) | `Dockerfile` | 中 |
 
@@ -261,6 +287,8 @@ newmcp/
 │   │   │   ├── api-keys/    # API 密钥
 │   │   │   ├── connections/ # 云端连接
 │   │   │   ├── dashboard/   # 控制台
+│   │   │   ├── vision/      # 视觉配置 (列表/详情/测试)
+│   │   │   ├── cameras/     # 摄像头 (列表/详情/推流预览)
 │   │   │   └── admin/       # 管理员
 │   │   ├── routes/          # TanStack Router 文件路由
 │   │   ├── lib/             # API client + 工具函数

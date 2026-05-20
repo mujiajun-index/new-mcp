@@ -1097,6 +1097,14 @@ passive-ws (被动连接):
 ### WebSocket GET /cameras/:id/stream
 摄像头帧推流端点。浏览器通过此 WebSocket 连接推送摄像头实时画面。
 
+**认证方式:** 由于浏览器 WebSocket API 不支持自定义 HTTP 头，认证通过 URL query 参数传递：
+
+```
+ws://localhost:3000/api/v1/cameras/1/stream?token=<JWT_TOKEN>
+```
+
+> 此端点位于 auth 路由组之外，由 handler 内部通过 `middleware.ParseToken()` 校验 query 中的 JWT token。
+
 **协议:**
 - 浏览器连接后，定时（默认 2 秒间隔）通过 canvas 截取 JPEG 帧，以二进制消息发送
 - 后端通过 `CameraStreamManager` 缓存最新帧，供 MCP 工具 `camera.capture` 和 `camera.analyze` 调用
@@ -1104,8 +1112,8 @@ passive-ws (被动连接):
 
 **连接示例 (浏览器端):**
 ```javascript
-const ws = new WebSocket(`ws://localhost:3000/api/v1/cameras/${cameraId}/stream`);
-// Authorization 通过 URL query 参数或 cookie 传递
+const token = localStorage.getItem('token');
+const ws = new WebSocket(`ws://localhost:3000/api/v1/cameras/${cameraId}/stream?token=${encodeURIComponent(token)}`);
 
 // canvas 截取 JPEG 帧并发送
 canvas.toBlob(blob => {
