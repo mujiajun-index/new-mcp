@@ -20,6 +20,9 @@ func SetApiRouter(engine *gin.Engine) {
 	api.GET("/marketplace", controller.BrowseMarketplace)
 	api.GET("/marketplace/:id", controller.GetMarketplaceItem)
 
+	// Camera stream (auth via query token — WebSocket can't send custom headers)
+	api.GET("/cameras/:id/stream", HandleCameraStream)
+
 	// User-authenticated endpoints
 	auth := api.Group("")
 	auth.Use(middleware.UserAuth())
@@ -93,8 +96,6 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.DELETE("/cameras/:id", controller.DeleteCamera)
 		auth.POST("/cameras/:id/enable", controller.EnableCamera)
 		auth.POST("/cameras/:id/disable", controller.DisableCamera)
-		auth.GET("/cameras/:id/stream", HandleCameraStream)
-
 		// User logs
 		auth.GET("/logs", controller.GetLogs)
 		auth.GET("/logs/stats", controller.GetLogStats)

@@ -36,7 +36,7 @@ func GenerateToken(user *model.User) (string, error) {
 	return token.SignedString([]byte(secret))
 }
 
-func parseToken(tokenStr string) (*Claims, error) {
+func ParseToken(tokenStr string) (*Claims, error) {
 	secret := common.SessionSecret
 	if secret == "" {
 		secret = "default-secret-change-me"
@@ -65,7 +65,7 @@ func UserAuth() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		claims, err := parseToken(tokenStr)
+		claims, err := ParseToken(tokenStr)
 		if err != nil {
 			common.Error(c, http.StatusUnauthorized, "无效的认证令牌")
 			c.Abort()
@@ -96,7 +96,7 @@ func AdminAuth() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		claims, err := parseToken(tokenStr)
+		claims, err := ParseToken(tokenStr)
 		if err != nil {
 			common.Error(c, http.StatusUnauthorized, "无效的认证令牌")
 			c.Abort()

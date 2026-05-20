@@ -7,6 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/mujkjk/newmcp/common"
+	"github.com/mujkjk/newmcp/middleware"
 	"github.com/mujkjk/newmcp/model"
 )
 
@@ -15,6 +17,25 @@ var upgrader = websocket.Upgrader{
 }
 
 func HandleCameraStream(c *gin.Context) {
+	tokenStr := c.Query("token")
+	if tokenStr == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未提供认证信息"})
+		return
+	}
+
+	claims, err := middleware.ParseToken(tokenStr)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的认证令牌"})
+		return
+	}
+
+	user, err := model.GetUserByID(claims.UserID)
+	if err != nil || user.Status != common.StatusEnabled {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在或已禁用"})
+		return
+	}
+	_ = user
+
 	cameraID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid camera id"})

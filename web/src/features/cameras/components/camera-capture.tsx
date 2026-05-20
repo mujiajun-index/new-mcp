@@ -13,7 +13,8 @@ function buildWebSocketUrl(cameraId: number): string {
   const protocol = loc.protocol === 'https:' ? 'wss:' : 'ws:'
   const base: string = import.meta.env.BASE_URL ?? '/'
   const apiBase = base.endsWith('/') ? base.slice(0, -1) : base
-  return `${protocol}//${loc.host}${apiBase}/api/v1/cameras/${cameraId}/stream`
+  const token = localStorage.getItem('newmcp-token') || ''
+  return `${protocol}//${loc.host}${apiBase}/api/v1/cameras/${cameraId}/stream?token=${encodeURIComponent(token)}`
 }
 
 function dataUrlToBinary(dataUrl: string): Uint8Array {
@@ -48,10 +49,13 @@ export function CameraCapture({ cameraId, onStreamingChange }: CameraCaptureProp
 
     // Close WebSocket
     if (wsRef.current) {
-      if (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING) {
-        wsRef.current.close()
-      }
+      const ws = wsRef.current
       wsRef.current = null
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close()
+      } else if (ws.readyState === WebSocket.CONNECTING) {
+        ws.onopen = () => ws.close()
+      }
     }
 
     // Stop media stream tracks
@@ -96,12 +100,12 @@ export function CameraCapture({ cameraId, onStreamingChange }: CameraCaptureProp
 
       streamRef.current = stream
 
+      setActive(true)
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         await videoRef.current.play()
       }
-
-      setActive(true)
 
       // Start WebSocket connection
       const wsUrl = buildWebSocketUrl(cameraId)
@@ -173,14 +177,13 @@ export function CameraCapture({ cameraId, onStreamingChange }: CameraCaptureProp
 
       {/* Video preview area */}
       <div className="relative rounded-lg overflow-hidden bg-muted/50 aspect-video flex items-center justify-center">
-        {active ? (
-          <video
-            ref={videoRef}
-            className="w-full h-full object-cover"
-            playsInline
-            muted
-          />
-        ) : (
+        <video
+          ref={videoRef}
+          className={`w-full h-full object-cover ${active ? '' : 'hidden'}`}
+          playsInline
+          muted
+        />
+        {!active && (
           <div className="flex flex-col items-center gap-2 text-muted-foreground">
             <Video className="h-8 w-8 text-muted-foreground/30" />
             <p className="text-sm">摄像头未开启</p>
