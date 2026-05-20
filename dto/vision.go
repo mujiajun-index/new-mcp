@@ -3,7 +3,7 @@ package dto
 type CreateVisionConfigReq struct {
 	Name         string `json:"name" binding:"required,min=1,max=128"`
 	Description  string `json:"description"`
-	Provider     string `json:"provider" binding:"required,oneof=openai custom glm qwen ollama"`
+	Provider     string `json:"provider" binding:"required,oneof=openai anthropic gemini"`
 	ModelName    string `json:"model_name" binding:"required"`
 	EndpointURL  string `json:"endpoint_url" binding:"required"`
 	ApiKey       string `json:"api_key" binding:"required"`
@@ -61,9 +61,22 @@ type VisionConfigDetail struct {
 }
 
 type TestVisionReq struct {
+	Provider    string `json:"provider" binding:"required,oneof=openai anthropic gemini"`
 	EndpointURL string `json:"endpoint_url" binding:"required"`
 	ApiKey      string `json:"api_key" binding:"required"`
 	ModelName   string `json:"model_name" binding:"required"`
+}
+
+type ListModelsReq struct {
+	Provider    string `json:"provider" binding:"required,oneof=openai anthropic gemini"`
+	EndpointURL string `json:"endpoint_url" binding:"required"`
+	ApiKey      string `json:"api_key"`
+	ConfigID    int64  `json:"config_id"`
+}
+
+type ModelInfo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type TestVisionResult struct {

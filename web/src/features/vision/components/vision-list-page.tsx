@@ -32,10 +32,8 @@ function EnabledBadge({ enabled }: { enabled: boolean }) {
 
 const providerLabels: Record<string, string> = {
   openai: 'OpenAI',
-  custom: 'Custom',
-  glm: 'GLM',
-  qwen: 'Qwen',
-  ollama: 'Ollama',
+  anthropic: 'Anthropic',
+  gemini: 'Gemini',
 }
 
 export function VisionListPage() {

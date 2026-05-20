@@ -223,6 +223,7 @@ func (s *VisionService) Delete(userID, id int64) error {
 
 func (s *VisionService) TestVision(req *dto.TestVisionReq) *dto.TestVisionResult {
 	client := &vision.VisionClient{
+		Provider:    req.Provider,
 		EndpointURL: req.EndpointURL,
 		ApiKey:      req.ApiKey,
 		ModelName:   req.ModelName,
@@ -240,6 +241,41 @@ func (s *VisionService) TestVision(req *dto.TestVisionReq) *dto.TestVisionResult
 		return &dto.TestVisionResult{Success: false, Error: err.Error()}
 	}
 	return &dto.TestVisionResult{Success: true, Result: result}
+}
+
+func (s *VisionService) ListModels(userID int64, req *dto.ListModelsReq) ([]dto.ModelInfo, error) {
+	apiKey := req.ApiKey
+	endpointURL := req.EndpointURL
+	if apiKey == "" && req.ConfigID > 0 {
+		vc, err := model.GetVisionConfigByID(userID, req.ConfigID)
+		if err != nil {
+			return nil, fmt.Errorf("配置不存在")
+		}
+		apiKey = vc.ApiKey
+		if endpointURL == "" {
+			endpointURL = vc.EndpointURL
+		}
+	}
+	if apiKey == "" {
+		return nil, fmt.Errorf("缺少 API Key")
+	}
+
+	client := &vision.VisionClient{
+		Provider:    req.Provider,
+		EndpointURL: endpointURL,
+		ApiKey:      apiKey,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	models, err := client.ListModels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]dto.ModelInfo, len(models))
+	for i, m := range models {
+		result[i] = dto.ModelInfo{ID: m.ID, Name: m.Name}
+	}
+	return result, nil
 }
 
 func (s *VisionService) syncVirtualService(vc *model.VisionConfig) {

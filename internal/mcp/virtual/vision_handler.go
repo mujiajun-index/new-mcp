@@ -33,6 +33,7 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 	}
 
 	client := &vision.VisionClient{
+		Provider:    vc.Provider,
 		EndpointURL: vc.EndpointURL,
 		ApiKey:      vc.ApiKey,
 		ModelName:   vc.ModelName,

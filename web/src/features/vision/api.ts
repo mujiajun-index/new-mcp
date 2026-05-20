@@ -61,6 +61,7 @@ export interface UpdateVisionConfigReq {
 }
 
 export interface TestVisionReq {
+  provider: string
   endpoint_url: string
   api_key: string
   model_name: string
@@ -109,5 +110,22 @@ export async function enableVisionConfig(id: number) {
 
 export async function disableVisionConfig(id: number) {
   const res = await api.post(`/vision/${id}/disable`)
+  return res.data
+}
+
+export interface ListModelsReq {
+  provider: string
+  endpoint_url: string
+  api_key?: string
+  config_id?: number
+}
+
+export interface ModelInfo {
+  id: string
+  name: string
+}
+
+export async function listVisionModels(data: ListModelsReq) {
+  const res = await api.post('/vision/models', data)
   return res.data
 }

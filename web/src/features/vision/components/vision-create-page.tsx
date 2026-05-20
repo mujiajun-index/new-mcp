@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation } from '@tanstack/react-query'
-import { createVisionConfig, testVisionConfig } from '../api'
+import { createVisionConfig, testVisionConfig, listVisionModels } from '../api'
+import type { ModelInfo } from '../api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,16 +13,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, Check, Loader2, Zap } from 'lucide-react'
+import { ArrowLeft, Check, Loader2, Zap, List } from 'lucide-react'
 import { toast } from 'sonner'
 
 const providerOptions = [
   { value: 'openai', label: 'OpenAI' },
-  { value: 'custom', label: 'Custom' },
-  { value: 'glm', label: 'GLM' },
-  { value: 'qwen', label: 'Qwen' },
-  { value: 'ollama', label: 'Ollama' },
+  { value: 'anthropic', label: 'Anthropic' },
+  { value: 'gemini', label: 'Gemini' },
 ]
+
+const providerSuffixes: Record<string, string> = {
+  openai: '/chat/completions',
+  anthropic: '/messages',
+  gemini: '/v1beta/models',
+}
+
+const providerPlaceholders: Record<string, string> = {
+  openai: 'https://api.openai.com/v1',
+  anthropic: 'https://api.anthropic.com/v1',
+  gemini: 'https://generativelanguage.googleapis.com',
+}
 
 export function VisionCreatePage() {
   const navigate = useNavigate()
@@ -35,6 +46,14 @@ export function VisionCreatePage() {
     system_prompt: '',
     max_tokens: 4096,
   })
+  const [modelList, setModelList] = useState<ModelInfo[]>([])
+  const [modelListLoading, setModelListLoading] = useState(false)
+  const [modelModalOpen, setModelModalOpen] = useState(false)
+  const [modelSearch, setModelSearch] = useState('')
+
+  const endpointPreview = form.endpoint_url.trim()
+    ? form.endpoint_url.trim().replace(/\/+$/, '') + (providerSuffixes[form.provider] || '')
+    : providerPlaceholders[form.provider] + (providerSuffixes[form.provider] || '')
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -60,6 +79,7 @@ export function VisionCreatePage() {
   const testMutation = useMutation({
     mutationFn: () =>
       testVisionConfig({
+        provider: form.provider,
         endpoint_url: form.endpoint_url,
         api_key: form.api_key,
         model_name: form.model_name,
@@ -74,6 +94,33 @@ export function VisionCreatePage() {
     onError: () => {
       toast.error('测试请求失败')
     },
+  })
+
+  const handleFetchModels = async () => {
+    setModelListLoading(true)
+    setModelSearch('')
+    try {
+      const res = await listVisionModels({
+        provider: form.provider,
+        endpoint_url: form.endpoint_url,
+        api_key: form.api_key,
+      })
+      setModelList(res.data || [])
+      setModelModalOpen(true)
+      if (!res.data?.length) {
+        toast.info('未找到可用模型')
+      }
+    } catch {
+      toast.error('获取模型列表失败')
+    } finally {
+      setModelListLoading(false)
+    }
+  }
+
+  const filteredModels = modelList.filter((m) => {
+    if (!modelSearch.trim()) return true
+    const q = modelSearch.toLowerCase()
+    return (m.id + m.name).toLowerCase().includes(q)
   })
 
   const canSubmit =
@@ -125,7 +172,10 @@ export function VisionCreatePage() {
           <Label>Provider *</Label>
           <Select
             value={form.provider}
-            onValueChange={(v) => setForm({ ...form, provider: v })}
+            onValueChange={(v) => {
+              setForm({ ...form, provider: v })
+              setModelList([])
+            }}
           >
             <SelectTrigger>
               <SelectValue placeholder="选择 Provider" />
@@ -145,10 +195,16 @@ export function VisionCreatePage() {
           <Label htmlFor="endpoint_url">Endpoint URL *</Label>
           <Input
             id="endpoint_url"
-            placeholder="https://api.openai.com/v1/chat/completions"
+            placeholder={providerPlaceholders[form.provider]}
             value={form.endpoint_url}
-            onChange={(e) => setForm({ ...form, endpoint_url: e.target.value })}
+            onChange={(e) => {
+              setForm({ ...form, endpoint_url: e.target.value })
+              setModelList([])
+            }}
           />
+          <p className="text-xs text-muted-foreground">
+            预览：<code className="text-primary">{endpointPreview}</code>
+          </p>
         </div>
 
         {/* API Key */}
@@ -166,12 +222,33 @@ export function VisionCreatePage() {
         {/* Model Name */}
         <div className="space-y-2">
           <Label htmlFor="model_name">模型名称 *</Label>
-          <Input
-            id="model_name"
-            placeholder="gpt-4o"
-            value={form.model_name}
-            onChange={(e) => setForm({ ...form, model_name: e.target.value })}
-          />
+          <div className="flex gap-2">
+            <Input
+              id="model_name"
+              placeholder="gpt-4o"
+              value={form.model_name}
+              onChange={(e) => setForm({ ...form, model_name: e.target.value })}
+              className="flex-1"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 shrink-0"
+              disabled={
+                modelListLoading ||
+                !form.endpoint_url.trim() ||
+                !form.api_key.trim()
+              }
+              onClick={modelList.length > 0 ? () => { setModelSearch(''); setModelModalOpen(true) } : handleFetchModels}
+            >
+              {modelListLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <List className="h-4 w-4" />
+              )}
+              获取模型
+            </Button>
+          </div>
         </div>
 
         {/* System Prompt */}
@@ -239,6 +316,52 @@ export function VisionCreatePage() {
           取消
         </Button>
       </div>
+
+      {/* Model List Modal */}
+      {modelModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setModelModalOpen(false)}>
+          <div className="w-full max-w-md rounded-xl border bg-card p-0 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <h3 className="text-sm font-semibold">选择模型</h3>
+              <button className="text-muted-foreground hover:text-foreground text-lg leading-none" onClick={() => setModelModalOpen(false)}>&times;</button>
+            </div>
+            <div className="px-4 pt-3">
+              <Input
+                placeholder="搜索模型..."
+                value={modelSearch}
+                onChange={(e) => setModelSearch(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="max-h-72 overflow-y-auto p-2">
+              {filteredModels.length === 0 ? (
+                <p className="py-8 text-center text-xs text-muted-foreground">
+                  {modelList.length === 0 ? '无可用模型' : '无匹配结果'}
+                </p>
+              ) : (
+                filteredModels.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className={`w-full text-left px-3 py-2 text-sm rounded-md hover:bg-muted transition-colors ${
+                      form.model_name === m.id ? 'bg-primary/10 text-primary font-medium' : ''
+                    }`}
+                    onClick={() => {
+                      setForm({ ...form, model_name: m.id })
+                      setModelModalOpen(false)
+                    }}
+                  >
+                    <span className="font-medium">{m.id}</span>
+                    {m.name && m.name !== m.id && (
+                      <span className="ml-2 text-xs text-muted-foreground">{m.name}</span>
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -83,6 +83,21 @@ func TestVisionConfig(c *gin.Context) {
 	common.Success(c, result)
 }
 
+func ListVisionModels(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	var req dto.ListModelsReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	models, err := visionService.ListModels(userID, &req)
+	if err != nil {
+		common.Error(c, http.StatusInternalServerError, "获取模型列表失败: "+err.Error())
+		return
+	}
+	common.Success(c, models)
+}
+
 func EnableVisionConfig(c *gin.Context) {
 	userID := c.GetInt64("user_id")
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)

@@ -81,6 +81,7 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.PUT("/vision/:id", controller.UpdateVisionConfig)
 		auth.DELETE("/vision/:id", controller.DeleteVisionConfig)
 		auth.POST("/vision/test", controller.TestVisionConfig)
+		auth.POST("/vision/models", controller.ListVisionModels)
 		auth.POST("/vision/:id/enable", controller.EnableVisionConfig)
 		auth.POST("/vision/:id/disable", controller.DisableVisionConfig)
 
