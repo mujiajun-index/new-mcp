@@ -38,8 +38,8 @@ const providerOptions = [
 ]
 
 const providerSuffixes: Record<string, string> = {
-  openai: '/chat/completions',
-  anthropic: '/messages',
+  openai: '/v1/chat/completions',
+  anthropic: '/v1/messages',
   gemini: '/v1beta/models',
 }
 
@@ -376,6 +376,7 @@ export function VisionDetailPage() {
           <Label htmlFor="system_prompt">系统提示词</Label>
           <textarea
             id="system_prompt"
+            aria-label="系统提示词"
             rows={4}
             value={form.system_prompt}
             onChange={(e) => setForm({ ...form, system_prompt: e.target.value })}

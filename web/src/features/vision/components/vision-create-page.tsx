@@ -23,8 +23,8 @@ const providerOptions = [
 ]
 
 const providerSuffixes: Record<string, string> = {
-  openai: '/chat/completions',
-  anthropic: '/messages',
+  openai: '/v1/chat/completions',
+  anthropic: '/v1/messages',
   gemini: '/v1beta/models',
 }
 

@@ -55,8 +55,8 @@ type openAIRequest struct {
 }
 
 type openAIMessage struct {
-	Role    string           `json:"role"`
-	Content []openAIContent  `json:"content"`
+	Role    string          `json:"role"`
+	Content []openAIContent `json:"content"`
 }
 
 type openAIContent struct {
@@ -103,7 +103,7 @@ func (c *VisionClient) analyzeOpenAI(ctx context.Context, systemPrompt, userProm
 		return "", fmt.Errorf("marshal request: %w", err)
 	}
 
-	url := strings.TrimRight(c.EndpointURL, "/") + "/chat/completions"
+	url := strings.TrimRight(c.EndpointURL, "/") + "/v1/chat/completions"
 	respBody, err := c.doPost(ctx, url, body, func(req *http.Request) {
 		req.Header.Set("Content-Type", "application/json")
 		if c.ApiKey != "" {
@@ -128,7 +128,7 @@ func (c *VisionClient) analyzeOpenAI(ctx context.Context, systemPrompt, userProm
 }
 
 func (c *VisionClient) listOpenAIModels(ctx context.Context) ([]ModelInfo, error) {
-	url := strings.TrimRight(c.EndpointURL, "/") + "/models"
+	url := strings.TrimRight(c.EndpointURL, "/") + "/v1/models"
 	respBody, err := c.doGet(ctx, url, func(req *http.Request) {
 		if c.ApiKey != "" {
 			req.Header.Set("Authorization", "Bearer "+c.ApiKey)
@@ -163,9 +163,9 @@ type anthropicMessage struct {
 }
 
 type anthropicBlock struct {
-	Type   string            `json:"type"`
-	Text   string            `json:"text,omitempty"`
-	Source *anthropicSource  `json:"source,omitempty"`
+	Type   string           `json:"type"`
+	Text   string           `json:"text,omitempty"`
+	Source *anthropicSource `json:"source,omitempty"`
 }
 
 type anthropicSource struct {
@@ -213,7 +213,7 @@ func (c *VisionClient) analyzeAnthropic(ctx context.Context, systemPrompt, userP
 		return "", fmt.Errorf("marshal request: %w", err)
 	}
 
-	url := strings.TrimRight(c.EndpointURL, "/") + "/messages"
+	url := strings.TrimRight(c.EndpointURL, "/") + "/v1/messages"
 	respBody, err := c.doPost(ctx, url, body, func(req *http.Request) {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("anthropic-version", "2023-06-01")
@@ -239,7 +239,7 @@ func (c *VisionClient) analyzeAnthropic(ctx context.Context, systemPrompt, userP
 }
 
 func (c *VisionClient) listAnthropicModels(ctx context.Context) ([]ModelInfo, error) {
-	url := strings.TrimRight(c.EndpointURL, "/") + "/models"
+	url := strings.TrimRight(c.EndpointURL, "/") + "/v1/models"
 	respBody, err := c.doGet(ctx, url, func(req *http.Request) {
 		req.Header.Set("anthropic-version", "2023-06-01")
 		if c.ApiKey != "" {
@@ -318,7 +318,7 @@ func (c *VisionClient) analyzeGemini(ctx context.Context, systemPrompt, userProm
 	}
 
 	reqBody := geminiRequest{
-		Contents: []geminiContent{{Role: "user", Parts: parts}},
+		Contents:         []geminiContent{{Role: "user", Parts: parts}},
 		GenerationConfig: &geminiGenConfig{MaxOutputTokens: c.MaxTokens},
 	}
 	if systemPrompt != "" {
