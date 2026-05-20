@@ -17,7 +17,7 @@ function buildWebSocketUrl(cameraId: number): string {
   return `${protocol}//${loc.host}${apiBase}/api/v1/cameras/${cameraId}/stream?token=${encodeURIComponent(token)}`
 }
 
-function dataUrlToBinary(dataUrl: string): Uint8Array {
+function dataUrlToBinary(dataUrl: string): Uint8Array<ArrayBuffer> {
   const base64 = dataUrl.split(',')[1] ?? ''
   const binaryStr = atob(base64)
   const bytes = new Uint8Array(binaryStr.length)
@@ -202,12 +202,17 @@ export function CameraCapture({ cameraId, onStreamingChange }: CameraCaptureProp
       </div>
 
       {/* Controls */}
-      <div className="flex gap-2">
+      <div className="space-y-1">
         {!active ? (
-          <Button onClick={handleOpen} disabled={opening || !mediaSupported} className="gap-2">
-            {opening ? <Loader2 className="h-4 w-4 animate-spin" /> : <Video className="h-4 w-4" />}
-            {opening ? '正在开启...' : mediaSupported ? '开启摄像头' : '需要 HTTPS'}
-          </Button>
+          <>
+            <Button onClick={handleOpen} disabled={opening || !mediaSupported} className="gap-2">
+              {opening ? <Loader2 className="h-4 w-4 animate-spin" /> : <Video className="h-4 w-4" />}
+              {opening ? '正在开启...' : mediaSupported ? '开启摄像头' : '需要 HTTPS'}
+            </Button>
+            {!mediaSupported && (
+              <p className="text-xs text-muted-foreground">使用 localhost 或 127.0.0.1 访问也可以开启摄像头</p>
+            )}
+          </>
         ) : (
           <Button variant="outline" onClick={handleClose} className="gap-2">
             <VideoOff className="h-4 w-4" />
