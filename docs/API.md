@@ -1167,7 +1167,101 @@ canvas.toBlob(blob => {
 
 ---
 
-## 10. 管理员接口
+## 10. 系统设置接口
+
+### GET /settings/public
+获取公开系统设置（无需认证），用于登录页面展示系统品牌信息。
+
+**Response:** `200 OK`
+```json
+{
+    "success": true,
+    "data": {
+        "SystemName": "NewMCP",
+        "Footer": ""
+    }
+}
+```
+
+> 仅返回公开设置项（如系统名称、页脚），不包含敏感信息。
+
+### GET /admin/settings
+获取所有系统设置（需要 admin 角色）。
+
+**Response:** `200 OK`
+```json
+{
+    "success": true,
+    "data": [
+        { "key": "SystemName", "value": "NewMCP" },
+        { "key": "ServerAddress", "value": "" },
+        { "key": "Footer", "value": "" },
+        { "key": "RegisterEnabled", "value": "true" },
+        { "key": "EmailVerificationEnabled", "value": "false" },
+        { "key": "EmailDomainRestrictionEnabled", "value": "false" },
+        { "key": "EmailDomainWhitelist", "value": "" },
+        { "key": "RateLimitEnabled", "value": "false" },
+        { "key": "RateLimitMaxRequests", "value": "60" },
+        { "key": "RateLimitWindowMinutes", "value": "1" },
+        { "key": "RateLimitGroupConfig", "value": "{}" },
+        { "key": "SMTPServer", "value": "" },
+        { "key": "SMTPPort", "value": "465" },
+        { "key": "SMTPAccount", "value": "" },
+        { "key": "SMTPToken", "value": "***" },
+        { "key": "SMTPFrom", "value": "" },
+        { "key": "SMTPSSLEnabled", "value": "true" }
+    ]
+}
+```
+
+> 敏感字段（如 `SMTPToken`）返回 `"***"` 掩码。
+
+### PUT /admin/settings
+更新单个系统设置（需要 admin 角色）。
+
+**Request Body:**
+```json
+{
+    "key": "SystemName",
+    "value": "My MCP Platform"
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+    "success": true,
+    "message": ""
+}
+```
+
+> 设置立即生效（写入数据库 + 更新内存缓存）。敏感字段传入 `"***"` 时跳过更新（不改变原值）。
+
+**设置项说明:**
+
+| 分类 | Key | 类型 | 说明 |
+|------|-----|------|------|
+| 通用 | `SystemName` | string | 系统名称，显示在登录页和标题栏 |
+| 通用 | `ServerAddress` | string | 服务器地址 |
+| 通用 | `Footer` | string | 页脚内容 |
+| 认证 | `RegisterEnabled` | bool | 是否允许用户注册 |
+| 认证 | `EmailVerificationEnabled` | bool | 是否开启邮箱验证 |
+| 认证 | `EmailDomainRestrictionEnabled` | bool | 是否开启邮箱域名限制 |
+| 认证 | `EmailDomainWhitelist` | string | 允许的邮箱域名（逗号分隔） |
+| 限流 | `RateLimitEnabled` | bool | 是否启用速率限制 |
+| 限流 | `RateLimitMaxRequests` | int | 时间窗口内最大请求数 |
+| 限流 | `RateLimitWindowMinutes` | int | 时间窗口（分钟） |
+| 限流 | `RateLimitGroupConfig` | string | 分组级限流配置 JSON，如 `{"vip":{"max":120,"window":1}}` |
+| SMTP | `SMTPServer` | string | SMTP 服务器地址 |
+| SMTP | `SMTPPort` | int | SMTP 端口 |
+| SMTP | `SMTPAccount` | string | SMTP 账号 |
+| SMTP | `SMTPToken` | string | SMTP 授权码（敏感） |
+| SMTP | `SMTPFrom` | string | 发件人地址 |
+| SMTP | `SMTPSSLEnabled` | bool | 是否启用 SSL |
+
+---
+
+## 11. 管理员接口
 
 > 以下接口需要 admin 角色。
 

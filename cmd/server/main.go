@@ -27,6 +27,7 @@ func main() {
 	defer model.CloseDB()
 
 	model.CheckSetup()
+	model.InitOptionMap()
 
 	gin.SetMode(common.GinMode)
 

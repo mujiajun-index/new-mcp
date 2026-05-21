@@ -27,8 +27,9 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 | **视觉配置** | **✅ 已完成** | **95%** | **CRUD + 虚拟 MCP 服务注册 + 多供应商支持 + AI 分析工具** |
 | **摄像头管理** | **✅ 已完成** | **95%** | **CRUD + WebRTC 预览 + WebSocket 推流 + capture/analyze 工具** |
 | **前端界面** | **✅ 已完成** | **95%** | **架构 + 核心业务 + 日志 + Dashboard + 设置 + 视觉 + 摄像头** |
+| **系统设置** | **✅ 已完成** | **90%** | **Option 键值模型 + 内存缓存 + 管理员设置页面 + 注册守卫 + 分组限流** |
 
-**整体完成度: ~93%**
+**整体完成度: ~94%**
 
 ---
 
@@ -74,7 +75,8 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 | 连接详情 | `/connections/:id` | ✅ | 状态 + 配置信息 |
 | 个人设置 | `/settings` | ✅ | 账号信息 + 用量统计 + 编辑资料 + 修改密码 |
 | 调用日志 | `/logs` | ✅ | 统计卡片 + 筛选 + 表格 + 详情展开 |
-| 管理员页面 | `/admin/*` | 🔲 | 占位页 |
+| 管理员-系统设置 | `/admin/system` | ✅ | Tabs 分区 (通用/认证/限流/SMTP/维护) + 逐字段自动保存 + 分组限流编辑器 |
+| 管理员页面 | `/admin/*` | 🔲 | 部分完成 (用户管理/市场管理/系统设置已完成) |
 | 视觉配置列表 | `/vision` | ✅ | 卡片视图 + 供应商筛选 + 启用/禁用 |
 | 视觉配置详情 | `/vision/:id` | ✅ | 配置编辑 + 测试连接 + 工具自定义名称/描述 |
 | 摄像头列表 | `/cameras` | ✅ | 卡片视图 + 启用/禁用 + 推流状态 |
@@ -93,7 +95,7 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 | 头部 | `components/layout/header.tsx` | 主题切换 + 用户菜单 |
 | 国际化 | `i18n/locales/{zh,en}.json` | 中英文翻译 |
 | 类型定义 | `types/index.ts` | 完整 TypeScript 接口 (对接后端所有 DTO) |
-| API 模块 | `features/*/api.ts` | 7 个模块 API 层 (services/groups/marketplace/apikeys/connections/admin/setup) |
+| API 模块 | `features/*/api.ts` | 8 个模块 API 层 (services/groups/marketplace/apikeys/connections/admin/setup/settings) |
 
 ### 3.4 前端构建
 
@@ -186,6 +188,18 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
  8. 禁用/删除 → 自动清理虚拟服务、分组关联、工具记录 ✅
 ```
 
+### 4.7 系统设置流程 ✅
+
+```
+ 1. 管理员访问 /admin/system → 查看 5 个设置分类 (通用/认证/限流/SMTP/维护) ✅
+ 2. 修改系统名称 → onBlur 自动保存 → GET /settings/public 返回新名称 ✅
+ 3. 关闭用户注册 → RegisterEnabled=false → 注册接口返回 "注册功能已禁用" ✅
+ 4. 配置邮箱域名限制 → 开启 + 设置白名单 → 注册时校验邮箱域名 ✅
+ 5. 配置速率限制 → 设置全局参数 + 分组级限流规则 ✅
+ 6. 配置 SMTP → 保存服务器信息 (敏感字段掩码) ✅
+ 7. 查看系统维护 → 显示当前版本号 (只读) ✅
+```
+
 ---
 
 ## 5. 待开发事项
@@ -207,7 +221,7 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 |---|------|----------|--------|
 | 7 | ~~Dashboard 实时数据 (对接 admin/stats API)~~ | `features/dashboard/` | ~~高~~ ✅ |
 | 8 | ~~个人设置页面~~ | `features/settings/` | ~~中~~ ✅ |
-| 9 | 管理员页面 (市场管理/系统设置) | `features/admin/` | 中 |
+| 9 | ~~管理员页面 (市场管理/系统设置)~~ | `features/admin/` | ~~中~~ ✅ |
 | 10 | ~~视觉配置 CRUD 页面~~ | `features/vision/` | ~~低~~ ✅ |
 | 11 | ~~摄像头管理页面~~ | `features/cameras/` | ~~低~~ ✅ |
 | 12 | Go 后端 go:embed 嵌入前端 | `cmd/server/main.go` | 中 |

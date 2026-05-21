@@ -79,6 +79,7 @@ func migrateDB() error {
 		&McpCallLog{},
 		&MarketplaceItem{},
 		&MarketplaceReview{},
+		&Option{},
 	)
 }
 

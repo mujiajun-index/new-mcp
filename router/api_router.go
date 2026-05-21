@@ -20,6 +20,9 @@ func SetApiRouter(engine *gin.Engine) {
 	api.GET("/marketplace", controller.BrowseMarketplace)
 	api.GET("/marketplace/:id", controller.GetMarketplaceItem)
 
+	// Public settings (system name, footer, etc.)
+	api.GET("/settings/public", controller.GetPublicSettings)
+
 	// Camera stream (auth via query token — WebSocket can't send custom headers)
 	api.GET("/cameras/:id/stream", HandleCameraStream)
 
@@ -124,6 +127,10 @@ func SetApiRouter(engine *gin.Engine) {
 		admin.GET("/marketplace/:id", controller.AdminGetMarketplaceItem)
 		admin.PUT("/marketplace/:id", controller.AdminUpdateMarketplaceItem)
 		admin.DELETE("/marketplace/:id", controller.AdminDeleteMarketplaceItem)
+
+		// Admin: System settings
+		admin.GET("/settings", controller.AdminGetSettings)
+		admin.PUT("/settings", controller.AdminUpdateSetting)
 	}
 
 	// Health check

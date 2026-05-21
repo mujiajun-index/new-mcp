@@ -344,6 +344,16 @@ export const Route = createFileRoute('/_authenticated/admin')({
 - 表格: 申请人 / 服务名称 / 提交时间 / 审核状态 / 操作
 - 审核操作: 查看详情 / 通过 / 拒绝（填写理由）
 
+### 4.17 管理员 - 系统设置 `/admin/system`
+- **Tabs 分区布局**：通用设置 / 身份认证 / 速率限制 / SMTP 邮件 / 系统维护
+- **逐字段自动保存**：每个字段 onBlur 时触发 `PUT /admin/settings`，无需手动点保存
+- **Switch 组件**：布尔型设置使用 Radix Switch 开关
+- **分组限流可视化编辑器**：RateLimitGroupConfig 以表格形式展示，每行一个分组规则（分组名/最大请求数/时间窗口），支持添加/删除
+- **敏感字段掩码**：SMTPToken 等字段以 `***` 显示，输入新值时才更新
+- **版本信息只读展示**：系统维护 tab 显示当前版本号
+- **组件文件**: `features/admin/components/admin-settings-page.tsx`
+- **UI 组件**: 复用 `components/ui/switch.tsx`、`components/ui/tabs.tsx`
+
 ---
 
 ## 5. 前端项目结构
@@ -449,7 +459,11 @@ web/
 │   │   │   ├── api-keys.lazy.tsx
 │   │   │   ├── marketplace/
 │   │   │   ├── settings.lazy.tsx
-│   │   │   └── _admin/
+│   │   │   └── admin/
+│   │   │       ├── route.tsx
+│   │   │       ├── users.lazy.tsx
+│   │   │       ├── marketplace/
+│   │   │       └── system.lazy.tsx        ← 系统设置 (Tabs: 通用/认证/限流/SMTP/维护)
 │   │   └── 500.lazy.tsx
 │   ├── lib/                         # 核心工具
 │   │   ├── api.ts                   # Axios 实例 + 拦截器 + 请求去重

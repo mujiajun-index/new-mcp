@@ -429,6 +429,45 @@ CREATE TABLE `marketplace_reviews` (
     KEY `idx_deleted_at` (`deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='市场服务审核表';
 ```
+
+### 2.14 options - 系统设置表
+
+```sql
+CREATE TABLE `options` (
+    `key`   VARCHAR(128) NOT NULL COMMENT '设置键名 (如 SystemName, RegisterEnabled)',
+    `value` TEXT         NOT NULL COMMENT '设置值 (统一以字符串存储)',
+    PRIMARY KEY (`key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统设置键值对';
+```
+
+> **设计说明**: 所有系统设置以 key-value 形式存储在 `options` 表中。服务启动时加载到内存缓存（`sync.RWMutex` 保护的 `map[string]string`），读取时不访问数据库。布尔值存储为 `"true"`/`"false"`，整数存储为字符串（如 `"60"`），复杂配置使用 JSON 字符串（如 `RateLimitGroupConfig`）。
+>
+> **设置项清单**: 参见 API 文档第 10 节"系统设置接口"。
+
+### 2.15 marketplace_reviews - 市场服务审核表（后期）
+
+```sql
+CREATE TABLE `marketplace_reviews` (
+    `id`               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `user_id`          BIGINT UNSIGNED NOT NULL COMMENT '提交用户 ID',
+    `name`             VARCHAR(128)    NOT NULL COMMENT '服务名称',
+    `display_name`     VARCHAR(255)    DEFAULT '' COMMENT '显示名称',
+    `description`      TEXT            DEFAULT '' COMMENT '服务描述',
+    `category`         VARCHAR(32)     NOT NULL COMMENT '分类: instant, source',
+    `submission`       MEDIUMTEXT      NOT NULL COMMENT '提交内容 JSON (代码/配置/文档)',
+    `review_status`    VARCHAR(16)     DEFAULT 'pending' COMMENT '审核状态: pending, approved, rejected',
+    `reviewer_id`      BIGINT UNSIGNED DEFAULT NULL COMMENT '审核管理员 ID',
+    `review_comment`   TEXT            DEFAULT '' COMMENT '审核意见',
+    `reviewed_at`      DATETIME        DEFAULT NULL COMMENT '审核时间',
+    `created_at`       DATETIME        DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`       DATETIME        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `deleted_at`       DATETIME        DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_user_id` (`user_id`),
+    KEY `idx_review_status` (`review_status`),
+    KEY `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='市场服务审核表';
+```
 ```
 
 ---
@@ -437,6 +476,7 @@ CREATE TABLE `marketplace_reviews` (
 
 ```
 setup (独立表，最多一条记录，标记系统是否已初始化)
+options (独立表，键值对存储系统设置，启动时全量加载到内存)
 
 users (1) ──< (N) api_keys
 users (1) ──< (N) mcp_services

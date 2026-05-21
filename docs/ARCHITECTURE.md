@@ -52,7 +52,7 @@
 │                         │                                      │
 │  ┌──────────────────────┴──────────────────────────────────┐   │
 │  │                    Controller Layer                      │   │
-│  │  Auth │ Service │ Group │ Connection │ Vision │ Camera  │   │
+│  │  Auth │ Service │ Group │ Connection │ Vision │ Camera │ Settings │   │
 │  └──────────────────────┬──────────────────────────────────┘   │
 │                         │                                      │
 │  ┌──────────────────────┴──────────────────────────────────┐   │
@@ -561,7 +561,36 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 
 > **路由优先级**: `handleToolsCall` 先检查 Smart 模式元工具 (mcp.search/describe/execute)，再检查虚拟服务，最后走 SessionPool 路由到上游 MCP 服务。所有服务名查找均带 `user_id` 约束确保用户隔离。
 
-### 4.10 ApiKeyResolver — 共享工具函数
+### 4.10 系统设置 (Option 模型)
+
+```go
+// model/option.go
+
+// Option 系统设置键值对，存储在数据库 options 表中
+type Option struct {
+    Key   string `json:"key" gorm:"primaryKey;size:128"`
+    Value string `json:"value" gorm:"type:text"`
+}
+
+// 内存缓存 — 所有设置在启动时加载到 map，读取零开销
+var OptionMap      = make(map[string]string)
+var OptionMapMutex sync.RWMutex
+
+// 初始化: 写入默认值 → 从数据库加载覆盖
+func InitOptionMap()
+
+// 更新: 写 DB → 更新内存（原子操作）
+func UpdateOption(key, value string) error
+
+// 类型化 getter（带默认值兜底）
+func GetOptionString(key string) string
+func GetOptionBool(key string) bool
+func GetOptionInt(key string) int
+```
+
+> **设计原则**: 参考 new-api 的 OptionMap 模式，所有值以 string 存储，类型在读取时转换。启动时全量加载到内存，写入时同步更新 DB + 内存缓存。敏感 key（如 SMTPToken）在 API 返回时掩码为 `"***"`。
+
+### 4.11 ApiKeyResolver — 共享工具函数
 
 ```go
 // internal/mcp/bridge/resolver.go

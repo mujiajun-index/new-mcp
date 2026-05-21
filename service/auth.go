@@ -12,10 +12,20 @@ import (
 var ErrUsernameExists = errors.New("用户名已存在")
 var ErrInvalidCredentials = errors.New("用户名或密码错误")
 var ErrWrongPassword = errors.New("原密码不正确")
+var ErrRegisterDisabled = errors.New("注册功能已禁用")
+var ErrEmailDomainRestricted = errors.New("该邮箱域名不在允许列表中")
 
 type AuthService struct{}
 
 func (s *AuthService) Register(req *dto.RegisterReq) (*dto.AuthResp, error) {
+	if !model.GetOptionBool("RegisterEnabled") {
+		return nil, ErrRegisterDisabled
+	}
+
+	if req.Email != "" && !model.IsEmailDomainAllowed(req.Email) {
+		return nil, ErrEmailDomainRestricted
+	}
+
 	if _, err := model.GetUserByUsername(req.Username); err == nil {
 		return nil, ErrUsernameExists
 	}
