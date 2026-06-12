@@ -1,5 +1,7 @@
 <div align="center">
 
+![new-mcp](/web/public/logo.png)
+
 # NewMCP
 
 **Next-Generation Unified MCP Service Management Platform**
