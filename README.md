@@ -227,11 +227,34 @@ docker run --name new-mcp -d --restart always \
 
 #### Docker Compose
 
+> [!TIP]
+> The project includes a ready-to-use `docker-compose.yaml`. You can start all services with a single command:
+
+```bash
+# Start (build & run in background)
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Stop
+docker compose down
+
+# Rebuild after code changes
+docker compose up -d --build
+```
+
+The default configuration uses **SQLite** with persistent data in a Docker volume. To switch to **MySQL**, **PostgreSQL**, or add **Redis**, edit `docker-compose.yaml` and uncomment the corresponding sections.
+
+<details>
+<summary>📝 docker-compose.yaml (default SQLite)</summary>
+
 ```yaml
 version: "3.8"
 services:
   newmcp:
     build: .
+    container_name: new-mcp
     restart: always
     ports:
       - "3000:3000"
@@ -239,12 +262,18 @@ services:
       - newmcp-data:/app/data
     environment:
       - TZ=Asia/Shanghai
-      - SESSION_SECRET=your-session-secret
-      - CRYPTO_SECRET=your-crypto-secret
+      - GIN_MODE=release
+      - DB_TYPE=sqlite
+      - DB_PATH=/app/data/newmcp.db
+      - SESSION_SECRET=change-me-to-a-random-string
+      - CRYPTO_SECRET=change-me-to-a-random-string
+      - BASE_URL=http://localhost:3000
 
 volumes:
   newmcp-data:
 ```
+
+</details>
 
 ### Available Make Commands
 

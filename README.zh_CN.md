@@ -180,6 +180,99 @@ make build
 ./build/newmcp
 ```
 
+### Docker
+
+使用 Docker 构建并运行（前端和后端均运行在 3000 端口）：
+
+```bash
+# 构建镜像
+docker build -t newmcp .
+
+# 运行容器
+docker run --name new-mcp -d --restart always \
+  -p 3000:3000 \
+  -e TZ=Asia/Shanghai \
+  -v /home/data/newmcp:/app/data \
+  newmcp
+```
+
+#### 环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `PORT` | `3000` | 服务端口 |
+| `GIN_MODE` | `release` | Gin 模式（`debug`/`release`） |
+| `DB_TYPE` | `sqlite` | 数据库类型（`sqlite`/`mysql`/`postgres`） |
+| `DB_PATH` | `/app/data/newmcp.db` | SQLite 数据库路径 |
+| `SQL_DSN` | — | MySQL/PostgreSQL 连接字符串 |
+| `REDIS_CONN_STRING` | — | Redis 连接字符串（可选） |
+| `SESSION_SECRET` | — | JWT 会话密钥 |
+| `CRYPTO_SECRET` | — | 敏感数据加密密钥 |
+| `BASE_URL` | `http://localhost:3000` | 外部访问地址 |
+
+#### 使用 MySQL / PostgreSQL
+
+```bash
+docker run --name new-mcp -d --restart always \
+  -p 3000:3000 \
+  -e DB_TYPE=mysql \
+  -e "SQL_DSN=user:password@tcp(mysql-host:3306)/newmcp" \
+  -e TZ=Asia/Shanghai \
+  -e SESSION_SECRET=your-secret \
+  -e CRYPTO_SECRET=your-crypto-key \
+  newmcp
+```
+
+#### Docker Compose
+
+> [!TIP]
+> 项目自带 `docker-compose.yaml` 文件，一条命令即可启动所有服务：
+
+```bash
+# 启动（构建并在后台运行）
+docker compose up -d
+
+# 查看日志
+docker compose logs -f
+
+# 停止
+docker compose down
+
+# 代码修改后重新构建
+docker compose up -d --build
+```
+
+默认配置使用 **SQLite**，数据通过 Docker 卷持久化。如需切换为 **MySQL**、**PostgreSQL** 或启用 **Redis**，编辑 `docker-compose.yaml` 取消对应部分的注释即可。
+
+<details>
+<summary>📝 docker-compose.yaml（默认 SQLite）</summary>
+
+```yaml
+version: "3.8"
+services:
+  newmcp:
+    build: .
+    container_name: new-mcp
+    restart: always
+    ports:
+      - "3000:3000"
+    volumes:
+      - newmcp-data:/app/data
+    environment:
+      - TZ=Asia/Shanghai
+      - GIN_MODE=release
+      - DB_TYPE=sqlite
+      - DB_PATH=/app/data/newmcp.db
+      - SESSION_SECRET=change-me-to-a-random-string
+      - CRYPTO_SECRET=change-me-to-a-random-string
+      - BASE_URL=http://localhost:3000
+
+volumes:
+  newmcp-data:
+```
+
+</details>
+
 ### Make 命令一览
 
 | 命令 | 说明 |

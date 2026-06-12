@@ -1,0 +1,77 @@
+version: "3.8"
+
+services:
+  newmcp:
+    build: .
+    container_name: new-mcp
+    restart: always
+    ports:
+      - "3000:3000"
+    volumes:
+      - newmcp-data:/app/data
+    environment:
+      - TZ=Asia/Shanghai
+      - GIN_MODE=release
+      - DB_TYPE=sqlite
+      - DB_PATH=/app/data/newmcp.db
+      - SESSION_SECRET=change-me-to-a-random-string
+      - CRYPTO_SECRET=change-me-to-a-random-string
+      - BASE_URL=http://localhost:3000
+    # Uncomment the following to use MySQL instead of SQLite:
+    # depends_on:
+    #   mysql:
+    #     condition: service_healthy
+
+  # Uncomment to use MySQL:
+  # mysql:
+  #   image: mysql:8.0
+  #   container_name: new-mcp-mysql
+  #   restart: always
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: rootpassword
+  #     MYSQL_DATABASE: newmcp
+  #   volumes:
+  #     - mysql-data:/var/lib/mysql
+  #   ports:
+  #     - "3306:3306"
+  #   healthcheck:
+  #     test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 10
+
+  # Uncomment to use PostgreSQL:
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: new-mcp-postgres
+  #   restart: always
+  #   environment:
+  #     POSTGRES_DB: newmcp
+  #     POSTGRES_USER: newmcp
+  #     POSTGRES_PASSWORD: yourpassword
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U newmcp"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 10
+
+  # Uncomment to use Redis:
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: new-mcp-redis
+  #   restart: always
+  #   volumes:
+  #     - redis-data:/data
+  #   ports:
+  #     - "6379:6379"
+
+volumes:
+  newmcp-data:
+  # Uncomment as needed:
+  # mysql-data:
+  # postgres-data:
+  # redis-data:
