@@ -14,7 +14,7 @@ type ApiKey struct {
 	Key            string         `json:"-" gorm:"size:255;not null;default:''"`
 	KeyHash        string         `json:"-" gorm:"column:key_hash;size:255;not null;uniqueIndex"`
 	KeyPrefix      string         `json:"key_prefix" gorm:"column:key_prefix;size:16;not null;index"`
-	Permissions    string         `json:"permissions" gorm:"type:text;default:'{}'"`
+	Permissions    string         `json:"permissions" gorm:"type:varchar(4096);default:'{}'"`
 	Status         int            `json:"status" gorm:"default:1"`
 	Quota          int64          `json:"quota" gorm:"default:0"`
 	UsedQuota      int64          `json:"used_quota" gorm:"default:0"`

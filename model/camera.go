@@ -20,10 +20,10 @@ type Camera struct {
 	AutoRegister       bool           `json:"auto_register" gorm:"default:false"`
 	RegisteredServiceID *int64        `json:"registered_service_id"`
 	CaptureName        string         `json:"capture_name" gorm:"size:128;default:camera.capture"`
-	CaptureDesc        string         `json:"capture_desc" gorm:"type:text;default:截取当前摄像头画面并返回图像"`
+	CaptureDesc        string         `json:"capture_desc" gorm:"type:varchar(512);default:截取当前摄像头画面并返回图像"`
 	AnalyzeName        string         `json:"analyze_name" gorm:"size:128;default:camera.analyze"`
-	AnalyzeDesc        string         `json:"analyze_desc" gorm:"type:text;default:截取当前摄像头画面并识别分析"`
-	ExtraConfig        string         `json:"extra_config" gorm:"type:text;default:'{}'"`
+	AnalyzeDesc        string         `json:"analyze_desc" gorm:"type:varchar(512);default:截取当前摄像头画面并识别分析"`
+	ExtraConfig        string         `json:"extra_config" gorm:"type:varchar(4096);default:'{}'"`
 	Status             int            `json:"status" gorm:"default:1"`
 	LastCaptureAt      *time.Time     `json:"last_capture_at"`
 	CreatedAt          time.Time      `json:"created_at"`

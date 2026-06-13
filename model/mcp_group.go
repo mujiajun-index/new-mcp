@@ -18,7 +18,7 @@ type McpGroup struct {
 	EndpointSlug     string         `json:"endpoint_slug" gorm:"size:128;uniqueIndex"`
 	EndpointAuth     string         `json:"endpoint_auth" gorm:"size:32;default:api_key"`
 	ExposeMode       string         `json:"expose_mode" gorm:"size:16;default:smart"`
-	MiddlewareConfig string         `json:"middleware_config" gorm:"type:text;default:'{}'"`
+	MiddlewareConfig string         `json:"middleware_config" gorm:"type:varchar(4096);default:'{}'"`
 	Status           int            `json:"status" gorm:"default:1"`
 	SortOrder        int            `json:"sort_order" gorm:"default:0"`
 	CreatedAt        time.Time      `json:"created_at"`

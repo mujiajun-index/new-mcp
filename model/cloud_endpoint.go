@@ -12,7 +12,7 @@ type CloudEndpoint struct {
 	Name             string         `json:"name" gorm:"size:128;not null"`
 	CloudType        string         `json:"cloud_type" gorm:"size:32;not null;default:custom;index"`
 	WssURL           string         `json:"wss_url" gorm:"size:1024"`
-	CloudConfig      string         `json:"cloud_config" gorm:"type:text;default:'{}'"`
+	CloudConfig      string         `json:"cloud_config" gorm:"type:varchar(4096);default:'{}'"`
 	RemoteID         string         `json:"remote_id" gorm:"size:128"`
 	TokenExpiresAt   *time.Time     `json:"token_expires_at"`
 	ApiKeyID         *int64         `json:"api_key_id" gorm:"index"`

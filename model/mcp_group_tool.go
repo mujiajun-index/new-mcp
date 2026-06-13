@@ -10,7 +10,7 @@ type McpGroupTool struct {
 	Enabled            bool      `json:"enabled" gorm:"default:true"`
 	NameOverride       string    `json:"name_override" gorm:"size:255"`
 	DescriptionOverride string   `json:"description_override" gorm:"type:text"`
-	Annotations        string    `json:"annotations" gorm:"type:text;default:'{}'"`
+	Annotations        string    `json:"annotations" gorm:"type:varchar(4096);default:'{}'"`
 	CreatedAt          time.Time `json:"created_at"`
 }
 

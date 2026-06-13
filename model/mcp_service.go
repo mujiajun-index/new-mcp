@@ -11,16 +11,16 @@ type McpService struct {
 	DisplayName      string         `json:"display_name" gorm:"size:255"`
 	Description      string         `json:"description" gorm:"type:text"`
 	TransportType    string         `json:"transport_type" gorm:"size:32;not null;index"`
-	Config           string         `json:"config" gorm:"type:text;default:'{}'"`
+	Config           string         `json:"config" gorm:"type:varchar(4096);default:'{}'"`
 	PassiveToken     string         `json:"-" gorm:"column:passive_token;size:512"`
 	PassiveConnected bool           `json:"passive_connected" gorm:"default:false"`
 	AuthType         string         `json:"auth_type" gorm:"size:32;default:none"`
-	AuthConfig       string         `json:"auth_config" gorm:"type:text;default:'{}'"`
-	ToolsCache       string         `json:"tools_cache" gorm:"type:mediumtext;default:'[]'"`
+	AuthConfig       string         `json:"auth_config" gorm:"type:varchar(4096);default:'{}'"`
+	ToolsCache       string         `json:"tools_cache" gorm:"type:text"`
 	ToolsUpdatedAt   *time.Time     `json:"tools_updated_at"`
 	HealthStatus     string         `json:"health_status" gorm:"size:16;default:unknown;index"`
 	LastHealthCheck  *time.Time     `json:"last_health_check"`
-	ServerInfo       string         `json:"server_info" gorm:"type:text;default:'{}'"`
+	ServerInfo       string         `json:"server_info" gorm:"type:varchar(4096);default:'{}'"`
 	ProtocolVersion  string         `json:"protocol_version" gorm:"size:32"`
 	IconURL          string         `json:"icon_url" gorm:"size:512"`
 	Tags             string         `json:"tags" gorm:"size:512"`

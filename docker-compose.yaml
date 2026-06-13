@@ -14,6 +14,8 @@ services:
       - GIN_MODE=release
       - DB_TYPE=sqlite
       - DB_PATH=/app/data/newmcp.db
+      # - DB_TYPE=mysql
+      # - SQL_DSN=newmcp:password@tcp(mysql:3306)/newmcp?charset=utf8mb4&parseTime=True
       - SESSION_SECRET=change-me-to-a-random-string
       - CRYPTO_SECRET=change-me-to-a-random-string
       - BASE_URL=http://localhost:3000
