@@ -293,7 +293,9 @@ make build
 | `SESSION_SECRET` | - | Session 密钥 (多实例必须设置) |
 | `CRYPTO_SECRET` | - | 加密密钥 (加密 API Key 等敏感数据) |
 | `LOG_LEVEL` | `info` | 日志级别: debug/info/warn/error |
-| `BASE_URL` | `http://localhost:3000` | 外部访问 URL (用于生成 MCP 端点地址) |
+
+> [!NOTE]
+> MCP 端点地址由**系统设置**中的**服务器地址**（`ServerAddress`）决定，管理员可在后台运行时动态修改，无需配置环境变量。
 
 ---
 

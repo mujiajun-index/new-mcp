@@ -14,7 +14,6 @@ var (
 	DbPath          = "./data/newmcp.db"
 	SqlDSN          string
 	RedisConnString string
-	BaseURL         = "http://localhost:3000"
 	LogLevel        = "info"
 	UsingSQLite     bool
 	UsingMySQL      bool
@@ -40,9 +39,6 @@ func InitEnv() {
 	}
 	SqlDSN = os.Getenv("SQL_DSN")
 	RedisConnString = os.Getenv("REDIS_CONN_STRING")
-	if v := os.Getenv("BASE_URL"); v != "" {
-		BaseURL = v
-	}
 	if v := os.Getenv("LOG_LEVEL"); v != "" {
 		LogLevel = v
 	}

@@ -210,7 +210,9 @@ docker run --name new-mcp -d --restart always \
 | `REDIS_CONN_STRING` | — | Redis connection string (optional) |
 | `SESSION_SECRET` | — | JWT session secret |
 | `CRYPTO_SECRET` | — | Encryption key for sensitive data |
-| `BASE_URL` | `http://localhost:3000` | External base URL |
+
+> [!NOTE]
+> MCP endpoint URLs are derived from the **Server Address** (`ServerAddress`) in **System Settings**, which admins can change at runtime — no restart or environment variable required.
 
 #### Using MySQL / PostgreSQL
 
@@ -267,7 +269,6 @@ services:
       - DB_PATH=/app/data/newmcp.db
       - SESSION_SECRET=change-me-to-a-random-string
       - CRYPTO_SECRET=change-me-to-a-random-string
-      - BASE_URL=http://localhost:3000
 
 volumes:
   newmcp-data:

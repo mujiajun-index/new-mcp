@@ -208,7 +208,9 @@ docker run --name new-mcp -d --restart always \
 | `REDIS_CONN_STRING` | — | Redis 连接字符串（可选） |
 | `SESSION_SECRET` | — | JWT 会话密钥 |
 | `CRYPTO_SECRET` | — | 敏感数据加密密钥 |
-| `BASE_URL` | `http://localhost:3000` | 外部访问地址 |
+
+> [!NOTE]
+> MCP 端点地址由**系统设置**中的**服务器地址**（`ServerAddress`）决定，管理员可在后台运行时动态修改，无需重启或配置环境变量。
 
 #### 使用 MySQL / PostgreSQL
 
@@ -265,7 +267,6 @@ services:
       - DB_PATH=/app/data/newmcp.db
       - SESSION_SECRET=change-me-to-a-random-string
       - CRYPTO_SECRET=change-me-to-a-random-string
-      - BASE_URL=http://localhost:3000
 
 volumes:
   newmcp-data:

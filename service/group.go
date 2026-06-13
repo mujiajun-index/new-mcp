@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
@@ -10,6 +11,12 @@ import (
 )
 
 type GroupService struct{}
+
+// serverBase returns the configured server address from system settings,
+// with any trailing slash trimmed. Used to build MCP endpoint URLs.
+func serverBase() string {
+	return strings.TrimRight(model.GetOptionString("ServerAddress"), "/")
+}
 
 func (s *GroupService) List(userID int64, page, pageSize int) ([]dto.GroupListItem, int64, error) {
 	offset := common.GetOffset(page, pageSize)
@@ -287,7 +294,7 @@ func (s *GroupService) toDetail(group *model.McpGroup) (*dto.GroupDetail, error)
 		Name:        group.Name,
 		DisplayName: group.DisplayName,
 		Description: group.Description,
-		EndpointURL: common.BaseURL + "/mcp/group/" + group.Name,
+		EndpointURL: serverBase() + "/mcp/group/" + group.Name,
 		Visibility:   group.Visibility,
 		ExposeMode:   group.ExposeMode,
 		Services:     services,
@@ -297,8 +304,8 @@ func (s *GroupService) toDetail(group *model.McpGroup) (*dto.GroupDetail, error)
 }
 
 func (s *GroupService) buildEndpointInfo(group *model.McpGroup) (*dto.EndpointInfo, error) {
-	httpURL := common.BaseURL + "/mcp/group/" + group.Name
-	wsURL := common.BaseURL + "/mcp/ws/group/" + group.Name
+	httpURL := serverBase() + "/mcp/group/" + group.Name
+	wsURL := serverBase() + "/mcp/ws/group/" + group.Name
 
 	return &dto.EndpointInfo{
 		StreamableHTTPURL: httpURL,

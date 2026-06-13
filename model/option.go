@@ -20,7 +20,7 @@ var (
 
 var defaultOptions = map[string]string{
 	"SystemName":                    "NewMCP",
-	"ServerAddress":                 "",
+	"ServerAddress":                 "http://localhost:3000",
 	"Footer":                        "",
 	"RegisterEnabled":               "true",
 	"EmailVerificationEnabled":      "false",
