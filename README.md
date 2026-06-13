@@ -99,6 +99,23 @@ NewMCP is a unified MCP (Model Context Protocol) service management platform. It
                     └─────────────┘
 ```
 
+### MCP Gateway
+
+NewMCP exposes MCP tools through a unified gateway supporting two **tool exposure modes**, driven by endpoint routing:
+
+| Endpoint | Transport | Mode | Description |
+|----------|-----------|------|-------------|
+| `POST /mcp` | Streamable HTTP | Direct (fixed) | Aggregates all groups bound to the API Key, dedupes and exposes every tool (`serviceName__toolName`) |
+| `POST /smart/mcp` | Streamable HTTP | Smart (fixed) | Aggregates all groups, exposes only 3 meta-tools for progressive discovery |
+| `POST /mcp/group/{slug}` | Streamable HTTP | Per-group `expose_mode` | Endpoint-driven; each group configured independently |
+| `GET /mcp/ws` | WebSocket | Direct (fixed) | Same as `POST /mcp` |
+| `GET /smart/mcp/ws` | WebSocket | Smart (fixed) | Same as `POST /smart/mcp` |
+| `GET /mcp/ws/group/{slug}` | WebSocket | Per-group `expose_mode` | Endpoint-driven |
+
+- **Direct mode** — exposes all tools at once. Suited for LLM clients with a large tool surface (Claude Code, Cursor).
+- **Smart mode** — exposes only 3 meta-tools (`mcp.search` / `mcp.describe` / `mcp.execute`); the client discovers tools progressively via search → describe → execute. Suited for context-limited devices (e.g. XiaoZhi) or very large tool sets.
+- For group endpoints (`/mcp/group/{slug}`), the mode is decided by each group's `expose_mode` setting (`direct` / `smart`).
+
 ### Tech Stack
 
 | Layer | Technology |
