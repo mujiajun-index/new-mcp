@@ -83,7 +83,7 @@ export function UserLogsPage() {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="p-6 lg:p-8 space-y-6 max-w-[1400px]">
+      <div className="p-6 lg:p-8 space-y-6">
         {/* Header */}
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{t('logs.title')}</h1>

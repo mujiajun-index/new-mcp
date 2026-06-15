@@ -113,6 +113,7 @@
 
 @layer utilities {
   .glass-1 {
+    -webkit-backdrop-filter : blur(12px) saturate(180%);
     backdrop-filter: blur(12px) saturate(180%);
     background: oklch(0.994 0.002 247.858 / 0.8);
     border: 1px solid oklch(0.925 0.01 255.508 / 0.5);

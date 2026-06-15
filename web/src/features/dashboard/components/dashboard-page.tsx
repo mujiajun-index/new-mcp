@@ -62,7 +62,7 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="p-6 lg:p-8 space-y-8 max-w-6xl">
+    <div className="p-6 lg:p-8 space-y-8">
       {/* Welcome */}
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">{t('dashboard.title')}</h1>

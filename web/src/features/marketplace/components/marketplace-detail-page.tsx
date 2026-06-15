@@ -28,7 +28,7 @@ export function MarketplaceDetailPage() {
   if (!item) return <div className="flex items-center justify-center py-20 text-muted-foreground">服务不存在</div>
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-4xl mx-auto">
+    <div className="p-6 lg:p-8 space-y-6">
       <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => navigate({ to: '/marketplace' })}>
         <ArrowLeft className="h-4 w-4" />返回广场
       </Button>

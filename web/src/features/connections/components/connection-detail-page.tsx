@@ -101,7 +101,7 @@ export function ConnectionDetailPage() {
   const boundKey = apiKeys.find((k: { id: number }) => k.id === (editing ? form.api_key_id : conn.api_key_id))
 
   return (
-    <div className={`p-6 lg:p-8 space-y-6 max-w-4xl mx-auto${isDisabled ? ' opacity-60' : ''}`}>
+    <div className={`p-6 lg:p-8 space-y-6${isDisabled ? ' opacity-60' : ''}`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">

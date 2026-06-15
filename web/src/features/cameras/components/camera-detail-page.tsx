@@ -122,7 +122,7 @@ export function CameraDetailPage() {
   if (!camera) return <div className="flex items-center justify-center py-20 text-muted-foreground">摄像头不存在</div>
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-4xl mx-auto">
+    <div className="p-6 lg:p-8 space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">

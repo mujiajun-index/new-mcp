@@ -23,7 +23,7 @@ export function MarketplaceListPage() {
   const items: MarketplaceListItem[] = data?.data || []
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-6xl">
+    <div className="p-6 lg:p-8 space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">MCP 广场</h1>
         <p className="mt-1 text-sm text-muted-foreground">发现并安装 MCP 服务</p>
