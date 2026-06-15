@@ -43,8 +43,9 @@ var sensitiveKeys = map[string]bool{
 }
 
 var publicKeys = map[string]bool{
-	"SystemName": true,
-	"Footer":     true,
+	"SystemName":    true,
+	"Footer":        true,
+	"ServerAddress": true,
 }
 
 func InitOptionMap() {

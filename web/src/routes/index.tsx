@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createFileRoute, Link, useNavigate, useLocation } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
+import { useSystemConfigStore } from '@/stores/system-config-store'
 import { useTheme } from '@/context/theme-provider'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -13,7 +14,7 @@ import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
   AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
-import { Server, GitBranch, Cloud, Shield, ArrowRight, Zap, Moon, Sun, Monitor, Languages, LogOut, User, Check } from 'lucide-react'
+import { Server, GitBranch, Cloud, Shield, ArrowRight, Zap, Moon, Sun, Monitor, Languages, LogOut, User, Check, Copy, Link2 } from 'lucide-react'
 
 export const Route = createFileRoute('/')({
   component: LandingPage,
@@ -27,6 +28,12 @@ function LandingPage() {
   const { theme, setTheme } = useTheme()
   const isLoggedIn = !!auth.user
   const [showSignOutDialog, setShowSignOutDialog] = useState(false)
+
+  const { config: systemConfig, fetchPublicSettings } = useSystemConfigStore()
+
+  useEffect(() => {
+    fetchPublicSettings()
+  }, [fetchPublicSettings])
 
   const navItems = [
     { label: t('nav.home'), to: '/' as const },
@@ -253,6 +260,9 @@ function LandingPage() {
         </div>
       </section>
 
+      {/* Endpoints */}
+      <EndpointsSection baseUrl={systemConfig.serverAddress} />
+
       {/* Features */}
       <section className="relative border-t bg-muted/30 px-6 py-24">
         <div className="mx-auto max-w-6xl">
@@ -281,6 +291,136 @@ function LandingPage() {
         </div>
       </footer>
     </div>
+  )
+}
+
+function EndpointsSection({ baseUrl }: { baseUrl: string }) {
+  const { t } = useTranslation()
+  const [copied, setCopied] = useState<string | null>(null)
+
+  const base = baseUrl.replace(/\/$/, '')
+  const endpoints = [
+    {
+      path: '/mcp',
+      mode: t('landing.directMode'),
+      desc: t('landing.directModeDesc'),
+      accent: 'from-sky-500/20 to-blue-500/20',
+      textColor: 'text-sky-600 dark:text-sky-400',
+      borderColor: 'border-sky-500/20',
+      glowColor: 'bg-sky-500/5',
+    },
+    {
+      path: '/smart/mcp',
+      mode: t('landing.smartMode'),
+      desc: t('landing.smartModeDesc'),
+      accent: 'from-violet-500/20 to-purple-500/20',
+      textColor: 'text-violet-600 dark:text-violet-400',
+      borderColor: 'border-violet-500/20',
+      glowColor: 'bg-violet-500/5',
+    },
+  ]
+
+  const handleCopy = async (url: string) => {
+    let success = false
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(url)
+        success = true
+      } else {
+        // Fallback for non-secure contexts (http://), where Clipboard API is unavailable
+        const textarea = document.createElement('textarea')
+        textarea.value = url
+        textarea.style.position = 'fixed'
+        textarea.style.top = '0'
+        textarea.style.left = '0'
+        textarea.style.opacity = '0'
+        document.body.appendChild(textarea)
+        textarea.focus()
+        textarea.select()
+        success = document.execCommand('copy')
+        document.body.removeChild(textarea)
+      }
+    } catch {
+      success = false
+    }
+    if (success) {
+      setCopied(url)
+      setTimeout(() => setCopied(null), 2000)
+    }
+  }
+
+  return (
+    <section className="relative overflow-hidden border-t px-6 py-24">
+      {/* Background decoration */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute top-1/2 left-1/4 -translate-y-1/2 h-[500px] w-[500px] rounded-full bg-ring/3 blur-3xl" />
+        <div className="absolute top-1/2 right-1/4 -translate-y-1/2 h-[500px] w-[500px] rounded-full bg-ring/3 blur-3xl" />
+      </div>
+
+      <div className="relative z-10 mx-auto max-w-4xl">
+        <div className="mb-12 text-center">
+          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
+            {t('landing.endpointsTitle')}
+          </h2>
+          <p className="mx-auto mt-4 max-w-xl text-base text-muted-foreground">
+            {t('landing.endpointsDesc')}
+          </p>
+        </div>
+
+        <div className="grid gap-6 sm:grid-cols-2">
+          {endpoints.map((ep, i) => {
+            const url = `${base}${ep.path}`
+            const isCopied = copied === url
+            return (
+              <div
+                key={ep.path}
+                className={cn(
+                  'group relative rounded-2xl border bg-card/80 p-6 backdrop-blur transition-all duration-300',
+                  'hover:border-ring/20 hover:shadow-lg hover:shadow-ring/5',
+                  ep.borderColor,
+                )}
+                style={{ animationDelay: `${i * 120}ms` }}
+              >
+                <div className={cn('absolute -inset-px rounded-2xl opacity-0 transition-opacity duration-500 group-hover:opacity-100', ep.glowColor)} />
+                <div className="relative z-10">
+                  <div className="mb-4 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br', ep.accent)}>
+                        <Link2 className="h-4 w-4" />
+                      </div>
+                      <span className={cn('text-sm font-semibold', ep.textColor)}>{ep.mode}</span>
+                    </div>
+                    <span className="rounded-full bg-muted px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                      POST
+                    </span>
+                  </div>
+
+                  <p className="mb-4 text-sm text-muted-foreground">{ep.desc}</p>
+
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 overflow-hidden rounded-lg border bg-muted/50 px-3 py-2">
+                      <code className="block truncate text-sm font-mono text-foreground">{url}</code>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn(
+                        'h-9 w-9 shrink-0 cursor-pointer transition-colors',
+                        isCopied && 'text-emerald-600 dark:text-emerald-400',
+                      )}
+                      onClick={() => handleCopy(url)}
+                      title={isCopied ? t('common.copied') : t('common.copy')}
+                    >
+                      {isCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </section>
   )
 }
 

@@ -85,7 +85,13 @@
     "feature3Title": "Cloud Connect",
     "feature3Desc": "Actively connect to cloud platforms and push MCP services to remote agents.",
     "feature4Title": "Secure Access",
-    "feature4Desc": "API Key permission control, group isolation, and call audit logging."
+    "feature4Desc": "API Key permission control, group isolation, and call audit logging.",
+    "endpointsTitle": "MCP Endpoints",
+    "endpointsDesc": "Connect your MCP clients to these URLs",
+    "directMode": "Direct Mode",
+    "directModeDesc": "Exposes all tools aggregated from your services",
+    "smartMode": "Smart Mode",
+    "smartModeDesc": "Progressive discovery via 3 meta-tools"
   },
   "apiKeys": {
     "title": "API Keys",

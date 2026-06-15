@@ -85,7 +85,13 @@
     "feature3Title": "云端互联",
     "feature3Desc": "主动连接云平台，将 MCP 服务推送至远程 Agent，实现跨平台工具调用。",
     "feature4Title": "安全管控",
-    "feature4Desc": "API Key 权限控制、分组隔离、调用审计，确保服务访问安全可控。"
+    "feature4Desc": "API Key 权限控制、分组隔离、调用审计，确保服务访问安全可控。",
+    "endpointsTitle": "MCP 接入端点",
+    "endpointsDesc": "将 MCP 客户端连接到以下 URL",
+    "directMode": "直连模式",
+    "directModeDesc": "暴露已聚合服务的全部工具",
+    "smartMode": "智能模式",
+    "smartModeDesc": "通过 3 个元工具渐进发现"
   },
   "apiKeys": {
     "title": "API 密钥",
