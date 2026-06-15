@@ -57,6 +57,10 @@ func IncreaseUserQuota(id int64, quota int64) error {
 	return DB.Model(&User{}).Where("id = ?", id).Update("quota", gorm.Expr("quota + ?", quota)).Error
 }
 
+func IncreaseUserRequestCount(id int64) error {
+	return DB.Model(&User{}).Where("id = ?", id).Update("request_count", gorm.Expr("request_count + ?", 1)).Error
+}
+
 func DecreaseUserQuota(id int64, quota int64) error {
 	return DB.Model(&User{}).Where("id = ? AND quota >= ?", id, quota).Update("quota", gorm.Expr("quota - ?", quota)).Error
 }

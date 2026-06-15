@@ -597,6 +597,9 @@ func (h *GatewayHandler) errorResponse(id interface{}, code int, message string)
 
 func (h *GatewayHandler) recordLog(log *model.McpCallLog) {
 	_ = log.Insert()
+	if log.UserID > 0 {
+		_ = model.IncreaseUserRequestCount(log.UserID)
+	}
 }
 
 func (h *GatewayHandler) smartToolsResponse(id interface{}) *JSONRPCResponse {
