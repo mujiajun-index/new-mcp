@@ -149,9 +149,12 @@ function KeyCell({ apiKey }: { apiKey: ApiKeyListItem }) {
           <div className="flex items-center gap-2">
             <input
               ref={inputRef}
+              type="text"
               readOnly
               value={loading ? '...' : (fullKey || apiKey.key_prefix)}
               className="flex-1 rounded-md bg-muted px-3 py-1.5 text-sm font-mono border-0 outline-none"
+              title={t('common.clickToSelect')}
+              aria-label={t('apiKeys.keyLabel')}
               onClick={() => inputRef.current?.select()}
             />
             <Button variant="outline" size="sm" className="shrink-0 gap-1" onClick={handleCopy} disabled={loading}>
@@ -322,9 +325,12 @@ export function ApiKeyPage() {
           </div>
           <div className="mt-3 flex items-center gap-2">
             <input
+              type="text"
               readOnly
               value={newKey}
               className="flex-1 rounded-lg bg-muted px-3 py-2 text-sm font-mono border-0 outline-none"
+              title={t('common.clickToSelect')}
+              aria-label={t('apiKeys.keyLabel')}
               onClick={(e) => (e.target as HTMLInputElement).select()}
             />
             <Button
@@ -486,7 +492,13 @@ export function ApiKeyPage() {
             className="pl-9"
           />
           {search && (
-            <button className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setSearch('')}>
+            <button
+              type="button"
+              className="absolute right-2 top-1/2 z-10 -translate-y-1/2 cursor-pointer rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
+              title={t('common.clear')}
+              aria-label={t('common.clear')}
+              onClick={() => setSearch('')}
+            >
               <X className="h-3.5 w-3.5" />
             </button>
           )}

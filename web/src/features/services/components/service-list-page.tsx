@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { TransportType, ServiceListItem } from '@/types'
 import {
-  Plus, Search, Server, Trash2, RefreshCw, Zap, Loader2,
+  Plus, Search, Server, Trash2, Zap, Loader2,
   Wifi, Terminal, Globe, Radio, Plug,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -184,7 +184,13 @@ export function ServiceListPage() {
                       <td className="px-4 py-3"><HealthBadge status={s.health_status} /></td>
                       <td className="px-4 py-3 tabular-nums">{s.tools_count}</td>
                       <td className="px-4 py-3">
-                        <button onClick={() => toggleMutation.mutate({ id: s.id, status: s.status === 1 ? 0 : 1 })}>
+                        <button
+                          type="button"
+                          className="cursor-pointer"
+                          title={s.status === 1 ? '点击禁用' : '点击启用'}
+                          aria-label={s.status === 1 ? '点击禁用' : '点击启用'}
+                          onClick={() => toggleMutation.mutate({ id: s.id, status: s.status === 1 ? 0 : 1 })}
+                        >
                           <StatusBadge status={s.status} />
                         </button>
                       </td>
