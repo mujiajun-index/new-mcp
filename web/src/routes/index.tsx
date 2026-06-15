@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { createFileRoute, Link, useNavigate, useLocation } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
@@ -29,11 +29,7 @@ function LandingPage() {
   const isLoggedIn = !!auth.user
   const [showSignOutDialog, setShowSignOutDialog] = useState(false)
 
-  const { config: systemConfig, fetchPublicSettings } = useSystemConfigStore()
-
-  useEffect(() => {
-    fetchPublicSettings()
-  }, [fetchPublicSettings])
+  const { config: systemConfig } = useSystemConfigStore()
 
   const navItems = [
     { label: t('nav.home'), to: '/' as const },
@@ -71,7 +67,7 @@ function LandingPage() {
               <div className="flex h-8 w-8 items-center justify-center rounded-lg overflow-hidden">
                 <img src="/favicon.svg" alt="Logo" className="h-8 w-8" />
               </div>
-              <span className="text-lg font-semibold tracking-tight">NewMCP</span>
+              <span className="text-lg font-semibold tracking-tight">{systemConfig.systemName}</span>
             </Link>
             <div className="flex items-center gap-1">
               {navItems.map((item) => {
@@ -286,8 +282,8 @@ function LandingPage() {
       {/* Footer */}
       <footer className="border-t px-6 py-8">
         <div className="mx-auto flex max-w-6xl items-center justify-between text-sm text-muted-foreground">
-          <span>NewMCP</span>
-          <span>MCP Protocol Gateway</span>
+          <span>{systemConfig.systemName}</span>
+          <span>{systemConfig.footer || 'MCP Protocol Gateway'}</span>
         </div>
       </footer>
     </div>

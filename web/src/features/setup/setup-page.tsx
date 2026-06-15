@@ -8,10 +8,12 @@ import { markSetupDone } from '@/lib/setup-check'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useSystemConfigStore } from '@/stores/system-config-store'
 
 export function SetupPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const { config } = useSystemConfigStore()
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({
     username: '',
@@ -69,7 +71,7 @@ export function SetupPage() {
             <div className="flex h-10 w-10 items-center justify-center rounded-xl overflow-hidden">
               <img src="/favicon.svg" alt="Logo" className="h-10 w-10" />
             </div>
-            <span className="text-xl font-semibold">NewMCP</span>
+            <span className="text-xl font-semibold">{config.systemName}</span>
           </div>
           <div>
             <h2 className="text-3xl font-bold leading-tight">
@@ -79,7 +81,7 @@ export function SetupPage() {
               {t('setup.heroDesc')}
             </p>
           </div>
-          <p className="text-xs text-primary-foreground/40">MCP Protocol Gateway</p>
+          <p className="text-xs text-primary-foreground/40">{config.footer || 'MCP Protocol Gateway'}</p>
         </div>
       </div>
 
@@ -91,7 +93,7 @@ export function SetupPage() {
               <div className="flex h-8 w-8 items-center justify-center rounded-lg overflow-hidden">
                 <img src="/favicon.svg" alt="Logo" className="h-8 w-8" />
               </div>
-              <span className="text-lg font-semibold">NewMCP</span>
+              <span className="text-lg font-semibold">{config.systemName}</span>
             </div>
             <div className="flex items-center gap-3 mb-4">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">

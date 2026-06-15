@@ -8,12 +8,14 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
+import { useSystemConfigStore } from '@/stores/system-config-store'
 
 export function SignInPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const search = useSearch({ strict: false }) as { redirect?: string }
   const { auth } = useAuthStore()
+  const { config } = useSystemConfigStore()
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({ username: '', password: '' })
 
@@ -53,7 +55,7 @@ export function SignInPage() {
             <div className="flex h-10 w-10 items-center justify-center rounded-xl overflow-hidden">
               <img src="/favicon.svg" alt="Logo" className="h-10 w-10" />
             </div>
-            <span className="text-xl font-semibold">NewMCP</span>
+            <span className="text-xl font-semibold">{config.systemName}</span>
           </Link>
           <div>
             <h2 className="text-3xl font-bold leading-tight">
@@ -63,7 +65,7 @@ export function SignInPage() {
               一站式管理、聚合和分发 MCP 服务。为 AI Agent 提供标准化的工具访问接口。
             </p>
           </div>
-          <p className="text-xs text-primary-foreground/40">MCP Protocol Gateway</p>
+          <p className="text-xs text-primary-foreground/40">{config.footer || 'MCP Protocol Gateway'}</p>
         </div>
       </div>
 
@@ -75,7 +77,7 @@ export function SignInPage() {
               <div className="flex h-8 w-8 items-center justify-center rounded-lg overflow-hidden">
                 <img src="/favicon.svg" alt="Logo" className="h-8 w-8" />
               </div>
-              <span className="text-lg font-semibold">NewMCP</span>
+              <span className="text-lg font-semibold">{config.systemName}</span>
             </Link>
             <h1 className="text-2xl font-semibold tracking-tight">{t('auth.welcomeBack')}</h1>
             <p className="mt-2 text-sm text-muted-foreground">{t('auth.signInDesc')}</p>

@@ -5,6 +5,7 @@ import { api } from '@/lib/api'
 interface SystemConfig {
   systemName: string
   serverAddress: string
+  footer: string
 }
 
 interface SystemConfigState {
@@ -19,6 +20,7 @@ export const useSystemConfigStore = create<SystemConfigState>()(
       config: {
         systemName: 'NewMCP',
         serverAddress: 'http://localhost:3000',
+        footer: '',
       },
       setConfig: (partial) =>
         set((state) => ({
@@ -28,15 +30,14 @@ export const useSystemConfigStore = create<SystemConfigState>()(
         try {
           const res = await api.get('/settings/public', { skipErrorHandler: true } as any)
           const data = res.data?.data || {}
-          if (data.SystemName || data.ServerAddress) {
-            set((state) => ({
-              config: {
-                ...state.config,
-                systemName: data.SystemName || state.config.systemName,
-                serverAddress: data.ServerAddress || state.config.serverAddress,
-              },
-            }))
-          }
+          set((state) => ({
+            config: {
+              ...state.config,
+              systemName: data.SystemName ?? state.config.systemName,
+              serverAddress: data.ServerAddress ?? state.config.serverAddress,
+              footer: data.Footer ?? state.config.footer,
+            },
+          }))
         } catch {
           // silently fallback to persisted / default values
         }

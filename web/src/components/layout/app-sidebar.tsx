@@ -10,6 +10,7 @@ import {
   ClipboardCheck, ChevronLeft, Activity,
 } from 'lucide-react'
 import { useState } from 'react'
+import { useSystemConfigStore } from '@/stores/system-config-store'
 
 interface NavItem {
   label: string
@@ -43,6 +44,7 @@ export function AppSidebar() {
   const router = useRouterState()
   const currentPath = router.location.pathname
   const { auth } = useAuthStore()
+  const { config } = useSystemConfigStore()
   const [collapsed, setCollapsed] = useState(false)
   const isAdmin = auth.user?.role === 'admin'
 
@@ -73,7 +75,7 @@ export function AppSidebar() {
             <img src="/favicon.svg" alt="Logo" className="h-8 w-8" />
           </div>
           {!collapsed && (
-            <span className="text-base font-semibold tracking-tight">NewMCP</span>
+            <span className="text-base font-semibold tracking-tight">{config.systemName}</span>
           )}
         </Link>
 

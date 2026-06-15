@@ -8,11 +8,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
+import { useSystemConfigStore } from '@/stores/system-config-store'
 
 export function SignUpPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { auth } = useAuthStore()
+  const { config } = useSystemConfigStore()
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({ username: '', email: '', password: '', confirmPassword: '' })
 
@@ -49,7 +51,7 @@ export function SignUpPage() {
         <div className="flex h-10 w-10 items-center justify-center rounded-xl overflow-hidden">
           <img src="/favicon.svg" alt="Logo" className="h-10 w-10" />
         </div>
-        <span className="text-xl font-semibold">NewMCP</span>
+        <span className="text-xl font-semibold">{config.systemName}</span>
       </Link>
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center">
@@ -114,6 +116,12 @@ export function SignUpPage() {
           </Link>
         </p>
       </div>
+
+      <footer className="absolute bottom-6 left-0 right-0 flex items-center justify-center gap-2 px-8 text-center text-xs text-muted-foreground">
+        <span>{config.systemName}</span>
+        <span className="text-muted-foreground/40">·</span>
+        <span>{config.footer || 'MCP Protocol Gateway'}</span>
+      </footer>
     </div>
   )
 }
