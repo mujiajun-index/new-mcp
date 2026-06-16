@@ -14,7 +14,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-# Copy frontend build output into web/dist so it's embedded at runtime
+# Copy frontend build output so //go:embed web/dist embeds it into the binary
 COPY --from=frontend-builder /app/web/dist ./web/dist
 RUN CGO_ENABLED=0 GOOS=linux go build -o /newmcp ./cmd/server/
 
@@ -25,7 +25,6 @@ RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 
 COPY --from=backend-builder /newmcp /app/newmcp
-COPY --from=backend-builder /app/web/dist /app/web/dist
 
 ENV PORT=3000
 ENV GIN_MODE=release

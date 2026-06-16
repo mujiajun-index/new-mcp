@@ -1,12 +1,13 @@
 package router
 
 import (
+	"io/fs"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/mujkjk/newmcp" // package frontend: embedded web/dist SPA assets
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/internal/mcp/camera"
 	"github.com/mujkjk/newmcp/internal/mcp/cloud"
@@ -17,11 +18,11 @@ import (
 )
 
 var (
-	GatewayHandler *handler.GatewayHandler
-	SessionPool    *bridge.SessionPool
-	CloudManager   *cloud.Manager
+	GatewayHandler  *handler.GatewayHandler
+	SessionPool     *bridge.SessionPool
+	CloudManager    *cloud.Manager
 	VirtualRegistry *virtual.VirtualToolRegistry
-	CameraStream   *camera.CameraStreamManager
+	CameraStream    *camera.CameraStreamManager
 )
 
 func InitGateway() {
@@ -70,31 +71,48 @@ func SetRouter(engine *gin.Engine) {
 	serveFrontend(engine)
 }
 
-// serveFrontend serves the React SPA static files from web/dist.
-// If the directory doesn't exist (backend-only mode), this is a no-op.
+// serveFrontend serves the React SPA from the frontend assets embedded into the
+// binary (web/dist, via //go:embed). Embedding the build output removes any
+// runtime dependency on the filesystem layout, so the served paths always match
+// what rsbuild produced — no more /static vs /assets mismatches.
 func serveFrontend(engine *gin.Engine) {
-	distDir := filepath.Join("web", "dist")
-	if info, err := os.Stat(distDir); err != nil || !info.IsDir() {
+	dist, err := fs.Sub(frontend.DistFS, "web/dist")
+	if err != nil {
+		log.Printf("[web] embedded frontend unavailable: %v", err)
 		return
 	}
+	fileServer := http.FileServer(http.FS(dist))
 
-	// rsbuild emits JS/CSS bundles under dist/static (not dist/assets).
-	engine.Static("/static", filepath.Join(distDir, "static"))
-
-	// Root-level public assets that rsbuild copies to the dist root.
-	engine.StaticFile("/favicon.svg", filepath.Join(distDir, "favicon.svg"))
-	engine.StaticFile("/logo.png", filepath.Join(distDir, "logo.png"))
-	engine.StaticFile("/logo-hd.png", filepath.Join(distDir, "logo-hd.png"))
-
-	// SPA fallback: any non-API, non-MCP route serves index.html
 	engine.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
-		if len(path) >= 4 && (path[:4] == "/api" || path[:4] == "/mcp") {
+
+		// API and MCP routes return a JSON 404, never the HTML shell.
+		if strings.HasPrefix(path, "/api") || strings.HasPrefix(path, "/mcp") {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 			return
 		}
-		indexPath := filepath.Join(distDir, "index.html")
-		c.File(indexPath)
+
+		// Serve a real embedded asset (js/css/svg/png/favicon) when present.
+		if path != "/" {
+			rel := strings.TrimPrefix(path, "/")
+			if f, openErr := dist.Open(rel); openErr == nil {
+				isDir := false
+				if st, statErr := f.Stat(); statErr == nil {
+					isDir = st.IsDir()
+				}
+				f.Close()
+				if !isDir {
+					fileServer.ServeHTTP(c.Writer, c.Request)
+					return
+				}
+			}
+		}
+
+		// SPA fallback: unknown routes serve index.html for client-side routing.
+		// Serve the bytes directly via c.Data — http.FileServer redirects any
+		// path ending in /index.html to "./", which would loop forever on "/".
+		c.Header("Cache-Control", "no-cache")
+		c.Data(http.StatusOK, "text/html; charset=utf-8", frontend.IndexHTML)
 	})
 }
 
