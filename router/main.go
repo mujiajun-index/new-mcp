@@ -78,11 +78,13 @@ func serveFrontend(engine *gin.Engine) {
 		return
 	}
 
-	engine.Static("/assets", filepath.Join(distDir, "assets"))
+	// rsbuild emits JS/CSS bundles under dist/static (not dist/assets).
+	engine.Static("/static", filepath.Join(distDir, "static"))
 
-	// Favicon and other root-level static files
-	engine.StaticFile("/favicon.ico", filepath.Join(distDir, "favicon.ico"))
-	engine.StaticFile("/vite.svg", filepath.Join(distDir, "vite.svg"))
+	// Root-level public assets that rsbuild copies to the dist root.
+	engine.StaticFile("/favicon.svg", filepath.Join(distDir, "favicon.svg"))
+	engine.StaticFile("/logo.png", filepath.Join(distDir, "logo.png"))
+	engine.StaticFile("/logo-hd.png", filepath.Join(distDir, "logo-hd.png"))
 
 	// SPA fallback: any non-API, non-MCP route serves index.html
 	engine.NoRoute(func(c *gin.Context) {
