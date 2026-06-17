@@ -2,6 +2,7 @@ package router
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/controller"
 	"github.com/mujkjk/newmcp/middleware"
 )
@@ -131,10 +132,14 @@ func SetApiRouter(engine *gin.Engine) {
 		// Admin: System settings
 		admin.GET("/settings", controller.AdminGetSettings)
 		admin.PUT("/settings", controller.AdminUpdateSetting)
+
+		// Admin: System info + update check (维护 Tab)
+		admin.GET("/system/info", controller.AdminGetSystemInfo)
+		admin.GET("/system/check-update", controller.AdminCheckUpdate)
 	}
 
 	// Health check
 	engine.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok", "version": "v1.0.0"})
+		c.JSON(200, gin.H{"status": "ok", "version": common.Version})
 	})
 }

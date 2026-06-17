@@ -18,7 +18,8 @@
     "clear": "Clear",
     "clickToSelect": "Click to select all",
     "actions": "Actions",
-    "status": "Status"
+    "status": "Status",
+    "close": "Close"
   },
   "nav": {
     "home": "Home",
@@ -226,6 +227,15 @@
     "maintenance": "Maintenance",
     "maintenanceDesc": "View current version information",
     "version": "Current Version",
+    "startTime": "Startup Time",
+    "checkUpdate": "Check for updates",
+    "checking": "Checking...",
+    "upToDate": "You are running the latest version ({{version}})",
+    "newVersionAvailable": "New version available: {{version}}",
+    "openRelease": "Open release",
+    "noReleaseNotes": "No release notes provided",
+    "publishedAt": "Published",
+    "noReleases": "No releases published yet",
     "saveSuccess": "Setting saved",
     "saveFailed": "Save failed"
   }

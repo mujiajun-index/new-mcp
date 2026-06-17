@@ -74,3 +74,15 @@ export async function getSelf() {
   const res = await api.get('/auth/profile')
   return res.data
 }
+
+// 系统信息：当前版本与启动时间
+export async function getSystemInfo() {
+  const res = await api.get('/admin/system/info')
+  return res.data
+}
+
+// 检查更新：后端代理请求 GitHub 最新 release
+export async function checkSystemUpdate() {
+  const res = await api.get('/admin/system/check-update')
+  return res.data
+}

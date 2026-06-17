@@ -1,17 +1,44 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { api } from '@/lib/api'
+import dayjs from 'dayjs'
+import { api, getSystemInfo, checkSystemUpdate } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { Settings, Shield, Activity, Mail, Wrench, Plus, Trash2 } from 'lucide-react'
+import {
+  Settings,
+  Shield,
+  Activity,
+  Mail,
+  Wrench,
+  Plus,
+  Trash2,
+  RefreshCw,
+  ExternalLink,
+} from 'lucide-react'
 
 interface SettingItem {
   key: string
   value: string
+}
+
+interface ReleaseInfo {
+  tag_name: string
+  name?: string
+  body?: string
+  html_url?: string
+  published_at?: string
 }
 
 async function getAdminSettings(): Promise<Record<string, string>> {
@@ -49,6 +76,38 @@ export function AdminSettingsPage() {
   const { data: settings, isLoading } = useQuery({
     queryKey: ['admin-settings'],
     queryFn: getAdminSettings,
+  })
+
+  // 系统信息：当前版本与启动时间（独立查询，避免与可编辑设置耦合）
+  const { data: systemInfoData } = useQuery({
+    queryKey: ['admin-system-info'],
+    queryFn: getSystemInfo,
+    staleTime: 60_000,
+  })
+  const systemInfo = systemInfoData?.data
+  const currentVersion = systemInfo?.version ?? 'v0.0.0'
+  const startTime = systemInfo?.start_time
+
+  const [release, setRelease] = useState<ReleaseInfo | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+
+  const checkUpdateMutation = useMutation({
+    mutationFn: checkSystemUpdate,
+    onSuccess: (res) => {
+      const data = res?.data
+      if (!data?.has_release || !data.release) {
+        // 仓库尚无任何 release
+        toast.info(t('settings.noReleases'))
+        return
+      }
+      const rel = data.release
+      if (rel.tag_name && rel.tag_name === currentVersion) {
+        toast.success(t('settings.upToDate', { version: rel.tag_name }))
+        return
+      }
+      setRelease(rel)
+      setDialogOpen(true)
+    },
   })
 
   const updateMutation = useMutation({
@@ -132,7 +191,7 @@ export function AdminSettingsPage() {
     )
   }
 
-  const version = localValues.Version || 'v1.0.0'
+  const startTimeStr = startTime ? dayjs.unix(startTime).format('YYYY-MM-DD HH:mm:ss') : '-'
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
@@ -413,12 +472,71 @@ export function AdminSettingsPage() {
             <p className="text-xs text-muted-foreground">{t('settings.maintenanceDesc')}</p>
 
             <div className="space-y-4">
-              <div className="rounded-lg bg-muted/50 p-4">
-                <p className="text-xs text-muted-foreground">{t('settings.version')}</p>
-                <p className="mt-1 text-lg font-semibold">{version}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="rounded-lg bg-muted/50 p-4">
+                  <p className="text-xs text-muted-foreground">{t('settings.version')}</p>
+                  <p className="mt-1 text-lg font-semibold">{currentVersion}</p>
+                </div>
+                <div className="rounded-lg bg-muted/50 p-4">
+                  <p className="text-xs text-muted-foreground">{t('settings.startTime')}</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums">{startTimeStr}</p>
+                </div>
               </div>
+
+              <Button
+                variant="outline"
+                onClick={() => checkUpdateMutation.mutate()}
+                disabled={checkUpdateMutation.isPending}
+              >
+                <RefreshCw className="h-4 w-4 mr-1.5" />
+                {checkUpdateMutation.isPending
+                  ? t('settings.checking')
+                  : t('settings.checkUpdate')}
+              </Button>
             </div>
           </div>
+
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle>
+                  {t('settings.newVersionAvailable', { version: release?.tag_name ?? '' })}
+                </DialogTitle>
+                {release?.published_at && (
+                  <DialogDescription>
+                    {t('settings.publishedAt')}{' '}
+                    {dayjs(release.published_at).format('YYYY-MM-DD HH:mm')}
+                  </DialogDescription>
+                )}
+              </DialogHeader>
+
+              <div className="space-y-3">
+                {release?.body ? (
+                  <pre className="text-sm whitespace-pre-wrap break-words font-sans bg-muted/40 rounded-md p-3">
+                    {release.body}
+                  </pre>
+                ) : (
+                  <p className="text-sm text-muted-foreground">{t('settings.noReleaseNotes')}</p>
+                )}
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setDialogOpen(false)}>
+                  {t('common.close')}
+                </Button>
+                {release?.html_url && (
+                  <Button
+                    onClick={() =>
+                      window.open(release.html_url, '_blank', 'noopener,noreferrer')
+                    }
+                  >
+                    <ExternalLink className="h-4 w-4 mr-1.5" />
+                    {t('settings.openRelease')}
+                  </Button>
+                )}
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
       </Tabs>
     </div>

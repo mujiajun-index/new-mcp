@@ -1,12 +1,20 @@
 package common
 
+import "time"
+
 var SystemInitialized = true
 
-const (
-	Version = "v1.0.0"
+// Version 为当前系统版本，可在构建时通过 ldflags 注入：
+//
+//	go build -ldflags "-X github.com/mujkjk/newmcp/common.Version=vX.Y.Z"
+var Version = "v0.0.0"
 
+// StartTime 记录进程启动时间（包级初始化 ≈ 服务启动），单位：秒。
+var StartTime = time.Now().Unix()
+
+const (
 	// Roles
-	RoleAdminUser = "admin"
+	RoleAdminUser  = "admin"
 	RoleCommonUser = "user"
 
 	// Status

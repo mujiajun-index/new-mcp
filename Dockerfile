@@ -16,7 +16,8 @@ RUN go mod download
 COPY . .
 # Copy frontend build output so //go:embed web/dist embeds it into the binary
 COPY --from=frontend-builder /app/web/dist ./web/dist
-RUN CGO_ENABLED=0 GOOS=linux go build -o /newmcp ./cmd/server/
+# Inject version from VERSION file via ldflags (default v0.0.0 if not injected)
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w -X 'github.com/mujkjk/newmcp/common.Version=$(cat VERSION)'" -o /newmcp ./cmd/server/
 
 # ---- Stage 3: Runtime ----
 FROM alpine:3.20
