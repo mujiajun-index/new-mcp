@@ -86,8 +86,10 @@ func serveFrontend(engine *gin.Engine) {
 	engine.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
 
-		// API and MCP routes return a JSON 404, never the HTML shell.
-		if strings.HasPrefix(path, "/api") || strings.HasPrefix(path, "/mcp") {
+		// Unmatched API/MCP requests return a JSON 404; everything else is a SPA
+		// route and gets the HTML shell. Use "/api/" (trailing slash) so frontend
+		// pages like /api-keys are NOT mistaken for API calls.
+		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/mcp") {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 			return
 		}
