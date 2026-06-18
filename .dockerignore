@@ -14,9 +14,16 @@ data/
 .git/
 .gitignore
 
+# Secrets — never bake env files into the image
+.env
+.env.*
+
 # Docker
 Dockerfile
 docker-compose.yml
+docker-compose.yaml
+docker-compose.*.yml
+docker-compose.*.yaml
 .dockerignore
 
 # Documentation
