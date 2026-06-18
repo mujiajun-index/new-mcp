@@ -20,6 +20,7 @@ func main() {
 	_ = godotenv.Load()
 
 	common.InitEnv()
+	defer common.CloseLogFile()
 
 	if err := model.InitDB(); err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)

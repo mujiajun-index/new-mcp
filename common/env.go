@@ -1,6 +1,7 @@
 package common
 
 import (
+	"flag"
 	"os"
 	"strconv"
 )
@@ -21,6 +22,9 @@ var (
 )
 
 func InitEnv() {
+	// Parse CLI flags first (e.g. --log-dir), before reading env vars.
+	flag.Parse()
+
 	if v := os.Getenv("PORT"); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			Port = i
@@ -46,4 +50,7 @@ func InitEnv() {
 	UsingSQLite = DbType == "sqlite"
 	UsingMySQL = DbType == "mysql"
 	UsingPostgreSQL = DbType == "postgres"
+
+	// Tee logs to ./logs (or the --log-dir path) in addition to the console.
+	SetupLogger()
 }

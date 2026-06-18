@@ -2,6 +2,7 @@ version: "3.8"
 
 services:
   new-mcp:
+    # build: .
     image: mujkjk/new-mcp:latest
     container_name: new-mcp
     restart: always
@@ -72,9 +73,9 @@ services:
   #   ports:
   #     - "6379:6379"
 
-volumes:
-  # data and logs use bind mounts (./data, ./logs), no named volumes needed.
-  # Uncomment as needed:
-  # mysql-data:
-  # postgres-data:
-  # redis-data:
+# No named volumes in the default config — data/logs use bind mounts (./data, ./logs).
+# When you uncomment a DB/Redis service above, uncomment a matching named volume here too:
+# volumes:
+#   mysql-data:
+#   postgres-data:
+#   redis-data:
