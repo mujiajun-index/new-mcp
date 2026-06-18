@@ -199,18 +199,18 @@ make build
 
 ### Docker
 
-使用 Docker 构建并运行（前端和后端均运行在 3000 端口）：
+使用 Docker 拉取并运行（前端和后端均运行在 3000 端口）：
 
 ```bash
-# 构建镜像
-docker build -t newmcp .
+# 拉取镜像
+docker pull mujkjk/new-mcp:latest
 
 # 运行容器
 docker run --name new-mcp -d --restart always \
   -p 3000:3000 \
   -e TZ=Asia/Shanghai \
-  -v /home/data/newmcp:/app/data \
-  newmcp
+  -v /www/wwwroot/newmcp:/app/data \
+  mujkjk/new-mcp:latest
 ```
 
 #### 环境变量
@@ -235,11 +235,9 @@ docker run --name new-mcp -d --restart always \
 docker run --name new-mcp -d --restart always \
   -p 3000:3000 \
   -e DB_TYPE=mysql \
-  -e "SQL_DSN=user:password@tcp(mysql-host:3306)/newmcp" \
+  -e SQL_DSN="user:password@tcp(mysql-host:3306)/newmcp" \
   -e TZ=Asia/Shanghai \
-  -e SESSION_SECRET=your-secret \
-  -e CRYPTO_SECRET=your-crypto-key \
-  newmcp
+  mujkjk/new-mcp:latest
 ```
 
 #### Docker Compose

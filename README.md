@@ -201,18 +201,18 @@ make build
 
 ### Docker
 
-Build and run with Docker (frontend and backend on port 3000):
+Pull and run with Docker (frontend and backend on port 3000):
 
 ```bash
-# Build image
-docker build -t newmcp .
+# Pull image
+docker pull mujkjk/new-mcp:latest
 
 # Run container
 docker run --name new-mcp -d --restart always \
   -p 3000:3000 \
   -e TZ=Asia/Shanghai \
-  -v /home/data/newmcp:/app/data \
-  newmcp
+  -v /www/wwwroot/newmcp:/app/data \
+  mujkjk/new-mcp:latest
 ```
 
 #### Environment Variables
@@ -237,11 +237,9 @@ docker run --name new-mcp -d --restart always \
 docker run --name new-mcp -d --restart always \
   -p 3000:3000 \
   -e DB_TYPE=mysql \
-  -e "SQL_DSN=user:password@tcp(mysql-host:3306)/newmcp" \
+  -e SQL_DSN="user:password@tcp(mysql-host:3306)/newmcp" \
   -e TZ=Asia/Shanghai \
-  -e SESSION_SECRET=your-secret \
-  -e CRYPTO_SECRET=your-crypto-key \
-  newmcp
+  mujkjk/new-mcp:latest
 ```
 
 #### Docker Compose
