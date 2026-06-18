@@ -1,14 +1,16 @@
 version: "3.8"
 
 services:
-  newmcp:
-    build: .
+  new-mcp:
+    image: mujkjk/new-mcp:latest
     container_name: new-mcp
     restart: always
+    command: --log-dir /app/logs
     ports:
       - "3000:3000"
     volumes:
-      - newmcp-data:/app/data
+      - ./data:/app/data
+      - ./logs:/app/logs
     environment:
       - TZ=Asia/Shanghai
       - GIN_MODE=release
@@ -71,7 +73,7 @@ services:
   #     - "6379:6379"
 
 volumes:
-  newmcp-data:
+  # data and logs use bind mounts (./data, ./logs), no named volumes needed.
   # Uncomment as needed:
   # mysql-data:
   # postgres-data:
