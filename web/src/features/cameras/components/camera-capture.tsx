@@ -1,7 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
-import { Video, VideoOff, Loader2 } from 'lucide-react'
+import { Video, VideoOff, Loader2, SwitchCamera } from 'lucide-react'
 import { toast } from 'sonner'
+
+type FacingMode = 'user' | 'environment'
 
 interface CameraCaptureProps {
   cameraId: number
@@ -27,18 +29,31 @@ function dataUrlToBinary(dataUrl: string): Uint8Array<ArrayBuffer> {
   return bytes
 }
 
+async function openStream(facingMode: FacingMode): Promise<MediaStream> {
+  return navigator.mediaDevices.getUserMedia({ video: { facingMode } })
+}
+
 export function CameraCapture({ cameraId, onStreamingChange }: CameraCaptureProps) {
   const mediaSupported = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia
 
   const [active, setActive] = useState(false)
   const [streaming, setStreaming] = useState(false)
   const [opening, setOpening] = useState(false)
+  const [switching, setSwitching] = useState(false)
+  const [facingMode, setFacingMode] = useState<FacingMode>('environment')
+  const [hasMultipleCameras, setHasMultipleCameras] = useState(false)
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const facingRef = useRef<FacingMode>('environment')
+
+  // 保持 ref 与 state 同步，供异步回调读取最新朝向
+  useEffect(() => {
+    facingRef.current = facingMode
+  }, [facingMode])
 
   const cleanup = useCallback(() => {
     // Stop interval
@@ -71,6 +86,7 @@ export function CameraCapture({ cameraId, onStreamingChange }: CameraCaptureProp
 
     setActive(false)
     setStreaming(false)
+    setHasMultipleCameras(false)
     onStreamingChange?.(false)
   }, [onStreamingChange])
 
@@ -80,6 +96,17 @@ export function CameraCapture({ cameraId, onStreamingChange }: CameraCaptureProp
       cleanup()
     }
   }, [cleanup])
+
+  // 探测可用视频输入设备数量（需在已获得摄像头权限后调用，标签才会填充）
+  const detectMultipleCameras = useCallback(async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      const videoInputs = devices.filter((d) => d.kind === 'videoinput')
+      setHasMultipleCameras(videoInputs.length > 1)
+    } catch {
+      setHasMultipleCameras(false)
+    }
+  }, [])
 
   const handleOpen = useCallback(async () => {
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -94,13 +121,12 @@ export function CameraCapture({ cameraId, onStreamingChange }: CameraCaptureProp
 
     setOpening(true)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-      })
+      const stream = await openStream(facingRef.current)
 
       streamRef.current = stream
 
       setActive(true)
+      detectMultipleCameras()
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream
@@ -164,7 +190,54 @@ export function CameraCapture({ cameraId, onStreamingChange }: CameraCaptureProp
     } finally {
       setOpening(false)
     }
-  }, [cameraId, onStreamingChange])
+  }, [cameraId, onStreamingChange, detectMultipleCameras])
+
+  // 切换前后摄像头：保持 WebSocket 与推流不中断，只替换视频源
+  const handleSwitch = useCallback(async () => {
+    if (!mediaSupported || switching) return
+    const prev = facingRef.current
+    const next: FacingMode = prev === 'environment' ? 'user' : 'environment'
+
+    setSwitching(true)
+    try {
+      // 先释放当前设备，浏览器才会真正按新 facingMode 选择另一颗摄像头
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop())
+        streamRef.current = null
+      }
+
+      const newStream = await openStream(next)
+      streamRef.current = newStream
+      setFacingMode(next)
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = newStream
+        await videoRef.current.play()
+      }
+    } catch (err: unknown) {
+      const error = err as DOMException
+      if (error.name === 'NotFoundError' || error.name === 'OverconstrainedError') {
+        toast.error('未找到对应方向的摄像头')
+      } else {
+        toast.error('切换摄像头失败')
+      }
+      // 尝试恢复原来的摄像头，避免推流空帧
+      try {
+        const restored = await openStream(prev)
+        streamRef.current = restored
+        if (videoRef.current) {
+          videoRef.current.srcObject = restored
+          await videoRef.current.play()
+        }
+      } catch {
+        // 恢复失败则整体关闭
+        cleanup()
+      }
+    } finally {
+      setSwitching(false)
+      detectMultipleCameras()
+    }
+  }, [mediaSupported, switching, cleanup, detectMultipleCameras])
 
   const handleClose = useCallback(() => {
     cleanup()
@@ -199,6 +272,22 @@ export function CameraCapture({ cameraId, onStreamingChange }: CameraCaptureProp
             </span>
           </div>
         )}
+
+        {/* Facing direction overlay */}
+        {active && (
+          <div className="absolute top-3 right-3">
+            <span className="inline-flex items-center rounded-full bg-black/60 px-2.5 py-1 text-xs text-white">
+              {facingMode === 'user' ? '前置' : '后置'}
+            </span>
+          </div>
+        )}
+
+        {/* Switching overlay */}
+        {switching && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+            <Loader2 className="h-6 w-6 animate-spin text-white" />
+          </div>
+        )}
       </div>
 
       {/* Controls */}
@@ -214,10 +303,22 @@ export function CameraCapture({ cameraId, onStreamingChange }: CameraCaptureProp
             )}
           </>
         ) : (
-          <Button variant="outline" onClick={handleClose} className="gap-2">
-            <VideoOff className="h-4 w-4" />
-            关闭摄像头
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={handleClose} className="gap-2">
+              <VideoOff className="h-4 w-4" />
+              关闭摄像头
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleSwitch}
+              disabled={switching || !hasMultipleCameras}
+              className="gap-2"
+              title={hasMultipleCameras ? '切换前后摄像头' : '仅检测到一个摄像头'}
+            >
+              {switching ? <Loader2 className="h-4 w-4 animate-spin" /> : <SwitchCamera className="h-4 w-4" />}
+              切换摄像头
+            </Button>
+          </div>
         )}
       </div>
     </div>
