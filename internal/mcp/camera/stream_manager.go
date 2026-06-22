@@ -49,6 +49,24 @@ func (m *CameraStreamManager) SetConn(cameraID int64, conn *websocket.Conn) {
 	s.Conn = conn
 }
 
+// TryAcquire 原子地占用摄像头的推流连接；若该摄像头已有活跃连接则返回 false
+// （不会覆盖已有连接，避免两个连接互相挤占/误关）。
+func (m *CameraStreamManager) TryAcquire(cameraID int64, conn *websocket.Conn) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	s, ok := m.streams[cameraID]
+	if ok && s.Conn != nil {
+		return false
+	}
+	if !ok {
+		s = &CameraStream{}
+		m.streams[cameraID] = s
+	}
+	s.Conn = conn
+	return true
+}
+
 func (m *CameraStreamManager) GetLatestFrame(cameraID int64) ([]byte, time.Time, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

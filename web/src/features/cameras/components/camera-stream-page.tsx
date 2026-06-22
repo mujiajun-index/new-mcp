@@ -37,6 +37,35 @@ export function CameraStreamPage() {
     }
   }
 
+  const handleAnswer = async () => {
+    // 推流前预检（WS 握手被拒时前端只能拿到通用失败，这里给出明确提示）：
+    // 1) 摄像头是否已禁用；2) 是否已有其他连接正在推流。
+    if (token) {
+      try {
+        const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '')
+        const res = await fetch(`${base}/api/v1/cameras/${cameraId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (res.ok) {
+          const json = await res.json()
+          if (json?.data) {
+            if (json.data.auto_register === false) {
+              toast.error('摄像头已禁用，请先在管理页启用后再推流')
+              return
+            }
+            if (json.data.streaming === true) {
+              toast.error('该摄像头正在推流中，请先停止现有推流')
+              return
+            }
+          }
+        }
+      } catch {
+        // 查询失败不阻塞，交给 WS 握手处理
+      }
+    }
+    s.open()
+  }
+
   const canAnswer = !!token && s.mediaSupported && !s.opening
 
   return (
@@ -67,7 +96,7 @@ export function CameraStreamPage() {
               <div className="flex flex-col items-center gap-2">
                 <button
                   type="button"
-                  onClick={s.open}
+                  onClick={handleAnswer}
                   disabled={!canAnswer}
                   className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
                 >

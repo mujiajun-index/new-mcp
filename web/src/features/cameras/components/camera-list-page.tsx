@@ -118,8 +118,9 @@ export function CameraListPage() {
                         variant="ghost"
                         size="sm"
                         className="gap-1"
+                        disabled={!camera.auto_register}
                         onClick={() => openLive(camera.id)}
-                        title="在新标签打开视频页（手机/桌面自适应，可复制链接到其他终端）"
+                        title={camera.auto_register ? '在新标签打开视频页（手机/桌面自适应，可复制链接到其他终端）' : '请先启用摄像头'}
                       >
                         <Phone className="h-3.5 w-3.5" />视频
                       </Button>

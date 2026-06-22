@@ -49,7 +49,17 @@ func HandleCameraStream(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "camera not found"})
 		return
 	}
-	_ = cam
+	// 拒绝已禁用的摄像头推流
+	if !cam.AutoRegister {
+		c.JSON(http.StatusForbidden, gin.H{"error": "摄像头已禁用，请先启用后再推流"})
+		return
+	}
+
+	// 同一摄像头同一时刻只允许一个推流连接，避免重复推流
+	if CameraStream != nil && CameraStream.IsStreaming(cameraID) {
+		c.JSON(http.StatusConflict, gin.H{"error": "该摄像头正在推流中，请先停止现有推流"})
+		return
+	}
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
@@ -62,7 +72,11 @@ func HandleCameraStream(c *gin.Context) {
 		return
 	}
 
-	CameraStream.SetConn(cameraID, conn)
+	// 原子占用推流通道；若在 HTTP 检查与升级之间有其他连接抢先占用（竞态），拒绝本连接
+	if !CameraStream.TryAcquire(cameraID, conn) {
+		conn.Close()
+		return
+	}
 	defer func() {
 		CameraStream.Cleanup(cameraID)
 	}()
