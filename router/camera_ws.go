@@ -42,12 +42,14 @@ func HandleCameraStream(c *gin.Context) {
 		return
 	}
 
-	// Verify camera exists
-	var cam model.Camera
-	if err := model.DB.First(&cam, cameraID).Error; err != nil {
+	// Verify camera exists AND belongs to the authenticated user (prevent IDOR:
+	// without the user_id filter any valid token could stream any camera by id).
+	cam, err := model.GetCameraByID(claims.UserID, cameraID)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "camera not found"})
 		return
 	}
+	_ = cam
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {

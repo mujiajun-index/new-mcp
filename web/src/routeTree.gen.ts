@@ -18,6 +18,7 @@ import { Route as AuthenticatedAdminRouteRouteImport } from './routes/_authentic
 
 const SetupLazyRouteImport = createFileRoute('/setup')()
 const R500LazyRouteImport = createFileRoute('/500')()
+const CameraLiveIdLazyRouteImport = createFileRoute('/camera-live/$id')()
 const PublicSignUpLazyRouteImport = createFileRoute('/_public/sign-up')()
 const PublicSignInLazyRouteImport = createFileRoute('/_public/sign-in')()
 const AuthenticatedSettingsLazyRouteImport = createFileRoute(
@@ -125,6 +126,13 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CameraLiveIdLazyRoute = CameraLiveIdLazyRouteImport.update({
+  id: '/camera-live/$id',
+  path: '/camera-live/$id',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() =>
+  import('./routes/camera-live.$id.lazy').then((d) => d.Route),
+)
 const PublicSignUpLazyRoute = PublicSignUpLazyRouteImport.update({
   id: '/sign-up',
   path: '/sign-up',
@@ -383,6 +391,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsLazyRoute
   '/sign-in': typeof PublicSignInLazyRoute
   '/sign-up': typeof PublicSignUpLazyRoute
+  '/camera-live/$id': typeof CameraLiveIdLazyRoute
   '/admin/reviews': typeof AuthenticatedAdminReviewsLazyRoute
   '/admin/system': typeof AuthenticatedAdminSystemLazyRoute
   '/admin/users': typeof AuthenticatedAdminUsersLazyRoute
@@ -418,6 +427,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsLazyRoute
   '/sign-in': typeof PublicSignInLazyRoute
   '/sign-up': typeof PublicSignUpLazyRoute
+  '/camera-live/$id': typeof CameraLiveIdLazyRoute
   '/admin/reviews': typeof AuthenticatedAdminReviewsLazyRoute
   '/admin/system': typeof AuthenticatedAdminSystemLazyRoute
   '/admin/users': typeof AuthenticatedAdminUsersLazyRoute
@@ -456,6 +466,7 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsLazyRoute
   '/_public/sign-in': typeof PublicSignInLazyRoute
   '/_public/sign-up': typeof PublicSignUpLazyRoute
+  '/camera-live/$id': typeof CameraLiveIdLazyRoute
   '/_authenticated/admin/reviews': typeof AuthenticatedAdminReviewsLazyRoute
   '/_authenticated/admin/system': typeof AuthenticatedAdminSystemLazyRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersLazyRoute
@@ -493,6 +504,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sign-in'
     | '/sign-up'
+    | '/camera-live/$id'
     | '/admin/reviews'
     | '/admin/system'
     | '/admin/users'
@@ -528,6 +540,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sign-in'
     | '/sign-up'
+    | '/camera-live/$id'
     | '/admin/reviews'
     | '/admin/system'
     | '/admin/users'
@@ -565,6 +578,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/_public/sign-in'
     | '/_public/sign-up'
+    | '/camera-live/$id'
     | '/_authenticated/admin/reviews'
     | '/_authenticated/admin/system'
     | '/_authenticated/admin/users'
@@ -596,6 +610,7 @@ export interface RootRouteChildren {
   PublicRouteRoute: typeof PublicRouteRouteWithChildren
   R500LazyRoute: typeof R500LazyRoute
   SetupLazyRoute: typeof SetupLazyRoute
+  CameraLiveIdLazyRoute: typeof CameraLiveIdLazyRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -633,6 +648,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/camera-live/$id': {
+      id: '/camera-live/$id'
+      path: '/camera-live/$id'
+      fullPath: '/camera-live/$id'
+      preLoaderRoute: typeof CameraLiveIdLazyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_public/sign-up': {
@@ -951,6 +973,7 @@ const rootRouteChildren: RootRouteChildren = {
   PublicRouteRoute: PublicRouteRouteWithChildren,
   R500LazyRoute: R500LazyRoute,
   SetupLazyRoute: SetupLazyRoute,
+  CameraLiveIdLazyRoute: CameraLiveIdLazyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

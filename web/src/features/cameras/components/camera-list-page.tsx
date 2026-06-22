@@ -14,13 +14,21 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-import { Plus, Trash2, Video, Eye, Loader2, CirclePower } from 'lucide-react'
+import { Plus, Trash2, Video, Eye, Loader2, CirclePower, Phone } from 'lucide-react'
 import { toast } from 'sonner'
 import { useState } from 'react'
 
 export function CameraListPage() {
   const queryClient = useQueryClient()
   const [deletingId, setDeletingId] = useState<number | null>(null)
+
+  // 视频页跳转：携带 id + 当前会话 token，可在手机/平板等任意终端打开
+  const streamToken = localStorage.getItem('newmcp-token') || ''
+  const streamBase = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '')
+  const openLive = (cameraId: number) => {
+    const href = `${streamBase}/camera-live/${cameraId}?token=${encodeURIComponent(streamToken)}`
+    window.open(href, '_blank', 'noopener,noreferrer')
+  }
 
   const { data, isLoading } = useQuery({
     queryKey: ['cameras'],
@@ -106,6 +114,15 @@ export function CameraListPage() {
                           <Eye className="h-3.5 w-3.5" />详情
                         </Button>
                       </Link>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1"
+                        onClick={() => openLive(camera.id)}
+                        title="在新标签打开视频页（手机/桌面自适应，可复制链接到其他终端）"
+                      >
+                        <Phone className="h-3.5 w-3.5" />视频
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
