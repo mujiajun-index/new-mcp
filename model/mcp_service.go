@@ -79,6 +79,13 @@ func GetServiceByIDWithoutUser(serviceID int64) (*McpService, error) {
 	return &svc, err
 }
 
+// GetServicesByIDs returns the services with the given IDs in a single query.
+func GetServicesByIDs(ids []int64) ([]McpService, error) {
+	var services []McpService
+	err := DB.Where("id IN ?", ids).Find(&services).Error
+	return services, err
+}
+
 func ListServicesBySource(source string, offset, limit int) ([]McpService, int64, error) {
 	var services []McpService
 	query := DB.Where("source = ?", source)

@@ -23,6 +23,12 @@ func NewSearchEngine() *SearchEngine {
 	return &SearchEngine{}
 }
 
+// toolMeta is the subset of a cached tool needed for search indexing.
+type toolMeta struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
 func (e *SearchEngine) Search(ctx context.Context, apiKeyID int64, query string, opts SearchOptions) ([]SearchResult, error) {
 	if opts.Limit <= 0 {
 		opts.Limit = 10
@@ -71,45 +77,54 @@ func (e *SearchEngine) buildSearchDocs(info *bridge.ApiKeyInfo, scopeGroup strin
 		groups = filtered
 	}
 
+	// Best-effort: swallow resolve errors and return no docs, matching prior behavior.
+	resolved, err := model.ResolveEnabledServicesForGroups(groups)
+	if err != nil || len(resolved) == 0 {
+		return nil
+	}
+
+	// Parse each service's ToolsCache at most once (a service may appear in several groups).
+	toolsCache := make(map[int64][]toolMeta, len(resolved))
+	parseTools := func(svcID int64, raw string) []toolMeta {
+		if tools, ok := toolsCache[svcID]; ok {
+			return tools
+		}
+		var tools []toolMeta
+		_ = json.Unmarshal([]byte(raw), &tools)
+		toolsCache[svcID] = tools
+		return tools
+	}
+
+	emitMcp := scope == "" || scope == "mcp" || scope == "all"
+	emitTool := scope == "tool" || scope == "all"
+
 	var docs []SearchDoc
-	for _, g := range groups {
-		groupServices, _ := model.GetEnabledGroupServices(g.ID)
+	for _, gs := range resolved {
+		svc := gs.Service
+		tools := parseTools(svc.ID, svc.ToolsCache)
 
-		for _, gs := range groupServices {
-			svc, svcErr := model.GetServiceByIDWithoutUser(gs.ServiceID)
-			if svcErr != nil {
-				continue
-			}
+		if emitMcp {
+			docs = append(docs, SearchDoc{
+				ID:          "svc:" + svc.Name,
+				Type:        "mcp",
+				Name:        svc.DisplayName,
+				Description: svc.Description,
+				GroupName:   gs.Group.Name,
+				ServiceName: svc.Name,
+				ToolCount:   len(tools),
+			})
+		}
 
-			var tools []struct {
-				Name        string `json:"name"`
-				Description string `json:"description"`
-			}
-			_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
-
-			if scope == "" || scope == "mcp" || scope == "all" {
+		if emitTool {
+			for _, t := range tools {
 				docs = append(docs, SearchDoc{
-					ID:          "svc:" + svc.Name,
-					Type:        "mcp",
-					Name:        svc.DisplayName,
-					Description: svc.Description,
-					GroupName:   g.Name,
+					ID:          "tool:" + svc.Name + "." + t.Name,
+					Type:        "tool",
+					Name:        t.Name,
+					Description: t.Description,
+					GroupName:   gs.Group.Name,
 					ServiceName: svc.Name,
-					ToolCount:   len(tools),
 				})
-			}
-
-			if scope == "tool" || scope == "all" {
-				for _, t := range tools {
-					docs = append(docs, SearchDoc{
-						ID:          "tool:" + svc.Name + "." + t.Name,
-						Type:        "tool",
-						Name:        t.Name,
-						Description: t.Description,
-						GroupName:   g.Name,
-						ServiceName: svc.Name,
-					})
-				}
 			}
 		}
 	}
@@ -124,16 +139,31 @@ func (e *SearchEngine) Describe(targets []string, apiKeyID int64) ([]map[string]
 		return nil, err
 	}
 
-	// Collect all service IDs accessible by this APIKey
 	groups, err := bridge.GetGroupsForApiKey(info)
 	if err != nil {
 		return nil, err
 	}
-	allowedSvcIDs := make(map[int64]bool)
-	for _, g := range groups {
-		gsList, _ := model.GetEnabledGroupServices(g.ID)
-		for _, gs := range gsList {
-			allowedSvcIDs[gs.ServiceID] = true
+
+	// Batch-resolve all services reachable by this APIKey (two queries total).
+	resolved, err := model.ResolveEnabledServicesForGroups(groups)
+	if err != nil {
+		// Best-effort: return empty rather than propagate, matching prior behavior.
+		return nil, nil
+	}
+
+	// Index allowed services by name and display_name for O(1) target lookup,
+	// avoiding one DB query per target. Exact name matches take precedence.
+	svcByName := make(map[string]*model.McpService, len(resolved))
+	for i := range resolved {
+		if name := resolved[i].Service.Name; name != "" {
+			svcByName[name] = &resolved[i].Service
+		}
+	}
+	for i := range resolved {
+		if dn := resolved[i].Service.DisplayName; dn != "" {
+			if _, exists := svcByName[dn]; !exists {
+				svcByName[dn] = &resolved[i].Service
+			}
 		}
 	}
 
@@ -148,13 +178,8 @@ func (e *SearchEngine) Describe(targets []string, apiKeyID int64) ([]map[string]
 			continue
 		}
 
-		var svc model.McpService
-		if err := model.DB.Where("(name = ? OR display_name = ?) AND user_id = ?", serviceName, serviceName, info.UserID).First(&svc).Error; err != nil {
-			continue
-		}
-
-		// Check if this service is within the APIKey's group scope
-		if !allowedSvcIDs[svc.ID] {
+		svc := svcByName[serviceName]
+		if svc == nil {
 			continue
 		}
 
@@ -198,7 +223,7 @@ func (e *SearchEngine) Describe(targets []string, apiKeyID int64) ([]map[string]
 // When includeSchema is false, only names and descriptions are shown (no parameter details).
 func FormatDescribeResult(results []map[string]interface{}, includeSchema bool) string {
 	if len(results) == 0 {
-		return "未找到匹配的服务或工具。"
+		return "No matching services or tools found."
 	}
 
 	var sb strings.Builder
@@ -207,7 +232,8 @@ func FormatDescribeResult(results []map[string]interface{}, includeSchema bool) 
 			sb.WriteString("\n---\n")
 		}
 		rtype, _ := r["type"].(string)
-		if rtype == "service" {
+		switch rtype {
+		case "service":
 			name, _ := r["name"].(string)
 			displayName, _ := r["display_name"].(string)
 			tc, _ := r["tools_count"].(int)
@@ -216,7 +242,7 @@ func FormatDescribeResult(results []map[string]interface{}, includeSchema bool) 
 			if displayName != name && name != "" {
 				header = fmt.Sprintf("%s (%s)", displayName, name)
 			}
-			fmt.Fprintf(&sb, "## %s 的工具列表 (%d个)\n", header, tc)
+			fmt.Fprintf(&sb, "## %s — Tools (%d)\n", header, tc)
 
 			if desc, ok := r["description"].(string); ok && desc != "" {
 				fmt.Fprintf(&sb, "%s\n", desc)
@@ -233,14 +259,14 @@ func FormatDescribeResult(results []map[string]interface{}, includeSchema bool) 
 						}
 						if includeSchema {
 							if schema, ok := tm["inputSchema"]; ok && schema != nil {
-								sb.WriteString("参数:\n")
+								sb.WriteString("Parameters:\n")
 								sb.WriteString(formatSchemaParams(schema))
 							}
 						}
 					}
 				}
 			}
-		} else if rtype == "tool" {
+		case "tool":
 			service, _ := r["service"].(string)
 			name, _ := r["name"].(string)
 			fmt.Fprintf(&sb, "## %s.%s\n", service, name)
@@ -249,7 +275,7 @@ func FormatDescribeResult(results []map[string]interface{}, includeSchema bool) 
 			}
 			if includeSchema {
 				if schema, ok := r["inputSchema"]; ok && schema != nil {
-					sb.WriteString("参数:\n")
+					sb.WriteString("Parameters:\n")
 					sb.WriteString(formatSchemaParams(schema))
 				}
 			}
@@ -259,42 +285,55 @@ func FormatDescribeResult(results []map[string]interface{}, includeSchema bool) 
 }
 
 // formatSchemaParams parses a JSON Schema object and formats properties as:
-//   - paramName (type, 必填/可选): description
+//   - paramName (type, required/optional): description
 func formatSchemaParams(schema interface{}) string {
-	raw, err := json.Marshal(schema)
-	if err != nil {
-		return ""
+	// Most callers pass a json.RawMessage ([]byte) straight from the service cache;
+	// skip the marshal round-trip in that common case.
+	var raw []byte
+	switch s := schema.(type) {
+	case json.RawMessage:
+		raw = s
+	case []byte:
+		raw = s
+	case string:
+		raw = []byte(s)
+	default:
+		b, err := json.Marshal(schema)
+		if err != nil {
+			return ""
+		}
+		raw = b
 	}
 
-	var s struct {
+	var parsed struct {
 		Properties map[string]struct {
 			Type        string `json:"type"`
 			Description string `json:"description"`
 		} `json:"properties"`
 		Required []string `json:"required"`
 	}
-	if err := json.Unmarshal(raw, &s); err != nil {
+	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return ""
 	}
 
-	requiredSet := make(map[string]bool, len(s.Required))
-	for _, r := range s.Required {
+	requiredSet := make(map[string]bool, len(parsed.Required))
+	for _, r := range parsed.Required {
 		requiredSet[r] = true
 	}
 
 	var sb strings.Builder
 	// Deterministic order via sorted keys
-	keys := make([]string, 0, len(s.Properties))
-	for k := range s.Properties {
+	keys := make([]string, 0, len(parsed.Properties))
+	for k := range parsed.Properties {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 
 	for _, k := range keys {
-		p := s.Properties[k]
-		reqLabel := "可选"
+		p := parsed.Properties[k]
+		reqLabel := "optional"
 		if requiredSet[k] {
-			reqLabel = "必填"
+			reqLabel = "required"
 		}
 		typeStr := p.Type
 		if typeStr == "" {

@@ -22,6 +22,13 @@ func GetGroupTools(groupID int64) ([]McpGroupTool, error) {
 	return tools, err
 }
 
+// GetGroupToolsByGroupIDs returns tool-level filters for many groups in a single query.
+func GetGroupToolsByGroupIDs(groupIDs []int64) ([]McpGroupTool, error) {
+	var tools []McpGroupTool
+	err := DB.Where("group_id IN ?", groupIDs).Find(&tools).Error
+	return tools, err
+}
+
 func GetGroupTool(groupID, serviceID int64, toolName string) (*McpGroupTool, error) {
 	var tool McpGroupTool
 	err := DB.Where("group_id = ? AND service_id = ? AND tool_name = ?", groupID, serviceID, toolName).First(&tool).Error
