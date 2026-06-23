@@ -10,7 +10,15 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
-  Eye, Plus, Trash2, Loader2, Power, PowerOff,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { MobileListCard } from '@/components/ui/mobile-list-card'
+import { useIsMobile } from '@/hooks/use-mobile'
+import {
+  Eye, Plus, Trash2, Loader2, Power, PowerOff, MoreHorizontal,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { VisionConfigListItem } from '../api'
@@ -38,6 +46,7 @@ const providerLabels: Record<string, string> = {
 
 export function VisionListPage() {
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
   const [searchInput, setSearchInput] = useState('')
   const [keyword, setKeyword] = useState('')
 
@@ -93,8 +102,8 @@ export function VisionListPage() {
   }
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">视觉配置</h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -120,20 +129,85 @@ export function VisionListPage() {
         />
       </form>
 
-      {/* Table */}
-      <div className="rounded-xl border bg-card overflow-hidden">
+      {/* List */}
+      <div className="overflow-hidden rounded-xl border bg-card">
         {isLoading ? (
           <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin mr-2" />
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
             加载中...
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <Eye className="h-10 w-10 text-muted-foreground/30 mb-3" />
+            <Eye className="mb-3 h-10 w-10 text-muted-foreground/30" />
             <p className="text-sm text-muted-foreground">暂无视觉配置</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">
+            <p className="mt-1 text-xs text-muted-foreground/60">
               点击"新建视觉配置"添加第一个视觉模型
             </p>
+          </div>
+        ) : isMobile ? (
+          <div className="divide-y">
+            {filtered.map((c) => {
+              const isEnabled = c.auto_register
+              return (
+                <MobileListCard
+                  key={c.id}
+                  title={
+                    <Link
+                      to="/vision/$id"
+                      params={{ id: String(c.id) }}
+                      className="font-medium transition-colors hover:text-primary"
+                    >
+                      {c.name}
+                    </Link>
+                  }
+                  badge={<EnabledBadge enabled={isEnabled} />}
+                  meta={[
+                    { label: 'Provider', value: providerLabels[c.provider] || c.provider },
+                    { label: '模型', value: <span className="font-mono">{c.model_name}</span> },
+                  ]}
+                  actions={
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1"
+                        disabled={enableMutation.isPending || disableMutation.isPending}
+                        onClick={() => {
+                          if (isEnabled) disableMutation.mutate(c.id)
+                          else enableMutation.mutate(c.id)
+                        }}
+                      >
+                        {isEnabled ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
+                        {isEnabled ? '禁用' : '启用'}
+                      </Button>
+                      <Link to="/vision/$id" params={{ id: String(c.id) }}>
+                        <Button variant="ghost" size="sm">详情</Button>
+                      </Link>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => {
+                              if (confirm(`确定删除视觉配置 "${c.name}"？`)) {
+                                deleteMutation.mutate(c.id)
+                              }
+                            }}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            删除
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </>
+                  }
+                />
+              )
+            })}
           </div>
         ) : (
           <div className="overflow-x-auto">

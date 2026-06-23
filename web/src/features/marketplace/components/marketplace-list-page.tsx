@@ -23,7 +23,7 @@ export function MarketplaceListPage() {
   const items: MarketplaceListItem[] = data?.data || []
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">MCP 广场</h1>
         <p className="mt-1 text-sm text-muted-foreground">发现并安装 MCP 服务</p>
@@ -38,7 +38,7 @@ export function MarketplaceListPage() {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="搜索服务..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} className="pl-9" />
         </form>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant={category === '' ? 'default' : 'outline'} size="sm" onClick={() => setCategory('')}>全部</Button>
           <Button variant={category === 'instant' ? 'default' : 'outline'} size="sm" className="gap-1.5" onClick={() => setCategory('instant')}>
             <Zap className="h-3.5 w-3.5" />即用型

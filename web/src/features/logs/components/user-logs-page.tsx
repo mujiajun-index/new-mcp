@@ -8,6 +8,8 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { MobileListCard } from '@/components/ui/mobile-list-card'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import { CompactDateTimeRangePicker } from '@/components/ui/date-time-range-picker'
@@ -18,6 +20,7 @@ export function UserLogsPage() {
   const { t } = useTranslation()
   const { auth } = useAuthStore()
   const isAdmin = auth.user?.role === 'admin'
+  const isMobile = useIsMobile()
   const [page, setPage] = useState(1)
   const pageSize = 20
   const [filter, setFilter] = useState<LogFilter>({})
@@ -79,11 +82,9 @@ export function UserLogsPage() {
     { label: t('logs.todayCalls'), value: stats?.data?.calls_today ?? 0, icon: Zap, color: 'text-amber-500', bg: 'bg-amber-500/10' },
   ]
 
-  const colSpan = isAdmin ? 11 : 8
-
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="p-6 lg:p-8 space-y-6">
+      <div className="space-y-6 p-4 sm:p-6 lg:p-8">
         {/* Header */}
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{t('logs.title')}</h1>
@@ -175,42 +176,76 @@ export function UserLogsPage() {
 
         {/* Table */}
         <div className="rounded-xl border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[50px]">ID</TableHead>
-                {isAdmin && <TableHead>{t('logs.username')}</TableHead>}
-                {isAdmin && <TableHead>{t('logs.apiKeyName')}</TableHead>}
-                <TableHead>{t('logs.toolName')}</TableHead>
-                <TableHead>{t('logs.groupName')}</TableHead>
-                {isAdmin && <TableHead>{t('logs.serviceName')}</TableHead>}
-                <TableHead>{t('logs.status')}</TableHead>
-                <TableHead>{t('logs.duration')}</TableHead>
-                <TableHead>{t('logs.errorMessage')}</TableHead>
-                <TableHead>IP</TableHead>
-                <TableHead>{t('logs.time')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
+          {isLoading ? (
+            <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+              {t('common.loading')}
+            </div>
+          ) : logs.length === 0 ? (
+            <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+              {t('common.noData')}
+            </div>
+          ) : isMobile ? (
+            <div className="divide-y">
+              {logs.map((log: any) => {
+                const isSuccess = log.response_status === 'success'
+                const errorMsg = log.error_message || ''
+                return (
+                  <MobileListCard
+                    key={log.id}
+                    title={
+                      <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                        {log.tool_name}
+                      </code>
+                    }
+                    badge={
+                      <Badge variant={isSuccess ? 'success' : 'destructive'}>
+                        {isSuccess ? t('logs.success') : t('logs.error')}
+                      </Badge>
+                    }
+                    meta={[
+                      { label: t('logs.duration'), value: <span className="tabular-nums">{formatDuration(log.duration_ms)}</span> },
+                      { label: t('logs.groupName'), value: log.group_name || '-' },
+                      { label: 'IP', value: <span className="font-mono">{log.client_ip}</span> },
+                      { label: t('logs.time'), value: formatTime(log.created_at) },
+                      ...(isAdmin ? [
+                        { label: t('logs.username'), value: log.username || '-' },
+                        { label: t('logs.apiKeyName'), value: log.api_key_name || '-' },
+                        { label: t('logs.serviceName'), value: log.service_name || '-' },
+                      ] : []),
+                    ]}
+                    note={
+                      errorMsg ? (
+                        <span className="line-clamp-2 text-red-500">{errorMsg}</span>
+                      ) : undefined
+                    }
+                  />
+                )
+              })}
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={colSpan} className="h-32 text-center text-muted-foreground">
-                    {t('common.loading')}
-                  </TableCell>
+                  <TableHead className="w-[50px]">ID</TableHead>
+                  {isAdmin && <TableHead>{t('logs.username')}</TableHead>}
+                  {isAdmin && <TableHead>{t('logs.apiKeyName')}</TableHead>}
+                  <TableHead>{t('logs.toolName')}</TableHead>
+                  <TableHead>{t('logs.groupName')}</TableHead>
+                  {isAdmin && <TableHead>{t('logs.serviceName')}</TableHead>}
+                  <TableHead>{t('logs.status')}</TableHead>
+                  <TableHead>{t('logs.duration')}</TableHead>
+                  <TableHead>{t('logs.errorMessage')}</TableHead>
+                  <TableHead>IP</TableHead>
+                  <TableHead>{t('logs.time')}</TableHead>
                 </TableRow>
-              ) : logs.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={colSpan} className="h-32 text-center text-muted-foreground">
-                    {t('common.noData')}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                logs.map((log: any) => (
+              </TableHeader>
+              <TableBody>
+                {logs.map((log: any) => (
                   <LogRow key={log.id} log={log} isAdmin={isAdmin} formatTime={formatTime} formatDuration={formatDuration} />
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </div>
 
         {/* Pagination */}

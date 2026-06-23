@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { MobileListCard } from '@/components/ui/mobile-list-card'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
@@ -143,7 +145,7 @@ function KeyCell({ apiKey }: { apiKey: ApiKeyListItem }) {
           <Eye className="h-3 w-3 text-muted-foreground group-hover:text-foreground transition-colors" />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto min-w-[360px] p-3" align="start">
+      <PopoverContent className="w-[min(360px,calc(100vw-2rem))] p-3" align="start">
         <div className="space-y-2">
           <p className="text-xs font-medium text-muted-foreground">{t('apiKeys.keyLabel')}</p>
           <div className="flex items-center gap-2">
@@ -172,6 +174,7 @@ function KeyCell({ apiKey }: { apiKey: ApiKeyListItem }) {
 export function ApiKeyPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [showCreate, setShowCreate] = useState(false)
@@ -299,7 +302,7 @@ export function ApiKeyPage() {
   const someSelected = selected.size > 0 && !allSelected
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -482,7 +485,7 @@ export function ApiKeyPage() {
       )}
 
       {/* Search + Batch Actions Bar */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -560,6 +563,72 @@ export function ApiKeyPage() {
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <Key className="h-10 w-10 text-muted-foreground/30 mb-3" />
             <p className="text-sm text-muted-foreground">{search ? t('apiKeys.noSearchResult') : t('apiKeys.noKeys')}</p>
+          </div>
+        ) : isMobile ? (
+          <div className="divide-y">
+            {keys.map((key: ApiKeyListItem) => {
+              const expired = isExpired(key)
+              return (
+                <MobileListCard
+                  key={key.id}
+                  className={selected.has(key.id) ? 'bg-muted/40' : undefined}
+                  title={
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => toggleSelect(key.id)} className="text-muted-foreground hover:text-foreground">
+                        {selected.has(key.id) ? <CheckSquare className="h-4 w-4 text-primary" /> : <Square className="h-4 w-4" />}
+                      </button>
+                      <span className="font-medium">{key.name}</span>
+                    </div>
+                  }
+                  badge={
+                    <button onClick={() => toggleStatus(key)} title={key.status === 1 ? t('apiKeys.clickDisable') : t('apiKeys.clickEnable')}>
+                      <StatusBadge status={key.status} expired={expired} />
+                    </button>
+                  }
+                  meta={[
+                    { label: t('apiKeys.key'), value: <KeyCell apiKey={key} /> },
+                    { label: t('apiKeys.groups'), value: key.groups?.length ? key.groups.join(', ') : '-' },
+                    {
+                      label: t('apiKeys.quota'),
+                      value: <QuotaDisplay used={key.used_quota} total={key.quota} unlimited={key.unlimited_quota} />,
+                    },
+                    {
+                      label: t('apiKeys.expires'),
+                      value: key.expires_at ? (
+                        <span className={expired ? 'text-amber-600' : ''}>
+                          {new Date(key.expires_at).toLocaleDateString('zh-CN')}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1">
+                          <Shield className="h-3 w-3" />{t('apiKeys.neverExpires')}
+                        </span>
+                      ),
+                    },
+                    {
+                      label: t('apiKeys.lastUsed'),
+                      value: (
+                        <span className="inline-flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {formatRelativeTime(key.last_used_at)}
+                        </span>
+                      ),
+                    },
+                  ]}
+                  actions={
+                    <>
+                      <Button variant="ghost" size="sm" onClick={() => startEdit(key)} title={t('common.edit')}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-destructive" onClick={() => {
+                        if (confirm(t('apiKeys.deleteConfirm', { name: key.name }))) deleteMutation.mutate(key.id)
+                      }} title={t('common.delete')}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </>
+                  }
+                />
+              )
+            })}
           </div>
         ) : (
           <Table>

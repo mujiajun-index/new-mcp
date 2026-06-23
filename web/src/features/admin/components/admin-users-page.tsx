@@ -7,12 +7,15 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { MobileListCard } from '@/components/ui/mobile-list-card'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { toast } from 'sonner'
-import { Users, Plus, Pencil, Search, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { Plus, Pencil, Search, ChevronLeft, ChevronRight, X } from 'lucide-react'
 
 export function AdminUsersPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
   const [page, setPage] = useState(1)
   const [keyword, setKeyword] = useState('')
   const pageSize = 20
@@ -109,7 +112,7 @@ export function AdminUsersPage() {
   }
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{t('nav.adminUsers')}</h1>
@@ -228,29 +231,62 @@ export function AdminUsersPage() {
 
       {/* Table */}
       <div className="rounded-xl border bg-card">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>ID</TableHead>
-              <TableHead>用户名</TableHead>
-              <TableHead>显示名</TableHead>
-              <TableHead>邮箱</TableHead>
-              <TableHead>角色</TableHead>
-              <TableHead>额度</TableHead>
-              <TableHead>已用</TableHead>
-              <TableHead>调用</TableHead>
-              <TableHead>状态</TableHead>
-              <TableHead>分组</TableHead>
-              <TableHead className="text-right">操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow><TableCell colSpan={11} className="h-32 text-center text-muted-foreground">加载中...</TableCell></TableRow>
-            ) : users.length === 0 ? (
-              <TableRow><TableCell colSpan={11} className="h-32 text-center text-muted-foreground">无数据</TableCell></TableRow>
-            ) : (
-              users.map((user: any) => (
+        {isLoading ? (
+          <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">加载中...</div>
+        ) : users.length === 0 ? (
+          <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">无数据</div>
+        ) : isMobile ? (
+          <div className="divide-y">
+            {users.map((user: any) => (
+              <MobileListCard
+                key={user.id}
+                title={
+                  <div className="flex flex-col">
+                    <span className="font-medium">{user.username}</span>
+                    {user.display_name && (
+                      <span className="text-xs text-muted-foreground">{user.display_name}</span>
+                    )}
+                  </div>
+                }
+                badge={
+                  <div className="flex flex-col items-end gap-1">
+                    {roleLabel(user.role)}
+                    {statusLabel(user.status)}
+                  </div>
+                }
+                meta={[
+                  { label: '额度', value: <span className="tabular-nums">{user.used_quota}/{user.quota}</span> },
+                  { label: '调用', value: <span className="tabular-nums">{user.request_count}</span> },
+                  { label: '邮箱', value: user.email || '-' },
+                  { label: '分组', value: user.group || '-' },
+                ]}
+                actions={
+                  <Button variant="ghost" size="sm" onClick={() => startEdit(user)}>
+                    <Pencil className="h-3.5 w-3.5" />编辑
+                  </Button>
+                }
+              />
+            ))}
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>ID</TableHead>
+                <TableHead>用户名</TableHead>
+                <TableHead>显示名</TableHead>
+                <TableHead>邮箱</TableHead>
+                <TableHead>角色</TableHead>
+                <TableHead>额度</TableHead>
+                <TableHead>已用</TableHead>
+                <TableHead>调用</TableHead>
+                <TableHead>状态</TableHead>
+                <TableHead>分组</TableHead>
+                <TableHead className="text-right">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {users.map((user: any) => (
                 <TableRow key={user.id}>
                   <TableCell className="text-xs text-muted-foreground tabular-nums">{user.id}</TableCell>
                   <TableCell className="font-medium">{user.username}</TableCell>
@@ -268,10 +304,10 @@ export function AdminUsersPage() {
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </div>
 
       {/* Pagination */}

@@ -66,12 +66,29 @@
 }
 
 @layer base {
+  /* Prevent iOS from auto-zooming when focusing inputs smaller than 16px. */
+  @media (max-width: 767px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
   * {
     @apply border-border;
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;
   }
+}
+
+/* Hide the scrollbar on horizontally-scrollable regions (e.g. nav link rows on small screens). */
+@utility no-scrollbar {
+  &::-webkit-scrollbar {
+    display: none;
+  }
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 .dark {

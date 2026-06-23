@@ -74,7 +74,14 @@
     "addConnection": "Add Connection",
     "healthy": "Healthy",
     "unhealthy": "Unhealthy",
-    "offline": "Offline"
+    "offline": "Offline",
+    "greeting": {
+      "morning": "Good morning",
+      "noon": "Good afternoon",
+      "afternoon": "Good afternoon",
+      "evening": "Good evening",
+      "night": "Good night"
+    }
   },
   "landing": {
     "hero": "Unified MCP Service Gateway",

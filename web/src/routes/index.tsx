@@ -61,15 +61,15 @@ function LandingPage() {
     <div className="min-h-svh bg-background">
       {/* Nav */}
       <nav className="fixed top-0 z-50 w-full border-b bg-background/60 backdrop-blur-xl">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-          <div className="flex items-center gap-6">
-            <Link to="/" className="flex items-center gap-2.5">
+        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
+          <div className="flex min-w-0 flex-1 items-center gap-4 sm:gap-6">
+            <Link to="/" className="flex shrink-0 items-center gap-2.5">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg overflow-hidden">
                 <img src="/favicon.svg" alt="Logo" className="h-8 w-8" />
               </div>
-              <span className="text-lg font-semibold tracking-tight">{systemConfig.systemName}</span>
+              <span className="hidden text-lg font-semibold tracking-tight sm:inline">{systemConfig.systemName}</span>
             </Link>
-            <div className="flex items-center gap-1">
+            <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
               {navItems.map((item) => {
                 const isActive = item.to === '/'
                   ? location.pathname === '/'
@@ -80,7 +80,7 @@ function LandingPage() {
                       key={item.to}
                       to={item.to}
                       className={cn(
-                        'px-3 py-1.5 text-sm font-medium transition-colors hover:text-foreground',
+                        'shrink-0 whitespace-nowrap px-3 py-1.5 text-sm font-medium transition-colors hover:text-foreground',
                         isActive ? 'text-foreground' : 'text-muted-foreground',
                       )}
                     >
@@ -93,7 +93,7 @@ function LandingPage() {
                     key={item.to}
                     onClick={() => handleNavClick(item.to)}
                     className={cn(
-                      'px-3 py-1.5 text-sm font-medium transition-colors hover:text-foreground',
+                      'shrink-0 whitespace-nowrap px-3 py-1.5 text-sm font-medium transition-colors hover:text-foreground',
                       isActive ? 'text-foreground' : 'text-muted-foreground',
                     )}
                   >
@@ -104,7 +104,7 @@ function LandingPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {/* Theme toggle */}
             <Button
               variant="ghost"
@@ -154,7 +154,7 @@ function LandingPage() {
                         {auth.user?.username?.charAt(0)?.toUpperCase() || 'U'}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="text-sm font-medium">{auth.user?.username}</span>
+                    <span className="hidden text-sm font-medium sm:inline">{auth.user?.username}</span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="w-48" align="end">
@@ -280,10 +280,10 @@ function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t px-6 py-8">
-        <div className="mx-auto flex max-w-6xl items-center justify-between text-sm text-muted-foreground">
-          <span>{systemConfig.systemName}</span>
-          <span>{systemConfig.footer || 'MCP Protocol Gateway'}</span>
+      <footer className="border-t px-4 py-3 sm:px-6 lg:px-8">
+        <div className="mx-auto flex h-8 max-w-6xl items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span className="truncate">{systemConfig.systemName}</span>
+          <span className="truncate">{systemConfig.footer || 'MCP Protocol Gateway'}</span>
         </div>
       </footer>
     </div>

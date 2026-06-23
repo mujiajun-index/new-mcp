@@ -2,12 +2,21 @@ import { useTranslation } from 'react-i18next'
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/auth-store'
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Server, FolderTree, Cloud, Zap, Plus, ArrowRight, Activity } from 'lucide-react'
+import { Server, FolderTree, Cloud, Zap, ArrowRight, Activity } from 'lucide-react'
 import { getAdminStats } from '@/features/admin/api'
 import { getUserLogs } from '@/features/logs/api'
 import { getServices } from '@/features/services/api'
+
+/** Time-based greeting key (早上好 / 中午好 / 下午好 / 晚上好 / 夜深了). */
+function getGreetingKey() {
+  const hour = new Date().getHours()
+  if (hour >= 23 || hour < 5) return 'dashboard.greeting.night'
+  if (hour < 11) return 'dashboard.greeting.morning'
+  if (hour < 14) return 'dashboard.greeting.noon'
+  if (hour < 18) return 'dashboard.greeting.afternoon'
+  return 'dashboard.greeting.evening'
+}
 
 export function DashboardPage() {
   const { t } = useTranslation()
@@ -67,7 +76,7 @@ export function DashboardPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">{t('dashboard.title')}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          欢迎回来，{auth.user?.username}
+          {t(getGreetingKey())}，{auth.user?.username}
         </p>
       </div>
 

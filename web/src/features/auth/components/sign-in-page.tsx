@@ -39,7 +39,7 @@ export function SignInPage() {
   }
 
   return (
-    <div className="flex min-h-svh">
+    <div className="relative flex min-h-svh">
       {/* Left panel — visual */}
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-primary">
         <div className="absolute inset-0 bg-gradient-to-br from-primary via-primary/90 to-primary/80" />
@@ -121,6 +121,13 @@ export function SignInPage() {
           </p>
         </div>
       </div>
+
+      {/* Footer — mobile only (desktop shows it inside the left visual panel) */}
+      <footer className="absolute bottom-6 left-0 right-0 flex items-center justify-center gap-2 px-8 text-center text-xs text-muted-foreground lg:hidden">
+        <span>{config.systemName}</span>
+        <span className="text-muted-foreground/40">·</span>
+        <span>{config.footer || 'MCP Protocol Gateway'}</span>
+      </footer>
     </div>
   )
 }

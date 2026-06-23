@@ -13,10 +13,10 @@ import {
   AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { Moon, Sun, LogOut, User, Monitor, Languages, Check } from 'lucide-react'
+import { Moon, Sun, LogOut, User, Monitor, Languages, Check, Menu } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export function Header() {
+export function Header({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const { auth } = useAuthStore()
@@ -29,7 +29,6 @@ export function Header() {
   }
 
   const location = useLocation()
-  const themeIcon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor
 
   const navItems = [
     { label: t('nav.home'), to: '/' as const },
@@ -38,28 +37,42 @@ export function Header() {
   ]
 
   return (
-    <header className="flex h-14 items-center justify-between border-b bg-background/80 backdrop-blur-sm px-6">
-      <nav className="flex items-center gap-1">
-        {navItems.map((item) => {
-          const isActive = item.to === '/'
-            ? location.pathname === '/'
-            : location.pathname.startsWith(item.to)
-          return (
-            <Link
-              key={item.to}
-              to={item.to}
-              className={cn(
-                'px-3 py-1.5 text-sm font-medium transition-colors hover:text-foreground',
-                isActive ? 'text-foreground' : 'text-muted-foreground',
-              )}
-            >
-              {item.label}
-            </Link>
-          )
-        })}
-      </nav>
+    <header className="flex h-14 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-sm sm:px-6">
+      <div className="flex min-w-0 flex-1 items-center gap-1">
+        {/* Mobile: open the sidebar drawer. Desktop: hidden. */}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onOpenMobileNav}
+          className="h-8 w-8 shrink-0 lg:hidden"
+          aria-label="打开导航"
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
 
-      <div className="flex items-center gap-2">
+        {/* Nav links scroll horizontally on small screens instead of overflowing. */}
+        <nav className="no-scrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+          {navItems.map((item) => {
+            const isActive = item.to === '/'
+              ? location.pathname === '/'
+              : location.pathname.startsWith(item.to)
+            return (
+              <Link
+                key={item.to}
+                to={item.to}
+                className={cn(
+                  'shrink-0 whitespace-nowrap px-3 py-1.5 text-sm font-medium transition-colors hover:text-foreground',
+                  isActive ? 'text-foreground' : 'text-muted-foreground',
+                )}
+              >
+                {item.label}
+              </Link>
+            )
+          })}
+        </nav>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2">
         {/* Theme toggle */}
         <Button
           variant="ghost"
@@ -107,7 +120,7 @@ export function Header() {
                   {auth.user?.username?.charAt(0)?.toUpperCase() || 'U'}
                 </AvatarFallback>
               </Avatar>
-              <span className="text-sm font-medium">{auth.user?.username}</span>
+              <span className="hidden text-sm font-medium sm:inline">{auth.user?.username}</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-48" align="end">

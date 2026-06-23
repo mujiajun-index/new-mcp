@@ -5,10 +5,18 @@ import { useTranslation } from 'react-i18next'
 import { getServices, deleteService, updateService, testService } from '../api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { MobileListCard } from '@/components/ui/mobile-list-card'
+import { useIsMobile } from '@/hooks/use-mobile'
 import type { TransportType, ServiceListItem } from '@/types'
 import {
   Plus, Search, Server, Trash2, Zap, Loader2,
-  Wifi, Terminal, Globe, Radio, Plug,
+  Wifi, Terminal, Globe, Radio, Plug, MoreHorizontal,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -41,9 +49,16 @@ function HealthBadge({ status }: { status: string }) {
   return <span className="inline-flex h-2 w-2 rounded-full bg-zinc-300 dark:bg-zinc-600" title="未知" />
 }
 
+function healthLabel(status: string) {
+  if (status === 'healthy') return '健康'
+  if (status === 'unhealthy') return '异常'
+  return '未知'
+}
+
 export function ServiceListPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
   const [keyword, setKeyword] = useState('')
   const [transportFilter, setTransportFilter] = useState<string>('')
   const [searchInput, setSearchInput] = useState('')
@@ -92,8 +107,8 @@ export function ServiceListPage() {
   }
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{t('nav.services')}</h1>
           <p className="mt-1 text-sm text-muted-foreground">管理所有 MCP 服务</p>
@@ -108,7 +123,7 @@ export function ServiceListPage() {
 
       {/* Filters */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <form onSubmit={handleSearch} className="relative flex-1 max-w-sm">
+        <form onSubmit={handleSearch} className="relative max-w-sm flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="搜索服务名称..."
@@ -117,7 +132,7 @@ export function ServiceListPage() {
             className="pl-9"
           />
         </form>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             variant={transportFilter === '' ? 'default' : 'outline'}
             size="sm"
@@ -138,15 +153,112 @@ export function ServiceListPage() {
         </div>
       </div>
 
-      {/* Table */}
-      <div className="rounded-xl border bg-card overflow-hidden">
+      {/* List */}
+      <div className="overflow-hidden rounded-xl border bg-card">
         {isLoading ? (
           <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">加载中...</div>
         ) : services.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <Server className="h-10 w-10 text-muted-foreground/30 mb-3" />
+            <Server className="mb-3 h-10 w-10 text-muted-foreground/30" />
             <p className="text-sm text-muted-foreground">暂无服务</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">点击"注册新服务"添加第一个 MCP 服务</p>
+            <p className="mt-1 text-xs text-muted-foreground/60">点击"注册新服务"添加第一个 MCP 服务</p>
+          </div>
+        ) : isMobile ? (
+          <div className="divide-y">
+            {services.map((s) => {
+              const Icon = transportIcons[s.transport_type] || Globe
+              const isVirtual = s.transport_type === 'virtual'
+              return (
+                <MobileListCard
+                  key={s.id}
+                  title={
+                    <div className="flex flex-col">
+                      <Link to="/services/$id" params={{ id: String(s.id) }} className="font-medium transition-colors hover:text-primary">
+                        {s.display_name || s.name}
+                      </Link>
+                      {s.description && (
+                        <p className="line-clamp-1 text-xs text-muted-foreground">{s.description}</p>
+                      )}
+                    </div>
+                  }
+                  badge={
+                    <button
+                      type="button"
+                      className="cursor-pointer"
+                      title={s.status === 1 ? '点击禁用' : '点击启用'}
+                      aria-label={s.status === 1 ? '点击禁用' : '点击启用'}
+                      onClick={() => toggleMutation.mutate({ id: s.id, status: s.status === 1 ? 0 : 1 })}
+                    >
+                      <StatusBadge status={s.status} />
+                    </button>
+                  }
+                  meta={[
+                    {
+                      label: '传输',
+                      value: (
+                        <span className="inline-flex items-center gap-1.5">
+                          <Icon className="h-3.5 w-3.5" />
+                          {transportLabels[s.transport_type] || s.transport_type}
+                        </span>
+                      ),
+                    },
+                    { label: '工具数', value: <span className="tabular-nums">{s.tools_count}</span> },
+                    {
+                      label: '健康',
+                      value: (
+                        <span className="inline-flex items-center gap-1.5">
+                          <HealthBadge status={s.health_status} />
+                          {healthLabel(s.health_status)}
+                        </span>
+                      ),
+                    },
+                  ]}
+                  actions={
+                    <>
+                      {!isVirtual && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1"
+                          disabled={testMutation.isPending}
+                          onClick={() => testMutation.mutate(s.id)}
+                        >
+                          {testMutation.isPending && testMutation.variables === s.id
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : <Zap className="h-3.5 w-3.5" />}
+                          测试
+                        </Button>
+                      )}
+                      <Link to="/services/$id" params={{ id: String(s.id) }}>
+                        <Button variant="ghost" size="sm">详情</Button>
+                      </Link>
+                      {!isVirtual && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => {
+                                if (confirm(`确定删除服务 "${s.display_name || s.name}"？`)) {
+                                  deleteMutation.mutate(s.id)
+                                }
+                              }}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              删除
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </>
+                  }
+                />
+              )
+            })}
           </div>
         ) : (
           <div className="overflow-x-auto">
