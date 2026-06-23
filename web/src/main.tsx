@@ -11,6 +11,7 @@ import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/auth-store'
 import { ThemeProvider } from '@/context/theme-provider'
 import { handleServerError } from '@/lib/handle-server-error'
+import { NotFound } from '@/components/not-found'
 import '@/i18n/config'
 import { routeTree } from './routeTree.gen'
 import '@/styles/index.css'
@@ -50,6 +51,7 @@ const router = createRouter({
   context: { queryClient },
   defaultPreload: 'intent',
   defaultPreloadStaleTime: 0,
+  defaultNotFoundComponent: NotFound,
 })
 
 declare module '@tanstack/react-router' {
