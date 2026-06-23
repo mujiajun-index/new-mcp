@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
@@ -326,23 +327,20 @@ func (h *GatewayHandler) handleSearch(ctx context.Context, reqID interface{}, lo
 		return h.errorResponse(reqID, -32603, "Search failed: "+err.Error())
 	}
 
-	var textResults []string
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Found %d results:\n", len(results))
 	for _, r := range results {
 		if r.Doc.Type == "mcp" {
 			label := r.Doc.Name
 			if r.Doc.Name != r.Doc.ServiceName {
 				label = fmt.Sprintf("%s (%s)", r.Doc.Name, r.Doc.ServiceName)
 			}
-			textResults = append(textResults, fmt.Sprintf("- **%s** (服务, %d 工具) %s [%s]", label, r.Doc.ToolCount, r.Doc.Description, r.Doc.GroupName))
+			fmt.Fprintf(&sb, "- **%s** (service, %d tools) %s [%s]\n", label, r.Doc.ToolCount, r.Doc.Description, r.Doc.GroupName)
 		} else {
-			textResults = append(textResults, fmt.Sprintf("- **%s.%s** (工具) %s [%s]", r.Doc.ServiceName, r.Doc.Name, r.Doc.Description, r.Doc.GroupName))
+			fmt.Fprintf(&sb, "- **%s.%s** (tool) %s [%s]\n", r.Doc.ServiceName, r.Doc.Name, r.Doc.Description, r.Doc.GroupName)
 		}
 	}
-
-	resultText := fmt.Sprintf("找到 %d 个结果:\n", len(textResults))
-	for _, t := range textResults {
-		resultText += t + "\n"
-	}
+	resultText := sb.String()
 
 	return &JSONRPCResponse{
 		JSONRPC: "2.0",
@@ -493,12 +491,14 @@ func (h *GatewayHandler) resolveGroupForService(serviceID int64, logCtx *LogCont
 	if err != nil {
 		return 0, ""
 	}
-	for _, g := range groups {
-		gsList, _ := model.GetEnabledGroupServices(g.ID)
-		for _, gs := range gsList {
-			if gs.ServiceID == serviceID {
-				return g.ID, g.Name
-			}
+	// Batched: all (group, service) pairs via two queries, instead of one per group.
+	pairs, err := model.ResolveEnabledServicesForGroups(groups)
+	if err != nil {
+		return 0, ""
+	}
+	for _, p := range pairs {
+		if p.Service.ID == serviceID {
+			return p.Group.ID, p.Group.Name
 		}
 	}
 	return 0, ""
@@ -514,13 +514,14 @@ func (h *GatewayHandler) isServiceInApiKeyScope(serviceName string, logCtx *LogC
 	if err != nil {
 		return false
 	}
-	for _, g := range groups {
-		gsList, _ := model.GetEnabledGroupServices(g.ID)
-		for _, gs := range gsList {
-			svc, svcErr := model.GetServiceByIDWithoutUser(gs.ServiceID)
-			if svcErr == nil && (svc.Name == serviceName || svc.DisplayName == serviceName) {
-				return true
-			}
+	// Batched: all services in scope via two queries, instead of one per group+service.
+	pairs, err := model.ResolveEnabledServicesForGroups(groups)
+	if err != nil {
+		return false
+	}
+	for _, p := range pairs {
+		if svc := p.Service; svc.Name == serviceName || svc.DisplayName == serviceName {
+			return true
 		}
 	}
 	return false
