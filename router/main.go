@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/mujkjk/newmcp" // package frontend: embedded web/dist SPA assets
+	frontend "github.com/mujkjk/newmcp" // package frontend: embedded web/dist SPA assets
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/internal/mcp/camera"
 	"github.com/mujkjk/newmcp/internal/mcp/cloud"
@@ -86,10 +86,27 @@ func serveFrontend(engine *gin.Engine) {
 	engine.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
 
-		// Unmatched API/MCP requests return a JSON 404; everything else is a SPA
-		// route and gets the HTML shell. Use "/api/" (trailing slash) so frontend
-		// pages like /api-keys are NOT mistaken for API calls.
-		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/mcp") {
+		// API and MCP transport endpoints must always answer with JSON, never the
+		// SPA shell. If a non-POST method (e.g. the GET a Streamable-HTTP MCP
+		// client sends to open its server->client channel) lands here and gets
+		// index.html back as HTTP 200 text/html, the client tries to parse it as
+		// JSON and dies with "Unexpected token '<'". This covers /mcp, the
+		// smart-mode transport under /smart/mcp (+ /smart/mcp/ws), /api/, and the
+		// RFC 8615 well-known paths an MCP client probes on a 401
+		// (/.well-known/oauth-protected-resource/mcp etc.) — those are reserved
+		// discovery URLs, never SPA routes. Use trailing slashes ("/api/",
+		// "/smart/") so frontend pages such as /api-keys or /smart-config are NOT
+		// mistaken for API calls.
+		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/mcp/") || strings.HasPrefix(path, "/smart/") || strings.HasPrefix(path, "/.well-known/") {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+
+		// A programmatic call that hits an unknown path should also get JSON, not
+		// the HTML shell — an SPA only navigates via GET, so any POST/PUT/DELETE/
+		// PATCH here is a misconfigured client (e.g. wrong MCP base URL). Returning
+		// HTML 200 would hide the error and break JSON parsing on the client.
+		if c.Request.Method != http.MethodGet {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 			return
 		}
