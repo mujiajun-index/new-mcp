@@ -347,17 +347,17 @@ func (h *GatewayHandler) getMetaTools() []Tool {
     return []Tool{
         {
             Name:        "mcp.search",
-            Description: "搜索可用的 MCP 服务和工具。支持按关键字、分组名、服务名搜索。",
+            Description: "Search available MCP services and tools by keyword, group name, or service name. Best for: discovering which MCP server or tool can fulfill a task before calling it. Returns: a list of matching services and/or tools.",
             InputSchema: searchToolSchema,
         },
         {
             Name:        "mcp.describe",
-            Description: "查看指定 MCP 服务的工具列表，或指定工具的完整参数 Schema。支持批量查询。",
+            Description: "List the tools of a given MCP service, or fetch the full parameter schema of a specific tool. Best for: inspecting what a service offers or learning a tool's exact arguments before calling it. Returns: tool lists and/or full input schemas.",
             InputSchema: describeToolSchema,
         },
         {
             Name:        "mcp.execute",
-            Description: "执行指定的 MCP 工具。参数: tool_id (格式: 服务名.工具名), arguments (工具参数)。",
+            Description: "Execute a specified MCP tool. Best for: actually calling a tool by id with the right arguments. Returns: the tool's execution result.",
             InputSchema: executeToolSchema,
         },
     }

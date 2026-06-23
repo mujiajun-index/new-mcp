@@ -216,9 +216,9 @@ CREATE TABLE `vision_configs` (
 
     -- 工具自定义名称和描述
     `analyze_image_name`   VARCHAR(128)    DEFAULT 'vision.analyze_image' COMMENT '工具1名称: analyze_image',
-    `analyze_image_desc`   TEXT            DEFAULT '分析图片内容，识别其中的物体、文字、场景等' COMMENT '工具1描述',
+    `analyze_image_desc`   TEXT            DEFAULT 'Analyze image content and identify the objects, text, and scenes it contains. Best for: extracting structured info, detecting items, or reading text. Returns: a detailed breakdown of recognized elements.' COMMENT '工具1描述',
     `describe_scene_name`  VARCHAR(128)    DEFAULT 'vision.describe_scene' COMMENT '工具2名称: describe_scene',
-    `describe_scene_desc`  TEXT            DEFAULT '描述图片中的场景和整体内容' COMMENT '工具2描述',
+    `describe_scene_desc`  TEXT            DEFAULT 'Describe the scene and overall content of an image in natural language. Best for: getting a high-level summary of what is happening. Returns: a natural-language description of the scene.' COMMENT '工具2描述',
 
     -- 扩展配置
     `extra_config`         TEXT            DEFAULT '{}' COMMENT '扩展配置 JSON',
@@ -254,9 +254,9 @@ CREATE TABLE `cameras` (
 
     -- 工具自定义名称和描述
     `capture_name`         VARCHAR(128)    DEFAULT 'camera.capture' COMMENT '工具1名称: capture',
-    `capture_desc`         TEXT            DEFAULT '截取当前摄像头画面并返回图像' COMMENT '工具1描述',
+    `capture_desc`         TEXT            DEFAULT 'Capture a single still frame from the live camera feed and return it as an image. Best for: taking snapshots or capturing the current view. Returns: the captured frame as an image.' COMMENT '工具1描述',
     `analyze_name`         VARCHAR(128)    DEFAULT 'camera.analyze' COMMENT '工具2名称: analyze',
-    `analyze_desc`         TEXT            DEFAULT '截取当前摄像头画面并识别分析' COMMENT '工具2描述',
+    `analyze_desc`         TEXT            DEFAULT 'Capture the current camera frame and run visual analysis on it. Best for: detecting objects, people, or events in the live feed. Returns: the analysis result for the current frame.' COMMENT '工具2描述',
 
     -- 扩展配置
     `extra_config`         TEXT            DEFAULT '{}' COMMENT '扩展配置 JSON',

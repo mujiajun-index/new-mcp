@@ -20,9 +20,9 @@ type VisionConfig struct {
 	AutoRegister       bool           `json:"auto_register" gorm:"default:false"`
 	RegisteredServiceID *int64        `json:"registered_service_id"`
 	AnalyzeImageName   string         `json:"analyze_image_name" gorm:"size:128;default:vision.analyze_image"`
-	AnalyzeImageDesc   string         `json:"analyze_image_desc" gorm:"type:varchar(512);default:分析图片内容，识别其中的物体、文字、场景等"`
+	AnalyzeImageDesc   string         `json:"analyze_image_desc" gorm:"type:varchar(512);default:Analyze image content and identify the objects, text, and scenes it contains. Best for: extracting structured info, detecting items, or reading text. Returns: a detailed breakdown of recognized elements."`
 	DescribeSceneName  string         `json:"describe_scene_name" gorm:"size:128;default:vision.describe_scene"`
-	DescribeSceneDesc  string         `json:"describe_scene_desc" gorm:"type:varchar(512);default:描述图片中的场景和整体内容"`
+	DescribeSceneDesc  string         `json:"describe_scene_desc" gorm:"type:varchar(512);default:Describe the scene and overall content of an image in natural language. Best for: getting a high-level summary of what is happening. Returns: a natural-language description of the scene."`
 	ExtraConfig        string         `json:"extra_config" gorm:"type:varchar(4096);default:'{}'"`
 	Status             int            `json:"status" gorm:"default:1"`
 	CreatedAt          time.Time      `json:"created_at"`

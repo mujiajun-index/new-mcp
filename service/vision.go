@@ -57,9 +57,9 @@ func (s *VisionService) Create(userID int64, req *dto.CreateVisionConfigReq) (*d
 		AutoRegister:      false,
 		Status:            common.StatusEnabled,
 		AnalyzeImageName:  "vision.analyze_image",
-		AnalyzeImageDesc:  "分析图片内容，识别其中的物体、文字、场景等",
+		AnalyzeImageDesc:  "Analyze image content and identify the objects, text, and scenes it contains. Best for: extracting structured info, detecting items, or reading text. Returns: a detailed breakdown of recognized elements.",
 		DescribeSceneName: "vision.describe_scene",
-		DescribeSceneDesc: "描述图片中的场景和整体内容",
+		DescribeSceneDesc: "Describe the scene and overall content of an image in natural language. Best for: getting a high-level summary of what is happening. Returns: a natural-language description of the scene.",
 		ExtraConfig:       "{}",
 	}
 

@@ -9,13 +9,13 @@ var MetaTools = []struct {
 }{
 	{
 		Name:        "mcp.search",
-		Description: "搜索可用的 MCP 服务和工具。支持按关键字、分组名、服务名搜索。",
+		Description: "Search available MCP services and tools by keyword, group name, or service name. Best for: discovering which MCP server or tool can fulfill a task before calling it. Returns: a list of matching services and/or tools.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"query": {"type": "string", "description": "搜索关键字"},
-				"scope": {"type": "string", "enum": ["mcp", "tool", "all"], "default": "mcp", "description": "搜索范围"},
-				"group": {"type": "string", "description": "限定分组"},
+				"query": {"type": "string", "description": "Search keyword"},
+				"scope": {"type": "string", "enum": ["mcp", "tool", "all"], "default": "mcp", "description": "Search scope: mcp (services), tool, or all"},
+				"group": {"type": "string", "description": "Restrict results to a specific group"},
 				"limit": {"type": "number", "default": 10, "maximum": 50}
 			},
 			"required": []
@@ -23,11 +23,11 @@ var MetaTools = []struct {
 	},
 	{
 		Name:        "mcp.describe",
-		Description: "查看指定 MCP 服务的工具列表，或指定工具的完整参数 Schema。",
+		Description: "List the tools of a given MCP service, or fetch the full parameter schema of a specific tool. Best for: inspecting what a service offers or learning a tool's exact arguments before calling it. Returns: tool lists and/or full input schemas.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"targets": {"type": "array", "items": {"type": "string"}, "description": "服务名或 serviceName.toolName"},
+				"targets": {"type": "array", "items": {"type": "string"}, "description": "Service name(s) or serviceName.toolName entries"},
 				"include_schema": {"type": "boolean", "default": true}
 			},
 			"required": ["targets"]
@@ -35,12 +35,12 @@ var MetaTools = []struct {
 	},
 	{
 		Name:        "mcp.execute",
-		Description: "执行指定的 MCP 工具。",
+		Description: "Execute a specified MCP tool. Best for: actually calling a tool by id with the right arguments. Returns: the tool's execution result.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"tool_id": {"type": "string", "description": "格式: 服务名.工具名"},
-				"arguments": {"type": "object", "description": "工具参数"},
+				"tool_id": {"type": "string", "description": "Format: serviceName.toolName"},
+				"arguments": {"type": "object", "description": "Tool arguments"},
 				"timeout_ms": {"type": "number", "default": 30000}
 			},
 			"required": ["tool_id"]
