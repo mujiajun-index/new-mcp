@@ -3,7 +3,7 @@ import { useNavigate, useParams } from '@tanstack/react-router'
 import { getMarketplaceItem, installFromMarketplace } from '../api'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
-import { ArrowLeft, Download, Star, Zap, Code2, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Download, Star, Zap, ExternalLink } from 'lucide-react'
 
 export function MarketplaceDetailPage() {
   const navigate = useNavigate()
@@ -103,7 +103,7 @@ export function MarketplaceDetailPage() {
               <div>
                 <p className="text-xs font-medium mb-1.5">需要的环境变量:</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {item.required_env.map((env) => (
+                  {item.required_env.map((env: string) => (
                     <span key={env} className="rounded bg-muted px-2 py-0.5 text-xs font-mono">{env}</span>
                   ))}
                 </div>
@@ -121,7 +121,7 @@ export function MarketplaceDetailPage() {
         <div className="rounded-xl border bg-card p-5">
           <h2 className="mb-3 text-sm font-semibold">提供的工具 ({item.tools_snapshot.length})</h2>
           <div className="space-y-2">
-            {item.tools_snapshot.map((tool) => (
+            {item.tools_snapshot.map((tool: { name: string; description?: string }) => (
               <div key={tool.name} className="rounded-lg border p-3">
                 <p className="text-sm font-medium font-mono">{tool.name}</p>
                 {tool.description && <p className="mt-0.5 text-xs text-muted-foreground">{tool.description}</p>}
@@ -134,7 +134,7 @@ export function MarketplaceDetailPage() {
       {/* Tags */}
       {item.tags && item.tags.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {item.tags.map((tag) => (
+          {item.tags.map((tag: string) => (
             <span key={tag} className="rounded-full bg-muted px-3 py-1 text-xs">{tag}</span>
           ))}
         </div>

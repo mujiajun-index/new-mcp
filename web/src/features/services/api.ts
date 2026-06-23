@@ -1,7 +1,7 @@
 import { api } from '@/lib/api'
 import type {
-  ServiceListParams, ServiceListItem, ServiceDetail,
-  CreateServiceReq, UpdateServiceReq, TestResult, RefreshToolsResult, McpTool,
+  ServiceListParams,
+  CreateServiceReq, UpdateServiceReq,
 } from '@/types'
 
 export async function getServices(params?: ServiceListParams) {

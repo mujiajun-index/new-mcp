@@ -140,7 +140,7 @@ export function ServiceCreatePage() {
 
       {/* Step indicators */}
       <div className="flex gap-2">
-        {steps.map((s, i) => (
+        {steps.map((_, i) => (
           <div
             key={i}
             className={`flex h-1.5 flex-1 rounded-full transition-colors ${

@@ -1,6 +1,4 @@
 import { useTranslation } from 'react-i18next'
-import { useMatchRoute } from '@tanstack/react-router'
-import { Link, useNavigate } from '@tanstack/react-router'
 import {
   Server, FolderTree, Cloud, Eye, Camera, Key, Store, Settings,
   Users, FileText, ClipboardCheck, Wrench, type LucideIcon,

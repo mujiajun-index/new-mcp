@@ -88,6 +88,7 @@ export function CompactDateTimeRangePicker({
       },
     }
     const range = presets[kind]
+    if (!range) return
     setDraftStart(toInputValue(range.start))
     setDraftEnd(toInputValue(range.end))
     onChange(range)

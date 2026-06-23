@@ -179,8 +179,8 @@ export function AdminSettingsPage() {
   }
 
   const updateGroup = (name: string, field: 'max' | 'window', value: number) => {
-    const config = { ...groupConfig, [name]: { ...groupConfig[name], [field]: value } }
-    saveGroupConfig(config)
+    const updated = { ...groupConfig[name], [field]: value } as RateLimitGroup
+    saveGroupConfig({ ...groupConfig, [name]: updated })
   }
 
   if (isLoading) {

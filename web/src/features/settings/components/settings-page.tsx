@@ -2,12 +2,11 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/lib/api'
-import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
-import { User, Mail, Shield, Key, Activity, Save } from 'lucide-react'
+import { User, Mail, Key, Activity, Save } from 'lucide-react'
 
 async function getProfile() {
   const res = await api.get('/auth/profile')
@@ -26,7 +25,6 @@ async function changePassword(data: { old_password: string; new_password: string
 
 export function SettingsPage() {
   const { t } = useTranslation()
-  const { auth } = useAuthStore()
   const queryClient = useQueryClient()
 
   const { data: profileData, isLoading } = useQuery({
