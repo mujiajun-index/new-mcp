@@ -24,14 +24,14 @@ type VisionClient struct {
 	MaxTokens   int
 }
 
-func (c *VisionClient) Analyze(ctx context.Context, systemPrompt, userPrompt, base64Image string) (string, error) {
+func (c *VisionClient) Analyze(ctx context.Context, systemPrompt, userPrompt, base64Image, mediaType string) (string, error) {
 	switch c.Provider {
 	case "anthropic":
-		return c.analyzeAnthropic(ctx, systemPrompt, userPrompt, base64Image)
+		return c.analyzeAnthropic(ctx, systemPrompt, userPrompt, base64Image, mediaType)
 	case "gemini":
-		return c.analyzeGemini(ctx, systemPrompt, userPrompt, base64Image)
+		return c.analyzeGemini(ctx, systemPrompt, userPrompt, base64Image, mediaType)
 	default:
-		return c.analyzeOpenAI(ctx, systemPrompt, userPrompt, base64Image)
+		return c.analyzeOpenAI(ctx, systemPrompt, userPrompt, base64Image, mediaType)
 	}
 }
 
@@ -86,10 +86,10 @@ type openAIModelsResponse struct {
 	} `json:"data"`
 }
 
-func (c *VisionClient) analyzeOpenAI(ctx context.Context, systemPrompt, userPrompt, base64Image string) (string, error) {
+func (c *VisionClient) analyzeOpenAI(ctx context.Context, systemPrompt, userPrompt, base64Image, mediaType string) (string, error) {
 	content := []openAIContent{
 		{Type: "text", Text: userPrompt},
-		{Type: "image_url", ImageURL: &openAIImage{URL: "data:image/jpeg;base64," + base64Image}},
+		{Type: "image_url", ImageURL: &openAIImage{URL: "data:" + mediaType + ";base64," + base64Image}},
 	}
 
 	messages := []openAIMessage{{Role: "user", Content: content}}
@@ -191,12 +191,12 @@ type anthropicModelsResponse struct {
 	} `json:"data"`
 }
 
-func (c *VisionClient) analyzeAnthropic(ctx context.Context, systemPrompt, userPrompt, base64Image string) (string, error) {
+func (c *VisionClient) analyzeAnthropic(ctx context.Context, systemPrompt, userPrompt, base64Image, mediaType string) (string, error) {
 	blocks := []anthropicBlock{
 		{Type: "text", Text: userPrompt},
 		{Type: "image", Source: &anthropicSource{
 			Type:      "base64",
-			MediaType: "image/jpeg",
+			MediaType: mediaType,
 			Data:      base64Image,
 		}},
 	}
@@ -311,10 +311,10 @@ type geminiModelsResponse struct {
 	} `json:"models"`
 }
 
-func (c *VisionClient) analyzeGemini(ctx context.Context, systemPrompt, userPrompt, base64Image string) (string, error) {
+func (c *VisionClient) analyzeGemini(ctx context.Context, systemPrompt, userPrompt, base64Image, mediaType string) (string, error) {
 	parts := []geminiPart{
 		{Text: userPrompt},
-		{InlineData: &geminiInlineData{MimeType: "image/jpeg", Data: base64Image}},
+		{InlineData: &geminiInlineData{MimeType: mediaType, Data: base64Image}},
 	}
 
 	reqBody := geminiRequest{

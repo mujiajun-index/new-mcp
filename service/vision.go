@@ -233,10 +233,10 @@ func (s *VisionService) TestVision(req *dto.TestVisionReq) *dto.TestVisionResult
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// Use a tiny 1x1 white pixel as test image
+	// Use a tiny 1x1 white pixel PNG as test image.
 	testImage := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
 
-	result, err := client.Analyze(ctx, "You are a test assistant.", "Describe this image in one word.", testImage)
+	result, err := client.Analyze(ctx, "You are a test assistant.", "Describe this image in one word.", testImage, "image/png")
 	if err != nil {
 		return &dto.TestVisionResult{Success: false, Error: err.Error()}
 	}
