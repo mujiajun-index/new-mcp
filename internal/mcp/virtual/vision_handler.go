@@ -52,22 +52,22 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 	case strings.HasSuffix(toolName, "analyze_image") || toolName == "vision.analyze_image":
 		systemPrompt = vc.SystemPrompt
 		if systemPrompt == "" {
-			systemPrompt = "你是一个图像分析助手，请分析用户提供的图片。"
+			systemPrompt = "You are a precise image analysis assistant. Examine the provided image and identify the objects, text, and scenes it contains. Be accurate, objective, and thorough."
 		}
 		if params.Prompt != "" {
 			userPrompt = params.Prompt
 		} else {
-			userPrompt = "请详细分析这张图片的内容。"
+			userPrompt = "Analyze this image in detail. Identify and describe every object, transcribe any visible text, and explain the scenes depicted. Return a structured breakdown of all recognized elements."
 		}
 	case strings.HasSuffix(toolName, "describe_scene") || toolName == "vision.describe_scene":
 		systemPrompt = vc.SystemPrompt
 		if systemPrompt == "" {
-			systemPrompt = "你是一个场景描述助手，请描述图片中的场景。"
+			systemPrompt = "You are a scene description assistant. Describe the overall content and context of the provided image in clear, natural language."
 		}
 		if params.Prompt != "" {
 			userPrompt = params.Prompt
 		} else {
-			userPrompt = "请描述这张图片中的场景和整体内容。"
+			userPrompt = "Describe the scene and overall content of this image in natural language. Summarize what is happening, including the setting, subjects, and their actions."
 		}
 	default:
 		return nil, fmt.Errorf("unknown vision tool: %s", toolName)

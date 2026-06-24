@@ -87,9 +87,9 @@ func handleAnalyze(ctx context.Context, cam *model.Camera, args json.RawMessage)
 
 	systemPrompt := vc.SystemPrompt
 	if systemPrompt == "" {
-		systemPrompt = "你是一个图像分析助手，请分析摄像头捕获的画面。"
+		systemPrompt = "You are a precise image analysis assistant. Examine the provided camera frame and identify the objects, people, text, and activity it contains. Be accurate, objective, and thorough."
 	}
-	userPrompt := "请分析这张摄像头截图的内容。"
+	userPrompt := "Analyze this camera frame in detail. Identify and describe every person and object, note any visible text or signage, and summarize the current activity and setting."
 	if params.Prompt != "" {
 		userPrompt = params.Prompt
 	}
