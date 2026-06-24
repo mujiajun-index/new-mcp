@@ -41,14 +41,14 @@ func handleCapture(cameraID int64) (json.RawMessage, error) {
 
 	frame, capturedAt, ok := StreamManager.GetLatestFrame(cameraID)
 	if !ok {
-		return nil, fmt.Errorf("摄像头未开启或无可用画面，请先在前端开启摄像头")
+		return nil, fmt.Errorf("camera is off or no frame is available; please enable the camera in the frontend first")
 	}
 
 	b64 := EncodeFrameToBase64(frame)
 	resp := map[string]interface{}{
 		"content": []map[string]interface{}{
 			{"type": "image", "data": b64, "mimeType": "image/jpeg"},
-			{"type": "text", "text": fmt.Sprintf("截取时间: %s", capturedAt.Format("2006-01-02 15:04:05"))},
+			{"type": "text", "text": fmt.Sprintf("Captured at: %s", capturedAt.Format("2006-01-02 15:04:05"))},
 		},
 	}
 	return json.Marshal(resp)
@@ -61,7 +61,7 @@ func handleAnalyze(ctx context.Context, cam *model.Camera, args json.RawMessage)
 
 	frame, _, ok := StreamManager.GetLatestFrame(cam.ID)
 	if !ok {
-		return nil, fmt.Errorf("摄像头未开启或无可用画面，请先在前端开启摄像头")
+		return nil, fmt.Errorf("camera is off or no frame is available; please enable the camera in the frontend first")
 	}
 
 	if cam.VisionConfigID == nil {
