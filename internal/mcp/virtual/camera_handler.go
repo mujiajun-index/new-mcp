@@ -47,7 +47,7 @@ func handleCapture(cameraID int64) (json.RawMessage, error) {
 	b64 := EncodeFrameToBase64(frame)
 	resp := map[string]interface{}{
 		"content": []map[string]interface{}{
-			{"type": "image", "data": b64, "mime_type": "image/jpeg"},
+			{"type": "image", "data": b64, "mimeType": "image/jpeg"},
 			{"type": "text", "text": fmt.Sprintf("截取时间: %s", capturedAt.Format("2006-01-02 15:04:05"))},
 		},
 	}
