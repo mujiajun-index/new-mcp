@@ -47,6 +47,7 @@
     "confirmSignOut": "确认退出登录",
     "confirmSignOutDesc": "您确定要退出登录吗？",
     "username": "用户名",
+    "usernameOrEmail": "用户名或邮箱",
     "password": "密码",
     "email": "邮箱",
     "confirmPassword": "确认密码",

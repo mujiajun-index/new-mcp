@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
@@ -76,7 +77,8 @@ func (s *AuthService) Register(req *dto.RegisterReq) (*dto.AuthResp, error) {
 }
 
 func (s *AuthService) Login(req *dto.LoginReq) (*dto.AuthResp, error) {
-	user, err := model.GetUserByUsername(req.Username)
+	// Login accepts either a username or an email address.
+	user, err := model.GetUserByUsernameOrEmail(strings.TrimSpace(req.Username))
 	if err != nil {
 		return nil, ErrInvalidCredentials
 	}

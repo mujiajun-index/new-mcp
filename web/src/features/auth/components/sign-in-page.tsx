@@ -85,10 +85,10 @@ export function SignInPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="username">{t('auth.username')}</Label>
+              <Label htmlFor="username">{t('auth.usernameOrEmail')}</Label>
               <Input
                 id="username"
-                placeholder={t('auth.username')}
+                placeholder={t('auth.usernameOrEmail')}
                 value={form.username}
                 onChange={(e) => setForm({ ...form, username: e.target.value })}
                 required

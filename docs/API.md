@@ -182,10 +182,12 @@ GET /api/v1/services?page=1&page_size=20&sort=created_at&order=desc
 **Request Body:**
 ```json
 {
-    "username": "string (必填)",
+    "username": "string (必填，可为用户名或邮箱)",
     "password": "string (必填)"
 }
 ```
+
+> `username` 字段同时接受用户名或邮箱地址，后端按 `username` 或 `email` 匹配账号。
 
 **Response:** `200 OK`
 ```json

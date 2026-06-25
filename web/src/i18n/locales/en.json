@@ -47,6 +47,7 @@
     "confirmSignOut": "Confirm Sign Out",
     "confirmSignOutDesc": "Are you sure you want to sign out?",
     "username": "Username",
+    "usernameOrEmail": "Username or Email",
     "password": "Password",
     "email": "Email",
     "confirmPassword": "Confirm Password",

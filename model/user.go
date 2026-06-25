@@ -40,6 +40,14 @@ func IsEmailAlreadyTaken(email string) bool {
 	return count > 0
 }
 
+// GetUserByUsernameOrEmail looks up a user by username OR email, so users can
+// sign in with either identifier.
+func GetUserByUsernameOrEmail(identifier string) (*User, error) {
+	var user User
+	err := DB.Where("username = ? OR email = ?", identifier, identifier).First(&user).Error
+	return &user, err
+}
+
 func GetUserByID(id int64) (*User, error) {
 	var user User
 	err := DB.First(&user, id).Error
