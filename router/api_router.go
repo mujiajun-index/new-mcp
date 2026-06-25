@@ -24,6 +24,9 @@ func SetApiRouter(engine *gin.Engine) {
 	// Public settings (system name, footer, etc.)
 	api.GET("/settings/public", controller.GetPublicSettings)
 
+	// Email verification code (registration) — public, rate-limited per IP
+	api.GET("/verification", middleware.EmailVerificationRateLimit(), controller.SendEmailVerification)
+
 	// Camera stream (auth via query token — WebSocket can't send custom headers)
 	api.GET("/cameras/:id/stream", HandleCameraStream)
 

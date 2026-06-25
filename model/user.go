@@ -33,6 +33,13 @@ func GetUserByUsername(username string) (*User, error) {
 	return &user, err
 }
 
+// IsEmailAlreadyTaken reports whether an account with the given email already exists.
+func IsEmailAlreadyTaken(email string) bool {
+	var count int64
+	DB.Model(&User{}).Where("email = ?", email).Count(&count)
+	return count > 0
+}
+
 func GetUserByID(id int64) (*User, error) {
 	var user User
 	err := DB.First(&user, id).Error

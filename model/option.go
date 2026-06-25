@@ -31,11 +31,11 @@ var defaultOptions = map[string]string{
 	"RateLimitWindowMinutes":        "1",
 	"RateLimitGroupConfig":          "{}",
 	"SMTPServer":                    "",
-	"SMTPPort":                      "465",
+	"SMTPPort":                      "587",
 	"SMTPAccount":                   "",
 	"SMTPToken":                     "",
 	"SMTPFrom":                      "",
-	"SMTPSSLEnabled":                "true",
+	"SMTPSSLEnabled":                "false",
 }
 
 var sensitiveKeys = map[string]bool{
@@ -43,9 +43,11 @@ var sensitiveKeys = map[string]bool{
 }
 
 var publicKeys = map[string]bool{
-	"SystemName":    true,
-	"Footer":        true,
-	"ServerAddress": true,
+	"SystemName":               true,
+	"Footer":                   true,
+	"ServerAddress":            true,
+	"RegisterEnabled":          true,
+	"EmailVerificationEnabled": true,
 }
 
 func InitOptionMap() {

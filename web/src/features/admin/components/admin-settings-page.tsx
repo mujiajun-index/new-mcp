@@ -422,7 +422,7 @@ export function AdminSettingsPage() {
                   <label className="text-sm font-medium">{t('settings.smtpPort')}</label>
                   <Input
                     type="number"
-                    value={localValues.SMTPPort ?? '465'}
+                    value={localValues.SMTPPort ?? '587'}
                     onChange={(e) => updateLocal('SMTPPort', e.target.value)}
                     onBlur={() => saveField('SMTPPort')}
                   />

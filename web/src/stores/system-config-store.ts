@@ -6,6 +6,8 @@ interface SystemConfig {
   systemName: string
   serverAddress: string
   footer: string
+  registerEnabled: boolean
+  emailVerificationEnabled: boolean
 }
 
 interface SystemConfigState {
@@ -21,6 +23,8 @@ export const useSystemConfigStore = create<SystemConfigState>()(
         systemName: 'NewMCP',
         serverAddress: 'http://localhost:3000',
         footer: '',
+        registerEnabled: true,
+        emailVerificationEnabled: false,
       },
       setConfig: (partial) =>
         set((state) => ({
@@ -36,6 +40,8 @@ export const useSystemConfigStore = create<SystemConfigState>()(
               systemName: data.SystemName ?? state.config.systemName,
               serverAddress: data.ServerAddress ?? state.config.serverAddress,
               footer: data.Footer ?? state.config.footer,
+              registerEnabled: data.RegisterEnabled === undefined ? state.config.registerEnabled : data.RegisterEnabled === 'true',
+              emailVerificationEnabled: data.EmailVerificationEnabled === 'true',
             },
           }))
         } catch {

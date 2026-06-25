@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { api } from '@/lib/api'
@@ -10,18 +10,73 @@ import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
+const VERIFICATION_COUNTDOWN = 60
+
 export function SignUpPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { auth } = useAuthStore()
   const { config } = useSystemConfigStore()
+  const requiresVerification = !!config.emailVerificationEnabled
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({ username: '', email: '', password: '', confirmPassword: '' })
+  const [verificationCode, setVerificationCode] = useState('')
+  const [countdown, setCountdown] = useState(0)
+  const [sendingCode, setSendingCode] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Clean up the countdown timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current)
+    }
+  }, [])
+
+  const startCountdown = () => {
+    setCountdown(VERIFICATION_COUNTDOWN)
+    if (timerRef.current) clearInterval(timerRef.current)
+    timerRef.current = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          if (timerRef.current) {
+            clearInterval(timerRef.current)
+            timerRef.current = null
+          }
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+  }
+
+  const handleSendCode = async () => {
+    if (!form.email) {
+      toast.error(t('auth.enterEmailFirst'))
+      return
+    }
+    setSendingCode(true)
+    try {
+      await api.get('/verification', {
+        params: { email: form.email },
+        disableDuplicate: true,
+      } as any)
+      toast.success(t('auth.verificationSent'))
+      startCountdown()
+    } catch {
+      // error toast handled by the axios interceptor
+    } finally {
+      setSendingCode(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (form.password !== form.confirmPassword) {
       toast.error('两次输入的密码不一致')
+      return
+    }
+    if (requiresVerification && !verificationCode) {
+      toast.error(t('auth.codeRequired'))
       return
     }
     setLoading(true)
@@ -30,6 +85,7 @@ export function SignUpPage() {
         username: form.username,
         email: form.email,
         password: form.password,
+        ...(requiresVerification ? { verification_code: verificationCode } : {}),
       })
       const { data } = res.data
       if (data?.token) {
@@ -81,6 +137,36 @@ export function SignUpPage() {
               required
             />
           </div>
+          {requiresVerification && (
+            <div className="space-y-2">
+              <Label htmlFor="verificationCode">{t('auth.verificationCode')}</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="verificationCode"
+                  placeholder={t('auth.verificationCode')}
+                  value={verificationCode}
+                  onChange={(e) => setVerificationCode(e.target.value)}
+                  maxLength={6}
+                  required
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="shrink-0"
+                  disabled={sendingCode || countdown > 0 || !form.email}
+                  onClick={handleSendCode}
+                >
+                  {sendingCode ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : countdown > 0 ? (
+                    t('auth.resendIn', { seconds: countdown })
+                  ) : (
+                    t('auth.sendCode')
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="password">{t('auth.password')}</Label>
             <Input

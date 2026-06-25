@@ -138,7 +138,8 @@ GET /api/v1/services?page=1&page_size=20&sort=created_at&order=desc
 {
     "username": "string (3-64字符, 必填)",
     "password": "string (6-128字符, 必填)",
-    "email": "string (可选)"
+    "email": "string (可选；开启邮箱验证时必填)",
+    "verification_code": "string (开启邮箱验证时必填，6位)"
 }
 ```
 
@@ -153,6 +154,27 @@ GET /api/v1/services?page=1&page_size=20&sort=created_at&order=desc
     }
 }
 ```
+
+> 当管理员开启「邮箱验证」(`EmailVerificationEnabled`) 时，`email` 与 `verification_code` 为必填；验证码通过 `GET /verification` 获取，10 分钟内有效。
+
+### GET /verification
+发送邮箱验证码（用于注册）。公开接口，按客户端 IP 限流（默认每 60 秒最多 1 次）。
+
+**Query:**
+
+| 参数 | 说明 |
+|------|------|
+| `email` | 接收验证码的邮箱地址（必填） |
+
+**Response:** `200 OK`
+```json
+{
+    "success": true,
+    "message": "success"
+}
+```
+
+> 校验顺序：邮箱格式 → 邮箱域名白名单 → 邮箱未被占用 → 生成 6 位验证码并发送。任一环节失败返回 `success: false` 并附带 `message`；触发限流时返回 `429`。
 
 ### POST /auth/login
 用户登录。
@@ -1205,11 +1227,11 @@ canvas.toBlob(blob => {
         { "key": "RateLimitWindowMinutes", "value": "1" },
         { "key": "RateLimitGroupConfig", "value": "{}" },
         { "key": "SMTPServer", "value": "" },
-        { "key": "SMTPPort", "value": "465" },
+        { "key": "SMTPPort", "value": "587" },
         { "key": "SMTPAccount", "value": "" },
         { "key": "SMTPToken", "value": "***" },
         { "key": "SMTPFrom", "value": "" },
-        { "key": "SMTPSSLEnabled", "value": "true" }
+        { "key": "SMTPSSLEnabled", "value": "false" }
     ]
 }
 ```
@@ -1253,11 +1275,11 @@ canvas.toBlob(blob => {
 | 限流 | `RateLimitWindowMinutes` | int | 时间窗口（分钟） |
 | 限流 | `RateLimitGroupConfig` | string | 分组级限流配置 JSON，如 `{"vip":{"max":120,"window":1}}` |
 | SMTP | `SMTPServer` | string | SMTP 服务器地址 |
-| SMTP | `SMTPPort` | int | SMTP 端口 |
+| SMTP | `SMTPPort` | int | SMTP 端口（默认 587，STARTTLS） |
 | SMTP | `SMTPAccount` | string | SMTP 账号 |
-| SMTP | `SMTPToken` | string | SMTP 授权码（敏感） |
-| SMTP | `SMTPFrom` | string | 发件人地址 |
-| SMTP | `SMTPSSLEnabled` | bool | 是否启用 SSL |
+| SMTP | `SMTPToken` | string | SMTP 访问凭证（敏感） |
+| SMTP | `SMTPFrom` | string | 发件人邮箱 |
+| SMTP | `SMTPSSLEnabled` | bool | 是否启用 SSL（默认关闭；端口 465 时应开启） |
 
 ---
 
