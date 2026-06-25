@@ -45,7 +45,7 @@ func buildLogContext(c *gin.Context, exposeMode string) *handler.LogContext {
 			ApiKeyID:   apiKeyID,
 			UserID:     userID,
 			ExposeMode: exposeMode,
-			ClientIP:   c.ClientIP(),
+			ClientIP:   middleware.GetRequestIP(c),
 			UserAgent:  c.Request.UserAgent(),
 		}
 	}
@@ -56,7 +56,7 @@ func buildLogContext(c *gin.Context, exposeMode string) *handler.LogContext {
 		Username:   info.Username,
 		ApiKeyName: info.ApiKeyName,
 		ExposeMode: exposeMode,
-		ClientIP:   c.ClientIP(),
+		ClientIP:   middleware.GetRequestIP(c),
 		UserAgent:  c.Request.UserAgent(),
 	}
 }

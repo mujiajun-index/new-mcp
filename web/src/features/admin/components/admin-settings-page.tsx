@@ -493,6 +493,19 @@ export function AdminSettingsPage() {
                   ? t('settings.checking')
                   : t('settings.checkUpdate')}
               </Button>
+
+              <div className="flex items-center justify-between rounded-lg border p-4">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-medium">{t('settings.cloudflareProxy')}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t('settings.cloudflareProxyDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={localValues.CloudflareProxyEnabled === 'true'}
+                  onCheckedChange={() => toggleBool('CloudflareProxyEnabled')}
+                />
+              </div>
             </div>
           </div>
 

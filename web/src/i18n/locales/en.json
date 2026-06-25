@@ -242,6 +242,8 @@
     "smtpSSL": "Enable SMTP SSL",
     "maintenance": "Maintenance",
     "maintenanceDesc": "View current version information",
+    "cloudflareProxy": "Cloudflare Proxy",
+    "cloudflareProxyDesc": "Enabled when the site is accessed via Cloudflare proxy, allowing retrieval of the real client IP. Only enable if the origin server is accessible exclusively through Cloudflare.",
     "version": "Current Version",
     "startTime": "Startup Time",
     "checkUpdate": "Check for updates",

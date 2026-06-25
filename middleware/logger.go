@@ -18,6 +18,6 @@ func Logger() gin.HandlerFunc {
 		status := c.Writer.Status()
 		method := c.Request.Method
 
-		log.Printf("[%d] %s %s %v %s", status, method, path, latency, c.ClientIP())
+		log.Printf("[%d] %s %s %v %s", status, method, path, latency, GetRequestIP(c))
 	}
 }

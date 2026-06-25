@@ -36,6 +36,7 @@ var defaultOptions = map[string]string{
 	"SMTPToken":                     "",
 	"SMTPFrom":                      "",
 	"SMTPSSLEnabled":                "false",
+	"CloudflareProxyEnabled":        "false",
 }
 
 var sensitiveKeys = map[string]bool{

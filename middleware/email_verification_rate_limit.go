@@ -33,7 +33,7 @@ var (
 // mirroring the memory fallback in reference/new-api.
 func EmailVerificationRateLimit() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		key := c.ClientIP()
+		key := GetRequestIP(c)
 		now := time.Now()
 
 		evMu.Lock()
