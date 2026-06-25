@@ -201,7 +201,7 @@ export function AdminSettingsPage() {
       </div>
 
       <Tabs defaultValue="general">
-        <TabsList>
+        <TabsList className="flex w-full max-w-2xl flex-wrap h-auto gap-1">
           <TabsTrigger value="general" className="gap-1.5">
             <Settings className="h-3.5 w-3.5" />
             {t('settings.general')}
@@ -474,25 +474,29 @@ export function AdminSettingsPage() {
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="rounded-lg bg-muted/50 p-4">
-                  <p className="text-xs text-muted-foreground">{t('settings.version')}</p>
-                  <p className="mt-1 text-lg font-semibold">{currentVersion}</p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs text-muted-foreground">{t('settings.version')}</p>
+                      <p className="mt-1 text-lg font-semibold">{currentVersion}</p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => checkUpdateMutation.mutate()}
+                      disabled={checkUpdateMutation.isPending}
+                    >
+                      <RefreshCw className="h-4 w-4 mr-1.5" />
+                      {checkUpdateMutation.isPending
+                        ? t('settings.checking')
+                        : t('settings.checkUpdate')}
+                    </Button>
+                  </div>
                 </div>
                 <div className="rounded-lg bg-muted/50 p-4">
                   <p className="text-xs text-muted-foreground">{t('settings.startTime')}</p>
                   <p className="mt-1 text-lg font-semibold tabular-nums">{startTimeStr}</p>
                 </div>
               </div>
-
-              <Button
-                variant="outline"
-                onClick={() => checkUpdateMutation.mutate()}
-                disabled={checkUpdateMutation.isPending}
-              >
-                <RefreshCw className="h-4 w-4 mr-1.5" />
-                {checkUpdateMutation.isPending
-                  ? t('settings.checking')
-                  : t('settings.checkUpdate')}
-              </Button>
 
               <div className="flex items-center justify-between rounded-lg border p-4">
                 <div className="space-y-0.5">
