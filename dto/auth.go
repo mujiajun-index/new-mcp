@@ -20,9 +20,10 @@ type AuthResp struct {
 }
 
 type UpdateProfileReq struct {
-	DisplayName *string `json:"display_name"`
-	Email       *string `json:"email" binding:"omitempty,email"`
-	AvatarURL   *string `json:"avatar_url" binding:"omitempty,max=512"`
+	DisplayName           *string `json:"display_name"`
+	Email                 *string `json:"email" binding:"omitempty,email"`
+	AvatarURL             *string `json:"avatar_url" binding:"omitempty,max=512"`
+	EmailVerificationCode string  `json:"email_verification_code" binding:"omitempty"`
 }
 
 type ChangePasswordReq struct {

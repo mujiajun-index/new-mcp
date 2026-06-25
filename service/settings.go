@@ -1,6 +1,8 @@
 package service
 
 import (
+	"strconv"
+
 	"github.com/mujkjk/newmcp/dto"
 	"github.com/mujkjk/newmcp/model"
 )
@@ -32,6 +34,10 @@ func (s *SettingsService) GetPublicSettings() map[string]string {
 			result[k] = model.OptionMap[k]
 		}
 	}
+	// Expose whether SMTP is configured so the frontend knows whether email
+	// binding requires verification. Read inline (not via GetOption*) since we
+	// already hold the read lock.
+	result["SMTPConfigured"] = strconv.FormatBool(model.OptionMap["SMTPServer"] != "" && model.OptionMap["SMTPAccount"] != "")
 	return result
 }
 

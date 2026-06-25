@@ -51,3 +51,44 @@ func SendEmailVerification(c *gin.Context) {
 	}
 	common.Success(c, nil)
 }
+
+// SendEmailBindVerification sends a verification code to an email address that
+// the authenticated user wants to bind/change to. The code is stored under the
+// EmailBindPurpose namespace. Only meaningful when SMTP is configured; callers
+// (the settings page) only invoke it then.
+func SendEmailBindVerification(c *gin.Context) {
+	email := strings.TrimSpace(c.Query("email"))
+	if email == "" {
+		common.Error(c, http.StatusBadRequest, "邮箱地址不能为空")
+		return
+	}
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		common.Error(c, http.StatusBadRequest, "无效的邮箱地址")
+		return
+	}
+	if !model.IsEmailDomainAllowed(email) {
+		common.Error(c, http.StatusBadRequest, "该邮箱域名不在允许列表中")
+		return
+	}
+	if model.IsEmailAlreadyTaken(email) {
+		common.Error(c, http.StatusBadRequest, "该邮箱已被其他账号绑定")
+		return
+	}
+
+	code := common.GenerateVerificationCode(6)
+	common.RegisterVerificationCodeWithKey(email, code, common.EmailBindPurpose)
+
+	systemName := model.GetOptionString("SystemName")
+	subject := fmt.Sprintf("%s邮箱验证邮件", systemName)
+	content := fmt.Sprintf("<p>您好，你正在绑定%s账号邮箱。</p>"+
+		"<p>您的验证码为: <strong>%s</strong></p>"+
+		"<p>验证码 %d 分钟内有效，如果不是本人操作，请忽略。</p>",
+		systemName, code, common.VerificationValidMinutes)
+
+	if err := service.SendEmail(subject, email, content); err != nil {
+		common.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	common.Success(c, nil)
+}

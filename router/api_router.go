@@ -38,6 +38,9 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.PUT("/auth/profile", controller.UpdateProfile)
 		auth.PUT("/auth/password", controller.ChangePassword)
 
+		// Email bind/change verification code (authenticated, rate-limited per IP)
+		auth.GET("/auth/profile/email-code", middleware.EmailVerificationRateLimit(), controller.SendEmailBindVerification)
+
 		// MCP Services
 		auth.GET("/services", controller.ListServices)
 		auth.POST("/services", controller.CreateService)

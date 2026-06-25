@@ -6,14 +6,15 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
-import { User, Mail, Key, Activity, Save } from 'lucide-react'
+import { User, Activity, Key, Save, UserCog } from 'lucide-react'
+import { AccountBindingsCard } from './account-bindings-card'
 
 async function getProfile() {
   const res = await api.get('/auth/profile')
   return res.data
 }
 
-async function updateProfile(data: { display_name?: string; email?: string; avatar_url?: string }) {
+async function updateProfile(data: { display_name?: string }) {
   const res = await api.put('/auth/profile', data)
   return res.data
 }
@@ -34,26 +35,25 @@ export function SettingsPage() {
 
   const profile = profileData?.data
 
-  const [profileForm, setProfileForm] = useState({ display_name: '', email: '' })
+  const [profileForm, setProfileForm] = useState({ display_name: '' })
   const [passwordForm, setPasswordForm] = useState({ old_password: '', new_password: '', confirm: '' })
   const [profileLoaded, setProfileLoaded] = useState(false)
 
   // Initialize form when profile loads
   if (profile && !profileLoaded) {
-    setProfileForm({ display_name: profile.display_name || '', email: profile.email || '' })
+    setProfileForm({ display_name: profile.display_name || '' })
     setProfileLoaded(true)
   }
 
+  const refreshProfile = () => queryClient.invalidateQueries({ queryKey: ['profile'] })
+
   const updateProfileMutation = useMutation({
-    mutationFn: () => updateProfile({
-      display_name: profileForm.display_name || undefined,
-      email: profileForm.email || undefined,
-    }),
+    mutationFn: () => updateProfile({ display_name: profileForm.display_name || undefined }),
     onSuccess: () => {
       toast.success('个人资料已更新')
       queryClient.invalidateQueries({ queryKey: ['profile'] })
     },
-    onError: () => toast.error('更新失败'),
+    // Error toasts are surfaced by the axios response interceptor.
   })
 
   const changePasswordMutation = useMutation({
@@ -127,30 +127,19 @@ export function SettingsPage() {
             </div>
           </div>
 
-          {/* Edit Profile */}
+          {/* Edit Profile (display name; email is bound via the Account Bindings card) */}
           <div className="rounded-xl border bg-card p-5 space-y-4">
             <div className="flex items-center gap-2">
-              <Mail className="h-4 w-4 text-muted-foreground" />
+              <UserCog className="h-4 w-4 text-muted-foreground" />
               <h2 className="text-sm font-semibold">编辑资料</h2>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">显示名称</label>
-                <Input
-                  placeholder="display name"
-                  value={profileForm.display_name}
-                  onChange={e => setProfileForm({ ...profileForm, display_name: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">邮箱</label>
-                <Input
-                  type="email"
-                  placeholder="email"
-                  value={profileForm.email}
-                  onChange={e => setProfileForm({ ...profileForm, email: e.target.value })}
-                />
-              </div>
+            <div className="space-y-2 max-w-sm">
+              <label className="text-sm font-medium">显示名称</label>
+              <Input
+                placeholder="display name"
+                value={profileForm.display_name}
+                onChange={e => setProfileForm({ ...profileForm, display_name: e.target.value })}
+              />
             </div>
             <div className="flex justify-end">
               <Button className="gap-2" onClick={() => updateProfileMutation.mutate()} disabled={updateProfileMutation.isPending}>
@@ -158,6 +147,9 @@ export function SettingsPage() {
               </Button>
             </div>
           </div>
+
+          {/* Account Bindings (email + future OAuth providers) */}
+          <AccountBindingsCard profile={profile} onUpdate={refreshProfile} />
 
           {/* Change Password */}
           <div className="rounded-xl border bg-card p-5 space-y-4">

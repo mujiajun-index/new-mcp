@@ -132,3 +132,10 @@ func IsEmailDomainAllowed(email string) bool {
 	}
 	return false
 }
+
+// IsSMTPConfigured reports whether SMTP sending is configured (server + account
+// set). It gates whether email binding/changing requires verification: when
+// SMTP is configured, the new address must be verified via a code.
+func IsSMTPConfigured() bool {
+	return GetOptionString("SMTPServer") != "" && GetOptionString("SMTPAccount") != ""
+}

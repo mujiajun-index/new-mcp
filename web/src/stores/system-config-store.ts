@@ -8,6 +8,7 @@ interface SystemConfig {
   footer: string
   registerEnabled: boolean
   emailVerificationEnabled: boolean
+  smtpConfigured: boolean
 }
 
 interface SystemConfigState {
@@ -25,6 +26,7 @@ export const useSystemConfigStore = create<SystemConfigState>()(
         footer: '',
         registerEnabled: true,
         emailVerificationEnabled: false,
+        smtpConfigured: false,
       },
       setConfig: (partial) =>
         set((state) => ({
@@ -42,6 +44,7 @@ export const useSystemConfigStore = create<SystemConfigState>()(
               footer: data.Footer ?? state.config.footer,
               registerEnabled: data.RegisterEnabled === undefined ? state.config.registerEnabled : data.RegisterEnabled === 'true',
               emailVerificationEnabled: data.EmailVerificationEnabled === 'true',
+              smtpConfigured: data.SMTPConfigured === 'true',
             },
           }))
         } catch {

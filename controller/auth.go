@@ -57,7 +57,7 @@ func UpdateProfile(c *gin.Context) {
 		return
 	}
 	if err := authService.UpdateProfile(userID, &req); err != nil {
-		common.Error(c, http.StatusInternalServerError, "更新失败")
+		common.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	common.Success(c, nil)

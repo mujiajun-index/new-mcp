@@ -21,6 +21,9 @@ const (
 	EmailVerificationPurpose = "v"
 	// PasswordResetPurpose is reserved for future password-reset flows.
 	PasswordResetPurpose = "r"
+	// EmailBindPurpose is the namespace key prefix for codes used when a user
+	// binds/changes their own email.
+	EmailBindPurpose = "b"
 )
 
 var verificationMutex sync.Mutex

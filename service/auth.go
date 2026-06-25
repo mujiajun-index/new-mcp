@@ -16,6 +16,7 @@ var ErrRegisterDisabled = errors.New("注册功能已禁用")
 var ErrEmailDomainRestricted = errors.New("该邮箱域名不在允许列表中")
 var ErrEmailVerificationRequired = errors.New("请完成邮箱验证")
 var ErrVerificationCodeInvalid = errors.New("验证码错误或已过期")
+var ErrEmailAlreadyBound = errors.New("该邮箱已被其他账号绑定")
 
 type AuthService struct{}
 
@@ -125,8 +126,26 @@ func (s *AuthService) UpdateProfile(userID int64, req *dto.UpdateProfileReq) err
 	if err != nil {
 		return err
 	}
-	if req.Email != nil {
-		user.Email = *req.Email
+	// Email binding / change. When SMTP is configured the new address must be
+	// verified via a code sent to it; otherwise it may be set directly.
+	if req.Email != nil && *req.Email != user.Email {
+		newEmail := *req.Email
+		if !model.IsEmailDomainAllowed(newEmail) {
+			return ErrEmailDomainRestricted
+		}
+		if model.IsEmailAlreadyTaken(newEmail) {
+			return ErrEmailAlreadyBound
+		}
+		if model.IsSMTPConfigured() {
+			if req.EmailVerificationCode == "" {
+				return ErrEmailVerificationRequired
+			}
+			if !common.VerifyCodeWithKey(newEmail, req.EmailVerificationCode, common.EmailBindPurpose) {
+				return ErrVerificationCodeInvalid
+			}
+			common.DeleteKey(newEmail, common.EmailBindPurpose)
+		}
+		user.Email = newEmail
 	}
 	if req.AvatarURL != nil {
 		user.AvatarURL = *req.AvatarURL

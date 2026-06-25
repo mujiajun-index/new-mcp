@@ -225,10 +225,36 @@ GET /api/v1/services?page=1&page_size=20&sort=created_at&order=desc
 **Request Body:**
 ```json
 {
+    "display_name": "string (可选)",
     "email": "new@example.com",
-    "avatar_url": "https://..."
+    "avatar_url": "https://...",
+    "email_verification_code": "string (更换/绑定邮箱且已配置 SMTP 时必填，6 位)"
 }
 ```
+
+> 绑定或更换邮箱时：
+> - 新邮箱需通过域名白名单校验，且未被其他账号占用；
+> - **若已配置 SMTP**（`SMTPServer` + `SMTPAccount`），必须先通过 `GET /auth/profile/email-code` 向新邮箱获取验证码，并在 `email_verification_code` 中提交，校验通过后才更新；
+> - **若未配置 SMTP**，可直接绑定/更换，无需验证码。
+
+### GET /auth/profile/email-code
+向指定新邮箱发送绑定/换绑验证码（需登录）。复用注册验证码的限流策略（按 IP，默认每 60 秒最多 1 次）。
+
+**Query:**
+
+| 参数 | 说明 |
+|------|------|
+| `email` | 欲绑定/更换的新邮箱地址（必填） |
+
+**Response:** `200 OK`
+```json
+{
+    "success": true,
+    "message": "success"
+}
+```
+
+> 校验顺序：邮箱格式 → 域名白名单 → 邮箱未被占用 → 生成 6 位验证码并发送。任一环节失败返回 `success: false` 并附带 `message`；触发限流返回 `429`。
 
 ### PUT /auth/password
 修改密码。
@@ -1200,12 +1226,16 @@ canvas.toBlob(blob => {
     "success": true,
     "data": {
         "SystemName": "NewMCP",
-        "Footer": ""
+        "ServerAddress": "http://localhost:3000",
+        "Footer": "",
+        "RegisterEnabled": "true",
+        "EmailVerificationEnabled": "false",
+        "SMTPConfigured": "false"
     }
 }
 ```
 
-> 仅返回公开设置项（如系统名称、页脚），不包含敏感信息。
+> 仅返回公开设置项（系统名称、页脚、注册/邮箱验证开关等），不包含敏感信息。`SMTPConfigured` 为派生布尔值（`SMTPServer` 与 `SMTPAccount` 均已配置时为 `true`），用于前端判断绑定/更换邮箱是否需要验证码。
 
 ### GET /admin/settings
 获取所有系统设置（需要 admin 角色）。
