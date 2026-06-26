@@ -16,8 +16,6 @@ import (
 	"github.com/mujkjk/newmcp/model"
 )
 
-// Ported from reference/new-api/common/email.go and email-outlook-auth.go.
-//
 // Unlike the reference (which reads package-level globals populated from the
 // option map), this implementation reads SMTP settings on demand from the
 // option store via model.GetOption*. This keeps it in the service layer, since

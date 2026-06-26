@@ -33,6 +33,9 @@ func (k *ApiKey) GetFullKey() string {
 
 func (ApiKey) TableName() string { return "api_keys" }
 
+// GetApiKeyByHash 通过 key 的 hash 反查启用的 API Key（仅校验 key 自身状态）。
+// 注意：这里不校验所属用户的状态——用户禁用判断放在 middleware.APIKeyAuth 中，
+// 以便对被禁用用户返回明确的 403 提示。
 func GetApiKeyByHash(keyHash string) (*ApiKey, error) {
 	var key ApiKey
 	err := DB.Where("key_hash = ? AND status = ?", keyHash, common.StatusEnabled).First(&key).Error

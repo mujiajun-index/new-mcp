@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// Ported from reference/new-api/common/verification.go.
 // Email verification codes are stored in-memory (no Redis in this project).
 
 type verificationValue struct {

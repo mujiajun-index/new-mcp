@@ -46,6 +46,19 @@ func APIKeyAuth() gin.HandlerFunc {
 			return
 		}
 
+		// 校验所属用户状态：key 有效但用户被禁用时，返回明确的 403。
+		user, err := model.GetUserByID(apiKey.UserID)
+		if err != nil {
+			common.Error(c, http.StatusUnauthorized, "无效的 API Key")
+			c.Abort()
+			return
+		}
+		if user.Status != common.StatusEnabled {
+			common.Error(c, http.StatusForbidden, "用户已被禁用")
+			c.Abort()
+			return
+		}
+
 		now := time.Now()
 		_ = model.DB.Model(apiKey).Update("last_used_at", now)
 

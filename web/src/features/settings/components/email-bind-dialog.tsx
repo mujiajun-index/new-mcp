@@ -26,7 +26,6 @@ interface EmailBindDialogProps {
   onSuccess: () => void
 }
 
-// Modal for binding or changing the account email. Mirrors reference/new-api's
 // email-bind-dialog, adapted to this project's verify-only-when-SMTP-configured rule.
 export function EmailBindDialog({
   open,

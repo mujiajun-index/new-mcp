@@ -30,7 +30,6 @@ var (
 
 // EmailVerificationRateLimit caps how often a single client IP can request a
 // verification email. Storage is in-memory (this project does not use Redis),
-// mirroring the memory fallback in reference/new-api.
 func EmailVerificationRateLimit() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key := GetRequestIP(c)
