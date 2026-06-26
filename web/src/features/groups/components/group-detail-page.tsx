@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { getGroup, deleteGroup, removeGroupService, getGroupTools, getGroupEndpoint, updateGroup, batchUpdateGroupTools, checkGroupName } from '../api'
 import { getServices } from '@/features/services/api'
 import { Button } from '@/components/ui/button'
@@ -10,6 +11,7 @@ import { useState, useMemo, useCallback } from 'react'
 import type { BatchToolUpdate } from '@/types'
 
 export function GroupDetailPage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { id } = useParams({ strict: false }) as { id: string }
   const queryClient = useQueryClient()
@@ -47,7 +49,7 @@ export function GroupDetailPage() {
   const deleteMutation = useMutation({
     mutationFn: () => deleteGroup(groupId),
     onSuccess: () => {
-      toast.success('分组已删除')
+      toast.success(t('groups.deleteSuccess'))
       navigate({ to: '/groups' })
     },
   })
@@ -55,7 +57,7 @@ export function GroupDetailPage() {
   const removeServiceMutation = useMutation({
     mutationFn: (serviceId: number) => removeGroupService(groupId, serviceId),
     onSuccess: () => {
-      toast.success('服务已移除')
+      toast.success(t('groups.serviceRemoved'))
       queryClient.invalidateQueries({ queryKey: ['group', id] })
       queryClient.invalidateQueries({ queryKey: ['group-tools', id] })
     },
@@ -65,7 +67,7 @@ export function GroupDetailPage() {
     mutationFn: (mode: 'direct' | 'smart') => updateGroup(groupId, { expose_mode: mode }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['group', id] })
-      toast.success('模式已切换')
+      toast.success(t('groups.modeSwitched'))
     },
   })
 
@@ -78,14 +80,14 @@ export function GroupDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['group', id] })
       setEditing(false)
-      toast.success('分组信息已更新')
+      toast.success(t('groups.groupUpdated'))
     },
   })
 
   const batchUpdateMutation = useMutation({
     mutationFn: (updates: BatchToolUpdate[]) => batchUpdateGroupTools(groupId, updates),
     onSuccess: () => {
-      toast.success('工具配置已更新')
+      toast.success(t('groups.toolConfigUpdated'))
       queryClient.invalidateQueries({ queryKey: ['group-tools', id] })
       setShowToolManager(false)
       setToolStates({})
@@ -216,11 +218,11 @@ export function GroupDetailPage() {
       document.execCommand('copy')
       document.body.removeChild(ta)
     }
-    toast.success('已复制到剪贴板')
+    toast.success(t('groups.copiedToClipboard'))
   }
 
-  if (isLoading) return <div className="flex items-center justify-center py-20 text-muted-foreground">加载中...</div>
-  if (!group) return <div className="flex items-center justify-center py-20 text-muted-foreground">分组不存在</div>
+  if (isLoading) return <div className="flex items-center justify-center py-20 text-muted-foreground">{t('common.loading')}</div>
+  if (!group) return <div className="flex items-center justify-center py-20 text-muted-foreground">{t('groups.notFound')}</div>
 
   const enabledCount = tools.filter(t => t.enabled).length
 
@@ -236,7 +238,7 @@ export function GroupDetailPage() {
             {editing ? (
               <div className="space-y-2">
                 <div>
-                  <label className="text-xs text-muted-foreground">分组标识</label>
+                  <label className="text-xs text-muted-foreground">{t('groups.identifier')}</label>
                   <div className="flex gap-2 items-center">
                     <Input
                       value={editForm.name}
@@ -253,12 +255,12 @@ export function GroupDetailPage() {
                       }}
                       className="h-8 text-sm font-mono"
                     />
-                    {nameChecking && <span className="text-xs text-muted-foreground shrink-0">检查中...</span>}
-                    {nameExists && <span className="text-xs text-destructive shrink-0">标识已存在</span>}
+                    {nameChecking && <span className="text-xs text-muted-foreground shrink-0">{t('groups.checking')}</span>}
+                    {nameExists && <span className="text-xs text-destructive shrink-0">{t('groups.identifierExistsEdit')}</span>}
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground">显示名称</label>
+                  <label className="text-xs text-muted-foreground">{t('groups.displayName')}</label>
                   <Input
                     value={editForm.display_name}
                     onChange={(e) => setEditForm(f => ({ ...f, display_name: e.target.value }))}
@@ -267,27 +269,27 @@ export function GroupDetailPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground">描述</label>
+                  <label className="text-xs text-muted-foreground">{t('groups.description')}</label>
                   <Input
                     value={editForm.description}
                     onChange={(e) => setEditForm(f => ({ ...f, description: e.target.value }))}
-                    placeholder="分组用途说明"
+                    placeholder={t('groups.descriptionPlaceholder')}
                     className="h-8 text-sm"
                   />
                 </div>
                 <div className="flex gap-2 pt-1">
                   <Button size="sm" disabled={updateInfoMutation.isPending || nameExists || !editForm.name.trim()} onClick={() => updateInfoMutation.mutate()}>
                     {updateInfoMutation.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
-                    保存
+                    {t('common.save')}
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => setEditing(false)}>取消</Button>
+                  <Button variant="outline" size="sm" onClick={() => setEditing(false)}>{t('common.cancel')}</Button>
                 </div>
               </div>
             ) : (
               <>
                 <h1 className="text-xl font-semibold">{group.display_name || group.name}</h1>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                  <span>标识: <code className="font-mono bg-muted px-1 rounded">{group.name}</code></span>
+                  <span>ID: <code className="font-mono bg-muted px-1 rounded">{group.name}</code></span>
                 </div>
                 {group.description && <p className="text-sm text-muted-foreground">{group.description}</p>}
               </>
@@ -301,18 +303,18 @@ export function GroupDetailPage() {
               setNameExists(false)
               setEditing(true)
             }}>
-              <Pencil className="h-3.5 w-3.5 mr-1.5" />编辑
+              <Pencil className="h-3.5 w-3.5 mr-1.5" />{t('common.edit')}
             </Button>
           )}
-          <Button variant="outline" size="sm" className="text-destructive" onClick={() => { if (confirm('确定删除此分组？')) deleteMutation.mutate() }}>
-            <Trash2 className="h-3.5 w-3.5 mr-1.5" />删除
+          <Button variant="outline" size="sm" className="text-destructive" onClick={() => { if (confirm(t('groups.deleteConfirm'))) deleteMutation.mutate() }}>
+            <Trash2 className="h-3.5 w-3.5 mr-1.5" />{t('common.delete')}
           </Button>
         </div>
       </div>
 
       {/* Mode switch */}
       <div className="rounded-xl border bg-card p-4">
-        <p className="text-xs text-muted-foreground mb-2">暴露模式</p>
+        <p className="text-xs text-muted-foreground mb-2">{t('groups.exposeMode')}</p>
         <div className="flex gap-2">
           {(['direct', 'smart'] as const).map((mode) => (
             <button
@@ -324,7 +326,7 @@ export function GroupDetailPage() {
                   : 'hover:border-primary/30'
               }`}
             >
-              {mode === 'direct' ? '直接模式' : '智能模式'}
+              {mode === 'direct' ? t('groups.directMode') : t('groups.smartMode')}
             </button>
           ))}
         </div>
@@ -333,7 +335,7 @@ export function GroupDetailPage() {
       {/* Endpoint info */}
       {endpoint && (
         <div className="rounded-xl border bg-card p-5 space-y-3">
-          <h2 className="text-sm font-semibold">端点信息</h2>
+          <h2 className="text-sm font-semibold">{t('groups.endpointsTitle')}</h2>
           {endpoint.streamable_http_url && (
             <div className="flex items-center gap-2">
               <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -358,19 +360,19 @@ export function GroupDetailPage() {
       {/* Services */}
       <div className="rounded-xl border bg-card p-5">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold">已添加服务 ({group.services?.length || 0})</h2>
+          <h2 className="text-sm font-semibold">{t('groups.addedServices', { count: group.services?.length || 0 })}</h2>
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowAddService(!showAddService)}>
-            <Plus className="h-3.5 w-3.5" />添加服务
+            <Plus className="h-3.5 w-3.5" />{t('groups.addService')}
           </Button>
         </div>
 
         {showAddService && (
           <div className="mb-4 rounded-lg border bg-muted/30 p-3 space-y-2">
             {availableServices.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-3">所有服务已添加，无可用服务</p>
+              <p className="text-sm text-muted-foreground text-center py-3">{t('groups.allAdded')}</p>
             ) : (
               <>
-                <p className="text-xs text-muted-foreground">选择要添加的服务：</p>
+                <p className="text-xs text-muted-foreground">{t('groups.selectService')}</p>
                 <div className="flex flex-wrap gap-2">
                   {availableServices.map((s: { id: number; name: string; display_name: string }) => (
                     <Button
@@ -380,7 +382,7 @@ export function GroupDetailPage() {
                       onClick={async () => {
                         const { addGroupServices } = await import('../api')
                         await addGroupServices(groupId, [s.id])
-                        toast.success(`已添加 ${s.display_name || s.name}`)
+                        toast.success(t('groups.serviceAdded', { name: s.display_name || s.name }))
                         queryClient.invalidateQueries({ queryKey: ['group', id] })
                         queryClient.invalidateQueries({ queryKey: ['group-tools', id] })
                       }}
@@ -395,7 +397,7 @@ export function GroupDetailPage() {
         )}
 
         {(!group.services || group.services.length === 0) ? (
-          <p className="text-sm text-muted-foreground text-center py-6">暂无服务，点击上方"添加服务"</p>
+          <p className="text-sm text-muted-foreground text-center py-6">{t('groups.noServiceHint')}</p>
         ) : (
           <div className="space-y-2">
             {group.services.map((s: { id: number; name: string; enabled: boolean; tools_count: number }) => (
@@ -403,15 +405,15 @@ export function GroupDetailPage() {
                 <div className="flex items-center gap-2">
                   <span className={`h-2 w-2 rounded-full ${s.enabled ? 'bg-emerald-500' : 'bg-zinc-400'}`} />
                   <span className="text-sm font-medium">{s.name}</span>
-                  <span className="text-xs text-muted-foreground">{s.tools_count} 工具</span>
+                  <span className="text-xs text-muted-foreground">{s.tools_count} {t('groups.toolsCount')}</span>
                   {s.name.startsWith('vision_') && (
-                    <span className="inline-flex items-center rounded-md bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">视觉</span>
+                    <span className="inline-flex items-center rounded-md bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">{t('groups.badgeVision')}</span>
                   )}
                   {s.name.startsWith('camera_') && (
-                    <span className="inline-flex items-center rounded-md bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">摄像头</span>
+                    <span className="inline-flex items-center rounded-md bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">{t('groups.badgeCamera')}</span>
                   )}
                 </div>
-                <Button variant="ghost" size="sm" className="text-destructive h-7" onClick={() => { if (confirm(`确定移除服务「${s.name}」？移除后该服务的工具将从分组中消失。`)) removeServiceMutation.mutate(s.id) }}>
+                <Button variant="ghost" size="sm" className="text-destructive h-7" onClick={() => { if (confirm(t('groups.removeServiceConfirm', { name: s.name }))) removeServiceMutation.mutate(s.id) }}>
                   <X className="h-3.5 w-3.5" />
                 </Button>
               </div>
@@ -424,18 +426,18 @@ export function GroupDetailPage() {
       <div className="rounded-xl border bg-card p-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold">
-            聚合工具列表 ({enabledCount}/{tools.length})
+            {t('groups.toolsListTitle', { count: tools.length, enabled: enabledCount }).replace(`(${tools.length})`, `(${enabledCount}/${tools.length})`)}
           </h2>
           {tools.length > 0 && (
             <Button variant="outline" size="sm" className="gap-1.5" onClick={() => showToolManager ? setShowToolManager(false) : openToolManager()}>
               <Settings2 className="h-3.5 w-3.5" />
-              {showToolManager ? '收起' : '管理工具'}
+              {showToolManager ? t('groups.collapse') : t('groups.manageTools')}
             </Button>
           )}
         </div>
 
         {tools.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-6">添加服务并刷新后显示工具</p>
+          <p className="text-sm text-muted-foreground text-center py-6">{t('groups.toolsEmptyHint')}</p>
         ) : showToolManager ? (
           /* Tool management panel */
           <div className="space-y-3">
@@ -443,7 +445,7 @@ export function GroupDetailPage() {
             <div className="relative">
               <input
                 type="text"
-                placeholder="搜索工具..."
+                placeholder={t('groups.searchToolsPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full rounded-lg border bg-muted/30 px-3 py-2 text-sm outline-none focus:border-primary"
@@ -467,7 +469,7 @@ export function GroupDetailPage() {
                       <div className="flex items-center gap-2">
                         {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
                         <span className="text-sm font-medium">{svcName}</span>
-                        <span className="text-xs text-muted-foreground">{enabledInSvc}/{svcTools.length} 已启用</span>
+                        <span className="text-xs text-muted-foreground">{t('groups.enabledCount', { enabled: enabledInSvc, total: svcTools.length })}</span>
                       </div>
                       <Button
                         variant="ghost"
@@ -475,7 +477,7 @@ export function GroupDetailPage() {
                         className="h-6 px-2 text-xs"
                         onClick={(e) => { e.stopPropagation(); toggleService(svcName, svcTools) }}
                       >
-                        {allEnabled ? '全部禁用' : '全部启用'}
+                        {allEnabled ? t('groups.disableAll') : t('groups.enableAll')}
                       </Button>
                     </div>
 
@@ -515,7 +517,7 @@ export function GroupDetailPage() {
             {/* Save / Cancel buttons */}
             <div className="flex items-center justify-between pt-2 border-t">
               <span className="text-xs text-muted-foreground">
-                {changedTools.length > 0 ? `${changedTools.length} 项变更待保存` : '无变更'}
+                {changedTools.length > 0 ? t('groups.changesPending', { count: changedTools.length }) : t('groups.noChanges')}
               </span>
               <div className="flex gap-2">
                 <Button
@@ -523,14 +525,14 @@ export function GroupDetailPage() {
                   size="sm"
                   onClick={() => { setShowToolManager(false); setToolStates({}) }}
                 >
-                  取消
+                  {t('common.cancel')}
                 </Button>
                 <Button
                   size="sm"
                   disabled={changedTools.length === 0 || batchUpdateMutation.isPending}
                   onClick={() => batchUpdateMutation.mutate(changedTools)}
                 >
-                  {batchUpdateMutation.isPending ? '保存中...' : `保存更改 (${changedTools.length})`}
+                  {batchUpdateMutation.isPending ? t('groups.saving') : t('groups.saveChanges', { count: changedTools.length })}
                 </Button>
               </div>
             </div>
@@ -539,7 +541,7 @@ export function GroupDetailPage() {
           /* Normal tool list - only show enabled tools */
           <div className="space-y-2">
             {tools.filter(t => t.enabled).length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-6">暂无启用的工具，点击"管理工具"选择要启用的工具</p>
+              <p className="text-sm text-muted-foreground text-center py-6">{t('groups.noEnabledToolsHint')}</p>
             ) : (
               tools.filter(t => t.enabled).map((tool) => (
                 <div key={tool.name} className="flex items-start gap-3 rounded-lg border p-3">
@@ -547,7 +549,7 @@ export function GroupDetailPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium font-mono">{tool.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      来自 {tool.service_name} · 原名: {tool.original_name}
+                      {t('groups.toolFrom', { name: tool.service_name, original: tool.original_name })}
                     </p>
                     {tool.description && <p className="mt-1 text-xs text-muted-foreground">{tool.description}</p>}
                   </div>

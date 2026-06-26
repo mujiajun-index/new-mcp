@@ -115,7 +115,7 @@ export function EmailBindDialog({
         email,
         ...(requireVerify ? { email_verification_code: code } : {}),
       })
-      toast.success('邮箱绑定成功')
+      toast.success(t('settings.bindSuccess'))
       onOpenChange(false)
       onSuccess()
     } catch {
@@ -131,24 +131,24 @@ export function EmailBindDialog({
     <Dialog open={open} onOpenChange={(o) => !loading && onOpenChange(o)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{isChange ? '更换邮箱' : '绑定邮箱'}</DialogTitle>
+          <DialogTitle>{isChange ? t('settings.changeEmail') : t('settings.bindEmail')}</DialogTitle>
           <DialogDescription>
             {isChange
-              ? `当前邮箱：${currentEmail}。输入新邮箱${requireVerify ? '并完成验证' : ''}以更换。`
-              : '为你的账号绑定一个邮箱地址。'}
-            {!requireVerify && ' 当前未配置 SMTP 邮件，可直接绑定，无需验证码。'}
+              ? t('settings.changeEmailDesc', { email: currentEmail, verify: requireVerify ? t('settings.verifyAnd') : '' })
+              : t('settings.bindEmailDesc')}
+            {!requireVerify && t('settings.noSmtpHint')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <div className="space-y-2">
-            <Label htmlFor="bind-email">邮箱地址</Label>
+            <Label htmlFor="bind-email">{t('settings.emailAddress')}</Label>
             <Input
               id="bind-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="请输入邮箱"
+              placeholder={t('settings.emailPlaceholder')}
               disabled={loading}
             />
           </div>
@@ -186,7 +186,7 @@ export function EmailBindDialog({
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
-            取消
+            {t('common.cancel')}
           </Button>
           <Button
             type="button"
@@ -194,7 +194,7 @@ export function EmailBindDialog({
             disabled={loading || !email || (requireVerify && !code)}
           >
             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {loading ? '绑定中...' : isChange ? '更换邮箱' : '绑定'}
+            {loading ? t('settings.binding') : isChange ? t('settings.changeEmail') : t('settings.bindEmail')}
           </Button>
         </DialogFooter>
       </DialogContent>

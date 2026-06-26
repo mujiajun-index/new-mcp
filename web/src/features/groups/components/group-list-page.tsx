@@ -1,11 +1,13 @@
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { getGroups } from '../api'
 import { Button } from '@/components/ui/button'
 import type { GroupListItem } from '@/types'
 import { Plus, FolderTree, Wrench } from 'lucide-react'
 
 export function GroupListPage() {
+  const { t } = useTranslation()
   const { data, isLoading } = useQuery({
     queryKey: ['groups'],
     queryFn: () => getGroups(),
@@ -17,23 +19,23 @@ export function GroupListPage() {
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">分组管理</h1>
-          <p className="mt-1 text-sm text-muted-foreground">将多个服务聚合为统一的 MCP 端点</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('nav.groups')}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t('groups.subtitle')}</p>
         </div>
         <Link to="/groups/create">
           <Button className="gap-2">
             <Plus className="h-4 w-4" />
-            创建分组
+            {t('groups.createGroup')}
           </Button>
         </Link>
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">加载中...</div>
+        <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">{t('common.loading')}</div>
       ) : groups.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <FolderTree className="h-10 w-10 text-muted-foreground/30 mb-3" />
-          <p className="text-sm text-muted-foreground">暂无分组</p>
+          <p className="text-sm text-muted-foreground">{t('groups.noGroups')}</p>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -50,17 +52,17 @@ export function GroupListPage() {
                   <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                     g.expose_mode === 'direct' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
                   }`}>
-                    {g.expose_mode === 'direct' ? '直接' : '智能'}
+                    {g.expose_mode === 'direct' ? t('groups.modeDirect') : t('groups.modeSmart')}
                   </span>
                 </div>
                 {g.description && (
                   <p className="mt-2 text-sm text-muted-foreground line-clamp-2">{g.description}</p>
                 )}
                 <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1"><Wrench className="h-3 w-3" />{g.tools_count} 工具</span>
+                  <span className="flex items-center gap-1"><Wrench className="h-3 w-3" />{g.tools_count} {t('groups.toolsCount')}</span>
                   <span className={`inline-flex items-center gap-1 ${g.status === 1 ? 'text-emerald-600' : 'text-zinc-500'}`}>
                     <span className={`h-1.5 w-1.5 rounded-full ${g.status === 1 ? 'bg-emerald-500' : 'bg-zinc-400'}`} />
-                    {g.status === 1 ? '启用' : '禁用'}
+                    {g.status === 1 ? t('common.active') : t('common.inactive')}
                   </span>
                 </div>
               </div>

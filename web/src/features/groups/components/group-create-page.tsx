@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { createGroup, checkGroupName } from '../api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,6 +10,7 @@ import { toast } from 'sonner'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 
 export function GroupCreatePage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [form, setForm] = useState({
     name: '',
@@ -27,12 +29,12 @@ export function GroupCreatePage() {
       expose_mode: form.expose_mode,
     }),
     onSuccess: (res) => {
-      toast.success('分组创建成功')
+      toast.success(t('groups.createSuccess'))
       const id = res.data?.id
       navigate({ to: '/groups/$id', params: { id: String(id) } })
     },
     onError: () => {
-      toast.error('创建失败，请检查分组标识是否重复')
+      toast.error(t('groups.createFailed'))
     },
   })
 
@@ -52,7 +54,7 @@ export function GroupCreatePage() {
 
   const handleCreate = () => {
     if (nameExists) {
-      toast.error('分组标识已存在，请使用其他名称')
+      toast.error(t('groups.identifierExists'))
       return
     }
     createMutation.mutate()
@@ -64,12 +66,12 @@ export function GroupCreatePage() {
         <Button variant="ghost" size="icon" onClick={() => navigate({ to: '/groups' })}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <h1 className="text-xl font-semibold">创建分组</h1>
+        <h1 className="text-xl font-semibold">{t('groups.createGroup')}</h1>
       </div>
 
       <div className="space-y-4 rounded-xl border bg-card p-6">
         <div className="space-y-2">
-          <Label htmlFor="name">分组标识 *</Label>
+          <Label htmlFor="name">{t('groups.identifierRequired')}</Label>
           <Input
             id="name"
             placeholder="my-group"
@@ -77,20 +79,20 @@ export function GroupCreatePage() {
             onChange={(e) => { setForm({ ...form, name: e.target.value }); setNameExists(false) }}
             onBlur={handleNameBlur}
           />
-          {checking && <p className="text-xs text-muted-foreground">检查中...</p>}
-          {nameExists && <p className="text-xs text-destructive">分组标识已存在</p>}
-          <p className="text-xs text-muted-foreground">唯一标识，同时作为端点路径使用</p>
+          {checking && <p className="text-xs text-muted-foreground">{t('groups.checking')}</p>}
+          {nameExists && <p className="text-xs text-destructive">{t('groups.exists')}</p>}
+          <p className="text-xs text-muted-foreground">{t('groups.identifierTip')}</p>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="display_name">显示名称</Label>
-          <Input id="display_name" placeholder="我的分组" value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} />
+          <Label htmlFor="display_name">{t('groups.displayName')}</Label>
+          <Input id="display_name" placeholder={t('groups.displayNamePlaceholder')} value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="description">描述</Label>
-          <Input id="description" placeholder="分组用途说明" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          <Label htmlFor="description">{t('groups.description')}</Label>
+          <Input id="description" placeholder={t('groups.descriptionPlaceholder')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
         </div>
         <div className="space-y-2">
-          <Label>暴露模式</Label>
+          <Label>{t('groups.exposeMode')}</Label>
           <div className="grid gap-3 sm:grid-cols-2">
             <button
               type="button"
@@ -99,8 +101,8 @@ export function GroupCreatePage() {
                 form.expose_mode === 'direct' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:border-primary/30'
               }`}
             >
-              <p className="text-sm font-semibold">Direct 模式</p>
-              <p className="mt-1 text-xs text-muted-foreground">直接暴露所有工具，适合工具少的场景</p>
+              <p className="text-sm font-semibold">{t('groups.modeDirect')}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t('groups.modeDirectDesc')}</p>
             </button>
             <button
               type="button"
@@ -109,8 +111,8 @@ export function GroupCreatePage() {
                 form.expose_mode === 'smart' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:border-primary/30'
               }`}
             >
-              <p className="text-sm font-semibold">Smart 模式</p>
-              <p className="mt-1 text-xs text-muted-foreground">仅暴露 3 个元工具（搜索/查看/执行），适合工具多的场景</p>
+              <p className="text-sm font-semibold">{t('groups.modeSmart')}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t('groups.modeSmartDesc')}</p>
             </button>
           </div>
         </div>
@@ -123,7 +125,7 @@ export function GroupCreatePage() {
           disabled={!form.name.trim() || nameExists || checking || createMutation.isPending}
         >
           {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-          创建分组
+          {t('groups.createGroup')}
         </Button>
       </div>
     </div>

@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Video, VideoOff, Loader2, SwitchCamera } from 'lucide-react'
 import { useCameraStream } from './use-camera-stream'
@@ -9,6 +10,7 @@ interface CameraCaptureProps {
 }
 
 export function CameraCapture({ cameraId, onStreamingChange }: CameraCaptureProps) {
+  const { t } = useTranslation()
   const {
     videoRef,
     canvasRef,
@@ -45,7 +47,7 @@ export function CameraCapture({ cameraId, onStreamingChange }: CameraCaptureProp
         {!active && (
           <div className="flex flex-col items-center gap-2 text-muted-foreground">
             <Video className="h-8 w-8 text-muted-foreground/30" />
-            <p className="text-sm">摄像头未开启</p>
+            <p className="text-sm">{t('cameras.capture.notStarted')}</p>
           </div>
         )}
 
@@ -54,7 +56,7 @@ export function CameraCapture({ cameraId, onStreamingChange }: CameraCaptureProp
           <div className="absolute top-3 left-3">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-xs text-white">
               <span className={`h-2 w-2 rounded-full ${streaming ? 'bg-emerald-400' : 'bg-zinc-400'}`} />
-              {streaming ? '推流中' : '未推流'}
+              {streaming ? t('cameras.streamStreaming') : t('cameras.streamIdle')}
             </span>
           </div>
         )}
@@ -63,7 +65,7 @@ export function CameraCapture({ cameraId, onStreamingChange }: CameraCaptureProp
         {active && (
           <div className="absolute top-3 right-3">
             <span className="inline-flex items-center rounded-full bg-black/60 px-2.5 py-1 text-xs text-white">
-              {facingMode === 'user' ? '前置' : '后置'}
+              {facingMode === 'user' ? t('cameras.capture.front') : t('cameras.capture.back')}
             </span>
           </div>
         )}
@@ -82,27 +84,27 @@ export function CameraCapture({ cameraId, onStreamingChange }: CameraCaptureProp
           <>
             <Button onClick={open} disabled={opening || !mediaSupported} className="gap-2">
               {opening ? <Loader2 className="h-4 w-4 animate-spin" /> : <Video className="h-4 w-4" />}
-              {opening ? '正在开启...' : mediaSupported ? '开启摄像头' : '需要 HTTPS'}
+              {opening ? t('cameras.capture.starting') : mediaSupported ? t('cameras.capture.start') : t('cameras.capture.needsHttps')}
             </Button>
             {!mediaSupported && (
-              <p className="text-xs text-muted-foreground">使用 localhost 或 127.0.0.1 访问也可以开启摄像头</p>
+              <p className="text-xs text-muted-foreground">{t('cameras.capture.httpsHint')}</p>
             )}
           </>
         ) : (
           <div className="flex gap-2">
             <Button variant="outline" onClick={close} className="gap-2">
               <VideoOff className="h-4 w-4" />
-              关闭摄像头
+              {t('cameras.capture.stop')}
             </Button>
             <Button
               variant="outline"
               onClick={switchCamera}
               disabled={switching || !hasMultipleCameras}
               className="gap-2"
-              title={hasMultipleCameras ? '切换前后摄像头' : '仅检测到一个摄像头'}
+              title={hasMultipleCameras ? t('cameras.capture.flipTitle') : t('cameras.capture.oneCamOnly')}
             >
               {switching ? <Loader2 className="h-4 w-4 animate-spin" /> : <SwitchCamera className="h-4 w-4" />}
-              切换摄像头
+              {t('cameras.capture.flip')}
             </Button>
           </div>
         )}

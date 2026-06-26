@@ -29,34 +29,37 @@ const transportIcons: Record<string, React.ComponentType<{ className?: string }>
   'virtual': Zap,
 }
 
-const transportLabels: Record<string, string> = {
-  'stdio': 'Stdio',
-  'sse': 'SSE',
-  'streamable-http': 'Streamable HTTP',
-  'websocket': 'WebSocket',
-  'passive-ws': 'Passive WS',
-  'virtual': '虚拟',
+function useTransportLabel() {
+  const { t } = useTranslation()
+  return (type: string) => {
+    if (type === 'virtual') return t('services.transport_virtual')
+    return t(`services.transports.${type}`, { defaultValue: type })
+  }
 }
 
 function StatusBadge({ status }: { status: number }) {
-  if (status === 1) return <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">启用</span>
-  return <span className="inline-flex items-center gap-1 rounded-full bg-zinc-500/10 px-2 py-0.5 text-xs font-medium text-zinc-500">禁用</span>
+  const { t } = useTranslation()
+  if (status === 1) return <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">{t('services.statusBadgeEnabled')}</span>
+  return <span className="inline-flex items-center gap-1 rounded-full bg-zinc-500/10 px-2 py-0.5 text-xs font-medium text-zinc-500">{t('services.statusBadgeDisabled')}</span>
 }
 
 function HealthBadge({ status }: { status: string }) {
-  if (status === 'healthy') return <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" title="健康" />
-  if (status === 'unhealthy') return <span className="inline-flex h-2 w-2 rounded-full bg-red-500" title="异常" />
-  return <span className="inline-flex h-2 w-2 rounded-full bg-zinc-300 dark:bg-zinc-600" title="未知" />
+  const { t } = useTranslation()
+  if (status === 'healthy') return <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" title={t('services.healthHealthy')} />
+  if (status === 'unhealthy') return <span className="inline-flex h-2 w-2 rounded-full bg-red-500" title={t('services.healthUnhealthy')} />
+  return <span className="inline-flex h-2 w-2 rounded-full bg-zinc-300 dark:bg-zinc-600" title={t('services.healthUnknown')} />
 }
 
 function healthLabel(status: string) {
-  if (status === 'healthy') return '健康'
-  if (status === 'unhealthy') return '异常'
-  return '未知'
+  const { t } = useTranslation()
+  if (status === 'healthy') return t('services.healthHealthy')
+  if (status === 'unhealthy') return t('services.healthUnhealthy')
+  return t('services.healthUnknown')
 }
 
 export function ServiceListPage() {
   const { t } = useTranslation()
+  const transportLabel = useTransportLabel()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
   const [keyword, setKeyword] = useState('')
@@ -71,7 +74,7 @@ export function ServiceListPage() {
   const deleteMutation = useMutation({
     mutationFn: deleteService,
     onSuccess: () => {
-      toast.success('服务已删除')
+      toast.success(t('services.deleteSuccess'))
       queryClient.invalidateQueries({ queryKey: ['services'] })
     },
   })
@@ -88,14 +91,14 @@ export function ServiceListPage() {
     onSuccess: (res) => {
       const result = res.data
       if (result?.connected) {
-        toast.success(`连接成功，${result.tools_count ?? 0} 个工具，延迟 ${result.latency_ms ?? 0}ms`)
+        toast.success(t('services.connectSuccess', { count: result.tools_count ?? 0, ms: result.latency_ms ?? 0 }))
       } else {
-        toast.error(`连接失败: ${result?.error || '未知错误'}`)
+        toast.error(t('services.connectFailed', { error: result?.error || t('common.unknownError') }))
       }
       queryClient.invalidateQueries({ queryKey: ['services'] })
     },
     onError: () => {
-      toast.error('测试请求失败')
+      toast.error(t('services.testRequestFailed'))
     },
   })
 
@@ -111,12 +114,12 @@ export function ServiceListPage() {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{t('nav.services')}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">管理所有 MCP 服务</p>
+          <p className="mt-1 text-sm text-muted-foreground">{t('services.subtitle')}</p>
         </div>
         <Link to="/services/create">
           <Button className="gap-2">
             <Plus className="h-4 w-4" />
-            注册新服务
+            {t('services.registerNew')}
           </Button>
         </Link>
       </div>
@@ -126,7 +129,7 @@ export function ServiceListPage() {
         <form onSubmit={handleSearch} className="relative max-w-sm flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="搜索服务名称..."
+            placeholder={t('services.searchPlaceholder')}
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             className="pl-9"
@@ -138,16 +141,16 @@ export function ServiceListPage() {
             size="sm"
             onClick={() => setTransportFilter('')}
           >
-            全部
+            {t('services.filterAll')}
           </Button>
-          {['stdio', 'sse', 'streamable-http', 'websocket', 'passive-ws'].map((t) => (
+          {['stdio', 'sse', 'streamable-http', 'websocket', 'passive-ws'].map((tp) => (
             <Button
-              key={t}
-              variant={transportFilter === t ? 'default' : 'outline'}
+              key={tp}
+              variant={transportFilter === tp ? 'default' : 'outline'}
               size="sm"
-              onClick={() => setTransportFilter(t)}
+              onClick={() => setTransportFilter(tp)}
             >
-              {transportLabels[t]}
+              {transportLabel(tp)}
             </Button>
           ))}
         </div>
@@ -156,12 +159,12 @@ export function ServiceListPage() {
       {/* List */}
       <div className="overflow-hidden rounded-xl border bg-card">
         {isLoading ? (
-          <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">加载中...</div>
+          <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">{t('common.loading')}</div>
         ) : services.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <Server className="mb-3 h-10 w-10 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">暂无服务</p>
-            <p className="mt-1 text-xs text-muted-foreground/60">点击"注册新服务"添加第一个 MCP 服务</p>
+            <p className="text-sm text-muted-foreground">{t('services.noServices')}</p>
+            <p className="mt-1 text-xs text-muted-foreground/60">{t('services.noServicesHint')}</p>
           </div>
         ) : isMobile ? (
           <div className="divide-y">
@@ -185,8 +188,8 @@ export function ServiceListPage() {
                     <button
                       type="button"
                       className="cursor-pointer"
-                      title={s.status === 1 ? '点击禁用' : '点击启用'}
-                      aria-label={s.status === 1 ? '点击禁用' : '点击启用'}
+                      title={s.status === 1 ? t('services.clickDisable') : t('services.clickEnable')}
+                      aria-label={s.status === 1 ? t('services.clickDisable') : t('services.clickEnable')}
                       onClick={() => toggleMutation.mutate({ id: s.id, status: s.status === 1 ? 0 : 1 })}
                     >
                       <StatusBadge status={s.status} />
@@ -194,17 +197,17 @@ export function ServiceListPage() {
                   }
                   meta={[
                     {
-                      label: '传输',
+                      label: t('services.transport'),
                       value: (
                         <span className="inline-flex items-center gap-1.5">
                           <Icon className="h-3.5 w-3.5" />
-                          {transportLabels[s.transport_type] || s.transport_type}
+                          {transportLabel(s.transport_type)}
                         </span>
                       ),
                     },
-                    { label: '工具数', value: <span className="tabular-nums">{s.tools_count}</span> },
+                    { label: t('services.toolsCount'), value: <span className="tabular-nums">{s.tools_count}</span> },
                     {
-                      label: '健康',
+                      label: t('services.healthHealthy'),
                       value: (
                         <span className="inline-flex items-center gap-1.5">
                           <HealthBadge status={s.health_status} />
@@ -226,11 +229,11 @@ export function ServiceListPage() {
                           {testMutation.isPending && testMutation.variables === s.id
                             ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             : <Zap className="h-3.5 w-3.5" />}
-                          测试
+                          {t('services.test')}
                         </Button>
                       )}
                       <Link to="/services/$id" params={{ id: String(s.id) }}>
-                        <Button variant="ghost" size="sm">详情</Button>
+                        <Button variant="ghost" size="sm">{t('services.detail')}</Button>
                       </Link>
                       {!isVirtual && (
                         <DropdownMenu>
@@ -243,13 +246,13 @@ export function ServiceListPage() {
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
                               onClick={() => {
-                                if (confirm(`确定删除服务 "${s.display_name || s.name}"？`)) {
+                                if (confirm(t('services.deleteConfirm', { name: s.display_name || s.name }))) {
                                   deleteMutation.mutate(s.id)
                                 }
                               }}
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
-                              删除
+                              {t('common.delete')}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -265,12 +268,12 @@ export function ServiceListPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">服务名称</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">传输类型</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">健康</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">工具数</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">状态</th>
-                  <th className="px-4 py-3 text-right font-medium text-muted-foreground">操作</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('services.serviceName')}</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('services.transportType')}</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('services.healthHealthy')}</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('services.toolsCount')}</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('common.status')}</th>
+                  <th className="px-4 py-3 text-right font-medium text-muted-foreground">{t('common.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -290,7 +293,7 @@ export function ServiceListPage() {
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center gap-1.5 text-xs">
                           <Icon className="h-3.5 w-3.5" />
-                          {transportLabels[s.transport_type] || s.transport_type}
+                          {transportLabel(s.transport_type)}
                         </span>
                       </td>
                       <td className="px-4 py-3"><HealthBadge status={s.health_status} /></td>
@@ -299,8 +302,8 @@ export function ServiceListPage() {
                         <button
                           type="button"
                           className="cursor-pointer"
-                          title={s.status === 1 ? '点击禁用' : '点击启用'}
-                          aria-label={s.status === 1 ? '点击禁用' : '点击启用'}
+                          title={s.status === 1 ? t('services.clickDisable') : t('services.clickEnable')}
+                          aria-label={s.status === 1 ? t('services.clickDisable') : t('services.clickEnable')}
                           onClick={() => toggleMutation.mutate({ id: s.id, status: s.status === 1 ? 0 : 1 })}
                         >
                           <StatusBadge status={s.status} />
@@ -319,11 +322,11 @@ export function ServiceListPage() {
                             {testMutation.isPending && testMutation.variables === s.id
                               ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                               : <Zap className="h-3.5 w-3.5" />}
-                            测试
+                            {t('services.test')}
                           </Button>
                           )}
                           <Link to="/services/$id" params={{ id: String(s.id) }}>
-                            <Button variant="ghost" size="sm">详情</Button>
+                            <Button variant="ghost" size="sm">{t('services.detail')}</Button>
                           </Link>
                           {!isVirtual && (
                           <Button
@@ -331,7 +334,7 @@ export function ServiceListPage() {
                             size="sm"
                             className="text-destructive hover:text-destructive"
                             onClick={() => {
-                              if (confirm(`确定删除服务 "${s.display_name || s.name}"？`)) {
+                              if (confirm(t('services.deleteConfirm', { name: s.display_name || s.name }))) {
                                 deleteMutation.mutate(s.id)
                               }
                             }}

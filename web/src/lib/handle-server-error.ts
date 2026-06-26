@@ -1,5 +1,6 @@
 import { AxiosError } from 'axios'
 import { toast } from 'sonner'
+import i18n from '@/i18n/config'
 
 export function handleServerError(error: unknown) {
   if (error instanceof AxiosError) {
@@ -11,5 +12,5 @@ export function handleServerError(error: unknown) {
     toast.error(error.message)
     return
   }
-  toast.error('未知错误')
+  toast.error(i18n.t('common.unknownError'))
 }

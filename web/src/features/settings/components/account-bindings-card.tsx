@@ -1,4 +1,5 @@
 import { useMemo, useState, type ElementType, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Mail, Link2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,6 +26,7 @@ interface AccountBindingsCardProps {
 }
 
 export function AccountBindingsCard({ profile, onUpdate }: AccountBindingsCardProps) {
+  const { t } = useTranslation()
   const { config } = useSystemConfigStore()
   const requireEmailVerify = !!config.smtpConfigured
   const [emailDialogOpen, setEmailDialogOpen] = useState(false)
@@ -33,7 +35,7 @@ export function AccountBindingsCard({ profile, onUpdate }: AccountBindingsCardPr
     return [
       {
         id: 'email',
-        label: '邮箱',
+        label: t('settings.bindingEmail'),
         icon: Mail,
         value: profile?.email,
         isBound: !!profile?.email,
@@ -43,16 +45,16 @@ export function AccountBindingsCard({ profile, onUpdate }: AccountBindingsCardPr
       // Future account types (GitHub, Google, OIDC, ...) slot in here.
     ].filter((b) => b.isEnabled)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile])
+  }, [profile, t])
 
   return (
     <>
       <div className="rounded-xl border bg-card p-5 space-y-4">
         <div className="flex items-center gap-2">
           <Link2 className="h-4 w-4 text-muted-foreground" />
-          <h2 className="text-sm font-semibold">账户绑定</h2>
+          <h2 className="text-sm font-semibold">{t('settings.accountBindings')}</h2>
         </div>
-        <p className="-mt-2 text-xs text-muted-foreground">绑定邮箱或第三方账号，用于登录与通知</p>
+        <p className="-mt-2 text-xs text-muted-foreground">{t('settings.accountBindingsDesc')}</p>
 
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3">
           {bindings.map((binding) => (
@@ -73,6 +75,7 @@ export function AccountBindingsCard({ profile, onUpdate }: AccountBindingsCardPr
 }
 
 function BindingRow({ binding }: { binding: BindingItem }): ReactNode {
+  const { t } = useTranslation()
   return (
     <div className="flex items-center justify-between gap-2.5 rounded-lg border p-2.5 sm:gap-3 sm:p-3">
       <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
@@ -82,9 +85,9 @@ function BindingRow({ binding }: { binding: BindingItem }): ReactNode {
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
             <p className="text-sm font-medium">{binding.label}</p>
-            {binding.isBound && <Badge variant="success">已绑定</Badge>}
+            {binding.isBound && <Badge variant="success">{t('settings.bound')}</Badge>}
           </div>
-          <p className="truncate text-xs text-muted-foreground">{binding.value || '未绑定'}</p>
+          <p className="truncate text-xs text-muted-foreground">{binding.value || t('settings.unbound')}</p>
         </div>
       </div>
       <Button
@@ -93,7 +96,7 @@ function BindingRow({ binding }: { binding: BindingItem }): ReactNode {
         className="h-7 shrink-0 px-2.5 text-xs"
         onClick={binding.onBind}
       >
-        {binding.isBound ? '更换' : '绑定'}
+        {binding.isBound ? t('settings.change') : t('settings.bind')}
       </Button>
     </div>
   )

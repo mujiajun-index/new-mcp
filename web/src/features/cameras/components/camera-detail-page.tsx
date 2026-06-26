@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { getCamera, updateCamera, deleteCamera, enableCamera, disableCamera } from '../api'
 import { getVisionConfigs } from '@/features/vision/api'
 import type { VisionConfigListItem } from '@/features/vision/api'
@@ -33,6 +34,7 @@ import {
 } from 'lucide-react'
 
 export function CameraDetailPage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { id } = useParams({ strict: false }) as { id: string }
   const queryClient = useQueryClient()
@@ -92,12 +94,12 @@ export function CameraDetailPage() {
         analyze_desc: form.analyze_desc,
       }),
     onSuccess: () => {
-      toast.success('更新成功')
+      toast.success(t('cameras.detail.updateSuccess'))
       setEditing(false)
       queryClient.invalidateQueries({ queryKey: ['cameras', id] })
     },
     onError: () => {
-      toast.error('更新失败')
+      toast.error(t('cameras.detail.updateFailed'))
     },
   })
 
@@ -105,7 +107,7 @@ export function CameraDetailPage() {
     mutationFn: (action: 'enable' | 'disable') =>
       action === 'enable' ? enableCamera(cameraId) : disableCamera(cameraId),
     onSuccess: () => {
-      toast.success('状态已更新')
+      toast.success(t('cameras.detail.statusUpdated'))
       queryClient.invalidateQueries({ queryKey: ['cameras', id] })
     },
   })
@@ -113,13 +115,13 @@ export function CameraDetailPage() {
   const deleteMutation = useMutation({
     mutationFn: () => deleteCamera(cameraId),
     onSuccess: () => {
-      toast.success('摄像头已删除')
+      toast.success(t('cameras.detail.deleted'))
       navigate({ to: '/cameras' })
     },
   })
 
-  if (isLoading) return <div className="flex items-center justify-center py-20 text-muted-foreground">加载中...</div>
-  if (!camera) return <div className="flex items-center justify-center py-20 text-muted-foreground">摄像头不存在</div>
+  if (isLoading) return <div className="flex items-center justify-center py-20 text-muted-foreground">{t('common.loading')}</div>
+  if (!camera) return <div className="flex items-center justify-center py-20 text-muted-foreground">{t('cameras.detail.notFound')}</div>
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
@@ -135,14 +137,14 @@ export function CameraDetailPage() {
               camera.auto_register ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500'
             }`}>
               <span className={`h-2 w-2 rounded-full ${camera.auto_register ? 'bg-emerald-500' : 'bg-zinc-400'}`} />
-              {camera.auto_register ? '已启用' : '已禁用'}
+              {camera.auto_register ? t('cameras.statusEnabled') : t('cameras.statusDisabled')}
             </p>
           </div>
         </div>
         <div className="flex gap-2">
           {!editing && (
             <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-              <Pencil className="h-4 w-4 mr-1.5" />编辑
+              <Pencil className="h-4 w-4 mr-1.5" />{t('cameras.detail.edit')}
             </Button>
           )}
           <Button
@@ -156,7 +158,7 @@ export function CameraDetailPage() {
             ) : (
               <CirclePower className="h-4 w-4 mr-1.5" />
             )}
-            {camera.auto_register ? '禁用' : '启用'}
+            {camera.auto_register ? t('cameras.disable') : t('cameras.enable')}
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -166,18 +168,18 @@ export function CameraDetailPage() {
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>确认删除</AlertDialogTitle>
+                <AlertDialogTitle>{t('cameras.deleteConfirmTitle')}</AlertDialogTitle>
                 <AlertDialogDescription>
-                  确定要删除摄像头 "{camera.name}" 吗？此操作不可撤销。
+                  {t('cameras.detail.deleteConfirmDesc', { name: camera.name })}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>取消</AlertDialogCancel>
+                <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                 <AlertDialogAction
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   onClick={() => deleteMutation.mutate()}
                 >
-                  删除
+                  {t('common.delete')}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -188,13 +190,13 @@ export function CameraDetailPage() {
       {/* Basic config */}
       <div className="rounded-xl border bg-card p-5 space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-muted-foreground">基本配置</h2>
+          <h2 className="text-sm font-medium text-muted-foreground">{t('cameras.detail.basicConfig')}</h2>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           {/* Name */}
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">名称</Label>
+            <Label className="text-xs text-muted-foreground">{t('cameras.detail.name')}</Label>
             {editing ? (
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             ) : (
@@ -204,14 +206,14 @@ export function CameraDetailPage() {
 
           {/* Vision config */}
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">视觉配置</Label>
+            <Label className="text-xs text-muted-foreground">{t('cameras.detail.visionConfig')}</Label>
             {editing ? (
               <Select
                 value={form.vision_config_id}
                 onValueChange={(value) => setForm({ ...form, vision_config_id: value })}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="选择视觉配置" />
+                  <SelectValue placeholder={t('cameras.detail.selectVisionConfig')} />
                 </SelectTrigger>
                 <SelectContent>
                   {visionConfigs.map((vc) => (
@@ -228,9 +230,9 @@ export function CameraDetailPage() {
 
           {/* Description */}
           <div className="space-y-1.5 sm:col-span-2">
-            <Label className="text-xs text-muted-foreground">描述</Label>
+            <Label className="text-xs text-muted-foreground">{t('cameras.detail.description')}</Label>
             {editing ? (
-              <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="摄像头描述" />
+              <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder={t('cameras.detail.descriptionPlaceholder')} />
             ) : (
               <p className="text-sm">{camera.description || '-'}</p>
             )}
@@ -241,7 +243,7 @@ export function CameraDetailPage() {
         {editing && (
           <div className="flex justify-end gap-2 pt-2 border-t">
             <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
-              <X className="h-4 w-4 mr-1.5" />取消
+              <X className="h-4 w-4 mr-1.5" />{t('common.cancel')}
             </Button>
             <Button
               size="sm"
@@ -249,7 +251,7 @@ export function CameraDetailPage() {
               disabled={!form.name.trim() || !form.vision_config_id || updateMutation.isPending}
             >
               {updateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Check className="h-4 w-4 mr-1.5" />}
-              保存
+              {t('common.save')}
             </Button>
           </div>
         )}
@@ -260,7 +262,7 @@ export function CameraDetailPage() {
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
             <Wrench className="h-3.5 w-3.5" />
-            工具配置
+            {t('cameras.detail.toolConfig')}
           </h2>
         </div>
 
@@ -272,30 +274,30 @@ export function CameraDetailPage() {
                 <Camera className="h-4 w-4 text-blue-600 dark:text-blue-400" />
               </div>
               <div>
-                <p className="text-sm font-medium">截图工具</p>
+                <p className="text-sm font-medium">{t('cameras.detail.screenshotTool')}</p>
                 <p className="text-xs text-muted-foreground">capture</p>
               </div>
             </div>
             <div className="space-y-2">
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">工具名称</Label>
+                <Label className="text-xs text-muted-foreground">{t('cameras.detail.toolName')}</Label>
                 {editing ? (
                   <Input
                     value={form.capture_name}
                     onChange={(e) => setForm({ ...form, capture_name: e.target.value })}
-                    placeholder="截图工具名称"
+                    placeholder={t('cameras.detail.screenshotToolName')}
                   />
                 ) : (
                   <p className="text-sm">{camera.capture_name || '-'}</p>
                 )}
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">工具描述</Label>
+                <Label className="text-xs text-muted-foreground">{t('cameras.detail.toolDesc')}</Label>
                 {editing ? (
                   <Input
                     value={form.capture_desc}
                     onChange={(e) => setForm({ ...form, capture_desc: e.target.value })}
-                    placeholder="截图工具描述"
+                    placeholder={t('cameras.detail.screenshotToolDesc')}
                   />
                 ) : (
                   <p className="text-sm">{camera.capture_desc || '-'}</p>
@@ -311,30 +313,30 @@ export function CameraDetailPage() {
                 <Wrench className="h-4 w-4 text-purple-600 dark:text-purple-400" />
               </div>
               <div>
-                <p className="text-sm font-medium">分析工具</p>
+                <p className="text-sm font-medium">{t('cameras.detail.analyzeTool')}</p>
                 <p className="text-xs text-muted-foreground">analyze</p>
               </div>
             </div>
             <div className="space-y-2">
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">工具名称</Label>
+                <Label className="text-xs text-muted-foreground">{t('cameras.detail.toolName')}</Label>
                 {editing ? (
                   <Input
                     value={form.analyze_name}
                     onChange={(e) => setForm({ ...form, analyze_name: e.target.value })}
-                    placeholder="分析工具名称"
+                    placeholder={t('cameras.detail.analyzeToolName')}
                   />
                 ) : (
                   <p className="text-sm">{camera.analyze_name || '-'}</p>
                 )}
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">工具描述</Label>
+                <Label className="text-xs text-muted-foreground">{t('cameras.detail.toolDesc')}</Label>
                 {editing ? (
                   <Input
                     value={form.analyze_desc}
                     onChange={(e) => setForm({ ...form, analyze_desc: e.target.value })}
-                    placeholder="分析工具描述"
+                    placeholder={t('cameras.detail.analyzeToolDesc')}
                   />
                 ) : (
                   <p className="text-sm">{camera.analyze_desc || '-'}</p>
@@ -348,10 +350,10 @@ export function CameraDetailPage() {
       {/* Camera preview */}
       <div className="rounded-xl border bg-card p-5 space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-muted-foreground">摄像头预览</h2>
+          <h2 className="text-sm font-medium text-muted-foreground">{t('cameras.detail.cameraPreview')}</h2>
           <span className="inline-flex items-center gap-1.5 text-xs">
             <span className={`h-2 w-2 rounded-full ${streaming ? 'bg-emerald-500' : 'bg-zinc-400'}`} />
-            {streaming ? '推流中' : '未推流'}
+            {streaming ? t('cameras.streamStreaming') : t('cameras.streamIdle')}
           </span>
         </div>
         <CameraCapture cameraId={cameraId} onStreamingChange={setStreaming} />

@@ -124,7 +124,7 @@ export function DashboardPage() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base font-semibold">{t('dashboard.healthStatus')}</h2>
             <Link to="/services" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-              查看全部 →
+              {t('dashboard.viewAllLogs')} →
             </Link>
           </div>
           {services.length === 0 ? (
@@ -158,7 +158,7 @@ export function DashboardPage() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base font-semibold">{t('dashboard.recentLogs')}</h2>
             <Link to="/logs" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-              查看全部 →
+              {t('dashboard.viewAllLogs')} →
             </Link>
           </div>
           {logs.length === 0 ? (

@@ -58,11 +58,11 @@ export function SignInPage() {
             <span className="text-xl font-semibold">{config.systemName}</span>
           </Link>
           <div>
-            <h2 className="text-3xl font-bold leading-tight">
-              统一的 MCP<br />服务网关平台
+            <h2 className="text-3xl font-bold leading-tight whitespace-pre-line">
+              {t('auth.signInHeroTitle')}
             </h2>
             <p className="mt-4 max-w-sm text-sm leading-relaxed text-primary-foreground/70">
-              一站式管理、聚合和分发 MCP 服务。为 AI Agent 提供标准化的工具访问接口。
+              {t('auth.signInHeroDesc')}
             </p>
           </div>
           <p className="text-xs text-primary-foreground/40">{config.footer || 'MCP Protocol Gateway'}</p>

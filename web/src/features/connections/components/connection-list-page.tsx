@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { getConnections, deleteConnection, connectConnection, disconnectConnection, updateConnection } from '../api'
 import { Button } from '@/components/ui/button'
 import {
@@ -20,19 +21,6 @@ const statusColors: Record<string, string> = {
   error: 'bg-red-500',
 }
 
-const statusLabels: Record<string, string> = {
-  connected: '已连接',
-  disconnected: '已断开',
-  connecting: '连接中',
-  error: '错误',
-}
-
-const cloudTypeLabels: Record<string, string> = {
-  xiaozhi: '小智',
-  custom: '自定义 WSS',
-  ssh: 'SSH',
-}
-
 type ConnectionItem = {
   id: number
   name: string
@@ -44,6 +32,7 @@ type ConnectionItem = {
 }
 
 export function ConnectionListPage() {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
   const { data, isLoading } = useQuery({
@@ -54,7 +43,7 @@ export function ConnectionListPage() {
   const deleteMutation = useMutation({
     mutationFn: deleteConnection,
     onSuccess: () => {
-      toast.success('连接已删除')
+      toast.success(t('connections.deleteSuccess'))
       queryClient.invalidateQueries({ queryKey: ['connections'] })
     },
   })
@@ -64,43 +53,52 @@ export function ConnectionListPage() {
       return action === 'connect' ? connectConnection(id) : disconnectConnection(id)
     },
     onSuccess: (_data, variables) => {
-      toast.success(variables.action === 'connect' ? '已连接' : '已断开')
+      toast.success(variables.action === 'connect' ? t('connections.connectSuccess') : t('connections.disconnectSuccess'))
       queryClient.invalidateQueries({ queryKey: ['connections'] })
     },
     onError: (err) => {
-      toast.error(err.message || '操作失败')
+      toast.error(err.message || t('connections.operationFailed'))
     },
   })
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: number }) => updateConnection(id, { status }),
     onSuccess: (_data, variables) => {
-      toast.success(variables.status === 1 ? '已启用' : '已禁用')
+      toast.success(variables.status === 1 ? t('connections.enabled') : t('connections.disabled'))
       queryClient.invalidateQueries({ queryKey: ['connections'] })
     },
   })
 
   const connections: ConnectionItem[] = data?.data || []
 
+  const statusLabel = (s: string) =>
+    t(`connections.status_${s}`, { defaultValue: s })
+  const platformLabel = (s: string) => {
+    if (s === 'xiaozhi') return t('connections.platform_xiaozhi')
+    if (s === 'custom') return t('connections.platform_custom_wss')
+    if (s === 'ssh') return t('connections.platform_ssh')
+    return s
+  }
+
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">云端连接</h1>
-          <p className="mt-1 text-sm text-muted-foreground">管理 MCP 服务的云端推送连接</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('nav.connections')}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t('connections.subtitle')}</p>
         </div>
         <Link to="/connections/create">
-          <Button className="gap-2"><Plus className="h-4 w-4" />添加连接</Button>
+          <Button className="gap-2"><Plus className="h-4 w-4" />{t('connections.addConnection')}</Button>
         </Link>
       </div>
 
       <div className="overflow-hidden rounded-xl border bg-card">
         {isLoading ? (
-          <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">加载中...</div>
+          <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">{t('common.loading')}</div>
         ) : connections.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <Cloud className="mb-3 h-10 w-10 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">暂无云端连接</p>
+            <p className="text-sm text-muted-foreground">{t('connections.noConnections')}</p>
           </div>
         ) : isMobile ? (
           <div className="divide-y">
@@ -114,23 +112,23 @@ export function ConnectionListPage() {
                   badge={
                     <span className="inline-flex items-center gap-1.5">
                       <span className={`h-2 w-2 rounded-full ${statusColors[c.connection_status] || 'bg-zinc-400'}`} />
-                      {statusLabels[c.connection_status] || c.connection_status}
+                      {statusLabel(c.connection_status)}
                     </span>
                   }
                   meta={[
-                    { label: '平台', value: cloudTypeLabels[c.cloud_type] || c.cloud_type },
+                    { label: t('connections.platform'), value: platformLabel(c.cloud_type) },
                     {
-                      label: '暴露',
+                      label: t('connections.expose'),
                       value: (
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                           c.expose_mode === 'direct' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
                         }`}>
-                          {c.expose_mode === 'direct' ? '直接' : '智能'}
+                          {c.expose_mode === 'direct' ? t('groups.modeDirect') : t('groups.modeSmart')}
                         </span>
                       ),
                     },
                     {
-                      label: '启用',
+                      label: t('connections.table.enabled'),
                       value: (
                         <button
                           onClick={() => statusMutation.mutate({ id: c.id, status: disabled ? 1 : 2 })}
@@ -140,11 +138,11 @@ export function ConnectionListPage() {
                               : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300'
                           }`}
                         >
-                          {disabled ? '已禁用' : '已启用'}
+                          {disabled ? t('connections.disabled') : t('connections.enabled')}
                         </button>
                       ),
                     },
-                    { label: '远程 ID', value: <span className="font-mono text-xs">{c.remote_id || '-'}</span> },
+                    { label: t('connections.remoteId'), value: <span className="font-mono text-xs">{c.remote_id || '-'}</span> },
                   ]}
                   actions={
                     <>
@@ -159,11 +157,11 @@ export function ConnectionListPage() {
                         disabled={disabled || toggleMutation.isPending}
                       >
                         {toggleMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : c.connection_status === 'connected' ? <WifiOff className="h-3.5 w-3.5" /> : <Wifi className="h-3.5 w-3.5" />}
-                        {toggleMutation.isPending ? '处理中...' : c.connection_status === 'connected' ? '断开' : '连接'}
+                        {toggleMutation.isPending ? t('connections.pending') : c.connection_status === 'connected' ? t('connections.disconnect') : t('connections.connect')}
                       </Button>
                       <Link to="/connections/$id" params={{ id: String(c.id) }}>
                         <Button variant="ghost" size="sm" className="gap-1">
-                          <Eye className="h-3.5 w-3.5" />详情
+                          <Eye className="h-3.5 w-3.5" />{t('connections.detail.title')}
                         </Button>
                       </Link>
                       <DropdownMenu>
@@ -176,11 +174,11 @@ export function ConnectionListPage() {
                           <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
                             onClick={() => {
-                              if (confirm(`确定删除连接 "${c.name}"？`)) deleteMutation.mutate(c.id)
+                              if (confirm(t('connections.deleteConfirm', { name: c.name }))) deleteMutation.mutate(c.id)
                             }}
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
-                            删除
+                            {t('common.delete')}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -195,13 +193,13 @@ export function ConnectionListPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">名称</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">平台</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">暴露模式</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">连接状态</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">启用</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">远程 ID</th>
-                  <th className="px-4 py-3 text-right font-medium text-muted-foreground">操作</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('connections.table.name')}</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('connections.table.platform')}</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('connections.table.exposeMode')}</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('connections.table.connectStatus')}</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('connections.table.enabled')}</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('connections.table.remoteId')}</th>
+                  <th className="px-4 py-3 text-right font-medium text-muted-foreground">{t('connections.table.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -210,18 +208,18 @@ export function ConnectionListPage() {
                   return (
                     <tr key={c.id} className={`border-b last:border-0 hover:bg-muted/30${disabled ? ' opacity-50' : ''}`}>
                       <td className="px-4 py-3 font-medium">{c.name}</td>
-                      <td className="px-4 py-3">{cloudTypeLabels[c.cloud_type] || c.cloud_type}</td>
+                      <td className="px-4 py-3">{platformLabel(c.cloud_type)}</td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                           c.expose_mode === 'direct' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
                         }`}>
-                          {c.expose_mode === 'direct' ? '直接' : '智能'}
+                          {c.expose_mode === 'direct' ? t('groups.modeDirect') : t('groups.modeSmart')}
                         </span>
                       </td>
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center gap-1.5">
                           <span className={`h-2 w-2 rounded-full ${statusColors[c.connection_status] || 'bg-zinc-400'}`} />
-                          {statusLabels[c.connection_status] || c.connection_status}
+                          {statusLabel(c.connection_status)}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -233,7 +231,7 @@ export function ConnectionListPage() {
                               : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300'
                           }`}
                         >
-                          {disabled ? '已禁用' : '已启用'}
+                          {disabled ? t('connections.disabled') : t('connections.enabled')}
                         </button>
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{c.remote_id || '-'}</td>
@@ -241,7 +239,7 @@ export function ConnectionListPage() {
                         <div className="flex items-center justify-end gap-1">
                           <Link to="/connections/$id" params={{ id: String(c.id) }}>
                             <Button variant="ghost" size="sm" className="gap-1">
-                              <Eye className="h-3.5 w-3.5" />详情
+                              <Eye className="h-3.5 w-3.5" />{t('connections.detail.title')}
                             </Button>
                           </Link>
                           <Button
@@ -255,10 +253,10 @@ export function ConnectionListPage() {
                             disabled={disabled || toggleMutation.isPending}
                           >
                             {toggleMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : c.connection_status === 'connected' ? <WifiOff className="h-3.5 w-3.5" /> : <Wifi className="h-3.5 w-3.5" />}
-                            {toggleMutation.isPending ? '处理中...' : c.connection_status === 'connected' ? '断开' : '连接'}
+                            {toggleMutation.isPending ? t('connections.pending') : c.connection_status === 'connected' ? t('connections.disconnect') : t('connections.connect')}
                           </Button>
                           <Button variant="ghost" size="sm" className="text-destructive" onClick={() => {
-                            if (confirm(`确定删除连接 "${c.name}"？`)) deleteMutation.mutate(c.id)
+                            if (confirm(t('connections.deleteConfirm', { name: c.name }))) deleteMutation.mutate(c.id)
                           }}>
                             <Trash2 className="h-4 w-4" />
                           </Button>

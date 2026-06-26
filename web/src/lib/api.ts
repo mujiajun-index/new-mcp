@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { toast } from 'sonner'
+import i18n from '@/i18n/config'
 import { useAuthStore } from '@/stores/auth-store'
 
 const pendingRequests = new Map<string, AbortController>()
@@ -42,7 +43,7 @@ api.interceptors.response.use(
 
     const { success, message } = response.data
     if (success === false) {
-      toast.error(message || '请求失败')
+      toast.error(message || i18n.t('common.requestFailed'))
       return Promise.reject(new Error(message))
     }
     return response
@@ -56,7 +57,7 @@ api.interceptors.response.use(
       if (hasToken) {
         useAuthStore.getState().auth.reset()
         localStorage.removeItem('newmcp-token')
-        toast.error('会话已过期')
+        toast.error(i18n.t('common.sessionExpired'))
         window.location.href = '/sign-in'
       } else if (message) {
         toast.error(message)
@@ -64,7 +65,7 @@ api.interceptors.response.use(
     } else if (message) {
       toast.error(message)
     } else if (!axios.isCancel(error)) {
-      toast.error('网络错误，请稍后重试')
+      toast.error(i18n.t('common.networkError'))
     }
     return Promise.reject(error)
   }

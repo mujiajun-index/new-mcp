@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { getCameras, deleteCamera, enableCamera, disableCamera } from '../api'
 import type { CameraListItem } from '../api'
 import { Button } from '@/components/ui/button'
@@ -27,11 +28,12 @@ import { toast } from 'sonner'
 import { useState } from 'react'
 
 export function CameraListPage() {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
   const [deletingId, setDeletingId] = useState<number | null>(null)
 
-  // 视频页跳转：携带 id + 当前会话 token，可在手机/平板等任意终端打开
+  // Video page navigation: carry id + current session token, opens on any device (phone/tablet/desktop)
   const streamToken = localStorage.getItem('newmcp-token') || ''
   const streamBase = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '')
   const openLive = (cameraId: number) => {
@@ -47,7 +49,7 @@ export function CameraListPage() {
   const deleteMutation = useMutation({
     mutationFn: deleteCamera,
     onSuccess: () => {
-      toast.success('摄像头已删除')
+      toast.success(t('cameras.detail.deleted'))
       queryClient.invalidateQueries({ queryKey: ['cameras'] })
       setDeletingId(null)
     },
@@ -58,7 +60,7 @@ export function CameraListPage() {
       return action === 'enable' ? enableCamera(id) : disableCamera(id)
     },
     onSuccess: (_data, variables) => {
-      toast.success(variables.action === 'enable' ? '摄像头已启用' : '摄像头已禁用')
+      toast.success(variables.action === 'enable' ? t('cameras.statusEnabled') : t('cameras.statusDisabled'))
       queryClient.invalidateQueries({ queryKey: ['cameras'] })
     },
   })
@@ -72,14 +74,14 @@ export function CameraListPage() {
       }`}
     >
       <span className={`h-2 w-2 rounded-full ${camera.auto_register ? 'bg-emerald-500' : 'bg-zinc-400'}`} />
-      {camera.auto_register ? '已启用' : '已禁用'}
+      {camera.auto_register ? t('cameras.statusEnabled') : t('cameras.statusDisabled')}
     </span>
   )
 
   const streamingValue = (camera: CameraListItem) => (
     <span className="inline-flex items-center gap-1.5">
       <span className={`h-2 w-2 rounded-full ${camera.streaming ? 'bg-emerald-500' : 'bg-zinc-400'}`} />
-      <span className="text-sm">{camera.streaming ? '推流中' : '未推流'}</span>
+      <span className="text-sm">{camera.streaming ? t('cameras.streamStreaming') : t('cameras.streamIdle')}</span>
     </span>
   )
 
@@ -87,22 +89,22 @@ export function CameraListPage() {
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">摄像头管理</h1>
-          <p className="mt-1 text-sm text-muted-foreground">管理摄像头设备与视频流配置</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('cameras.title')}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t('cameras.subtitle')}</p>
         </div>
         <Link to="/cameras/create">
-          <Button className="gap-2"><Plus className="h-4 w-4" />新建摄像头</Button>
+          <Button className="gap-2"><Plus className="h-4 w-4" />{t('cameras.create.title')}</Button>
         </Link>
       </div>
 
       <div className="overflow-hidden rounded-xl border bg-card">
         {isLoading ? (
-          <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">加载中...</div>
+          <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">{t('common.loading')}</div>
         ) : cameras.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <Video className="mb-3 h-10 w-10 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">暂无摄像头</p>
-            <p className="mt-1 text-xs text-muted-foreground/60">点击"新建摄像头"添加第一个设备</p>
+            <p className="text-sm text-muted-foreground">{t('cameras.noCameras')}</p>
+            <p className="mt-1 text-xs text-muted-foreground/60">{t('cameras.noCamerasHint')}</p>
           </div>
         ) : isMobile ? (
           <div className="divide-y">
@@ -112,14 +114,14 @@ export function CameraListPage() {
                 title={camera.name}
                 badge={enabledBadge(camera)}
                 meta={[
-                  { label: '视觉配置', value: camera.vision_config_name || '-' },
-                  { label: '流状态', value: streamingValue(camera) },
+                  { label: t('cameras.visionConfig'), value: camera.vision_config_name || '-' },
+                  { label: t('cameras.streamStatus'), value: streamingValue(camera) },
                 ]}
                 actions={
                   <>
                     <Link to="/cameras/$id" params={{ id: String(camera.id) }}>
                       <Button variant="ghost" size="sm" className="gap-1">
-                        <Eye className="h-3.5 w-3.5" />详情
+                        <Eye className="h-3.5 w-3.5" />{t('cameras.detail.title')}
                       </Button>
                     </Link>
                     <Button
@@ -128,9 +130,9 @@ export function CameraListPage() {
                       className="gap-1"
                       disabled={!camera.auto_register}
                       onClick={() => openLive(camera.id)}
-                      title={camera.auto_register ? '在新标签打开视频页' : '请先启用摄像头'}
+                      title={camera.auto_register ? t('cameras.openVideoTabTitle') : t('cameras.enableFirstTitle')}
                     >
-                      <Phone className="h-3.5 w-3.5" />视频
+                      <Phone className="h-3.5 w-3.5" />{t('cameras.video')}
                     </Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -149,32 +151,32 @@ export function CameraListPage() {
                           }
                         >
                           <CirclePower className="mr-2 h-4 w-4" />
-                          {camera.auto_register ? '禁用' : '启用'}
+                          {camera.auto_register ? t('cameras.disable') : t('cameras.enable')}
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-destructive focus:text-destructive"
                           onClick={() => setDeletingId(camera.id)}
                         >
                           <Trash2 className="mr-2 h-4 w-4" />
-                          删除
+                          {t('common.delete')}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                     <AlertDialog open={deletingId === camera.id} onOpenChange={(open) => !open && setDeletingId(null)}>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>确认删除</AlertDialogTitle>
+                          <AlertDialogTitle>{t('cameras.deleteConfirmTitle')}</AlertDialogTitle>
                           <AlertDialogDescription>
-                            确定要删除摄像头 "{camera.name}" 吗？此操作不可撤销。
+                            {t('cameras.deleteConfirmDesc', { name: camera.name })}
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
-                          <AlertDialogCancel>取消</AlertDialogCancel>
+                          <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                           <AlertDialogAction
                             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                             onClick={() => deleteMutation.mutate(camera.id)}
                           >
-                            删除
+                            {t('common.delete')}
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
@@ -189,11 +191,11 @@ export function CameraListPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">名称</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">关联视觉配置</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">状态</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">流状态</th>
-                  <th className="px-4 py-3 text-right font-medium text-muted-foreground">操作</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('cameras.table.name')}</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('cameras.table.visionConfig')}</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('cameras.table.status')}</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('cameras.table.streamStatus')}</th>
+                  <th className="px-4 py-3 text-right font-medium text-muted-foreground">{t('cameras.table.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -207,7 +209,7 @@ export function CameraListPage() {
                       <div className="flex items-center justify-end gap-1">
                         <Link to="/cameras/$id" params={{ id: String(camera.id) }}>
                           <Button variant="ghost" size="sm" className="gap-1">
-                            <Eye className="h-3.5 w-3.5" />详情
+                            <Eye className="h-3.5 w-3.5" />{t('cameras.detail.title')}
                           </Button>
                         </Link>
                         <Button
@@ -216,9 +218,9 @@ export function CameraListPage() {
                           className="gap-1"
                           disabled={!camera.auto_register}
                           onClick={() => openLive(camera.id)}
-                          title={camera.auto_register ? '在新标签打开视频页（手机/桌面自适应，可复制链接到其他终端）' : '请先启用摄像头'}
+                          title={camera.auto_register ? t('cameras.openVideoTabTitle') : t('cameras.enableFirstTitle')}
                         >
-                          <Phone className="h-3.5 w-3.5" />视频
+                          <Phone className="h-3.5 w-3.5" />{t('cameras.video')}
                         </Button>
                         <Button
                           variant="outline"
@@ -235,7 +237,7 @@ export function CameraListPage() {
                           ) : (
                             <CirclePower className="h-3.5 w-3.5" />
                           )}
-                          {camera.auto_register ? '禁用' : '启用'}
+                          {camera.auto_register ? t('cameras.disable') : t('cameras.enable')}
                         </Button>
                         <AlertDialog open={deletingId === camera.id} onOpenChange={(open) => !open && setDeletingId(null)}>
                           <AlertDialogTrigger asChild>
@@ -245,18 +247,18 @@ export function CameraListPage() {
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>确认删除</AlertDialogTitle>
+                              <AlertDialogTitle>{t('cameras.deleteConfirmTitle')}</AlertDialogTitle>
                               <AlertDialogDescription>
-                                确定要删除摄像头 "{camera.name}" 吗？此操作不可撤销。
+                                {t('cameras.deleteConfirmDesc', { name: camera.name })}
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel>取消</AlertDialogCancel>
+                              <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                               <AlertDialogAction
                                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                 onClick={() => deleteMutation.mutate(camera.id)}
                               >
-                                删除
+                                {t('common.delete')}
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>

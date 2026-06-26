@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { createCamera } from '../api'
 import { getVisionConfigs } from '@/features/vision/api'
 import type { VisionConfigListItem } from '@/features/vision/api'
@@ -18,6 +19,7 @@ import { toast } from 'sonner'
 import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react'
 
 export function CameraCreatePage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [form, setForm] = useState({
     name: '',
@@ -46,7 +48,7 @@ export function CameraCreatePage() {
         vision_config_id: Number(form.vision_config_id),
       }),
     onSuccess: () => {
-      toast.success('摄像头创建成功')
+      toast.success(t('cameras.create.success'))
       navigate({ to: '/cameras' })
     },
   })
@@ -57,40 +59,40 @@ export function CameraCreatePage() {
         <Button variant="ghost" size="icon" onClick={() => navigate({ to: '/cameras' })}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <h1 className="text-xl font-semibold">新建摄像头</h1>
+        <h1 className="text-xl font-semibold">{t('cameras.create.title')}</h1>
       </div>
 
       <div className="space-y-4 rounded-xl border bg-card p-6">
         <div className="space-y-2">
-          <Label htmlFor="name">名称 *</Label>
+          <Label htmlFor="name">{t('cameras.create.nameRequired')}</Label>
           <Input
             id="name"
-            placeholder="摄像头名称"
+            placeholder={t('cameras.create.namePlaceholder')}
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
           />
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="description">描述</Label>
+          <Label htmlFor="description">{t('cameras.create.description')}</Label>
           <Input
             id="description"
-            placeholder="摄像头描述（可选）"
+            placeholder={t('cameras.create.descriptionPlaceholder')}
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
         </div>
 
         <div className="space-y-2">
-          <Label>视觉配置 *</Label>
+          <Label>{t('cameras.create.visionConfigRequired')}</Label>
           {visionLoading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-              <Loader2 className="h-4 w-4 animate-spin" />加载中...
+              <Loader2 className="h-4 w-4 animate-spin" />{t('common.loading')}
             </div>
           ) : visionConfigs.length === 0 ? (
             <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
               <AlertCircle className="h-4 w-4 shrink-0" />
-              <span>暂无可用的视觉配置，请先创建并启用视觉配置。</span>
+              <span>{t('cameras.create.noVisionConfig')}</span>
             </div>
           ) : (
             <Select
@@ -98,7 +100,7 @@ export function CameraCreatePage() {
               onValueChange={(value) => setForm({ ...form, vision_config_id: value })}
             >
               <SelectTrigger>
-                <SelectValue placeholder="选择视觉配置" />
+                <SelectValue placeholder={t('cameras.create.selectVisionConfig')} />
               </SelectTrigger>
               <SelectContent>
                 {visionConfigs.map((vc) => (
@@ -118,7 +120,7 @@ export function CameraCreatePage() {
           disabled={!canSubmit || createMutation.isPending || visionConfigs.length === 0}
         >
           {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          创建摄像头
+          {t('cameras.create.submit')}
         </Button>
       </div>
     </div>

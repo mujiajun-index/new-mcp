@@ -20,20 +20,20 @@ import {
 } from 'lucide-react'
 import type { ApiKeyListItem } from '@/types'
 
-function formatRelativeTime(dateStr: string) {
+function formatRelativeTime(dateStr: string, localeStr: string, t: (k: string, opts?: any) => string) {
   if (!dateStr) return '-'
   const date = new Date(dateStr)
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
   const seconds = Math.floor(diffMs / 1000)
-  if (seconds < 60) return '刚刚'
+  if (seconds < 60) return t('apiKeys.justNow')
   const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes} 分钟前`
+  if (minutes < 60) return t('apiKeys.minutesAgo', { count: minutes })
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} 小时前`
+  if (hours < 24) return t('apiKeys.hoursAgo', { count: hours })
   const days = Math.floor(hours / 24)
-  if (days < 30) return `${days} 天前`
-  return date.toLocaleDateString('zh-CN')
+  if (days < 30) return t('apiKeys.daysAgo', { count: days })
+  return date.toLocaleDateString(localeStr)
 }
 
 function isExpired(key: ApiKeyListItem) {
@@ -56,21 +56,21 @@ function copyText(text: string) {
   return Promise.resolve()
 }
 
-function StatusBadge({ status, expired }: { status: number; expired: boolean }) {
+function StatusBadge({ status, expired, t }: { status: number; expired: boolean; t: (k: string) => string }) {
   if (expired) {
-    return <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30">已过期</Badge>
+    return <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30">{t('apiKeys.expired')}</Badge>
   }
   if (status === 1) {
-    return <Badge variant="outline" className="text-emerald-600 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30">已启用</Badge>
+    return <Badge variant="outline" className="text-emerald-600 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30">{t('apiKeys.enabled')}</Badge>
   }
-  return <Badge variant="outline" className="text-zinc-500 border-zinc-300 bg-zinc-50 dark:bg-zinc-950/30">已禁用</Badge>
+  return <Badge variant="outline" className="text-zinc-500 border-zinc-300 bg-zinc-50 dark:bg-zinc-950/30">{t('apiKeys.disabled')}</Badge>
 }
 
-function QuotaDisplay({ used, total, unlimited }: { used: number; total: number; unlimited: boolean }) {
+function QuotaDisplay({ used, total, unlimited, t }: { used: number; total: number; unlimited: boolean; t: (k: string, opts?: any) => string }) {
   if (unlimited) {
     return (
       <Badge variant="secondary" className="gap-1">
-        <Infinity className="h-3 w-3" />不限
+        <Infinity className="h-3 w-3" />{t('apiKeys.unlimited')}
       </Badge>
     )
   }
@@ -91,7 +91,7 @@ function QuotaDisplay({ used, total, unlimited }: { used: number; total: number;
             <span className={`text-xs tabular-nums ${color}`}>{used}/{total}</span>
           </div>
         </TooltipTrigger>
-        <TooltipContent>已用 {used} / 总额 {total}，剩余 {remaining > 0 ? remaining : 0}</TooltipContent>
+        <TooltipContent>{t('apiKeys.usedTotal', { used, total, remaining: remaining > 0 ? remaining : 0 })}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   )
@@ -171,8 +171,16 @@ function KeyCell({ apiKey }: { apiKey: ApiKeyListItem }) {
   )
 }
 
+function formatLastUsed(value: unknown, t: (k: string, opts?: any) => string, localeStr: string): string {
+  if (!value) return '-'
+  if (typeof value === 'string') {
+    return formatRelativeTime(value, localeStr, t)
+  }
+  return String(value)
+}
+
 export function ApiKeyPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
@@ -300,6 +308,8 @@ export function ApiKeyPage() {
   const groups = groupsData?.data || []
   const allSelected = keys.length > 0 && selected.size === keys.length
   const someSelected = selected.size > 0 && !allSelected
+
+  const locale = i18n.language?.startsWith('zh') ? 'zh-CN' : 'en-US'
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
@@ -582,7 +592,7 @@ export function ApiKeyPage() {
                   }
                   badge={
                     <button onClick={() => toggleStatus(key)} title={key.status === 1 ? t('apiKeys.clickDisable') : t('apiKeys.clickEnable')}>
-                      <StatusBadge status={key.status} expired={expired} />
+                      <StatusBadge status={key.status} expired={expired} t={t} />
                     </button>
                   }
                   meta={[
@@ -590,13 +600,13 @@ export function ApiKeyPage() {
                     { label: t('apiKeys.groups'), value: key.groups?.length ? key.groups.join(', ') : '-' },
                     {
                       label: t('apiKeys.quota'),
-                      value: <QuotaDisplay used={key.used_quota} total={key.quota} unlimited={key.unlimited_quota} />,
+                      value: <QuotaDisplay used={key.used_quota} total={key.quota} unlimited={key.unlimited_quota} t={t} />,
                     },
                     {
                       label: t('apiKeys.expires'),
                       value: key.expires_at ? (
                         <span className={expired ? 'text-amber-600' : ''}>
-                          {new Date(key.expires_at).toLocaleDateString('zh-CN')}
+                          {new Date(key.expires_at).toLocaleDateString(locale)}
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1">
@@ -609,7 +619,7 @@ export function ApiKeyPage() {
                       value: (
                         <span className="inline-flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          {formatRelativeTime(key.last_used_at)}
+                          {formatLastUsed(key.last_used_at, t, locale)}
                         </span>
                       ),
                     },
@@ -685,11 +695,11 @@ export function ApiKeyPage() {
                       )}
                     </TableCell>
                     <TableCell className="px-4">
-                      <QuotaDisplay used={key.used_quota} total={key.quota} unlimited={key.unlimited_quota} />
+                      <QuotaDisplay used={key.used_quota} total={key.quota} unlimited={key.unlimited_quota} t={t} />
                     </TableCell>
                     <TableCell className="px-4">
                       <button onClick={() => toggleStatus(key)} title={key.status === 1 ? t('apiKeys.clickDisable') : t('apiKeys.clickEnable')}>
-                        <StatusBadge status={key.status} expired={expired} />
+                        <StatusBadge status={key.status} expired={expired} t={t} />
                       </button>
                     </TableCell>
                     <TableCell className="px-4">
@@ -698,17 +708,17 @@ export function ApiKeyPage() {
                           <TooltipTrigger asChild>
                             <span className="flex items-center gap-1 text-xs text-muted-foreground">
                               <Clock className="h-3 w-3" />
-                              {formatRelativeTime(key.last_used_at)}
+                              {formatLastUsed(key.last_used_at, t, locale)}
                             </span>
                           </TooltipTrigger>
-                          <TooltipContent>{key.last_used_at ? new Date(key.last_used_at).toLocaleString('zh-CN') : '-'}</TooltipContent>
+                          <TooltipContent>{key.last_used_at ? new Date(key.last_used_at).toLocaleString(locale) : '-'}</TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                     </TableCell>
                     <TableCell className="px-4 text-xs text-muted-foreground">
                       {key.expires_at ? (
                         <span className={expired ? 'text-amber-600' : ''}>
-                          {new Date(key.expires_at).toLocaleDateString('zh-CN')}
+                          {new Date(key.expires_at).toLocaleDateString(locale)}
                         </span>
                       ) : (
                         <span className="flex items-center gap-1">

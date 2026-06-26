@@ -149,6 +149,7 @@ export function AppSidebar({
   mobileOpen: boolean
   onMobileOpenChange: (open: boolean) => void
 }) {
+  const { t } = useTranslation()
   const isMobile = useIsMobile()
   const [collapsed, setCollapsed] = useState(false)
 
@@ -158,8 +159,8 @@ export function AppSidebar({
         <SheetContent side="left" showClose={false} className="w-[240px] gap-0 p-0">
           {/* Visually hidden a11y labels required by Radix Dialog. */}
           <SheetHeader className="sr-only">
-            <SheetTitle>{'导航'}</SheetTitle>
-            <SheetDescription>{'主导航菜单'}</SheetDescription>
+            <SheetTitle>{t('auth.nav')}</SheetTitle>
+            <SheetDescription>{t('auth.navDesc')}</SheetDescription>
           </SheetHeader>
           <SidebarNav
             collapsed={false}
@@ -174,7 +175,7 @@ export function AppSidebar({
               className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
             >
               <ChevronLeft className="h-4 w-4" />
-              <span className="text-xs">收起侧边栏</span>
+              <span className="text-xs">{t('auth.collapseSidebar')}</span>
             </button>
           </div>
         </SheetContent>
@@ -201,7 +202,7 @@ export function AppSidebar({
           )}
         >
           <ChevronLeft className={cn('h-4 w-4 transition-transform', collapsed && 'rotate-180')} />
-          {!collapsed && <span className="text-xs">收起侧边栏</span>}
+          {!collapsed && <span className="text-xs">{t('auth.collapseSidebar')}</span>}
         </button>
       </div>
     </aside>

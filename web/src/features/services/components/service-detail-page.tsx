@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { getService, updateService, deleteService, testService, refreshTools } from '../api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,42 +13,33 @@ import {
 } from 'lucide-react'
 import type { McpTool, AuthType, UpdateServiceReq } from '@/types'
 
-const transportLabels: Record<string, string> = {
-  'stdio': 'Stdio', 'sse': 'SSE', 'streamable-http': 'Streamable HTTP',
-  'websocket': 'WebSocket', 'passive-ws': 'Passive WS', 'virtual': '虚拟',
-}
-
-const sourceLabels: Record<string, { label: string; color: string }> = {
-  'vision': { label: '视觉', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
-  'camera': { label: '摄像头', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
-}
-
-const authOptions: { value: AuthType; label: string }[] = [
-  { value: 'none', label: '无需认证' },
-  { value: 'api_key', label: 'API Key' },
-  { value: 'bearer', label: 'Bearer Token' },
-  { value: 'custom', label: '自定义配置' },
-]
-
-type EditForm = {
-  display_name: string
-  description: string
-  command: string
-  args: string
-  env: string
-  url: string
-  auth_type: AuthType
-  api_key: string
-  bearer_token: string
-  custom_header_key: string
-  custom_header_value: string
-}
-
 export function ServiceDetailPage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { id } = useParams({ strict: false }) as { id: string }
   const queryClient = useQueryClient()
   const serviceId = Number(id)
+
+  const transportLabels: Record<string, string> = {
+    'stdio': t('services.transports.stdio'),
+    'sse': t('services.transports.sse'),
+    'streamable-http': t('services.transports["streamable-http"]'),
+    'websocket': t('services.transports.websocket'),
+    'passive-ws': t('services.transports["passive-ws"]'),
+    'virtual': t('services.transport_virtual'),
+  }
+
+  const sourceLabels: Record<string, { label: string; color: string }> = {
+    'vision': { label: t('services.sourceVision'), color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
+    'camera': { label: t('services.sourceCamera'), color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
+  }
+
+  const authOptions: { value: AuthType; label: string }[] = [
+    { value: 'none', label: t('services.authNone') },
+    { value: 'api_key', label: t('services.authApiKey') },
+    { value: 'bearer', label: t('services.authBearer') },
+    { value: 'custom', label: t('services.authCustom') },
+  ]
 
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState<EditForm>({
@@ -72,7 +64,7 @@ export function ServiceDetailPage() {
   const deleteMutation = useMutation({
     mutationFn: () => deleteService(serviceId),
     onSuccess: () => {
-      toast.success('服务已删除')
+      toast.success(t('services.deleteSuccess'))
       navigate({ to: '/services' })
     },
   })
@@ -81,9 +73,9 @@ export function ServiceDetailPage() {
     mutationFn: () => testService(serviceId),
     onSuccess: (res) => {
       if (res.data?.connected) {
-        toast.success(`连接成功 · ${res.data.tools_count} 个工具 · ${res.data.latency_ms}ms`)
+        toast.success(t('services.connectSuccessDetail', { count: res.data.tools_count, ms: res.data.latency_ms }))
       } else {
-        toast.error(`连接失败: ${res.data?.error || '未知错误'}`)
+        toast.error(t('services.connectFailedDetail', { error: res.data?.error || t('common.unknownError') }))
       }
     },
   })
@@ -91,7 +83,7 @@ export function ServiceDetailPage() {
   const refreshMutation = useMutation({
     mutationFn: () => refreshTools(serviceId),
     onSuccess: (res) => {
-      toast.success(`已刷新，发现 ${res.data?.tools_count || 0} 个工具`)
+      toast.success(t('services.refreshed', { count: res.data?.tools_count || 0 }))
       queryClient.invalidateQueries({ queryKey: ['service', id] })
     },
   })
@@ -112,12 +104,12 @@ export function ServiceDetailPage() {
       return updateService(serviceId, payload)
     },
     onSuccess: () => {
-      toast.success('更新成功')
+      toast.success(t('services.updateSuccess'))
       setEditing(false)
       queryClient.invalidateQueries({ queryKey: ['service', id] })
     },
     onError: () => {
-      toast.error('更新失败')
+      toast.error(t('services.updateFailed'))
     },
   })
 
@@ -219,11 +211,11 @@ export function ServiceDetailPage() {
   })()
 
   if (isLoading) {
-    return <div className="flex items-center justify-center py-20 text-muted-foreground">加载中...</div>
+    return <div className="flex items-center justify-center py-20 text-muted-foreground">{t('common.loading')}</div>
   }
 
   if (!service) {
-    return <div className="flex items-center justify-center py-20 text-muted-foreground">服务不存在</div>
+    return <div className="flex items-center justify-center py-20 text-muted-foreground">{t('services.detailNotFound')}</div>
   }
 
   const tools: McpTool[] = service.tools_cache || []
@@ -254,22 +246,22 @@ export function ServiceDetailPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => testMutation.mutate()} disabled={editing || testMutation.isPending || isVirtual} title={isVirtual ? '虚拟服务不支持测试连接' : undefined}>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => testMutation.mutate()} disabled={editing || testMutation.isPending || isVirtual} title={isVirtual ? t('services.virtualNotTestable') : undefined}>
             <Zap className="h-3.5 w-3.5" />
-            {testMutation.isPending ? '测试中...' : '测试连接'}
+            {testMutation.isPending ? t('services.testPending') : t('services.test')}
           </Button>
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => refreshMutation.mutate()} disabled={editing || refreshMutation.isPending || isVirtual} title={isVirtual ? '虚拟服务不支持刷新工具' : undefined}>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => refreshMutation.mutate()} disabled={editing || refreshMutation.isPending || isVirtual} title={isVirtual ? t('services.virtualNotRefreshable') : undefined}>
             <RefreshCw className={`h-3.5 w-3.5 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
-            刷新工具
+            {t('services.refreshTools')}
           </Button>
           {!isVirtual && !editing && (
             <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-              <Pencil className="h-3.5 w-3.5 mr-1.5" />编辑
+              <Pencil className="h-3.5 w-3.5 mr-1.5" />{t('common.edit')}
             </Button>
           )}
           {!isVirtual && (
           <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" disabled={editing} onClick={() => {
-            if (confirm('确定删除此服务？')) deleteMutation.mutate()
+            if (confirm(t('services.deletePrompt'))) deleteMutation.mutate()
           }}>
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
@@ -280,10 +272,10 @@ export function ServiceDetailPage() {
       {/* Info cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          { label: '传输类型', value: transportLabels[service.transport_type] || service.transport_type },
-          { label: '健康状态', value: service.health_status || 'unknown' },
-          { label: '工具数', value: String(tools.length) },
-          { label: '协议版本', value: service.protocol_version || '-' },
+          { label: t('services.transportType'), value: transportLabels[service.transport_type] || service.transport_type },
+          { label: t('services.healthStatus'), value: service.health_status || t('common.unknown') },
+          { label: t('services.toolsCount'), value: String(tools.length) },
+          { label: t('services.protocolVersion'), value: service.protocol_version || '-' },
         ].map((item) => (
           <div key={item.label} className="rounded-xl border bg-card p-4">
             <p className="text-xs text-muted-foreground">{item.label}</p>
@@ -295,7 +287,7 @@ export function ServiceDetailPage() {
       {/* Server Info */}
       {service.server_info && Object.keys(service.server_info).length > 0 && (
         <div className="rounded-xl border bg-card p-5">
-          <h2 className="mb-3 text-sm font-semibold">服务器信息</h2>
+          <h2 className="mb-3 text-sm font-semibold">{t('services.serverInfo')}</h2>
           <pre className="rounded-lg bg-muted/50 p-3 text-xs overflow-auto">
             {JSON.stringify(service.server_info, null, 2)}
           </pre>
@@ -305,14 +297,14 @@ export function ServiceDetailPage() {
       {/* Basic config / editable */}
       {!isVirtual && (
         <div className="rounded-xl border bg-card p-5 space-y-4">
-          <h2 className="text-sm font-semibold">基本配置</h2>
+          <h2 className="text-sm font-semibold">{t('services.basicConfig')}</h2>
 
           <div className="grid gap-4 sm:grid-cols-2">
             {/* Display name */}
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">显示名称</Label>
+              <Label className="text-xs text-muted-foreground">{t('services.displayName')}</Label>
               {editing ? (
-                <Input value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} placeholder="我的服务" />
+                <Input value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} placeholder={t('services.placeholderMyService')} />
               ) : (
                 <p className="text-sm">{service.display_name || '-'}</p>
               )}
@@ -320,15 +312,15 @@ export function ServiceDetailPage() {
 
             {/* Name (read-only) */}
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">服务标识</Label>
+              <Label className="text-xs text-muted-foreground">{t('services.serviceIdentifier')}</Label>
               <p className="text-sm font-mono">{service.name}</p>
             </div>
 
             {/* Description */}
             <div className="space-y-1.5 sm:col-span-2">
-              <Label className="text-xs text-muted-foreground">描述</Label>
+              <Label className="text-xs text-muted-foreground">{t('services.description')}</Label>
               {editing ? (
-                <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="服务用途说明" />
+                <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder={t('services.placeholderDesc')} />
               ) : (
                 <p className="text-sm">{service.description || '-'}</p>
               )}
@@ -336,7 +328,7 @@ export function ServiceDetailPage() {
 
             {/* Transport type (read-only) */}
             <div className="space-y-1.5 sm:col-span-2">
-              <Label className="text-xs text-muted-foreground">传输类型</Label>
+              <Label className="text-xs text-muted-foreground">{t('services.transportType')}</Label>
               <p className="text-sm">{transportLabels[service.transport_type] || service.transport_type}</p>
             </div>
 
@@ -344,7 +336,7 @@ export function ServiceDetailPage() {
             {isStdio ? (
               <>
                 <div className="space-y-1.5 sm:col-span-2">
-                  <Label className="text-xs text-muted-foreground">命令 *</Label>
+                  <Label className="text-xs text-muted-foreground">{t('services.commandRequired')}</Label>
                   {editing ? (
                     <Input value={form.command} onChange={(e) => setForm({ ...form, command: e.target.value })} placeholder="npx" />
                   ) : (
@@ -352,7 +344,7 @@ export function ServiceDetailPage() {
                   )}
                 </div>
                 <div className="space-y-1.5 sm:col-span-2">
-                  <Label className="text-xs text-muted-foreground">参数</Label>
+                  <Label className="text-xs text-muted-foreground">{t('services.args')}</Label>
                   {editing ? (
                     <Input value={form.args} onChange={(e) => setForm({ ...form, args: e.target.value })} placeholder="-y @modelcontextprotocol/server-memory" />
                   ) : (
@@ -360,11 +352,11 @@ export function ServiceDetailPage() {
                   )}
                 </div>
                 <div className="space-y-1.5 sm:col-span-2">
-                  <Label className="text-xs text-muted-foreground">环境变量 (JSON)</Label>
+                  <Label className="text-xs text-muted-foreground">{t('services.envVars')}</Label>
                   {editing ? (
                     <>
                       <Input value={form.env} onChange={(e) => setForm({ ...form, env: e.target.value })} placeholder='{"API_KEY": "xxx"}' />
-                      {!envValid && <p className="text-xs text-red-500">环境变量不是合法的 JSON</p>}
+                      {!envValid && <p className="text-xs text-red-500">{t('services.envInvalidJson')}</p>}
                     </>
                   ) : (
                     <code className="block text-sm break-all rounded-md bg-muted/50 px-3 py-2">{form.env || '-'}</code>
@@ -374,7 +366,7 @@ export function ServiceDetailPage() {
             ) : (
               /* HTTP/SSE/WS url */
               <div className="space-y-1.5 sm:col-span-2">
-                <Label className="text-xs text-muted-foreground">服务 URL *</Label>
+                <Label className="text-xs text-muted-foreground">{t('services.serviceUrlRequired')}</Label>
                 {editing ? (
                   <Input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://example.com/mcp" />
                 ) : (
@@ -385,7 +377,7 @@ export function ServiceDetailPage() {
 
             {/* Auth config */}
             <div className="space-y-1.5 sm:col-span-2">
-              <Label className="text-xs text-muted-foreground">认证方式</Label>
+              <Label className="text-xs text-muted-foreground">{t('services.authMethod')}</Label>
               {editing ? (
                 <div className="flex flex-wrap gap-2 pt-1">
                   {authOptions.map((opt) => (
@@ -402,25 +394,25 @@ export function ServiceDetailPage() {
                   ))}
                 </div>
               ) : (
-                <p className="text-sm">{authOptions.find((o) => o.value === form.auth_type)?.label || '无需认证'}</p>
+                <p className="text-sm">{authOptions.find((o) => o.value === form.auth_type)?.label || t('services.noAuth')}</p>
               )}
             </div>
 
             {editing && form.auth_type === 'api_key' && (
               <div className="space-y-1.5 sm:col-span-2">
                 <Label className="text-xs text-muted-foreground">API Key</Label>
-                <Input value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} placeholder="留空则保持不变" />
+                <Input value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} placeholder={t('services.placeholderKeepUnchanged')} />
               </div>
             )}
             {editing && form.auth_type === 'bearer' && (
               <div className="space-y-1.5 sm:col-span-2">
                 <Label className="text-xs text-muted-foreground">Token</Label>
-                <Input value={form.bearer_token} onChange={(e) => setForm({ ...form, bearer_token: e.target.value })} placeholder="留空则保持不变" />
+                <Input value={form.bearer_token} onChange={(e) => setForm({ ...form, bearer_token: e.target.value })} placeholder={t('services.placeholderKeepUnchanged')} />
               </div>
             )}
             {editing && form.auth_type === 'custom' && (
               <div className="space-y-1.5 sm:col-span-2">
-                <Label className="text-xs text-muted-foreground">自定义请求头</Label>
+                <Label className="text-xs text-muted-foreground">{t('services.customHeaders')}</Label>
                 <div className="flex gap-2">
                   <Input value={form.custom_header_key} onChange={(e) => setForm({ ...form, custom_header_key: e.target.value })} placeholder="Header Key" />
                   <Input value={form.custom_header_value} onChange={(e) => setForm({ ...form, custom_header_value: e.target.value })} placeholder="Value" />
@@ -428,7 +420,7 @@ export function ServiceDetailPage() {
               </div>
             )}
             {editing && form.auth_type !== 'none' && (
-              <p className="text-xs text-muted-foreground sm:col-span-2">填入新凭据后才会更新认证配置，留空则保持原有认证不变。</p>
+              <p className="text-xs text-muted-foreground sm:col-span-2">{t('services.headerKeepUnchanged')}</p>
             )}
           </div>
 
@@ -436,7 +428,7 @@ export function ServiceDetailPage() {
           {editing && (
             <div className="flex justify-end gap-2 pt-2 border-t">
               <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
-                <X className="h-3.5 w-3.5 mr-1.5" />取消
+                <X className="h-3.5 w-3.5 mr-1.5" />{t('common.cancel')}
               </Button>
               <Button
                 size="sm"
@@ -444,7 +436,7 @@ export function ServiceDetailPage() {
                 disabled={!canSave || !envValid || updateMutation.isPending}
               >
                 {updateMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Check className="h-3.5 w-3.5 mr-1.5" />}
-                保存
+                {t('common.save')}
               </Button>
             </div>
           )}
@@ -454,7 +446,7 @@ export function ServiceDetailPage() {
       {/* Raw config (read-only) */}
       {!editing && service.config && Object.keys(service.config).length > 0 && (
         <div className="rounded-xl border bg-card p-5">
-          <h2 className="mb-3 text-sm font-semibold">连接配置</h2>
+          <h2 className="mb-3 text-sm font-semibold">{t('services.connectionConfig')}</h2>
           <pre className="rounded-lg bg-muted/50 p-3 text-xs overflow-auto">
             {JSON.stringify(service.config, null, 2)}
           </pre>
@@ -463,12 +455,12 @@ export function ServiceDetailPage() {
 
       {/* Tools */}
       <div className="rounded-xl border bg-card p-5">
-        <h2 className="mb-3 text-sm font-semibold">工具列表 ({tools.length})</h2>
+        <h2 className="mb-3 text-sm font-semibold">{t('services.toolsList', { count: tools.length })}</h2>
         {tools.length === 0 ? (
           <div className="flex flex-col items-center py-8 text-center">
             <Server className="h-8 w-8 text-muted-foreground/30 mb-2" />
-            <p className="text-sm text-muted-foreground">暂无工具</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">点击"刷新工具"重新获取</p>
+            <p className="text-sm text-muted-foreground">{t('services.noTools')}</p>
+            <p className="text-xs text-muted-foreground/60 mt-1">{t('services.clickRefresh')}</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -494,4 +486,18 @@ export function ServiceDetailPage() {
       </div>
     </div>
   )
+}
+
+type EditForm = {
+  display_name: string
+  description: string
+  command: string
+  args: string
+  env: string
+  url: string
+  auth_type: AuthType
+  api_key: string
+  bearer_token: string
+  custom_header_key: string
+  custom_header_value: string
 }

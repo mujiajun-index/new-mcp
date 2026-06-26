@@ -19,8 +19,8 @@ export function PlaceholderPage({ title, subtitle, icon }: { title: string; subt
         <Icon className="h-8 w-8 text-muted-foreground" />
       </div>
       <h2 className="text-xl font-semibold">{t(title)}</h2>
-      {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
-      <p className="text-xs text-muted-foreground/60 mt-2">即将上线</p>
+      {subtitle && <p className="text-sm text-muted-foreground">{t(subtitle)}</p>}
+      <p className="text-xs text-muted-foreground/60 mt-2">{t('common.comingSoon')}</p>
     </div>
   )
 }

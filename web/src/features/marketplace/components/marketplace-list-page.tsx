@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { getMarketplaceItems } from '../api'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -8,6 +9,7 @@ import type { MarketplaceListItem } from '@/types'
 import { Search, Store, Download, Star, Zap, Code2 } from 'lucide-react'
 
 export function MarketplaceListPage() {
+  const { t } = useTranslation()
   const [keyword, setKeyword] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [category, setCategory] = useState<'' | 'instant' | 'source'>('')
@@ -25,8 +27,8 @@ export function MarketplaceListPage() {
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">MCP 广场</h1>
-        <p className="mt-1 text-sm text-muted-foreground">发现并安装 MCP 服务</p>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('marketplace.title')}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t('marketplace.subtitle')}</p>
       </div>
 
       {/* Filters */}
@@ -36,26 +38,26 @@ export function MarketplaceListPage() {
           className="relative flex-1 max-w-sm"
         >
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="搜索服务..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} className="pl-9" />
+          <Input placeholder={t('marketplace.searchPlaceholder')} value={searchInput} onChange={(e) => setSearchInput(e.target.value)} className="pl-9" />
         </form>
         <div className="flex flex-wrap gap-2">
-          <Button variant={category === '' ? 'default' : 'outline'} size="sm" onClick={() => setCategory('')}>全部</Button>
+          <Button variant={category === '' ? 'default' : 'outline'} size="sm" onClick={() => setCategory('')}>{t('marketplace.filterAll')}</Button>
           <Button variant={category === 'instant' ? 'default' : 'outline'} size="sm" className="gap-1.5" onClick={() => setCategory('instant')}>
-            <Zap className="h-3.5 w-3.5" />即用型
+            <Zap className="h-3.5 w-3.5" />{t('marketplace.filterReady')}
           </Button>
           <Button variant={category === 'source' ? 'default' : 'outline'} size="sm" className="gap-1.5" onClick={() => setCategory('source')}>
-            <Code2 className="h-3.5 w-3.5" />源码型
+            <Code2 className="h-3.5 w-3.5" />{t('marketplace.filterSource')}
           </Button>
         </div>
       </div>
 
       {/* Grid */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">加载中...</div>
+        <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">{t('common.loading')}</div>
       ) : items.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <Store className="h-10 w-10 text-muted-foreground/30 mb-3" />
-          <p className="text-sm text-muted-foreground">暂无市场服务</p>
+          <p className="text-sm text-muted-foreground">{t('marketplace.noServices')}</p>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -80,7 +82,7 @@ export function MarketplaceListPage() {
                           ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
                           : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
                       }`}>
-                        {item.category === 'instant' ? '即用型' : '源码型'}
+                        {item.category === 'instant' ? t('marketplace.ready') : t('marketplace.source')}
                       </span>
                       {item.version && (
                         <span className="text-[10px] text-muted-foreground">v{item.version}</span>

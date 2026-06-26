@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-query'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
+import i18n from '@/i18n/config'
 import { useAuthStore } from '@/stores/auth-store'
 import { ThemeProvider } from '@/context/theme-provider'
 import { handleServerError } from '@/lib/handle-server-error'
@@ -37,7 +38,7 @@ const queryClient = new QueryClient({
     onError: (error) => {
       if (error instanceof AxiosError) {
         if (error.response?.status === 401) {
-          toast.error('会话已过期')
+          toast.error(i18n.t('common.sessionExpired'))
           useAuthStore.getState().auth.reset()
           router.navigate({ to: '/sign-in' })
         }

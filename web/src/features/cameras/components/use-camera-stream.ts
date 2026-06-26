@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { toast } from 'sonner'
+import i18n from '@/i18n/config'
 
 export type FacingMode = 'user' | 'environment'
 
@@ -115,9 +116,9 @@ export function useCameraStream(cameraId: number, tokenOverride?: string) {
     if (!navigator.mediaDevices?.getUserMedia) {
       const isSecure = window.isSecureContext
       if (!isSecure) {
-        toast.error('摄像头需要安全上下文（HTTPS 或 localhost），请使用 HTTPS 访问')
+        toast.error(i18n.t('cameras.capture.httpsRequiredHook'))
       } else {
-        toast.error('当前浏览器不支持摄像头访问')
+        toast.error(i18n.t('cameras.capture.notSupportedHook'))
       }
       return
     }
@@ -148,7 +149,7 @@ export function useCameraStream(cameraId: number, tokenOverride?: string) {
 
       ws.onerror = () => {
         // 推流连接失败：关闭摄像头并给出提示，避免摄像头亮着却无法推送
-        toast.error('推流连接失败，已关闭摄像头（请检查网络或授权 token 是否有效）')
+        toast.error(i18n.t('cameras.capture.streamLoadFailed'))
         cleanup()
       }
 
@@ -182,11 +183,11 @@ export function useCameraStream(cameraId: number, tokenOverride?: string) {
     } catch (err: unknown) {
       const error = err as DOMException
       if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-        toast.error('摄像头权限被拒绝，请在浏览器设置中允许访问摄像头')
+        toast.error(i18n.t('cameras.capture.permissionDeniedHook'))
       } else if (error.name === 'NotFoundError') {
-        toast.error('未检测到摄像头设备')
+        toast.error(i18n.t('cameras.capture.noDeviceHook'))
       } else {
-        toast.error(`无法打开摄像头: ${error.message || '未知错误'}`)
+        toast.error(i18n.t('cameras.capture.openFailedHook', { error: error.message || i18n.t('common.unknownError') }))
       }
     } finally {
       setOpening(false)
@@ -218,9 +219,9 @@ export function useCameraStream(cameraId: number, tokenOverride?: string) {
     } catch (err: unknown) {
       const error = err as DOMException
       if (error.name === 'NotFoundError' || error.name === 'OverconstrainedError') {
-        toast.error('未找到对应方向的摄像头')
+        toast.error(i18n.t('cameras.capture.noCameraFacing'))
       } else {
-        toast.error('切换摄像头失败')
+        toast.error(i18n.t('cameras.capture.switchFailedHook'))
       }
       // 尝试恢复原来的摄像头，避免推流空帧
       try {

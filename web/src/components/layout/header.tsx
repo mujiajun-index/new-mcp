@@ -45,7 +45,7 @@ export function Header({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
           size="icon"
           onClick={onOpenMobileNav}
           className="h-8 w-8 shrink-0 lg:hidden"
-          aria-label="打开导航"
+          aria-label={t('auth.openNav')}
         >
           <Menu className="h-5 w-5" />
         </Button>

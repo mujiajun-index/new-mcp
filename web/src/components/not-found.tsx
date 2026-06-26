@@ -1,4 +1,5 @@
 import { useNavigate } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Home } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth-store'
@@ -9,6 +10,7 @@ import { useSystemConfigStore } from '@/stores/system-config-store'
 // navigation) so it looks right whether it bubbles up from the root boundary or
 // from a nested authenticated section.
 export function NotFound() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.auth.user)
   const systemName = useSystemConfigStore((s) => s.config.systemName)
@@ -35,20 +37,20 @@ export function NotFound() {
         </h1>
 
         <div className="space-y-2">
-          <h2 className="text-xl font-semibold">页面未找到</h2>
+          <h2 className="text-xl font-semibold">{t('errors.notFoundTitle')}</h2>
           <p className="mx-auto max-w-md text-sm text-muted-foreground">
-            您访问的页面不存在，或可能已被移动。请检查地址是否正确，或返回首页继续浏览。
+            {t('errors.notFoundDesc')}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center justify-center gap-3">
           <Button onClick={() => navigate({ to: user ? '/dashboard' : '/' })}>
             <Home />
-            返回首页
+            {t('common.backHome')}
           </Button>
           <Button variant="outline" onClick={() => window.history.back()}>
             <ArrowLeft />
-            返回上一页
+            {t('common.backPrev')}
           </Button>
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import {
   getVisionConfig,
   updateVisionConfig,
@@ -44,6 +45,7 @@ const providerSuffixes: Record<string, string> = {
 }
 
 export function VisionDetailPage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { id } = useParams({ strict: false }) as { id: string }
   const queryClient = useQueryClient()
@@ -108,47 +110,47 @@ export function VisionDetailPage() {
   const updateMutation = useMutation({
     mutationFn: (data: UpdateVisionConfigReq) => updateVisionConfig(Number(id), data),
     onSuccess: () => {
-      toast.success('配置已更新')
+      toast.success(t('vision.updateSuccess'))
       queryClient.invalidateQueries({ queryKey: ['vision', id] })
       queryClient.invalidateQueries({ queryKey: ['vision'] })
     },
     onError: () => {
-      toast.error('更新失败')
+      toast.error(t('vision.updateFailed'))
     },
   })
 
   const enableMutation = useMutation({
     mutationFn: () => enableVisionConfig(Number(id)),
     onSuccess: () => {
-      toast.success('已启用')
+      toast.success(t('vision.enableSuccess'))
       queryClient.invalidateQueries({ queryKey: ['vision', id] })
       queryClient.invalidateQueries({ queryKey: ['vision'] })
     },
     onError: () => {
-      toast.error('启用失败')
+      toast.error(t('vision.enableFailed'))
     },
   })
 
   const disableMutation = useMutation({
     mutationFn: () => disableVisionConfig(Number(id)),
     onSuccess: () => {
-      toast.success('已禁用')
+      toast.success(t('vision.disableSuccess'))
       queryClient.invalidateQueries({ queryKey: ['vision', id] })
       queryClient.invalidateQueries({ queryKey: ['vision'] })
     },
     onError: () => {
-      toast.error('禁用失败')
+      toast.error(t('vision.disableFailed'))
     },
   })
 
   const toolMutation = useMutation({
     mutationFn: (data: UpdateVisionConfigReq) => updateVisionConfig(Number(id), data),
     onSuccess: () => {
-      toast.success('工具配置已更新')
+      toast.success(t('vision.toolUpdateSuccess'))
       queryClient.invalidateQueries({ queryKey: ['vision', id] })
     },
     onError: () => {
-      toast.error('工具更新失败')
+      toast.error(t('vision.toolUpdateFailed'))
     },
   })
 
@@ -165,10 +167,10 @@ export function VisionDetailPage() {
       setModelList(res.data || [])
       setModelModalOpen(true)
       if (!res.data?.length) {
-        toast.info('未找到可用模型')
+        toast.info(t('vision.noModelsFound'))
       }
     } catch {
-      toast.error('获取模型列表失败')
+      toast.error(t('vision.fetchModelsFailed'))
     } finally {
       setModelListLoading(false)
     }
@@ -201,7 +203,7 @@ export function VisionDetailPage() {
     return (
       <div className="flex items-center justify-center py-20 text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin mr-2" />
-        加载中...
+        {t('common.loading')}
       </div>
     )
   }
@@ -209,7 +211,7 @@ export function VisionDetailPage() {
   if (!config) {
     return (
       <div className="flex items-center justify-center py-20 text-muted-foreground">
-        视觉配置不存在
+        {t('vision.notFound')}
       </div>
     )
   }
@@ -255,7 +257,7 @@ export function VisionDetailPage() {
           ) : (
             <Power className="h-3.5 w-3.5" />
           )}
-          {isEnabled ? '禁用' : '启用'}
+          {isEnabled ? t('vision.disable') : t('vision.enable')}
         </Button>
       </div>
 
@@ -264,18 +266,18 @@ export function VisionDetailPage() {
         <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-3">
           <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
           <span className="text-sm text-emerald-700 dark:text-emerald-300">
-            已注册为服务 (ID: {config.registered_service_id})，工具可正常调用
+            {t('vision.registered', { id: config.registered_service_id })}
           </span>
         </div>
       )}
 
       {/* Config editing section */}
       <div className="rounded-xl border bg-card p-5 space-y-5">
-        <h2 className="text-sm font-semibold">基础配置</h2>
+        <h2 className="text-sm font-semibold">{t('vision.basicConfig')}</h2>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="name">配置名称 *</Label>
+            <Label htmlFor="name">{t('vision.nameRequired')}</Label>
             <Input
               id="name"
               value={form.name}
@@ -283,7 +285,7 @@ export function VisionDetailPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="description">描述</Label>
+            <Label htmlFor="description">{t('vision.description')}</Label>
             <Input
               id="description"
               value={form.description}
@@ -315,7 +317,7 @@ export function VisionDetailPage() {
             </Select>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="model_name">模型名称 *</Label>
+            <Label htmlFor="model_name">{t('vision.modelNameRequired')}</Label>
             <div className="flex gap-2">
               <Input
                 id="model_name"
@@ -338,7 +340,7 @@ export function VisionDetailPage() {
                 ) : (
                   <List className="h-4 w-4" />
                 )}
-                获取模型
+                {t('vision.fetchModels')}
               </Button>
             </div>
           </div>
@@ -356,7 +358,7 @@ export function VisionDetailPage() {
           />
           {endpointPreview && (
             <p className="text-xs text-muted-foreground">
-              预览：<code className="text-primary">{endpointPreview}</code>
+              {t('vision.endpointPreview')}：<code className="text-primary">{endpointPreview}</code>
             </p>
           )}
         </div>
@@ -366,17 +368,17 @@ export function VisionDetailPage() {
           <Input
             id="api_key"
             type="password"
-            placeholder="留空则不修改"
+            placeholder={t('vision.placeholderKeepUnchanged')}
             value={form.api_key}
             onChange={(e) => setForm({ ...form, api_key: e.target.value })}
           />
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="system_prompt">系统提示词</Label>
+          <Label htmlFor="system_prompt">{t('vision.systemPrompt')}</Label>
           <textarea
             id="system_prompt"
-            aria-label="系统提示词"
+            aria-label={t('vision.systemPrompt')}
             rows={4}
             value={form.system_prompt}
             onChange={(e) => setForm({ ...form, system_prompt: e.target.value })}
@@ -409,7 +411,7 @@ export function VisionDetailPage() {
             ) : (
               <Save className="h-4 w-4" />
             )}
-            保存配置
+            {t('vision.saveConfig')}
           </Button>
         </div>
       </div>
@@ -418,10 +420,10 @@ export function VisionDetailPage() {
       <div className="rounded-xl border bg-card p-5 space-y-4">
         <div className="flex items-center gap-2">
           <Wrench className="h-4 w-4 text-muted-foreground" />
-          <h2 className="text-sm font-semibold">注册工具</h2>
+          <h2 className="text-sm font-semibold">{t('vision.registeredTools')}</h2>
         </div>
         <p className="text-xs text-muted-foreground">
-          启用后会自动注册以下两个 MCP 工具，可自定义工具名称和描述
+          {t('vision.registeredToolsHint')}
         </p>
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -435,7 +437,7 @@ export function VisionDetailPage() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs">工具名称</Label>
+              <Label className="text-xs">{t('vision.toolName')}</Label>
               <Input
                 value={tools.analyze_image_name}
                 onChange={(e) =>
@@ -446,14 +448,14 @@ export function VisionDetailPage() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs">工具描述</Label>
+              <Label className="text-xs">{t('vision.toolDesc')}</Label>
               <Input
                 value={tools.analyze_image_desc}
                 onChange={(e) =>
                   setTools({ ...tools, analyze_image_desc: e.target.value })
                 }
                 className="text-xs h-8"
-                placeholder="分析图片内容"
+                placeholder={t('vision.toolDescPlaceholderAnalyze')}
               />
             </div>
 
@@ -475,7 +477,7 @@ export function VisionDetailPage() {
                 ) : (
                   <Save className="h-3 w-3" />
                 )}
-                保存
+                {t('vision.save')}
               </Button>
             </div>
           </div>
@@ -490,7 +492,7 @@ export function VisionDetailPage() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs">工具名称</Label>
+              <Label className="text-xs">{t('vision.toolName')}</Label>
               <Input
                 value={tools.describe_scene_name}
                 onChange={(e) =>
@@ -501,14 +503,14 @@ export function VisionDetailPage() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs">工具描述</Label>
+              <Label className="text-xs">{t('vision.toolDesc')}</Label>
               <Input
                 value={tools.describe_scene_desc}
                 onChange={(e) =>
                   setTools({ ...tools, describe_scene_desc: e.target.value })
                 }
                 className="text-xs h-8"
-                placeholder="描述场景内容"
+                placeholder={t('vision.toolDescPlaceholderScene')}
               />
             </div>
 
@@ -530,7 +532,7 @@ export function VisionDetailPage() {
                 ) : (
                   <Save className="h-3 w-3" />
                 )}
-                保存
+                {t('vision.save')}
               </Button>
             </div>
           </div>
@@ -542,12 +544,12 @@ export function VisionDetailPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setModelModalOpen(false)}>
           <div className="w-full max-w-md rounded-xl border bg-card p-0 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b px-4 py-3">
-              <h3 className="text-sm font-semibold">选择模型</h3>
+              <h3 className="text-sm font-semibold">{t('vision.selectModel')}</h3>
               <button className="text-muted-foreground hover:text-foreground text-lg leading-none" onClick={() => setModelModalOpen(false)}>&times;</button>
             </div>
             <div className="px-4 pt-3">
               <Input
-                placeholder="搜索模型..."
+                placeholder={t('vision.searchModelPlaceholder')}
                 value={modelSearch}
                 onChange={(e) => setModelSearch(e.target.value)}
                 autoFocus
@@ -556,7 +558,7 @@ export function VisionDetailPage() {
             <div className="max-h-72 overflow-y-auto p-2">
               {filteredModels.length === 0 ? (
                 <p className="py-8 text-center text-xs text-muted-foreground">
-                  {modelList.length === 0 ? '无可用模型' : '无匹配结果'}
+                  {modelList.length === 0 ? t('vision.noModels') : t('vision.noMatches')}
                 </p>
               ) : (
                 filteredModels.map((m) => (

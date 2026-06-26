@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { getConnection, deleteConnection, connectConnection, disconnectConnection, updateConnection } from '../api'
 import { getApiKeys } from '@/features/api-keys/api'
 import { Button } from '@/components/ui/button'
@@ -16,18 +17,8 @@ const statusColors: Record<string, string> = {
   error: 'text-red-600 dark:text-red-400',
 }
 
-const statusLabels: Record<string, string> = {
-  connected: '已连接',
-  disconnected: '已断开',
-  connecting: '连接中',
-  error: '错误',
-}
-
-const cloudTypeLabels: Record<string, string> = {
-  xiaozhi: '小智', custom: '自定义 WSS', ssh: 'SSH',
-}
-
 export function ConnectionDetailPage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { id } = useParams({ strict: false }) as { id: string }
   const queryClient = useQueryClient()
@@ -50,6 +41,19 @@ export function ConnectionDetailPage() {
   const apiKeys = (keysData?.data || []).filter((k: { status: number }) => k.status === 1)
   const isDisabled = conn ? conn.status !== 1 : false
 
+  const statusLabels: Record<string, string> = {
+    connected: t('connections.status_connected'),
+    disconnected: t('connections.status_disconnected'),
+    connecting: t('connections.status_connecting'),
+    error: t('connections.status_error'),
+  }
+
+  const cloudTypeLabels: Record<string, string> = {
+    xiaozhi: t('connections.platform_xiaozhi'),
+    custom: t('connections.platform_custom_wss'),
+    ssh: t('connections.platform_ssh'),
+  }
+
   useEffect(() => {
     if (conn && !editing) {
       setForm({
@@ -63,14 +67,14 @@ export function ConnectionDetailPage() {
 
   const deleteMutation = useMutation({
     mutationFn: () => deleteConnection(connId),
-    onSuccess: () => { toast.success('连接已删除'); navigate({ to: '/connections' }) },
+    onSuccess: () => { toast.success(t('connections.deleteSuccess')); navigate({ to: '/connections' }) },
   })
 
   const toggleMutation = useMutation({
     mutationFn: (action: 'connect' | 'disconnect') =>
       action === 'connect' ? connectConnection(connId) : disconnectConnection(connId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['connection', id] }),
-    onError: (err) => toast.error(err.message || '操作失败'),
+    onError: (err) => toast.error(err.message || t('connections.operationFailed')),
   })
 
   const statusMutation = useMutation({
@@ -86,17 +90,17 @@ export function ConnectionDetailPage() {
       expose_mode: form.expose_mode,
     }),
     onSuccess: () => {
-      toast.success('更新成功')
+      toast.success(t('connections.detail.updateSuccess'))
       setEditing(false)
       queryClient.invalidateQueries({ queryKey: ['connection', id] })
     },
     onError: () => {
-      toast.error('更新失败')
+      toast.error(t('connections.detail.updateFailed'))
     },
   })
 
-  if (isLoading) return <div className="flex items-center justify-center py-20 text-muted-foreground">加载中...</div>
-  if (!conn) return <div className="flex items-center justify-center py-20 text-muted-foreground">连接不存在</div>
+  if (isLoading) return <div className="flex items-center justify-center py-20 text-muted-foreground">{t('common.loading')}</div>
+  if (!conn) return <div className="flex items-center justify-center py-20 text-muted-foreground">{t('connections.detail.notFound')}</div>
 
   const boundKey = apiKeys.find((k: { id: number }) => k.id === (editing ? form.api_key_id : conn.api_key_id))
 
@@ -112,7 +116,7 @@ export function ConnectionDetailPage() {
             <h1 className="text-xl font-semibold">{conn.name}</h1>
             <p className={`mt-0.5 text-sm font-medium ${statusColors[conn.connection_status] || ''}`}>
               {statusLabels[conn.connection_status] || conn.connection_status}
-              {isDisabled && <span className="ml-2 text-zinc-500">· 已禁用</span>}
+              {isDisabled && <span className="ml-2 text-zinc-500">{t('connections.detail.disabledHint')}</span>}
             </p>
           </div>
         </div>
@@ -123,11 +127,11 @@ export function ConnectionDetailPage() {
             size="sm"
             onClick={() => statusMutation.mutate(isDisabled ? 1 : 2)}
           >
-            {isDisabled ? '启用' : '禁用'}
+            {isDisabled ? t('common.enabled') : t('common.disabled')}
           </Button>
           {!editing && (
             <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-              <Pencil className="h-4 w-4 mr-1.5" />编辑
+              <Pencil className="h-4 w-4 mr-1.5" />{t('common.edit')}
             </Button>
           )}
           <Button
@@ -137,10 +141,10 @@ export function ConnectionDetailPage() {
             disabled={isDisabled || toggleMutation.isPending}
           >
             {toggleMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> :
-              conn.connection_status === 'connected' ? <><WifiOff className="h-4 w-4 mr-1.5" />断开</> : <><Wifi className="h-4 w-4 mr-1.5" />连接</>
+              conn.connection_status === 'connected' ? <><WifiOff className="h-4 w-4 mr-1.5" />{t('connections.disconnect')}</> : <><Wifi className="h-4 w-4 mr-1.5" />{t('connections.connect')}</>
             }
           </Button>
-          <Button variant="outline" size="sm" className="text-destructive" onClick={() => { if (confirm('确定删除？')) deleteMutation.mutate() }}>
+          <Button variant="outline" size="sm" className="text-destructive" onClick={() => { if (confirm(t('connections.detail.deleteConfirm'))) deleteMutation.mutate() }}>
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
@@ -149,13 +153,13 @@ export function ConnectionDetailPage() {
       {/* Basic config */}
       <div className="rounded-xl border bg-card p-5 space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-muted-foreground">基本配置</h2>
+          <h2 className="text-sm font-medium text-muted-foreground">{t('connections.detail.basicConfig')}</h2>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           {/* Name */}
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">名称</Label>
+            <Label className="text-xs text-muted-foreground">{t('connections.detail.name')}</Label>
             {editing ? (
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             ) : (
@@ -165,14 +169,14 @@ export function ConnectionDetailPage() {
 
           {/* Cloud type (read-only) */}
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">平台类型</Label>
+            <Label className="text-xs text-muted-foreground">{t('connections.detail.platformType')}</Label>
             <p className="text-sm">{cloudTypeLabels[conn.cloud_type] || conn.cloud_type}</p>
           </div>
 
           {/* WSS URL */}
           {conn.cloud_type !== 'ssh' && (
             <div className="space-y-1.5 sm:col-span-2">
-              <Label className="text-xs text-muted-foreground">WSS URL</Label>
+              <Label className="text-xs text-muted-foreground">{t('connections.detail.wssUrl')}</Label>
               {editing ? (
                 <Input value={form.wss_url} onChange={(e) => setForm({ ...form, wss_url: e.target.value })} placeholder="wss://example.com/ws" />
               ) : (
@@ -183,10 +187,10 @@ export function ConnectionDetailPage() {
 
           {/* Bound API Key */}
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">绑定 API Key</Label>
+            <Label className="text-xs text-muted-foreground">{t('connections.detail.bindApiKey')}</Label>
             {editing ? (
               apiKeys.length === 0 ? (
-                <p className="text-xs text-muted-foreground py-2">请先创建 API Key</p>
+                <p className="text-xs text-muted-foreground py-2">{t('connections.detail.createApiKeyFirst')}</p>
               ) : (
                 <div className="flex flex-wrap gap-2 pt-1">
                   {apiKeys.map((k: { id: number; name: string; key_prefix: string }) => (
@@ -210,7 +214,7 @@ export function ConnectionDetailPage() {
 
           {/* Expose Mode */}
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">暴露模式-重新链接后生效</Label>
+            <Label className="text-xs text-muted-foreground">{t('connections.detail.exposeModeHint')}</Label>
             {editing ? (
               <div className="flex gap-2 pt-1">
                 <button
@@ -220,7 +224,7 @@ export function ConnectionDetailPage() {
                     form.expose_mode === 'smart' ? 'border-purple-200 bg-purple-100 text-purple-700 dark:border-purple-800 dark:bg-purple-900/30 dark:text-purple-300' : 'hover:border-primary/30'
                   }`}
                 >
-                  智能模式
+                  {t('connections.detail.smartMode')}
                 </button>
                 <button
                   type="button"
@@ -229,18 +233,18 @@ export function ConnectionDetailPage() {
                     form.expose_mode === 'direct' ? 'border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300' : 'hover:border-primary/30'
                   }`}
                 >
-                  直接模式
+                  {t('connections.detail.directMode')}
                 </button>
               </div>
             ) : (
-              <p className="text-sm">{conn.expose_mode === 'direct' ? '直接模式' : '智能模式'}</p>
+              <p className="text-sm">{conn.expose_mode === 'direct' ? t('connections.detail.directMode') : t('connections.detail.smartMode')}</p>
             )}
           </div>
 
           {/* Auto connect (read-only) */}
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">自动连接</Label>
-            <p className="text-sm">{conn.auto_connect ? '是' : '否'}</p>
+            <Label className="text-xs text-muted-foreground">{t('connections.detail.autoConnect')}</Label>
+            <p className="text-sm">{conn.auto_connect ? t('connections.detail.yes') : t('connections.detail.no')}</p>
           </div>
         </div>
 
@@ -248,7 +252,7 @@ export function ConnectionDetailPage() {
         {editing && (
           <div className="flex justify-end gap-2 pt-2 border-t">
             <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
-              <X className="h-4 w-4 mr-1.5" />取消
+              <X className="h-4 w-4 mr-1.5" />{t('common.cancel')}
             </Button>
             <Button
               size="sm"
@@ -256,7 +260,7 @@ export function ConnectionDetailPage() {
               disabled={!form.name.trim() || !form.wss_url.trim() || form.api_key_id === 0 || updateMutation.isPending}
             >
               {updateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Check className="h-4 w-4 mr-1.5" />}
-              保存
+              {t('common.save')}
             </Button>
           </div>
         )}
@@ -264,24 +268,24 @@ export function ConnectionDetailPage() {
 
       {/* Connection status */}
       <div className="rounded-xl border bg-card p-5 space-y-3">
-        <h2 className="text-sm font-medium text-muted-foreground">连接状态</h2>
+        <h2 className="text-sm font-medium text-muted-foreground">{t('connections.detail.connectStatus')}</h2>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <p className="text-xs text-muted-foreground">状态</p>
+            <p className="text-xs text-muted-foreground">{t('common.status')}</p>
             <p className={`mt-0.5 text-sm font-medium ${statusColors[conn.connection_status] || ''}`}>
               {statusLabels[conn.connection_status] || conn.connection_status}
             </p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">远程 ID</p>
+            <p className="text-xs text-muted-foreground">{t('connections.detail.remoteId')}</p>
             <p className="mt-0.5 text-sm font-mono">{conn.remote_id || '-'}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">最后连接</p>
+            <p className="text-xs text-muted-foreground">{t('connections.detail.lastConnect')}</p>
             <p className="mt-0.5 text-sm">{conn.last_connected_at || '-'}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">最后错误</p>
+            <p className="text-xs text-muted-foreground">{t('connections.detail.lastError')}</p>
             <p className="mt-0.5 text-sm">{conn.last_error || '-'}</p>
           </div>
         </div>
@@ -290,7 +294,7 @@ export function ConnectionDetailPage() {
       {/* SSH config */}
       {conn.cloud_config && Object.keys(conn.cloud_config).length > 0 && (
         <div className="rounded-xl border bg-card p-5 space-y-2">
-          <h2 className="text-sm font-medium text-muted-foreground">配置</h2>
+          <h2 className="text-sm font-medium text-muted-foreground">{t('connections.detail.config')}</h2>
           <pre className="rounded-lg bg-muted/50 p-3 text-xs overflow-auto">
             {JSON.stringify(conn.cloud_config, null, 2)}
           </pre>

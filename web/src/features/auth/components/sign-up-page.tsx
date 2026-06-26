@@ -72,7 +72,7 @@ export function SignUpPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (form.password !== form.confirmPassword) {
-      toast.error('两次输入的密码不一致')
+      toast.error(t('auth.passwordMismatch'))
       return
     }
     if (requiresVerification && !verificationCode) {
@@ -91,7 +91,7 @@ export function SignUpPage() {
       if (data?.token) {
         localStorage.setItem('newmcp-token', data.token)
         auth.setUser({ id: data.id, username: data.username, role: data.role })
-        toast.success('注册成功')
+        toast.success(t('auth.registerSuccess'))
         navigate({ to: '/dashboard' })
       }
     } catch {

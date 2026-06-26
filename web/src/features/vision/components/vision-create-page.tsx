@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { createVisionConfig, testVisionConfig, listVisionModels } from '../api'
 import type { ModelInfo } from '../api'
 import { Button } from '@/components/ui/button'
@@ -35,6 +36,7 @@ const providerPlaceholders: Record<string, string> = {
 }
 
 export function VisionCreatePage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [form, setForm] = useState({
     name: '',
@@ -68,11 +70,11 @@ export function VisionCreatePage() {
         max_tokens: form.max_tokens || undefined,
       }),
     onSuccess: () => {
-      toast.success('视觉配置创建成功')
+      toast.success(t('vision.create.success'))
       navigate({ to: '/vision' })
     },
     onError: () => {
-      toast.error('创建失败，请检查表单信息')
+      toast.error(t('vision.create.failed'))
     },
   })
 
@@ -86,13 +88,13 @@ export function VisionCreatePage() {
       }),
     onSuccess: (res) => {
       if (res.data?.success) {
-        toast.success('连接测试成功')
+        toast.success(t('vision.create.testSuccess'))
       } else {
-        toast.error(`连接测试失败: ${res.data?.error || '未知错误'}`)
+        toast.error(t('vision.create.testFailed', { error: res.data?.error || t('common.unknownError') }))
       }
     },
     onError: () => {
-      toast.error('测试请求失败')
+      toast.error(t('vision.create.testRequestFailed'))
     },
   })
 
@@ -108,10 +110,10 @@ export function VisionCreatePage() {
       setModelList(res.data || [])
       setModelModalOpen(true)
       if (!res.data?.length) {
-        toast.info('未找到可用模型')
+        toast.info(t('vision.noModelsFound'))
       }
     } catch {
-      toast.error('获取模型列表失败')
+      toast.error(t('vision.fetchModelsFailed'))
     } finally {
       setModelListLoading(false)
     }
@@ -136,9 +138,9 @@ export function VisionCreatePage() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
-          <h1 className="text-xl font-semibold">新建视觉配置</h1>
+          <h1 className="text-xl font-semibold">{t('vision.create.title')}</h1>
           <p className="text-sm text-muted-foreground">
-            配置视觉模型以提供图像理解能力
+            {t('vision.create.subtitle')}
           </p>
         </div>
       </div>
@@ -146,22 +148,22 @@ export function VisionCreatePage() {
       <div className="space-y-5 rounded-xl border bg-card p-6">
         {/* Name */}
         <div className="space-y-2">
-          <Label htmlFor="name">配置名称 *</Label>
+          <Label htmlFor="name">{t('vision.nameRequired')}</Label>
           <Input
             id="name"
-            placeholder="例如: gpt-4o-vision"
+            placeholder={t('vision.placeholderName')}
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
           />
-          <p className="text-xs text-muted-foreground">唯一标识，便于后续管理</p>
+          <p className="text-xs text-muted-foreground">{t('vision.create.uniqueTip')}</p>
         </div>
 
         {/* Description */}
         <div className="space-y-2">
-          <Label htmlFor="description">描述</Label>
+          <Label htmlFor="description">{t('vision.description')}</Label>
           <Input
             id="description"
-            placeholder="配置用途说明"
+            placeholder={t('vision.placeholderDesc')}
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
@@ -178,7 +180,7 @@ export function VisionCreatePage() {
             }}
           >
             <SelectTrigger>
-              <SelectValue placeholder="选择 Provider" />
+              <SelectValue placeholder={t('vision.placeholderProvider')} />
             </SelectTrigger>
             <SelectContent>
               {providerOptions.map((opt) => (
@@ -203,7 +205,7 @@ export function VisionCreatePage() {
             }}
           />
           <p className="text-xs text-muted-foreground">
-            预览：<code className="text-primary">{endpointPreview}</code>
+            {t('vision.endpointPreview')}：<code className="text-primary">{endpointPreview}</code>
           </p>
         </div>
 
@@ -221,7 +223,7 @@ export function VisionCreatePage() {
 
         {/* Model Name */}
         <div className="space-y-2">
-          <Label htmlFor="model_name">模型名称 *</Label>
+          <Label htmlFor="model_name">{t('vision.modelNameRequired')}</Label>
           <div className="flex gap-2">
             <Input
               id="model_name"
@@ -246,18 +248,18 @@ export function VisionCreatePage() {
               ) : (
                 <List className="h-4 w-4" />
               )}
-              获取模型
+              {t('vision.fetchModels')}
             </Button>
           </div>
         </div>
 
         {/* System Prompt */}
         <div className="space-y-2">
-          <Label htmlFor="system_prompt">系统提示词</Label>
+          <Label htmlFor="system_prompt">{t('vision.systemPrompt')}</Label>
           <textarea
             id="system_prompt"
             rows={4}
-            placeholder="你是一个图像分析助手..."
+            placeholder={t('vision.placeholderPrompt')}
             value={form.system_prompt}
             onChange={(e) => setForm({ ...form, system_prompt: e.target.value })}
             className="flex w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-y"
@@ -298,7 +300,7 @@ export function VisionCreatePage() {
           ) : (
             <Zap className="h-4 w-4" />
           )}
-          测试连接
+          {t('vision.create.testConnection')}
         </Button>
         <Button
           className="gap-2"
@@ -310,10 +312,10 @@ export function VisionCreatePage() {
           ) : (
             <Check className="h-4 w-4" />
           )}
-          保存
+          {t('common.save')}
         </Button>
         <Button variant="ghost" onClick={() => navigate({ to: '/vision' })}>
-          取消
+          {t('common.cancel')}
         </Button>
       </div>
 
@@ -322,12 +324,12 @@ export function VisionCreatePage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setModelModalOpen(false)}>
           <div className="w-full max-w-md rounded-xl border bg-card p-0 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b px-4 py-3">
-              <h3 className="text-sm font-semibold">选择模型</h3>
+              <h3 className="text-sm font-semibold">{t('vision.selectModel')}</h3>
               <button className="text-muted-foreground hover:text-foreground text-lg leading-none" onClick={() => setModelModalOpen(false)}>&times;</button>
             </div>
             <div className="px-4 pt-3">
               <Input
-                placeholder="搜索模型..."
+                placeholder={t('vision.searchModelPlaceholder')}
                 value={modelSearch}
                 onChange={(e) => setModelSearch(e.target.value)}
                 autoFocus
@@ -336,7 +338,7 @@ export function VisionCreatePage() {
             <div className="max-h-72 overflow-y-auto p-2">
               {filteredModels.length === 0 ? (
                 <p className="py-8 text-center text-xs text-muted-foreground">
-                  {modelList.length === 0 ? '无可用模型' : '无匹配结果'}
+                  {modelList.length === 0 ? t('vision.noModels') : t('vision.noMatches')}
                 </p>
               ) : (
                 filteredModels.map((m) => (

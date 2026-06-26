@@ -56,23 +56,23 @@ export function AdminUsersPage() {
       group: form.group || undefined,
     }),
     onSuccess: () => {
-      toast.success('用户创建成功')
+      toast.success(t('admin.users.createSuccess'))
       setShowCreate(false)
       resetForm()
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
     },
-    onError: (err: any) => toast.error(err?.response?.data?.message || '创建失败'),
+    onError: (err: any) => toast.error(err?.response?.data?.message || t('admin.users.createFailed')),
   })
 
   const updateMutation = useMutation({
     mutationFn: (data: { id: number; body: any }) => updateAdminUser(data.id, data.body),
     onSuccess: () => {
-      toast.success('更新成功')
+      toast.success(t('admin.users.updateSuccess'))
       setEditingUser(null)
       resetForm()
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
     },
-    onError: () => toast.error('更新失败'),
+    onError: () => toast.error(t('admin.users.updateFailed')),
   })
 
   const startEdit = (user: any) => {
@@ -99,15 +99,15 @@ export function AdminUsersPage() {
 
   const roleLabel = (role: string) => {
     switch (role) {
-      case 'admin': return <Badge variant="default">管理员</Badge>
-      default: return <Badge variant="secondary">用户</Badge>
+      case 'admin': return <Badge variant="default">{t('admin.users.badgeAdmin')}</Badge>
+      default: return <Badge variant="secondary">{t('admin.users.badgeUser')}</Badge>
     }
   }
 
   const statusLabel = (status: number) => {
     switch (status) {
-      case 1: return <Badge variant="success">启用</Badge>
-      default: return <Badge variant="destructive">禁用</Badge>
+      case 1: return <Badge variant="success">{t('admin.users.badgeEnabled')}</Badge>
+      default: return <Badge variant="destructive">{t('admin.users.badgeDisabled')}</Badge>
     }
   }
 
@@ -116,10 +116,10 @@ export function AdminUsersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{t('nav.adminUsers')}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">管理系统用户账号</p>
+          <p className="mt-1 text-sm text-muted-foreground">{t('admin.users.subtitle')}</p>
         </div>
         <Button className="gap-2" onClick={startCreate}>
-          <Plus className="h-4 w-4" />创建用户
+          <Plus className="h-4 w-4" />{t('admin.users.create')}
         </Button>
       </div>
 
@@ -128,7 +128,7 @@ export function AdminUsersPage() {
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="搜索用户名/邮箱..."
+            placeholder={t('admin.users.searchPlaceholder')}
             value={keyword}
             onChange={e => { setKeyword(e.target.value); setPage(1) }}
             className="pl-9 h-9"
@@ -140,7 +140,7 @@ export function AdminUsersPage() {
       {(showCreate || editingUser) && (
         <div className="rounded-xl border bg-card p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">{editingUser ? '编辑用户' : '创建新用户'}</h2>
+            <h2 className="text-sm font-semibold">{editingUser ? t('admin.users.editTitle') : t('admin.users.createTitle')}</h2>
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setShowCreate(false); setEditingUser(null); resetForm() }}>
               <X className="h-4 w-4" />
             </Button>
@@ -149,60 +149,60 @@ export function AdminUsersPage() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {!editingUser && (
               <div className="space-y-2">
-                <label className="text-sm font-medium">用户名</label>
+                <label className="text-sm font-medium">{t('admin.users.username')}</label>
                 <Input placeholder="username" value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} />
               </div>
             )}
             <div className="space-y-2">
-              <label className="text-sm font-medium">{editingUser ? '重置密码' : '密码'}</label>
-              <Input type="password" placeholder={editingUser ? '留空不修改' : 'password'} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
+              <label className="text-sm font-medium">{editingUser ? t('admin.users.resetPassword') : t('admin.users.password')}</label>
+              <Input type="password" placeholder={editingUser ? t('admin.users.keepPasswordUnchanged') : 'password'} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">显示名称</label>
+              <label className="text-sm font-medium">{t('admin.users.displayName')}</label>
               <Input placeholder="display name" value={form.display_name} onChange={e => setForm({ ...form, display_name: e.target.value })} />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">邮箱</label>
+              <label className="text-sm font-medium">{t('admin.users.email')}</label>
               <Input type="email" placeholder="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">角色</label>
+              <label className="text-sm font-medium">{t('admin.users.role')}</label>
               <Select value={form.role} onValueChange={v => setForm({ ...form, role: v })}>
                 <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="user">普通用户</SelectItem>
-                  <SelectItem value="admin">管理员</SelectItem>
+                  <SelectItem value="user">{t('admin.users.user')}</SelectItem>
+                  <SelectItem value="admin">{t('admin.users.admin')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">额度</label>
+              <label className="text-sm font-medium">{t('admin.users.quota')}</label>
               <Input type="number" placeholder="0" value={form.quota} onChange={e => setForm({ ...form, quota: e.target.value })} />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">分组</label>
+              <label className="text-sm font-medium">{t('admin.users.groups')}</label>
               <Input placeholder="default" value={form.group} onChange={e => setForm({ ...form, group: e.target.value })} />
             </div>
             {editingUser && (
               <div className="space-y-2">
-                <label className="text-sm font-medium">状态</label>
+                <label className="text-sm font-medium">{t('admin.users.status')}</label>
                 <Select value={String(form.status)} onValueChange={v => setForm({ ...form, status: parseInt(v) })}>
                   <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="1">启用</SelectItem>
-                    <SelectItem value="2">禁用</SelectItem>
+                    <SelectItem value="1">{t('admin.users.badgeEnabled')}</SelectItem>
+                    <SelectItem value="2">{t('admin.users.badgeDisabled')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             )}
             <div className="space-y-2">
-              <label className="text-sm font-medium">备注</label>
+              <label className="text-sm font-medium">{t('admin.users.remark')}</label>
               <Input placeholder="remark" value={form.remark} onChange={e => setForm({ ...form, remark: e.target.value })} />
             </div>
           </div>
 
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => { setShowCreate(false); setEditingUser(null); resetForm() }}>取消</Button>
+            <Button variant="outline" onClick={() => { setShowCreate(false); setEditingUser(null); resetForm() }}>{t('common.cancel')}</Button>
             <Button
               disabled={editingUser ? updateMutation.isPending : (!form.username.trim() || !form.password.trim())}
               onClick={() => {
@@ -223,7 +223,7 @@ export function AdminUsersPage() {
                 }
               }}
             >
-              {editingUser ? '保存' : '创建'}
+              {editingUser ? t('common.save') : t('common.create')}
             </Button>
           </div>
         </div>
@@ -232,9 +232,9 @@ export function AdminUsersPage() {
       {/* Table */}
       <div className="rounded-xl border bg-card">
         {isLoading ? (
-          <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">加载中...</div>
+          <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">{t('common.loading')}</div>
         ) : users.length === 0 ? (
-          <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">无数据</div>
+          <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">{t('common.noData')}</div>
         ) : isMobile ? (
           <div className="divide-y">
             {users.map((user: any) => (
@@ -255,14 +255,14 @@ export function AdminUsersPage() {
                   </div>
                 }
                 meta={[
-                  { label: '额度', value: <span className="tabular-nums">{user.used_quota}/{user.quota}</span> },
-                  { label: '调用', value: <span className="tabular-nums">{user.request_count}</span> },
-                  { label: '邮箱', value: user.email || '-' },
-                  { label: '分组', value: user.group || '-' },
+                  { label: t('admin.users.table.quota'), value: <span className="tabular-nums">{user.used_quota}/{user.quota}</span> },
+                  { label: t('admin.users.table.calls'), value: <span className="tabular-nums">{user.request_count}</span> },
+                  { label: t('admin.users.email'), value: user.email || '-' },
+                  { label: t('admin.users.groups'), value: user.group || '-' },
                 ]}
                 actions={
                   <Button variant="ghost" size="sm" onClick={() => startEdit(user)}>
-                    <Pencil className="h-3.5 w-3.5" />编辑
+                    <Pencil className="h-3.5 w-3.5" />{t('common.edit')}
                   </Button>
                 }
               />
@@ -273,16 +273,16 @@ export function AdminUsersPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>ID</TableHead>
-                <TableHead>用户名</TableHead>
-                <TableHead>显示名</TableHead>
-                <TableHead>邮箱</TableHead>
-                <TableHead>角色</TableHead>
-                <TableHead>额度</TableHead>
-                <TableHead>已用</TableHead>
-                <TableHead>调用</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>分组</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+                <TableHead>{t('admin.users.table.username')}</TableHead>
+                <TableHead>{t('admin.users.table.displayName')}</TableHead>
+                <TableHead>{t('admin.users.table.email')}</TableHead>
+                <TableHead>{t('admin.users.table.role')}</TableHead>
+                <TableHead>{t('admin.users.table.quota')}</TableHead>
+                <TableHead>{t('admin.users.table.used')}</TableHead>
+                <TableHead>{t('admin.users.table.calls')}</TableHead>
+                <TableHead>{t('admin.users.table.status')}</TableHead>
+                <TableHead>{t('admin.users.table.groups')}</TableHead>
+                <TableHead className="text-right">{t('admin.users.table.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -313,7 +313,7 @@ export function AdminUsersPage() {
       {/* Pagination */}
       {pagination && (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">共 {pagination.total} 条</p>
+          <p className="text-sm text-muted-foreground">{t('admin.users.total', { count: pagination.total })}</p>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
               <ChevronLeft className="h-4 w-4" />
