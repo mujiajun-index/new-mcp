@@ -72,7 +72,7 @@ export function AdminUsersPage() {
       resetForm()
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
     },
-    onError: () => toast.error(t('admin.users.updateFailed')),
+    onError: (err: any) => toast.error(err?.response?.data?.message || t('admin.users.updateFailed')),
   })
 
   const startEdit = (user: any) => {
@@ -99,6 +99,7 @@ export function AdminUsersPage() {
 
   const roleLabel = (role: string) => {
     switch (role) {
+      case 'super_admin': return <Badge variant="default">{t('admin.users.badgeSuperAdmin')}</Badge>
       case 'admin': return <Badge variant="default">{t('admin.users.badgeAdmin')}</Badge>
       default: return <Badge variant="secondary">{t('admin.users.badgeUser')}</Badge>
     }
@@ -110,6 +111,10 @@ export function AdminUsersPage() {
       default: return <Badge variant="destructive">{t('admin.users.badgeDisabled')}</Badge>
     }
   }
+
+  // 超级管理员（id=1）的角色与状态不可修改：编辑时角色以只读徽章展示、状态下拉禁用。
+  // 普通管理员在列表中看不到超级管理员，故此处只影响超级管理员编辑自己的情形。
+  const isProtectedTarget = editingUser?.id === 1 || editingUser?.role === 'super_admin'
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
@@ -147,12 +152,14 @@ export function AdminUsersPage() {
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {!editingUser && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{t('admin.users.username')}</label>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t('admin.users.username')}</label>
+              {editingUser ? (
+                <Input value={editingUser.username || ''} disabled readOnly />
+              ) : (
                 <Input placeholder="username" value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} />
-              </div>
-            )}
+              )}
+            </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">{editingUser ? t('admin.users.resetPassword') : t('admin.users.password')}</label>
               <Input type="password" placeholder={editingUser ? t('admin.users.keepPasswordUnchanged') : 'password'} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
@@ -167,13 +174,17 @@ export function AdminUsersPage() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('admin.users.role')}</label>
-              <Select value={form.role} onValueChange={v => setForm({ ...form, role: v })}>
-                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="user">{t('admin.users.user')}</SelectItem>
-                  <SelectItem value="admin">{t('admin.users.admin')}</SelectItem>
-                </SelectContent>
-              </Select>
+              {isProtectedTarget ? (
+                <div className="h-9 flex items-center"><Badge variant="default">{t('admin.users.badgeSuperAdmin')}</Badge></div>
+              ) : (
+                <Select value={form.role} onValueChange={v => setForm({ ...form, role: v })}>
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="user">{t('admin.users.user')}</SelectItem>
+                    <SelectItem value="admin">{t('admin.users.admin')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('admin.users.quota')}</label>
@@ -186,7 +197,7 @@ export function AdminUsersPage() {
             {editingUser && (
               <div className="space-y-2">
                 <label className="text-sm font-medium">{t('admin.users.status')}</label>
-                <Select value={String(form.status)} onValueChange={v => setForm({ ...form, status: parseInt(v) })}>
+                <Select value={String(form.status)} onValueChange={v => setForm({ ...form, status: parseInt(v) })} disabled={isProtectedTarget}>
                   <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="1">{t('admin.users.badgeEnabled')}</SelectItem>

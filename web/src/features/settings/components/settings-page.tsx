@@ -94,7 +94,7 @@ export function SettingsPage() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground mb-1">{t('settings.accountInfoRole')}</p>
-                {profile?.role === 'admin' ? <Badge variant="default">{t('settings.roleAdmin')}</Badge> : <Badge variant="secondary">{t('settings.roleUser')}</Badge>}
+                {profile?.role === 'super_admin' ? <Badge variant="default">{t('settings.roleSuperAdmin')}</Badge> : profile?.role === 'admin' ? <Badge variant="default">{t('settings.roleAdmin')}</Badge> : <Badge variant="secondary">{t('settings.roleUser')}</Badge>}
               </div>
               <div>
                 <p className="text-xs text-muted-foreground mb-1">{t('settings.accountInfoGroup')}</p>

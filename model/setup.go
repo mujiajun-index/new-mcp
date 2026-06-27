@@ -26,7 +26,8 @@ func GetSetup() *Setup {
 
 func AdminUserExists() bool {
 	var count int64
-	DB.Model(&User{}).Where("role = ?", "admin").Count(&count)
+	// 超级管理员与普通管理员都算「已初始化管理员」，避免初始化后误判为未初始化。
+	DB.Model(&User{}).Where("role IN ?", []string{common.RoleSuperAdmin, common.RoleAdminUser}).Count(&count)
 	return count > 0
 }
 

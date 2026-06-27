@@ -1,6 +1,7 @@
 import { Link, useRouterState } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
+import { isAdminRole } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
@@ -60,7 +61,7 @@ function SidebarNav({
   const currentPath = router.location.pathname
   const { auth } = useAuthStore()
   const { config } = useSystemConfigStore()
-  const isAdmin = auth.user?.role === 'admin'
+  const isAdmin = isAdminRole(auth.user?.role)
 
   const isActive = (href: string) => {
     if (href === '/dashboard') return currentPath === '/dashboard'

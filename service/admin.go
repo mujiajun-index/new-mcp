@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/mujkjk/newmcp/common"
@@ -8,11 +9,23 @@ import (
 	"github.com/mujkjk/newmcp/model"
 )
 
+// 超级管理员保护：id 为 1 的账号（super_admin）不可被改角色、禁用或删除，
+// 普通管理员也不能修改其任何信息。
+var ErrSuperAdminProtected = errors.New("普通管理员不能修改超级管理员的信息")
+var ErrSuperAdminRoleProtected = errors.New("超级管理员的角色不可修改")
+var ErrSuperAdminStatusProtected = errors.New("超级管理员不可禁用")
+var ErrSuperAdminRoleReserved = errors.New("超级管理员角色不可分配")
+
 type AdminService struct{}
 
-func (s *AdminService) ListUsers(page, pageSize int, keyword string) ([]dto.UserListItem, int64, error) {
+func (s *AdminService) ListUsers(actorRole string, page, pageSize int, keyword string) ([]dto.UserListItem, int64, error) {
 	offset := common.GetOffset(page, pageSize)
-	users, total, err := model.ListUsersWithPaged(offset, pageSize, keyword)
+	// 普通管理员看不到超级管理员（id=1）。
+	var excludeID int64
+	if actorRole != common.RoleSuperAdmin {
+		excludeID = common.SuperAdminUserID
+	}
+	users, total, err := model.ListUsersWithPaged(offset, pageSize, keyword, excludeID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -37,11 +50,31 @@ func (s *AdminService) ListUsers(page, pageSize int, keyword string) ([]dto.User
 	return items, total, nil
 }
 
-func (s *AdminService) UpdateUser(userID int64, req *dto.AdminUpdateUserReq) error {
+func (s *AdminService) UpdateUser(actorRole string, userID int64, req *dto.AdminUpdateUserReq) error {
 	var user model.User
 	if err := model.DB.First(&user, userID).Error; err != nil {
 		return err
 	}
+
+	// 超级管理员保护：目标为超级管理员（id=1 或 role=super_admin）。
+	targetIsSuper := user.ID == common.SuperAdminUserID || user.Role == common.RoleSuperAdmin
+	if targetIsSuper {
+		// 普通管理员不能修改超级管理员的任何信息。
+		if actorRole != common.RoleSuperAdmin {
+			return ErrSuperAdminProtected
+		}
+		// 超级管理员本人也不能改自己的角色或把自己禁用（防自锁）；其余字段可正常修改。
+		if req.Role != nil && *req.Role != user.Role {
+			return ErrSuperAdminRoleProtected
+		}
+		if req.Status != nil && *req.Status != common.StatusEnabled {
+			return ErrSuperAdminStatusProtected
+		}
+	} else if req.Role != nil && *req.Role == common.RoleSuperAdmin {
+		// super_admin 固定为 id=1 独有，任何人都不能把别人提升为超级管理员。
+		return ErrSuperAdminRoleReserved
+	}
+
 	if req.Status != nil {
 		user.Status = *req.Status
 	}
@@ -74,6 +107,10 @@ func (s *AdminService) UpdateUser(userID int64, req *dto.AdminUpdateUserReq) err
 }
 
 func (s *AdminService) CreateUser(req *dto.AdminCreateUserReq) (*dto.UserListItem, error) {
+	// super_admin 固定为 id=1 独有，禁止通过后台创建该角色。
+	if req.Role == common.RoleSuperAdmin {
+		return nil, ErrSuperAdminRoleReserved
+	}
 	if _, err := model.GetUserByUsername(req.Username); err == nil {
 		return nil, fmt.Errorf("用户名已存在")
 	}

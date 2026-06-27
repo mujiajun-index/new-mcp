@@ -14,12 +14,17 @@ var StartTime = time.Now().Unix()
 
 const (
 	// Roles
+	RoleSuperAdmin = "super_admin"
 	RoleAdminUser  = "admin"
 	RoleCommonUser = "user"
 
 	// Status
 	StatusEnabled  = 1
 	StatusDisabled = 2
+
+	// SuperAdminUserID 为系统初始化的超级管理员（首个账号，自增主键即 1）。
+	// 其角色与启用状态受保护：不可被改角色、禁用或删除，避免管理员被锁在系统之外。
+	SuperAdminUserID int64 = 1
 
 	// API Key
 	ApiKeyPrefix = "sk-"
@@ -47,3 +52,8 @@ const (
 	ConnConnecting   = "connecting"
 	ConnError        = "error"
 )
+
+// IsAdminRole 判断角色是否属于管理员级别（超级管理员或普通管理员），用于所有「仅管理员可访问」的门禁。
+func IsAdminRole(role string) bool {
+	return role == RoleSuperAdmin || role == RoleAdminUser
+}

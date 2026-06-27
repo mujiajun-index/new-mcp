@@ -81,7 +81,8 @@ func PostSetup(c *gin.Context) {
 		user := &model.User{
 			Username: req.Username,
 			Password: hash,
-			Role:     common.RoleAdminUser,
+			// 系统初始化的首个账号即超级管理员（固定为 id=1）。
+			Role:     common.RoleSuperAdmin,
 			Status:   common.StatusEnabled,
 			Group:    "default",
 		}

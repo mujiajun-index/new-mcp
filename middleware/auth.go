@@ -102,7 +102,7 @@ func AdminAuth() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		if claims.Role != common.RoleAdminUser {
+		if !common.IsAdminRole(claims.Role) {
 			common.Error(c, http.StatusForbidden, "需要管理员权限")
 			c.Abort()
 			return

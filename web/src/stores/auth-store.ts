@@ -4,7 +4,7 @@ import { persist } from 'zustand/middleware'
 interface AuthUser {
   id: number
   username: string
-  role: 'user' | 'admin'
+  role: 'super_admin' | 'admin' | 'user'
   email?: string
 }
 

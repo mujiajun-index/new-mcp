@@ -54,10 +54,13 @@ func GetUserByID(id int64) (*User, error) {
 	return &user, err
 }
 
-func ListUsersWithPaged(offset, limit int, keyword string) ([]User, int64, error) {
+func ListUsersWithPaged(offset, limit int, keyword string, excludeID int64) ([]User, int64, error) {
 	var users []User
 	var total int64
 	query := DB.Model(&User{})
+	if excludeID > 0 {
+		query = query.Where("id != ?", excludeID)
+	}
 	if keyword != "" {
 		query = query.Where("username LIKE ? OR email LIKE ? OR display_name LIKE ?", "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
 	}

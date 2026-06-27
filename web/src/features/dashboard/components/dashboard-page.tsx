@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/auth-store'
+import { isAdminRole } from '@/lib/roles'
 import { Badge } from '@/components/ui/badge'
 import { Server, FolderTree, Cloud, Zap, ArrowRight, Activity } from 'lucide-react'
 import { getAdminStats } from '@/features/admin/api'
@@ -21,7 +22,7 @@ function getGreetingKey() {
 export function DashboardPage() {
   const { t } = useTranslation()
   const { auth } = useAuthStore()
-  const isAdmin = auth.user?.role === 'admin'
+  const isAdmin = isAdminRole(auth.user?.role)
 
   const { data: adminStats } = useQuery({
     queryKey: ['admin-stats'],

@@ -3,7 +3,7 @@ export interface User {
   username: string
   display_name: string
   email: string
-  role: 'user' | 'admin'
+  role: 'super_admin' | 'admin' | 'user'
   status: number
   quota: number
   used_quota: number

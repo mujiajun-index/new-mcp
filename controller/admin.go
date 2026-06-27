@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -15,7 +16,7 @@ var adminService = &service.AdminService{}
 func AdminListUsers(c *gin.Context) {
 	page, pageSize := common.GetPagination(c)
 	keyword := c.Query("keyword")
-	items, total, err := adminService.ListUsers(page, pageSize, keyword)
+	items, total, err := adminService.ListUsers(c.GetString("role"), page, pageSize, keyword)
 	if err != nil {
 		common.Error(c, http.StatusInternalServerError, "获取用户列表失败")
 		return
@@ -30,7 +31,15 @@ func AdminUpdateUser(c *gin.Context) {
 		common.Error(c, http.StatusBadRequest, "请求参数错误")
 		return
 	}
-	if err := adminService.UpdateUser(id, &req); err != nil {
+	if err := adminService.UpdateUser(c.GetString("role"), id, &req); err != nil {
+		// 触发超级管理员保护（普通管理员改超管信息 / 改超管角色 / 禁用超管 / 分配超管角色）时返回明确的 403。
+		if errors.Is(err, service.ErrSuperAdminProtected) ||
+			errors.Is(err, service.ErrSuperAdminRoleProtected) ||
+			errors.Is(err, service.ErrSuperAdminStatusProtected) ||
+			errors.Is(err, service.ErrSuperAdminRoleReserved) {
+			common.Error(c, http.StatusForbidden, err.Error())
+			return
+		}
 		common.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -45,6 +54,10 @@ func AdminCreateUser(c *gin.Context) {
 	}
 	user, err := adminService.CreateUser(&req)
 	if err != nil {
+		if errors.Is(err, service.ErrSuperAdminRoleReserved) {
+			common.Error(c, http.StatusForbidden, err.Error())
+			return
+		}
 		common.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -64,7 +77,7 @@ func AdminGetStats(c *gin.Context) {
 
 func GetLogs(c *gin.Context) {
 	userID := c.GetInt64("user_id")
-	isAdmin := c.GetString("role") == common.RoleAdminUser
+	isAdmin := common.IsAdminRole(c.GetString("role"))
 	page, pageSize := common.GetPagination(c)
 	var filter dto.LogFilter
 	if err := c.ShouldBindQuery(&filter); err != nil {
@@ -81,7 +94,7 @@ func GetLogs(c *gin.Context) {
 
 func GetLogStats(c *gin.Context) {
 	userID := c.GetInt64("user_id")
-	isAdmin := c.GetString("role") == common.RoleAdminUser
+	isAdmin := common.IsAdminRole(c.GetString("role"))
 	var filter dto.LogFilter
 	if err := c.ShouldBindQuery(&filter); err != nil {
 		common.Error(c, http.StatusBadRequest, "筛选参数错误")
