@@ -12,11 +12,14 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/mujiajun-index/new-mcp">
+  <a href="https://raw.githubusercontent.com/mujiajun-index/new-mcp/main/LICENSE">
     <img src="https://img.shields.io/github/license/mujiajun-index/new-mcp?color=brightgreen" alt="license">
   </a><!--
   --><a href="https://github.com/mujiajun-index/new-mcp/releases/latest">
     <img src="https://img.shields.io/github/v/release/mujiajun-index/new-mcp?color=brightgreen&include_prereleases" alt="release">
+  </a><!--
+  --><a href="https://hub.docker.com/r/mujkjk/new-mcp">
+    <img src="https://img.shields.io/badge/docker-dockerHub-blue" alt="docker">
   </a><!--
   --><a href="https://goreportcard.com/report/github.com/mujiajun-index/new-mcp">
     <img src="https://goreportcard.com/badge/github.com/mujiajun-index/new-mcp" alt="GoReportCard">
@@ -321,7 +324,11 @@ volumes:
 
 ## 🌟 Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=mujiajun-index/new-mcp&type=Date)](https://star-history.com/#mujiajun-index/new-mcp&Date)
+<div align="center">
+
+[![Star History Chart](https://api.star-history.com/chart?repos=mujiajun-index/new-mcp&type=date&legend=top-left)](https://www.star-history.com/?type=date&repos=mujiajun-index%2Fnew-mcp)
+
+</div>
 
 ---
 
