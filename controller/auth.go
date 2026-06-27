@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
+	"github.com/mujkjk/newmcp/middleware"
 	"github.com/mujkjk/newmcp/service"
 )
 
@@ -18,7 +19,7 @@ func Register(c *gin.Context) {
 		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
 		return
 	}
-	resp, err := authService.Register(&req)
+	resp, err := authService.Register(middleware.GetRequestIP(c), &req)
 	if err != nil {
 		common.Error(c, http.StatusBadRequest, err.Error())
 		return
@@ -32,7 +33,7 @@ func Login(c *gin.Context) {
 		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
 		return
 	}
-	resp, err := authService.Login(&req)
+	resp, err := authService.Login(middleware.GetRequestIP(c), &req)
 	if err != nil {
 		// 账号被禁用：返回明确的 403。
 		if errors.Is(err, service.ErrUserDisabled) {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mujkjk/newmcp/common"
+	"github.com/mujkjk/newmcp/middleware"
 	"github.com/mujkjk/newmcp/model"
 )
 
@@ -79,12 +80,13 @@ func PostSetup(c *gin.Context) {
 		}
 
 		user := &model.User{
-			Username: req.Username,
-			Password: hash,
+			Username:   req.Username,
+			Password:   hash,
 			// 系统初始化的首个账号即超级管理员（固定为 id=1）。
-			Role:     common.RoleSuperAdmin,
-			Status:   common.StatusEnabled,
-			Group:    "default",
+			Role:       common.RoleSuperAdmin,
+			Status:     common.StatusEnabled,
+			Group:      "default",
+			RegisterIP: middleware.GetRequestIP(c),
 		}
 		if err := user.Insert(); err != nil {
 			common.Error(c, http.StatusInternalServerError, "创建管理员账号失败")

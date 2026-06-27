@@ -395,6 +395,12 @@ export interface AdminUserItem {
   created_at: string
 }
 
+export interface AdminUserDetail extends AdminUserItem {
+  register_ip: string
+  last_login_at: string
+  last_login_ip: string
+}
+
 export interface AdminCreateUserReq {
   username: string
   password: string

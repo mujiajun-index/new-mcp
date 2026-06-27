@@ -46,6 +46,26 @@ type UserListItem struct {
 	CreatedAt    string `json:"created_at"`
 }
 
+// UserDetailResp 为管理员查看单个用户的详情，额外暴露审计字段（注册 IP、最后登录时间/IP）。
+// LastLoginAt 为空字符串表示从未登录。
+type UserDetailResp struct {
+	ID           int64  `json:"id"`
+	Username     string `json:"username"`
+	DisplayName  string `json:"display_name"`
+	Email        string `json:"email"`
+	Role         string `json:"role"`
+	Status       int    `json:"status"`
+	Quota        int64  `json:"quota"`
+	UsedQuota    int64  `json:"used_quota"`
+	RequestCount int64  `json:"request_count"`
+	Group        string `json:"group"`
+	Remark       string `json:"remark"`
+	CreatedAt    string `json:"created_at"` // 注册时间
+	RegisterIP   string `json:"register_ip"`
+	LastLoginAt  string `json:"last_login_at"`
+	LastLoginIP  string `json:"last_login_ip"`
+}
+
 type LogItem struct {
 	ID             int64  `json:"id"`
 	UserID         int64  `json:"user_id"`

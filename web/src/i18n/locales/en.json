@@ -738,7 +738,14 @@
       "badgeAdmin": "Admin",
       "badgeUser": "User",
       "badgeEnabled": "Enabled",
-      "badgeDisabled": "Disabled"
+      "badgeDisabled": "Disabled",
+      "detailTitle": "User Details",
+      "detail": "Detail",
+      "registerIp": "Registration IP",
+      "registerTime": "Registration Time",
+      "lastLoginAt": "Last Login Time",
+      "lastLoginIp": "Last Login IP",
+      "never": "Never"
     },
     "marketplace": {
       "subtitleEdit": "Edit Service",

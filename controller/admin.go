@@ -24,6 +24,16 @@ func AdminListUsers(c *gin.Context) {
 	common.PageOf(c, items, page, pageSize, total)
 }
 
+func AdminGetUserDetail(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	resp, err := adminService.GetUserDetail(c.GetString("role"), id)
+	if err != nil {
+		common.Error(c, http.StatusNotFound, err.Error())
+		return
+	}
+	common.Success(c, resp)
+}
+
 func AdminUpdateUser(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 	var req dto.AdminUpdateUserReq

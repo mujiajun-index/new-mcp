@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { getAdminUsers, createAdminUser, updateAdminUser } from '@/features/admin/api'
+import { getAdminUsers, createAdminUser, updateAdminUser, getAdminUserDetail } from '@/features/admin/api'
+import type { AdminUserDetail } from '@/types'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -10,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { MobileListCard } from '@/components/ui/mobile-list-card'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { toast } from 'sonner'
-import { Plus, Pencil, Search, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { Plus, Pencil, Search, ChevronLeft, ChevronRight, X, Eye } from 'lucide-react'
 
 export function AdminUsersPage() {
   const { t } = useTranslation()
@@ -22,6 +23,8 @@ export function AdminUsersPage() {
 
   const [showCreate, setShowCreate] = useState(false)
   const [editingUser, setEditingUser] = useState<any>(null)
+  const [detailUser, setDetailUser] = useState<AdminUserDetail | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
   const [form, setForm] = useState({
     username: '',
     password: '',
@@ -77,6 +80,7 @@ export function AdminUsersPage() {
 
   const startEdit = (user: any) => {
     setEditingUser(user)
+    setDetailUser(null)
     setShowCreate(false)
     setForm({
       username: user.username || '',
@@ -94,8 +98,26 @@ export function AdminUsersPage() {
   const startCreate = () => {
     setShowCreate(true)
     setEditingUser(null)
+    setDetailUser(null)
     resetForm()
   }
+
+  const startDetail = async (user: any) => {
+    if (detailLoading) return
+    setShowCreate(false)
+    setEditingUser(null)
+    setDetailLoading(true)
+    try {
+      const res = await getAdminUserDetail(user.id)
+      setDetailUser(res?.data ?? null)
+    } catch {
+      // 错误由 axios 拦截器统一提示
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  const fmtTime = (s?: string) => (s ? new Date(s).toLocaleString() : t('admin.users.never'))
 
   const roleLabel = (role: string) => {
     switch (role) {
@@ -240,6 +262,40 @@ export function AdminUsersPage() {
         </div>
       )}
 
+      {/* Detail panel (read-only, admin-only audit fields) */}
+      {detailUser && (
+        <div className="rounded-xl border bg-card p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold">{t('admin.users.detailTitle')}</h2>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setDetailUser(null)}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <DetailField label={t('admin.users.username')} value={detailUser.username} />
+            <DetailField label={t('admin.users.displayName')} value={detailUser.display_name || '-'} />
+            <DetailField label={t('admin.users.email')} value={detailUser.email || '-'} />
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">{t('admin.users.role')}</p>
+              <div>{roleLabel(detailUser.role)}</div>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">{t('admin.users.status')}</p>
+              <div>{statusLabel(detailUser.status)}</div>
+            </div>
+            <DetailField label={t('admin.users.groups')} value={detailUser.group || '-'} />
+            <DetailField label={t('admin.users.quota')} value={`${detailUser.used_quota} / ${detailUser.quota}`} />
+            <DetailField label={t('admin.users.table.calls')} value={String(detailUser.request_count)} />
+            <DetailField label={t('admin.users.remark')} value={detailUser.remark || '-'} />
+            <DetailField label={t('admin.users.registerTime')} value={fmtTime(detailUser.created_at)} />
+            <DetailField label={t('admin.users.registerIp')} value={detailUser.register_ip || '-'} />
+            <DetailField label={t('admin.users.lastLoginAt')} value={fmtTime(detailUser.last_login_at)} />
+            <DetailField label={t('admin.users.lastLoginIp')} value={detailUser.last_login_ip || '-'} />
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="rounded-xl border bg-card">
         {isLoading ? (
@@ -272,9 +328,14 @@ export function AdminUsersPage() {
                   { label: t('admin.users.groups'), value: user.group || '-' },
                 ]}
                 actions={
-                  <Button variant="ghost" size="sm" onClick={() => startEdit(user)}>
-                    <Pencil className="h-3.5 w-3.5" />{t('common.edit')}
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => startDetail(user)}>
+                      <Eye className="h-3.5 w-3.5" />{t('admin.users.detail')}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => startEdit(user)}>
+                      <Pencil className="h-3.5 w-3.5" />{t('common.edit')}
+                    </Button>
+                  </div>
                 }
               />
             ))}
@@ -310,9 +371,14 @@ export function AdminUsersPage() {
                   <TableCell>{statusLabel(user.status)}</TableCell>
                   <TableCell className="text-sm">{user.group}</TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" onClick={() => startEdit(user)}>
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => startDetail(user)} title={t('admin.users.detail')}>
+                        <Eye className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => startEdit(user)} title={t('common.edit')}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -336,6 +402,15 @@ export function AdminUsersPage() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function DetailField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-sm font-medium break-all">{value}</p>
     </div>
   )
 }

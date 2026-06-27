@@ -21,3 +21,8 @@ export async function updateAdminUser(id: number, data: AdminUpdateUserReq) {
   return res.data
 }
 
+export async function getAdminUserDetail(id: number) {
+  const res = await api.get(`/admin/users/${id}`)
+  return res.data
+}
+

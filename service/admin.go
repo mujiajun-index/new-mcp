@@ -15,6 +15,7 @@ var ErrSuperAdminProtected = errors.New("普通管理员不能修改超级管理
 var ErrSuperAdminRoleProtected = errors.New("超级管理员的角色不可修改")
 var ErrSuperAdminStatusProtected = errors.New("超级管理员不可禁用")
 var ErrSuperAdminRoleReserved = errors.New("超级管理员角色不可分配")
+var ErrUserNotFound = errors.New("用户不存在")
 
 type AdminService struct{}
 
@@ -48,6 +49,40 @@ func (s *AdminService) ListUsers(actorRole string, page, pageSize int, keyword s
 		}
 	}
 	return items, total, nil
+}
+
+// GetUserDetail 返回单个用户的详情（含审计字段）。普通管理员查询超级管理员时按隐藏规则返回 404。
+func (s *AdminService) GetUserDetail(actorRole string, userID int64) (*dto.UserDetailResp, error) {
+	user, err := model.GetUserByID(userID)
+	if err != nil {
+		return nil, ErrUserNotFound
+	}
+	// 普通管理员看不到超级管理员（与列表隐藏一致），直接当作不存在。
+	targetIsSuper := user.ID == common.SuperAdminUserID || user.Role == common.RoleSuperAdmin
+	if targetIsSuper && actorRole != common.RoleSuperAdmin {
+		return nil, ErrUserNotFound
+	}
+
+	resp := &dto.UserDetailResp{
+		ID:           user.ID,
+		Username:     user.Username,
+		DisplayName:  user.DisplayName,
+		Email:        user.Email,
+		Role:         user.Role,
+		Status:       user.Status,
+		Quota:        user.Quota,
+		UsedQuota:    user.UsedQuota,
+		RequestCount: user.RequestCount,
+		Group:        user.Group,
+		Remark:       user.Remark,
+		CreatedAt:    user.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		RegisterIP:   user.RegisterIP,
+		LastLoginIP:  user.LastLoginIP,
+	}
+	if user.LastLoginAt != nil {
+		resp.LastLoginAt = user.LastLoginAt.Format("2006-01-02T15:04:05Z")
+	}
+	return resp, nil
 }
 
 func (s *AdminService) UpdateUser(actorRole string, userID int64, req *dto.AdminUpdateUserReq) error {

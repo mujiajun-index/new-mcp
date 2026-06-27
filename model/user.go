@@ -20,6 +20,9 @@ type User struct {
 	RequestCount int64          `json:"request_count" gorm:"default:0"`
 	Group        string         `json:"group" gorm:"size:64;default:default"`
 	Remark       string         `json:"remark" gorm:"size:255"`
+	RegisterIP   string         `json:"register_ip" gorm:"column:register_ip;size:64"`
+	LastLoginAt  *time.Time     `json:"last_login_at" gorm:"column:last_login_at"`
+	LastLoginIP  string         `json:"last_login_ip" gorm:"column:last_login_ip;size:64"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 	DeletedAt    gorm.DeletedAt `json:"-" gorm:"index"`

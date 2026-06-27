@@ -738,7 +738,14 @@
       "badgeAdmin": "管理员",
       "badgeUser": "用户",
       "badgeEnabled": "启用",
-      "badgeDisabled": "禁用"
+      "badgeDisabled": "禁用",
+      "detailTitle": "用户详情",
+      "detail": "详情",
+      "registerIp": "注册IP",
+      "registerTime": "注册时间",
+      "lastLoginAt": "最后登录时间",
+      "lastLoginIp": "最后登录IP",
+      "never": "从未登录"
     },
     "marketplace": {
       "subtitleEdit": "编辑服务",

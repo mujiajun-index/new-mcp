@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
@@ -22,7 +23,7 @@ var ErrEmailAlreadyBound = errors.New("该邮箱已被其他账号绑定")
 
 type AuthService struct{}
 
-func (s *AuthService) Register(req *dto.RegisterReq) (*dto.AuthResp, error) {
+func (s *AuthService) Register(registerIP string, req *dto.RegisterReq) (*dto.AuthResp, error) {
 	if !model.GetOptionBool("RegisterEnabled") {
 		return nil, ErrRegisterDisabled
 	}
@@ -53,12 +54,13 @@ func (s *AuthService) Register(req *dto.RegisterReq) (*dto.AuthResp, error) {
 	}
 
 	user := &model.User{
-		Username: req.Username,
-		Password: hash,
-		Email:    req.Email,
-		Role:     common.RoleCommonUser,
-		Status:   common.StatusEnabled,
-		Group:    "default",
+		Username:   req.Username,
+		Password:   hash,
+		Email:      req.Email,
+		Role:       common.RoleCommonUser,
+		Status:     common.StatusEnabled,
+		Group:      "default",
+		RegisterIP: registerIP,
 	}
 	if err := user.Insert(); err != nil {
 		return nil, err
@@ -77,7 +79,7 @@ func (s *AuthService) Register(req *dto.RegisterReq) (*dto.AuthResp, error) {
 	}, nil
 }
 
-func (s *AuthService) Login(req *dto.LoginReq) (*dto.AuthResp, error) {
+func (s *AuthService) Login(loginIP string, req *dto.LoginReq) (*dto.AuthResp, error) {
 	// Login accepts either a username or an email address.
 	user, err := model.GetUserByUsernameOrEmail(strings.TrimSpace(req.Username))
 	if err != nil {
@@ -91,6 +93,13 @@ func (s *AuthService) Login(req *dto.LoginReq) (*dto.AuthResp, error) {
 	if user.Status != common.StatusEnabled {
 		return nil, ErrUserDisabled
 	}
+
+	// 记录最后登录时间与 IP；定向更新，避免覆盖并发变更的 quota/request_count。
+	now := time.Now()
+	_ = model.DB.Model(&model.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
+		"last_login_at": now,
+		"last_login_ip": loginIP,
+	})
 
 	token, err := middleware.GenerateToken(user)
 	if err != nil {
