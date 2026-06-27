@@ -333,6 +333,13 @@ If your organization's policies do not permit the use of AGPLv3-licensed softwar
 
 ---
 
+## 💬 Contact
+
+- **QQGroup**: `873292034`
+- **Email**: jiajun25701@gmail.com
+
+---
+
 <div align="center">
 
 If this project is helpful to you, welcome to give a ⭐️ Star!
