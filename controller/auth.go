@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -33,6 +34,11 @@ func Login(c *gin.Context) {
 	}
 	resp, err := authService.Login(&req)
 	if err != nil {
+		// 账号被禁用：返回明确的 403。
+		if errors.Is(err, service.ErrUserDisabled) {
+			common.Error(c, http.StatusForbidden, err.Error())
+			return
+		}
 		common.Error(c, http.StatusUnauthorized, err.Error())
 		return
 	}

@@ -12,6 +12,7 @@ import (
 
 var ErrUsernameExists = errors.New("用户名已存在")
 var ErrInvalidCredentials = errors.New("用户名或密码错误")
+var ErrUserDisabled = errors.New("用户已被禁用")
 var ErrWrongPassword = errors.New("原密码不正确")
 var ErrRegisterDisabled = errors.New("注册功能已禁用")
 var ErrEmailDomainRestricted = errors.New("该邮箱域名不在允许列表中")
@@ -85,8 +86,10 @@ func (s *AuthService) Login(req *dto.LoginReq) (*dto.AuthResp, error) {
 	if !common.ValidatePasswordAndHash(req.Password, user.Password) {
 		return nil, ErrInvalidCredentials
 	}
+	// 密码正确但账号被禁用：返回明确的禁用提示，而非"用户名或密码错误"。
+	// 仅在凭据校验通过后才暴露状态，避免攻击者借此枚举有效用户名。
 	if user.Status != common.StatusEnabled {
-		return nil, ErrInvalidCredentials
+		return nil, ErrUserDisabled
 	}
 
 	token, err := middleware.GenerateToken(user)
