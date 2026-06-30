@@ -11,11 +11,11 @@ import { ArrowLeft, ArrowRight, Check, Loader2, Zap } from 'lucide-react'
 import type { TransportType, AuthType, TestResult } from '@/types'
 
 const transportOptions: { value: TransportType; labelKey: string; descKey: string }[] = [
-  { value: 'streamable-http', labelKey: 'services.transports["streamable-http"]', descKey: 'services.transportDescs["streamable-http"]' },
+  { value: 'streamable-http', labelKey: 'services.transports.streamable-http', descKey: 'services.transportDescs.streamable-http' },
   { value: 'sse', labelKey: 'services.transports.sse', descKey: 'services.transportDescs.sse' },
   { value: 'stdio', labelKey: 'services.transports.stdio', descKey: 'services.transportDescs.stdio' },
   { value: 'websocket', labelKey: 'services.transports.websocket', descKey: 'services.transportDescs.websocket' },
-  { value: 'passive-ws', labelKey: 'services.transports["passive-ws"]', descKey: 'services.transportDescs["passive-ws"]' },
+  { value: 'passive-ws', labelKey: 'services.transports.passive-ws', descKey: 'services.transportDescs.passive-ws' },
 ]
 
 const authOptions: { value: AuthType; labelKey: string }[] = [

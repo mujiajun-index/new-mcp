@@ -23,9 +23,9 @@ export function ServiceDetailPage() {
   const transportLabels: Record<string, string> = {
     'stdio': t('services.transports.stdio'),
     'sse': t('services.transports.sse'),
-    'streamable-http': t('services.transports["streamable-http"]'),
+    'streamable-http': t('services.transports.streamable-http'),
     'websocket': t('services.transports.websocket'),
-    'passive-ws': t('services.transports["passive-ws"]'),
+    'passive-ws': t('services.transports.passive-ws'),
     'virtual': t('services.transport_virtual'),
   }
 
