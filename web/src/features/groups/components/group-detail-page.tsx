@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
 import { ArrowLeft, Trash2, Copy, Plus, X, Globe, Radio, Settings2, ChevronDown, ChevronRight, Check, Pencil, Loader2 } from 'lucide-react'
 import { useState, useMemo, useCallback } from 'react'
-import type { BatchToolUpdate } from '@/types'
+import type { BatchToolUpdate, GroupListItem } from '@/types'
 
 // 分组标识：字母开头，仅含字母与数字（禁止中文/特殊字符）
 const IDENTIFIER_RE = /^[a-zA-Z][a-zA-Z0-9]*$/
@@ -53,6 +53,13 @@ export function GroupDetailPage() {
     mutationFn: () => deleteGroup(groupId),
     onSuccess: () => {
       toast.success(t('groups.deleteSuccess'))
+      // 乐观更新：立即从列表缓存移除已删除的分组，避免导航后仍短暂显示旧数据
+      queryClient.setQueryData(['groups'], (old: any) => {
+        if (!old) return old
+        return { ...old, data: (old.data || []).filter((g: GroupListItem) => g.id !== groupId) }
+      })
+      queryClient.invalidateQueries({ queryKey: ['groups'] })
+      queryClient.removeQueries({ queryKey: ['group', id] })
       navigate({ to: '/groups' })
     },
   })

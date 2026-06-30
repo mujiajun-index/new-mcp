@@ -1,10 +1,13 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
 	"github.com/mujkjk/newmcp/service"
@@ -84,7 +87,11 @@ func DeleteGroup(c *gin.Context) {
 	userID := c.GetInt64("user_id")
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err := groupService.Delete(userID, id); err != nil {
-		common.Error(c, http.StatusNotFound, "分组不存在")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			common.Error(c, http.StatusNotFound, "分组不存在")
+			return
+		}
+		common.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	common.Success(c, nil)

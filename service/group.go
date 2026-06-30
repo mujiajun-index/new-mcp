@@ -110,6 +110,18 @@ func (s *GroupService) Delete(userID, groupID int64) error {
 	if err != nil {
 		return err
 	}
+	// 禁止删除被 API Key 引用的分组，避免产生悬空引用
+	keys, err := model.GetApiKeysReferencingGroup(userID, group.Name)
+	if err != nil {
+		return err
+	}
+	if len(keys) > 0 {
+		names := make([]string, 0, len(keys))
+		for _, k := range keys {
+			names = append(names, k.Name)
+		}
+		return fmt.Errorf("该分组已被 %d 个 API Key 关联（%s），请先在 API Key 中移除该分组或删除对应密钥", len(keys), strings.Join(names, "、"))
+	}
 	return group.Delete()
 }
 

@@ -1,6 +1,8 @@
 package model
 
 import (
+	"encoding/json"
+	"slices"
 	"time"
 
 	"github.com/mujkjk/newmcp/common"
@@ -85,4 +87,27 @@ func (k *ApiKey) Update() error {
 
 func (k *ApiKey) Delete() error {
 	return DB.Delete(k).Error
+}
+
+// GetApiKeysReferencingGroup 返回该用户下 permissions 显式引用了 groupName 的 API Key。
+// 注意：通配符 "*" 表示"所有分组"，不针对具体分组，因此不计入。
+// 不区分启用/禁用状态——只要引用存在就返回，避免删除分组后产生悬空引用。
+func GetApiKeysReferencingGroup(userID int64, groupName string) ([]ApiKey, error) {
+	var keys []ApiKey
+	if err := DB.Where("user_id = ?", userID).Find(&keys).Error; err != nil {
+		return nil, err
+	}
+	matched := make([]ApiKey, 0)
+	for i := range keys {
+		var perms struct {
+			Groups []string `json:"groups"`
+		}
+		if err := json.Unmarshal([]byte(keys[i].Permissions), &perms); err != nil {
+			continue
+		}
+		if slices.Contains(perms.Groups, groupName) {
+			matched = append(matched, keys[i])
+		}
+	}
+	return matched, nil
 }
