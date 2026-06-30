@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { getApiKeys, createApiKey, updateApiKey, deleteApiKey, getApiKeyFullKey, batchDeleteApiKeys, batchUpdateApiKeyStatus } from '../api'
 import { getGroups } from '@/features/groups/api'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -18,7 +19,7 @@ import {
   Infinity, Search, CheckSquare, Square, Clock, Shield, Loader2,
   ChevronDown, Eye, Check,
 } from 'lucide-react'
-import type { ApiKeyListItem } from '@/types'
+import type { ApiKeyListItem, GroupListItem } from '@/types'
 
 function formatRelativeTime(dateStr: string, localeStr: string, t: (k: string, opts?: any) => string) {
   if (!dateStr) return '-'
@@ -179,6 +180,105 @@ function formatLastUsed(value: unknown, t: (k: string, opts?: any) => string, lo
   return String(value)
 }
 
+function GroupMultiSelect({
+  options,
+  value,
+  onChange,
+  label,
+  placeholder,
+  emptyText,
+  removeLabel,
+}: {
+  options: { value: string; label: string }[]
+  value: string[]
+  onChange: (value: string[]) => void
+  label: string
+  placeholder: string
+  emptyText: string
+  removeLabel: string
+}) {
+  const [open, setOpen] = useState(false)
+
+  const toggle = (val: string) => {
+    onChange(value.includes(val) ? value.filter(v => v !== val) : [...value, val])
+  }
+
+  const remove = (val: string) => {
+    onChange(value.filter(v => v !== val))
+  }
+
+  const labelOf = (val: string) => options.find(o => o.value === val)?.label || val
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <div
+          role="combobox"
+          aria-expanded={open}
+          aria-haspopup="listbox"
+          tabIndex={0}
+          className="flex min-h-[38px] w-full cursor-pointer flex-wrap items-center gap-1 rounded-md border border-input bg-transparent px-2 py-1 text-sm shadow-sm transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {value.length > 0 ? (
+            value.map(v => (
+              <span
+                key={v}
+                className="inline-flex max-w-full items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary"
+              >
+                <span className="max-w-[160px] truncate">{labelOf(v)}</span>
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  aria-label={removeLabel}
+                  className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-sm hover:bg-primary/20"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    remove(v)
+                  }}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))
+          ) : (
+            <span className="px-1 py-0.5 text-muted-foreground">{placeholder}</span>
+          )}
+          <ChevronDown className="ml-auto h-4 w-4 shrink-0 opacity-50" />
+        </div>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        {options.length === 0 ? (
+          <div className="py-6 text-center text-sm text-muted-foreground">{emptyText}</div>
+        ) : (
+          <div role="listbox" aria-label={label} className="max-h-60 overflow-auto p-1">
+            {options.map(o => {
+              const checked = value.includes(o.value)
+              return (
+                <button
+                  key={o.value}
+                  type="button"
+                  role="option"
+                  aria-selected={checked}
+                  className={cn(
+                    'flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted',
+                    checked ? 'font-medium text-primary' : 'text-foreground'
+                  )}
+                  onClick={() => toggle(o.value)}
+                >
+                  <span className="truncate text-left">{o.label}</span>
+                  {checked && <Check className="h-4 w-4 shrink-0" />}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 export function ApiKeyPage() {
   const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
@@ -190,9 +290,17 @@ export function ApiKeyPage() {
   const [newKey, setNewKey] = useState<string | null>(null)
   const [newKeyCopied, setNewKeyCopied] = useState(false)
   const [showBatchMenu, setShowBatchMenu] = useState(false)
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    name: string
+    groups: string[]
+    quota: string
+    unlimited_quota: boolean
+    allow_ips: string
+    expires_at: string
+    never_expires: boolean
+  }>({
     name: '',
-    groups: '',
+    groups: [],
     quota: '',
     unlimited_quota: true,
     allow_ips: '',
@@ -210,12 +318,12 @@ export function ApiKeyPage() {
     queryFn: () => getGroups(),
   })
 
-  const resetForm = () => setForm({ name: '', groups: '', quota: '', unlimited_quota: true, allow_ips: '', expires_at: '', never_expires: true })
+  const resetForm = () => setForm({ name: '', groups: [], quota: '', unlimited_quota: true, allow_ips: '', expires_at: '', never_expires: true })
 
   const createMutation = useMutation({
     mutationFn: () => createApiKey({
       name: form.name,
-      groups: form.groups ? form.groups.split(',').map(s => s.trim()).filter(Boolean) : [],
+      groups: form.groups,
       quota: form.unlimited_quota ? undefined : (parseInt(form.quota) || undefined),
       unlimited_quota: form.unlimited_quota,
       allow_ips: form.allow_ips || undefined,
@@ -277,7 +385,7 @@ export function ApiKeyPage() {
     setEditingKey(key)
     setForm({
       name: key.name,
-      groups: key.groups?.join(', ') || '',
+      groups: key.groups || [],
       quota: key.unlimited_quota ? '' : String(key.quota),
       unlimited_quota: key.unlimited_quota,
       allow_ips: key.allow_ips || '',
@@ -305,7 +413,7 @@ export function ApiKeyPage() {
   }
 
   const keys = keysData?.data || []
-  const groups = groupsData?.data || []
+  const groups: GroupListItem[] = groupsData?.data || []
   const allSelected = keys.length > 0 && selected.size === keys.length
   const someSelected = selected.size > 0 && !allSelected
 
@@ -381,35 +489,15 @@ export function ApiKeyPage() {
             </div>
             <div className="space-y-2">
               <Label>{t('apiKeys.groups')} <span className="text-destructive">*</span></Label>
-              <Input placeholder="group1, group2" value={form.groups} onChange={e => setForm({ ...form, groups: e.target.value })} />
-              {groups.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-1">
-                  {groups.map((g: any) => (
-                    <button
-                      key={g.id}
-                      type="button"
-                      className={`rounded px-2 py-0.5 text-xs transition-colors ${
-                        form.groups.split(',').map(s => s.trim()).includes(g.name)
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-muted hover:bg-muted/80'
-                      }`}
-                      onClick={() => {
-                        const slug = g.name
-                        const current = form.groups ? form.groups.split(',').map(s => s.trim()).filter(Boolean) : []
-                        const idx = current.indexOf(slug)
-                        if (idx >= 0) {
-                          current.splice(idx, 1)
-                        } else {
-                          current.push(slug)
-                        }
-                        setForm({ ...form, groups: current.join(', ') })
-                      }}
-                    >
-                      {g.display_name || g.name}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <GroupMultiSelect
+                options={groups.map(g => ({ value: g.name, label: g.display_name || g.name }))}
+                value={form.groups}
+                onChange={selected => setForm({ ...form, groups: selected })}
+                label={t('apiKeys.groups')}
+                placeholder={t('apiKeys.groupsPlaceholder')}
+                emptyText={t('apiKeys.noGroups')}
+                removeLabel={t('apiKeys.removeGroup')}
+              />
             </div>
           </div>
 
@@ -469,14 +557,14 @@ export function ApiKeyPage() {
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => { setShowCreate(false); setEditingKey(null); resetForm() }}>{t('common.cancel')}</Button>
             <Button
-              disabled={!form.name.trim() || !form.groups.split(',').map(s => s.trim()).filter(Boolean).length}
+              disabled={!form.name.trim() || !form.groups.length}
               onClick={() => {
                 if (editingKey) {
                   updateMutation.mutate({
                     id: editingKey.id,
                     body: {
                       name: form.name,
-                      groups: form.groups ? form.groups.split(',').map(s => s.trim()).filter(Boolean) : [],
+                      groups: form.groups,
                       quota: form.unlimited_quota ? undefined : (parseInt(form.quota) || undefined),
                       unlimited_quota: form.unlimited_quota,
                       allow_ips: form.allow_ips || undefined,
