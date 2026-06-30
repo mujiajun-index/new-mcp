@@ -377,6 +377,7 @@
     "identifier": "Group Identifier",
     "identifierRequired": "Group Identifier *",
     "identifierTip": "Unique identifier, also used as the endpoint path.",
+    "identifierFormatError": "Only English letters and numbers are allowed, and it must start with a letter.",
     "checking": "Checking...",
     "exists": "Identifier already exists",
     "displayName": "Display Name",

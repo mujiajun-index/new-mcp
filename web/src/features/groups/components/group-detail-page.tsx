@@ -10,6 +10,9 @@ import { ArrowLeft, Trash2, Copy, Plus, X, Globe, Radio, Settings2, ChevronDown,
 import { useState, useMemo, useCallback } from 'react'
 import type { BatchToolUpdate } from '@/types'
 
+// 分组标识：字母开头，仅含字母与数字（禁止中文/特殊字符）
+const IDENTIFIER_RE = /^[a-zA-Z][a-zA-Z0-9]*$/
+
 export function GroupDetailPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -242,9 +245,9 @@ export function GroupDetailPage() {
                   <div className="flex gap-2 items-center">
                     <Input
                       value={editForm.name}
-                      onChange={(e) => { setEditForm(f => ({ ...f, name: e.target.value })); setNameExists(false) }}
+                      onChange={(e) => { setEditForm(f => ({ ...f, name: e.target.value.replace(/[^a-zA-Z0-9]/g, '') })); setNameExists(false) }}
                       onBlur={async () => {
-                        if (editForm.name.trim() && editForm.name.trim() !== group.name) {
+                        if (editForm.name.trim() && IDENTIFIER_RE.test(editForm.name.trim()) && editForm.name.trim() !== group.name) {
                           setNameChecking(true)
                           try {
                             const res = await checkGroupName(editForm.name.trim(), groupId)
@@ -257,6 +260,9 @@ export function GroupDetailPage() {
                     />
                     {nameChecking && <span className="text-xs text-muted-foreground shrink-0">{t('groups.checking')}</span>}
                     {nameExists && <span className="text-xs text-destructive shrink-0">{t('groups.identifierExistsEdit')}</span>}
+                    {editForm.name.trim() !== group.name && editForm.name.length > 0 && !IDENTIFIER_RE.test(editForm.name) && (
+                      <span className="text-xs text-destructive shrink-0">{t('groups.identifierFormatError')}</span>
+                    )}
                   </div>
                 </div>
                 <div>
@@ -278,7 +284,7 @@ export function GroupDetailPage() {
                   />
                 </div>
                 <div className="flex gap-2 pt-1">
-                  <Button size="sm" disabled={updateInfoMutation.isPending || nameExists || !editForm.name.trim()} onClick={() => updateInfoMutation.mutate()}>
+                  <Button size="sm" disabled={updateInfoMutation.isPending || nameExists || (editForm.name.trim() !== group.name && !IDENTIFIER_RE.test(editForm.name.trim()))} onClick={() => updateInfoMutation.mutate()}>
                     {updateInfoMutation.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
                     {t('common.save')}
                   </Button>

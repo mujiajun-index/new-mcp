@@ -377,6 +377,7 @@
     "identifier": "分组标识",
     "identifierRequired": "分组标识 *",
     "identifierTip": "唯一标识，同时作为端点路径使用",
+    "identifierFormatError": "只能包含英文字母和数字，且必须以字母开头",
     "checking": "检查中...",
     "exists": "分组标识已存在",
     "displayName": "显示名称",

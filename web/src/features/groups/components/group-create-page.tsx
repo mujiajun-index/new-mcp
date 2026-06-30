@@ -9,6 +9,9 @@ import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 
+// 分组标识：字母开头，仅含字母与数字（禁止中文/特殊字符）
+const IDENTIFIER_RE = /^[a-zA-Z][a-zA-Z0-9]*$/
+
 export function GroupCreatePage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -40,7 +43,10 @@ export function GroupCreatePage() {
 
   const handleNameBlur = async () => {
     const name = form.name.trim()
-    if (!name) return
+    if (!name || !IDENTIFIER_RE.test(name)) {
+      setNameExists(false)
+      return
+    }
     setChecking(true)
     try {
       const res = await checkGroupName(name)
@@ -53,6 +59,10 @@ export function GroupCreatePage() {
   }
 
   const handleCreate = () => {
+    if (!IDENTIFIER_RE.test(form.name.trim())) {
+      toast.error(t('groups.identifierFormatError'))
+      return
+    }
     if (nameExists) {
       toast.error(t('groups.identifierExists'))
       return
@@ -74,13 +84,16 @@ export function GroupCreatePage() {
           <Label htmlFor="name">{t('groups.identifierRequired')}</Label>
           <Input
             id="name"
-            placeholder="my-group"
+            placeholder="myGroup"
             value={form.name}
-            onChange={(e) => { setForm({ ...form, name: e.target.value }); setNameExists(false) }}
+            onChange={(e) => { setForm({ ...form, name: e.target.value.replace(/[^a-zA-Z0-9]/g, '') }); setNameExists(false) }}
             onBlur={handleNameBlur}
           />
           {checking && <p className="text-xs text-muted-foreground">{t('groups.checking')}</p>}
           {nameExists && <p className="text-xs text-destructive">{t('groups.exists')}</p>}
+          {form.name.length > 0 && !IDENTIFIER_RE.test(form.name) && (
+            <p className="text-xs text-destructive">{t('groups.identifierFormatError')}</p>
+          )}
           <p className="text-xs text-muted-foreground">{t('groups.identifierTip')}</p>
         </div>
         <div className="space-y-2">
@@ -122,7 +135,7 @@ export function GroupCreatePage() {
         <Button
           className="gap-2"
           onClick={handleCreate}
-          disabled={!form.name.trim() || nameExists || checking || createMutation.isPending}
+          disabled={!form.name.trim() || !IDENTIFIER_RE.test(form.name) || nameExists || checking || createMutation.isPending}
         >
           {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
           {t('groups.createGroup')}
