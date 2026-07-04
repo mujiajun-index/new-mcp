@@ -132,6 +132,27 @@ export interface TestResult {
   error?: string
 }
 
+export interface PrepareStdioReq {
+  command: string
+  args: string[]
+  env: Record<string, string>
+  registry: string
+}
+
+export interface PrepareStdioResult {
+  branch: string
+  runtime_found: boolean
+  runtime_path?: string
+  did_install: boolean
+  installed: boolean
+  package_name?: string
+  registry_env: Record<string, string>
+  stdout?: string
+  stderr?: string
+  duration_ms: number
+  message: string
+}
+
 export interface RefreshToolsResult {
   tools_count: number
   tools: McpTool[]

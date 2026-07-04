@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mujkjk/newmcp/internal/mcp/installer"
 	"github.com/mujkjk/newmcp/internal/mcp/transport"
 	"github.com/mujkjk/newmcp/model"
 )
@@ -192,6 +193,15 @@ func CreateAdapter(svc *model.McpService) transport.TransportAdapter {
 		envMap := make(map[string]string)
 		for k, v := range env {
 			envMap[k], _ = v.(string)
+		}
+		// 将所选包管理源镜像注入子进程环境变量（npx→NPM_CONFIG_REGISTRY；
+		// uvx→UV_DEFAULT_INDEX+PIP_INDEX_URL）。用户在 env 里显式写过的同名变量优先。
+		if registry, _ := config["registry"].(string); registry != "" {
+			for k, v := range installer.RegistryEnv(installer.ClassifyCommand(cmd), registry) {
+				if _, exists := envMap[k]; !exists {
+					envMap[k] = v
+				}
+			}
 		}
 		return transport.NewStdioAdapter(svc.ID, cmd, args, envMap)
 

@@ -2,13 +2,49 @@ import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { createService, testConnection } from '../api'
+import { createService, testConnection, prepareStdio } from '../api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { ArrowLeft, ArrowRight, Check, Loader2, Zap } from 'lucide-react'
-import type { TransportType, AuthType, TestResult } from '@/types'
+import { ArrowLeft, ArrowRight, Check, Loader2, Zap, RefreshCw } from 'lucide-react'
+import type { TransportType, AuthType, TestResult, PrepareStdioResult } from '@/types'
+
+type CommandChoice = 'npx' | 'uvx' | 'custom'
+type InstallStatus = 'idle' | 'ready' | 'failed'
+
+interface RegistryOption { key: string; label: string; url: string }
+
+const NPM_REGISTRIES: RegistryOption[] = [
+  { key: 'npmmirror', label: '淘宝', url: 'https://registry.npmmirror.com' },
+]
+const UV_REGISTRIES: RegistryOption[] = [
+  { key: 'tsinghua', label: '清华', url: 'https://pypi.tuna.tsinghua.edu.cn/simple' },
+  { key: 'aliyun', label: '阿里云', url: 'http://mirrors.aliyun.com/pypi/simple/' },
+  { key: 'ustc', label: 'USTC', url: 'https://mirrors.ustc.edu.cn/pypi/simple/' },
+  { key: 'huaweicloud', label: '华为云', url: 'https://repo.huaweicloud.com/repository/pypi/simple/' },
+  { key: 'tencent', label: '腾讯云', url: 'https://mirrors.cloud.tencent.com/pypi/simple/' },
+]
+
+// parseArgs: one argument per line (no shell splitting, paths with spaces are safe).
+function parseArgs(text: string): string[] {
+  return text.split('\n').map((s) => s.trim()).filter(Boolean)
+}
+
+// parseEnv: KEY=value per line; blank lines and # comments ignored; never throws.
+function parseEnv(text: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) continue
+    const i = line.indexOf('=')
+    if (i <= 0) continue
+    out[line.slice(0, i).trim()] = line.slice(i + 1)
+  }
+  return out
+}
 
 const transportOptions: { value: TransportType; labelKey: string; descKey: string }[] = [
   { value: 'streamable-http', labelKey: 'services.transports.streamable-http', descKey: 'services.transportDescs.streamable-http' },
@@ -40,9 +76,12 @@ export function ServiceCreatePage() {
     auth_config: {} as Record<string, unknown>,
     tags: [] as string[],
     // Stdio fields
-    command: '',
+    command: 'npx',
     args: '',
     env: '',
+    commandChoice: 'npx' as CommandChoice,
+    registry: '',
+    registryPreset: 'default',
     // HTTP/SSE/WS fields
     url: '',
     // Auth fields
@@ -88,6 +127,64 @@ export function ServiceCreatePage() {
     },
   })
 
+  // --- stdio detect/install state ---
+  const [installStatus, setInstallStatus] = useState<InstallStatus>('idle')
+  const [installMessage, setInstallMessage] = useState('')
+  const [installResult, setInstallResult] = useState<PrepareStdioResult | null>(null)
+  const [preparedSig, setPreparedSig] = useState('')
+
+  const registryOptions = form.commandChoice === 'npx' ? NPM_REGISTRIES : form.commandChoice === 'uvx' ? UV_REGISTRIES : []
+
+  // Signature of the inputs covered by the last successful prepare; editing
+  // command/args/registry afterwards flips readyForCurrentInputs back to false.
+  const commandSig = `${form.command}|${parseArgs(form.args).join('\n')}|${form.registry}`
+  const readyForCurrentInputs = installStatus === 'ready' && preparedSig === commandSig
+
+  const prepareMutation = useMutation({
+    mutationFn: () => prepareStdio({
+      command: form.command,
+      args: parseArgs(form.args),
+      env: parseEnv(form.env),
+      registry: form.registry,
+    }),
+    onSuccess: (res) => {
+      const data = res.data as PrepareStdioResult
+      setInstallResult(data)
+      setInstallMessage(data.message)
+      if (data.installed) {
+        setInstallStatus('ready')
+        setPreparedSig(commandSig)
+      } else {
+        setInstallStatus('failed')
+      }
+    },
+    onError: (e: unknown) => {
+      const err = e as { response?: { data?: { message?: string } }; message?: string }
+      setInstallStatus('failed')
+      setInstallMessage(err?.response?.data?.message || err?.message || '')
+      setInstallResult(null)
+    },
+  })
+
+  function onCommandChoice(choice: CommandChoice) {
+    if (choice === 'npx' || choice === 'uvx') {
+      setForm({ ...form, commandChoice: choice, command: choice, registryPreset: 'default', registry: '' })
+    } else {
+      setForm({ ...form, commandChoice: 'custom' })
+    }
+  }
+
+  function onRegistryPresetChange(key: string) {
+    if (key === 'default') {
+      setForm({ ...form, registryPreset: 'default', registry: '' })
+    } else if (key === 'custom') {
+      setForm({ ...form, registryPreset: 'custom' })
+    } else {
+      const opt = registryOptions.find((r) => r.key === key)
+      if (opt) setForm({ ...form, registryPreset: key, registry: opt.url })
+    }
+  }
+
   function buildConfig(): Record<string, unknown> {
     const headers: Record<string, string> = {}
     if (form.auth_type === 'api_key' && form.api_key) {
@@ -102,8 +199,9 @@ export function ServiceCreatePage() {
       case 'stdio':
         return {
           command: form.command,
-          args: form.args ? form.args.split(/\s+/) : [],
-          env: form.env ? JSON.parse(form.env) : {},
+          args: parseArgs(form.args),
+          env: parseEnv(form.env),
+          registry: form.registry,
         }
       case 'sse':
       case 'streamable-http':
@@ -127,7 +225,7 @@ export function ServiceCreatePage() {
   const canNext = () => {
     if (step === 0) return form.name.trim().length > 0
     if (step === 1) {
-      if (form.transport_type === 'stdio') return form.command.trim().length > 0
+      if (form.transport_type === 'stdio') return readyForCurrentInputs
       return form.url.trim().length > 0
     }
     return true
@@ -202,17 +300,123 @@ export function ServiceCreatePage() {
 
           {form.transport_type === 'stdio' ? (
             <>
+              {/* Command type */}
               <div className="space-y-2">
-                <Label htmlFor="command">{t('services.commandRequired')}</Label>
-                <Input id="command" placeholder="npx" value={form.command} onChange={(e) => setForm({ ...form, command: e.target.value })} />
+                <Label>{t('services.create.commandChoice')}</Label>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {([
+                    { v: 'npx', label: t('services.create.commandNpx') },
+                    { v: 'uvx', label: t('services.create.commandUvx') },
+                    { v: 'custom', label: t('services.create.commandCustom') },
+                  ] as { v: CommandChoice; label: string }[]).map((opt) => (
+                    <button
+                      key={opt.v}
+                      type="button"
+                      onClick={() => onCommandChoice(opt.v)}
+                      className={`rounded-lg border p-3 text-left text-sm transition-all ${
+                        form.commandChoice === opt.v ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:border-primary/30'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {/* Custom command input */}
+              {form.commandChoice === 'custom' && (
+                <div className="space-y-2">
+                  <Label htmlFor="command">{t('services.commandRequired')}</Label>
+                  <Input id="command" placeholder={t('services.create.commandCustomPlaceholder')} value={form.command} onChange={(e) => setForm({ ...form, command: e.target.value })} />
+                </div>
+              )}
+
+              {/* Package registry / mirror (npx / uvx only) */}
+              {form.commandChoice !== 'custom' && (
+                <div className="space-y-2">
+                  <Label>{t('services.create.registryLabel')}</Label>
+                  <Select value={form.registryPreset} onValueChange={onRegistryPresetChange}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">{t('services.create.registryDefault')}</SelectItem>
+                      {registryOptions.map((r) => (
+                        <SelectItem key={r.key} value={r.key}>{r.label}</SelectItem>
+                      ))}
+                      <SelectItem value="custom">{t('services.create.registryCustom')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {form.registryPreset === 'custom' && (
+                    <Input placeholder={t('services.create.registryCustomPlaceholder')} value={form.registry} onChange={(e) => setForm({ ...form, registry: e.target.value })} />
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {form.commandChoice === 'npx' ? t('services.create.registryHintNpx') : t('services.create.registryHintUvx')}
+                  </p>
+                </div>
+              )}
+
+              {/* Arguments (one per line) */}
               <div className="space-y-2">
-                <Label htmlFor="args">{t('services.args')}</Label>
-                <Input id="args" placeholder="-y @modelcontextprotocol/server-memory" value={form.args} onChange={(e) => setForm({ ...form, args: e.target.value })} />
+                <Label htmlFor="args">{t('services.create.argsLabel')}</Label>
+                <Textarea id="args" rows={3} placeholder={'-y\n@modelcontextprotocol/server-memory'} value={form.args} onChange={(e) => setForm({ ...form, args: e.target.value })} />
+                <p className="text-xs text-muted-foreground">{t('services.create.argsHint')}</p>
               </div>
+
+              {/* Environment variables (KEY=value, one per line) */}
               <div className="space-y-2">
-                <Label htmlFor="env">{t('services.envVars')}</Label>
-                <Input id="env" placeholder='{"API_KEY": "xxx"}' value={form.env} onChange={(e) => setForm({ ...form, env: e.target.value })} />
+                <Label htmlFor="env">{t('services.create.envLabel')}</Label>
+                <Textarea id="env" rows={3} placeholder={'API_KEY=xxx\nNODE_ENV=production'} value={form.env} onChange={(e) => setForm({ ...form, env: e.target.value })} />
+                <p className="text-xs text-muted-foreground">{t('services.create.envHint')}</p>
+              </div>
+
+              {/* Detect & install */}
+              <div className="space-y-2 rounded-lg bg-muted/40 p-3">
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => prepareMutation.mutate()}
+                    disabled={prepareMutation.isPending || !form.command.trim()}
+                  >
+                    {prepareMutation.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : installStatus === 'ready' ? (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    ) : (
+                      <Zap className="h-3.5 w-3.5" />
+                    )}
+                    {prepareMutation.isPending
+                      ? t('services.create.installing')
+                      : installStatus === 'ready'
+                        ? t('services.create.reinstall')
+                        : t('services.create.installButton')}
+                  </Button>
+                </div>
+
+                {prepareMutation.isPending && (
+                  <p className="text-sm text-muted-foreground">{t('services.create.installing')}</p>
+                )}
+                {installStatus === 'ready' && readyForCurrentInputs && (
+                  <p className="text-sm text-emerald-600 dark:text-emerald-400">{t('services.create.installReady', { msg: installMessage })}</p>
+                )}
+                {installStatus === 'ready' && !readyForCurrentInputs && (
+                  <p className="text-sm text-muted-foreground">{t('services.create.installStaleHint')}</p>
+                )}
+                {installStatus === 'failed' && (
+                  <p className="text-sm text-red-600 dark:text-red-400">{t('services.create.installFailed', { msg: installMessage })}</p>
+                )}
+                {installStatus === 'idle' && (
+                  <p className="text-sm text-muted-foreground">{t('services.create.installStatusIdle')}</p>
+                )}
+                {!readyForCurrentInputs && (
+                  <p className="text-xs text-muted-foreground">{t('services.create.installRequiredNext')}</p>
+                )}
+                {installResult?.stderr && installStatus === 'failed' && (
+                  <pre className="mt-1 max-h-32 overflow-auto rounded bg-muted p-2 text-xs">{installResult.stderr}</pre>
+                )}
               </div>
             </>
           ) : (
@@ -282,7 +486,11 @@ export function ServiceCreatePage() {
       {/* Step 3: Test & confirm */}
       {step === 3 && (
         <div className="space-y-4 rounded-xl border bg-card p-6">
-          <p className="text-sm text-muted-foreground">{t('services.create.testHint')}</p>
+          <p className="text-sm text-muted-foreground">
+            {form.transport_type === 'stdio' && readyForCurrentInputs
+              ? t('services.create.testHintInstalled')
+              : t('services.create.testHint')}
+          </p>
 
           {testResult && (
             <div className={`rounded-lg p-4 ${testResult.connected ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}>
@@ -311,7 +519,7 @@ export function ServiceCreatePage() {
             <Button
               className={`gap-2 ${testResult?.connected ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`}
               onClick={() => createMutation.mutate()}
-              disabled={createMutation.isPending}
+              disabled={createMutation.isPending || (form.transport_type === 'stdio' && !readyForCurrentInputs)}
             >
               {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               <Check className="h-4 w-4" />

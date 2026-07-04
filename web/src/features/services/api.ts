@@ -1,7 +1,7 @@
 import { api } from '@/lib/api'
 import type {
   ServiceListParams,
-  CreateServiceReq, UpdateServiceReq,
+  CreateServiceReq, UpdateServiceReq, PrepareStdioReq,
 } from '@/types'
 
 export async function getServices(params?: ServiceListParams) {
@@ -36,6 +36,11 @@ export async function testService(id: number) {
 
 export async function testConnection(data: { transport_type: string; config: Record<string, unknown> }) {
   const res = await api.post('/services/test-connection', data)
+  return res.data
+}
+
+export async function prepareStdio(data: PrepareStdioReq) {
+  const res = await api.post('/services/prepare-stdio', data)
   return res.data
 }
 

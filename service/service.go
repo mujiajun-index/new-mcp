@@ -11,6 +11,7 @@ import (
 	"github.com/mujkjk/newmcp/dto"
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/internal/mcp/camera"
+	"github.com/mujkjk/newmcp/internal/mcp/installer"
 	"github.com/mujkjk/newmcp/internal/mcp/virtual"
 	"github.com/mujkjk/newmcp/model"
 )
@@ -127,6 +128,36 @@ func (s *McpServiceService) TestConnection(req *dto.TestConnectionReq) (*dto.Tes
 		Connected:  true,
 		ToolsCount: len(tools),
 		LatencyMs:  time.Since(start).Milliseconds(),
+	}, nil
+}
+
+// PrepareStdio runs the pre-flight detect/install for a stdio service
+// (npx/uvx runtime + package prefetch, plus mirror injection). No DB access.
+func (s *McpServiceService) PrepareStdio(req *dto.PrepareStdioReq) (*dto.PrepareStdioResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 240*time.Second)
+	defer cancel()
+
+	res, err := installer.Prepare(ctx, &installer.PrepareReq{
+		Command:  req.Command,
+		Args:     req.Args,
+		Env:      req.Env,
+		Registry: req.Registry,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &dto.PrepareStdioResult{
+		Branch:       string(res.Branch),
+		RuntimeFound: res.RuntimeFound,
+		RuntimePath:  res.RuntimePath,
+		DidInstall:   res.DidInstall,
+		Installed:    res.Installed,
+		PackageName:  res.PackageName,
+		RegistryEnv:  res.RegistryEnv,
+		Stdout:       res.Stdout,
+		Stderr:       res.Stderr,
+		DurationMs:   res.DurationMs,
+		Message:      res.Message,
 	}, nil
 }
 

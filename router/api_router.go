@@ -45,6 +45,7 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.GET("/services", controller.ListServices)
 		auth.POST("/services", controller.CreateService)
 		auth.POST("/services/test-connection", controller.TestConnection)
+		auth.POST("/services/prepare-stdio", controller.PrepareStdio)
 		auth.GET("/services/:id", controller.GetService)
 		auth.PUT("/services/:id", controller.UpdateService)
 		auth.DELETE("/services/:id", controller.DeleteService)
