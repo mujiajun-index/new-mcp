@@ -204,6 +204,15 @@ func CreateAdapter(svc *model.McpService) transport.TransportAdapter {
 		}
 		return transport.NewStreamableHTTPAdapter(svc.ID, url, h)
 
+	case transport.TypeSSE:
+		url, _ := config["url"].(string)
+		headers, _ := config["headers"].(map[string]interface{})
+		h := make(map[string]string)
+		for k, v := range headers {
+			h[k], _ = v.(string)
+		}
+		return transport.NewSSEAdapter(svc.ID, url, h)
+
 	default:
 		return nil
 	}
