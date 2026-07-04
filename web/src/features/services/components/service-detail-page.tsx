@@ -95,9 +95,13 @@ export function ServiceDetailPage() {
         description: form.description,
         config: buildConfig(),
       }
-      // 仅在填写了认证凭据时才更新认证，避免清空已有配置
       const authConfig = buildAuthConfig()
-      if (form.auth_type !== 'none' && Object.keys(authConfig).length > 0) {
+      if (form.auth_type === 'none') {
+        // 切换为无需认证时，显式清空已保存的认证类型与凭据
+        payload.auth_type = 'none'
+        payload.auth_config = {}
+      } else if (Object.keys(authConfig).length > 0) {
+        // 仅在填写了认证凭据时才更新认证，避免清空已有配置
         payload.auth_type = form.auth_type
         payload.auth_config = authConfig
       }
@@ -167,11 +171,18 @@ export function ServiceDetailPage() {
       (form.auth_type === 'bearer' && !!form.bearer_token) ||
       (form.auth_type === 'custom' && !!form.custom_header_key)
 
-    const headers: Record<string, string> = hasNewAuth ? {} : { ...originalHeaders }
-    if (hasNewAuth) {
+    let headers: Record<string, string>
+    if (form.auth_type === 'none') {
+      // 切换为无需认证时，清除已保存的认证 headers
+      headers = {}
+    } else if (hasNewAuth) {
+      headers = {}
       if (form.auth_type === 'api_key') headers['X-API-Key'] = form.api_key
       else if (form.auth_type === 'bearer') headers['Authorization'] = `Bearer ${form.bearer_token}`
       else if (form.auth_type === 'custom' && form.custom_header_key) headers[form.custom_header_key] = form.custom_header_value
+    } else {
+      // 未改动认证：保留原 headers
+      headers = { ...originalHeaders }
     }
 
     switch (service?.transport_type) {
