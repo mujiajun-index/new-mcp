@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import dayjs from 'dayjs'
 import { getUserLogs, getUserLogStats } from '@/features/logs/api'
 import { useAuthStore } from '@/stores/auth-store'
+import { isAdminRole } from '@/lib/roles'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -19,7 +20,7 @@ import type { LogFilter } from '@/types'
 export function UserLogsPage() {
   const { t } = useTranslation()
   const { auth } = useAuthStore()
-  const isAdmin = auth.user?.role === 'admin'
+  const isAdmin = isAdminRole(auth.user?.role)
   const isMobile = useIsMobile()
   const [page, setPage] = useState(1)
   const pageSize = 20
