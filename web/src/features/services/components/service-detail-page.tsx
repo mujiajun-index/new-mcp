@@ -6,12 +6,34 @@ import { getService, updateService, deleteService, testService, refreshTools } f
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import {
   ArrowLeft, Trash2, Zap, RefreshCw, Server,
   Pencil, X, Check, Loader2,
 } from 'lucide-react'
 import type { McpTool, AuthType, UpdateServiceReq } from '@/types'
+
+// parseEnv / envToString: 与注册页一致，环境变量用「每行 KEY=value」文本表示，
+// 而非 JSON。编辑 stdio 服务时仅环境变量可编辑，命令/参数只读。
+function parseEnv(text: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) continue
+    const i = line.indexOf('=')
+    if (i <= 0) continue
+    out[line.slice(0, i).trim()] = line.slice(i + 1)
+  }
+  return out
+}
+
+function envToString(env: Record<string, unknown> | undefined | null): string {
+  if (!env || typeof env !== 'object') return ''
+  return Object.entries(env)
+    .map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`)
+    .join('\n')
+}
 
 export function ServiceDetailPage() {
   const { t } = useTranslation()
@@ -45,8 +67,6 @@ export function ServiceDetailPage() {
   const [form, setForm] = useState<EditForm>({
     display_name: '',
     description: '',
-    command: '',
-    args: '',
     env: '',
     url: '',
     auth_type: 'none',
@@ -148,9 +168,7 @@ export function ServiceDetailPage() {
       setForm({
         display_name: service.display_name || '',
         description: service.description || '',
-        command: typeof cfg.command === 'string' ? cfg.command : '',
-        args: Array.isArray(cfg.args) ? (cfg.args as unknown[]).join(' ') : '',
-        env: cfg.env ? JSON.stringify(cfg.env) : '',
+        env: envToString(cfg.env as Record<string, unknown> | undefined),
         url: typeof cfg.url === 'string' ? cfg.url : '',
         auth_type: authType,
         api_key: apiKey,
@@ -187,14 +205,11 @@ export function ServiceDetailPage() {
 
     switch (service?.transport_type) {
       case 'stdio':
-        let envObj: Record<string, unknown> = {}
-        if (form.env) {
-          try { envObj = JSON.parse(form.env) } catch { /* 忽略非法 JSON */ }
-        }
+        // 命令/参数不可编辑，沿用原配置；仅环境变量可编辑（保存后由后端自动重连生效）。
         return {
-          command: form.command,
-          args: form.args ? form.args.split(/\s+/).filter(Boolean) : [],
-          env: envObj,
+          command: cfg.command,
+          args: Array.isArray(cfg.args) ? cfg.args : [],
+          env: parseEnv(form.env),
         }
       case 'sse':
       case 'streamable-http':
@@ -217,7 +232,7 @@ export function ServiceDetailPage() {
 
   const canSave = (() => {
     if (!service) return false
-    if (service.transport_type === 'stdio') return form.command.trim().length > 0
+    if (service.transport_type === 'stdio') return !!(service.config as Record<string, unknown>)?.command
     return form.url.trim().length > 0
   })()
 
@@ -232,8 +247,8 @@ export function ServiceDetailPage() {
   const tools: McpTool[] = service.tools_cache || []
   const isVirtual = service.transport_type === 'virtual'
   const isStdio = service.transport_type === 'stdio'
+  const stdioConfig = ((service.config as Record<string, unknown>) || {})
   const virtualSource = isVirtual ? sourceLabels[service.source] : null
-  const envValid = !form.env || (() => { try { JSON.parse(form.env); return true } catch { return false } })()
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
@@ -343,34 +358,27 @@ export function ServiceDetailPage() {
               <p className="text-sm">{transportLabels[service.transport_type] || service.transport_type}</p>
             </div>
 
-            {/* Stdio fields */}
+            {/* Stdio fields: 命令/参数只读，仅环境变量可编辑（每行 KEY=value，保存后立即重连生效） */}
             {isStdio ? (
               <>
                 <div className="space-y-1.5 sm:col-span-2">
                   <Label className="text-xs text-muted-foreground">{t('services.commandRequired')}</Label>
-                  {editing ? (
-                    <Input value={form.command} onChange={(e) => setForm({ ...form, command: e.target.value })} placeholder="npx" />
-                  ) : (
-                    <code className="block text-sm break-all rounded-md bg-muted/50 px-3 py-2">{(service.config as Record<string, unknown>)?.command as string || '-'}</code>
-                  )}
+                  <code className="block text-sm break-all rounded-md bg-muted/50 px-3 py-2">{(stdioConfig.command as string) || '-'}</code>
                 </div>
                 <div className="space-y-1.5 sm:col-span-2">
                   <Label className="text-xs text-muted-foreground">{t('services.args')}</Label>
-                  {editing ? (
-                    <Input value={form.args} onChange={(e) => setForm({ ...form, args: e.target.value })} placeholder="-y @modelcontextprotocol/server-memory" />
-                  ) : (
-                    <code className="block text-sm break-all rounded-md bg-muted/50 px-3 py-2">{form.args || '-'}</code>
-                  )}
+                  <code className="block text-sm break-all rounded-md bg-muted/50 px-3 py-2">{Array.isArray(stdioConfig.args) ? (stdioConfig.args as unknown[]).join(' ') : '-'}</code>
                 </div>
                 <div className="space-y-1.5 sm:col-span-2">
-                  <Label className="text-xs text-muted-foreground">{t('services.envVars')}</Label>
+                  <Label className="text-xs text-muted-foreground">{t('services.create.envLabel')}</Label>
                   {editing ? (
                     <>
-                      <Input value={form.env} onChange={(e) => setForm({ ...form, env: e.target.value })} placeholder='{"API_KEY": "xxx"}' />
-                      {!envValid && <p className="text-xs text-red-500">{t('services.envInvalidJson')}</p>}
+                      <Textarea rows={4} value={form.env} onChange={(e) => setForm({ ...form, env: e.target.value })} placeholder={'API_KEY=xxx\nNODE_ENV=production'} />
+                      <p className="text-xs text-muted-foreground">{t('services.create.envHint')}</p>
+                      <p className="text-xs text-muted-foreground">{t('services.envEditHint')}</p>
                     </>
                   ) : (
-                    <code className="block text-sm break-all rounded-md bg-muted/50 px-3 py-2">{form.env || '-'}</code>
+                    <code className="block whitespace-pre-wrap text-sm break-all rounded-md bg-muted/50 px-3 py-2">{form.env || '-'}</code>
                   )}
                 </div>
               </>
@@ -444,7 +452,7 @@ export function ServiceDetailPage() {
               <Button
                 size="sm"
                 onClick={() => updateMutation.mutate()}
-                disabled={!canSave || !envValid || updateMutation.isPending}
+                disabled={!canSave || updateMutation.isPending}
               >
                 {updateMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Check className="h-3.5 w-3.5 mr-1.5" />}
                 {t('common.save')}
@@ -502,8 +510,6 @@ export function ServiceDetailPage() {
 type EditForm = {
   display_name: string
   description: string
-  command: string
-  args: string
   env: string
   url: string
   auth_type: AuthType

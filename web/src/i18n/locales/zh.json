@@ -298,6 +298,7 @@
     "commandRequired": "命令 *",
     "args": "参数",
     "envVars": "环境变量 (JSON)",
+    "envEditHint": "保存后立即生效：将自动重连该服务",
     "serviceUrl": "服务 URL",
     "serviceUrlRequired": "服务 URL *",
     "authMethod": "认证方式",

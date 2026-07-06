@@ -197,7 +197,17 @@ func (s *McpServiceService) Update(userID, serviceID int64, req *dto.UpdateServi
 	if req.Status != nil {
 		svc.Status = *req.Status
 	}
-	return svc.Update()
+	if err := svc.Update(); err != nil {
+		return err
+	}
+	// 配置（command/args/env/registry/url/headers）变更后，运行中的连接/子进程仍带旧配置。
+	// 踢掉旧 session 并按新配置异步重连（与 Create 一致）：让新 env 立即生效，同时刷新
+	// tools_cache 并预热连接。AuthConfig 不喂给 adapter、DisplayName/Description/Tags 为展示字段，均无需重连。
+	if req.Config != nil && SessionPool != nil {
+		SessionPool.Remove(serviceID)
+		go SessionPool.GetOrConnect(context.Background(), svc)
+	}
+	return nil
 }
 
 func (s *McpServiceService) Delete(userID, serviceID int64) error {

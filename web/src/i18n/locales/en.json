@@ -298,6 +298,7 @@
     "commandRequired": "Command *",
     "args": "Arguments",
     "envVars": "Env Vars (JSON)",
+    "envEditHint": "Takes effect on save: the service reconnects automatically",
     "serviceUrl": "Service URL",
     "serviceUrlRequired": "Service URL *",
     "authMethod": "Auth Method",
