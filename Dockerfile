@@ -22,7 +22,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w -X 'github.com/mujkjk/newm
 # ---- Stage 3: Runtime ----
 FROM alpine:3.20
 
-RUN apk add --no-cache ca-certificates tzdata
+# 运行 stdio MCP 服务（npx/uvx）所需的运行时：node+npm 提供 npx；
+# python3+pip+curl 让 EnsureUV 能自动安装 uv（见 internal/mcp/installer/uv_install.go）。
+RUN apk add --no-cache ca-certificates tzdata \
+        nodejs npm \
+        python3 py3-pip \
+        curl
 WORKDIR /app
 
 COPY --from=backend-builder /newmcp /app/newmcp
