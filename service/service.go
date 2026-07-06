@@ -212,7 +212,16 @@ func (s *McpServiceService) Delete(userID, serviceID int64) error {
 		}
 		return fmt.Errorf("虚拟服务无法直接删除，请在%s配置页面操作", sourceLabel)
 	}
-	return svc.Delete()
+	if err := svc.Delete(); err != nil {
+		return err
+	}
+	// 服务已从 DB 删除，回收其连接及子进程，避免孤儿进程残留。
+	// Remove → Adapter.Close() → SDK CommandTransport.Close()：
+	// 关 stdin → 等 5s → SIGTERM → 再等 → SIGKILL，确保 stdio 子进程退出。
+	if SessionPool != nil {
+		SessionPool.Remove(serviceID)
+	}
+	return nil
 }
 
 func (s *McpServiceService) RefreshTools(userID, serviceID int64) (*dto.RefreshToolsResult, error) {
