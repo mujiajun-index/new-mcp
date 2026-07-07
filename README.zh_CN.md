@@ -10,7 +10,10 @@
 </p>
 
 <p align="center">
-  <a href="https://raw.githubusercontent.com/mujiajun-index/new-mcp/main/LICENSE">
+  <a href="https://mcp.newmcp.pro/">
+    <img src="https://img.shields.io/badge/在线体验-mcp.newmcp.pro-brightgreen" alt="在线体验">
+  </a><!--
+  --><a href="https://raw.githubusercontent.com/mujiajun-index/new-mcp/main/LICENSE">
     <img src="https://img.shields.io/github/license/mujiajun-index/new-mcp?color=brightgreen" alt="license">
   </a><!--
   --><a href="https://github.com/mujiajun-index/new-mcp/releases/latest">
@@ -349,6 +352,6 @@ volumes:
 
 如果这个项目对你有帮助，欢迎给个 ⭐️ Star！
 
-**[GitHub](https://github.com/mujiajun-index/new-mcp)** • **[Issues](https://github.com/mujiajun-index/new-mcp/issues)**
+**[GitHub](https://github.com/mujiajun-index/new-mcp)** • **[Issues](https://github.com/mujiajun-index/new-mcp/issues)** • **[在线体验](https://mcp.newmcp.pro/)**
 
 </div>

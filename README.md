@@ -12,7 +12,10 @@
 </p>
 
 <p align="center">
-  <a href="https://raw.githubusercontent.com/mujiajun-index/new-mcp/main/LICENSE">
+  <a href="https://mcp.newmcp.pro/">
+    <img src="https://img.shields.io/badge/onlinedemo-mcp.newmcp.pro-success" alt="online demo">
+  </a><!--
+  --><a href="https://raw.githubusercontent.com/mujiajun-index/new-mcp/main/LICENSE">
     <img src="https://img.shields.io/github/license/mujiajun-index/new-mcp?color=brightgreen" alt="license">
   </a><!--
   --><a href="https://github.com/mujiajun-index/new-mcp/releases/latest">
@@ -351,6 +354,6 @@ If your organization's policies do not permit the use of AGPLv3-licensed softwar
 
 If this project is helpful to you, welcome to give a ⭐️ Star!
 
-**[GitHub](https://github.com/mujiajun-index/new-mcp)** • **[Issues](https://github.com/mujiajun-index/new-mcp/issues)**
+**[GitHub](https://github.com/mujiajun-index/new-mcp)** • **[Issues](https://github.com/mujiajun-index/new-mcp/issues)** • **[Online Demo](https://mcp.newmcp.pro/)**
 
 </div>
