@@ -11,6 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner'
 import { ArrowLeft, ArrowRight, Check, Loader2, Zap, RefreshCw } from 'lucide-react'
 import type { TransportType, AuthType, TestResult, PrepareStdioResult } from '@/types'
+import { useAuthStore } from '@/stores/auth-store'
+import { isAdminRole } from '@/lib/roles'
 
 type CommandChoice = 'npx' | 'uvx' | 'custom'
 type InstallStatus = 'idle' | 'ready' | 'failed'
@@ -64,6 +66,12 @@ const authOptions: { value: AuthType; labelKey: string }[] = [
 export function ServiceCreatePage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  // stdio 服务在服务器本地执行命令行子进程，属特权操作：仅管理员可创建，普通用户隐藏该传输选项。
+  const { auth } = useAuthStore()
+  const isAdmin = isAdminRole(auth.user?.role)
+  const visibleTransportOptions = isAdmin
+    ? transportOptions
+    : transportOptions.filter((opt) => opt.value !== 'stdio')
   const [step, setStep] = useState(0)
   const [testResult, setTestResult] = useState<TestResult | null>(null)
   const [form, setForm] = useState({
@@ -280,7 +288,7 @@ export function ServiceCreatePage() {
           <div className="space-y-2">
             <Label>{t('services.transportType')}</Label>
             <div className="grid gap-2 sm:grid-cols-2">
-              {transportOptions.map((opt) => (
+              {visibleTransportOptions.map((opt) => (
                 <button
                   key={opt.value}
                   type="button"

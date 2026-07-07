@@ -32,9 +32,15 @@ func ListServices(c *gin.Context) {
 
 func CreateService(c *gin.Context) {
 	userID := c.GetInt64("user_id")
+	role := c.GetString("role")
 	var req dto.CreateServiceReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	// stdio 服务在服务器本地执行命令行子进程，属特权操作，仅管理员可创建。
+	if req.TransportType == "stdio" && !common.IsAdminRole(role) {
+		common.Error(c, http.StatusForbidden, "仅管理员可创建 stdio 服务")
 		return
 	}
 	resp, err := mcpServiceService.Create(userID, &req)
@@ -93,9 +99,15 @@ func TestService(c *gin.Context) {
 }
 
 func TestConnection(c *gin.Context) {
+	role := c.GetString("role")
 	var req dto.TestConnectionReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	// 测试 stdio 同样会在服务器本地拉起子进程，仅管理员可用。
+	if req.TransportType == "stdio" && !common.IsAdminRole(role) {
+		common.Error(c, http.StatusForbidden, "仅管理员可测试 stdio 服务")
 		return
 	}
 	resp, err := mcpServiceService.TestConnection(&req)
@@ -108,6 +120,12 @@ func TestConnection(c *gin.Context) {
 
 // PrepareStdio runs the pre-flight detect/install for a stdio service before creation.
 func PrepareStdio(c *gin.Context) {
+	role := c.GetString("role")
+	// prepare-stdio 会在服务器本地执行 npx/uvx 安装与包预拉取，属特权操作，仅管理员可用。
+	if !common.IsAdminRole(role) {
+		common.Error(c, http.StatusForbidden, "仅管理员可执行 stdio 安装")
+		return
+	}
 	var req dto.PrepareStdioReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
