@@ -64,10 +64,11 @@ type GroupDetail struct {
 }
 
 type GroupServiceItem struct {
-	ID         int64  `json:"id"`
-	Name       string `json:"name"`
-	Enabled    bool   `json:"enabled"`
-	ToolsCount int    `json:"tools_count"`
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+	Enabled     bool   `json:"enabled"`
+	ToolsCount  int    `json:"tools_count"`
 }
 
 type GroupToolItem struct {

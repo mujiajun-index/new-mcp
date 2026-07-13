@@ -292,10 +292,11 @@ func (s *GroupService) toDetail(group *model.McpGroup) (*dto.GroupDetail, error)
 		var tools []interface{}
 		_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
 		services = append(services, dto.GroupServiceItem{
-			ID:         svc.ID,
-			Name:       svc.Name,
-			Enabled:    gs.Enabled,
-			ToolsCount: len(tools),
+			ID:          svc.ID,
+			Name:        svc.Name,
+			DisplayName: svc.DisplayName,
+			Enabled:     gs.Enabled,
+			ToolsCount:  len(tools),
 		})
 	}
 
