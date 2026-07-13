@@ -81,8 +81,13 @@ export function ServiceListPage() {
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: number }) => updateService(id, { status }),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['services'] })
+      // 禁用会从全部分组移除该服务，分组列表的工具数/成员会变化，需一并刷新
+      queryClient.invalidateQueries({ queryKey: ['groups'] })
+      if (variables.status === 0) {
+        toast.success(t('services.disabledToast'))
+      }
     },
   })
 
@@ -107,6 +112,16 @@ export function ServiceListPage() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     setKeyword(searchInput)
+  }
+
+  // 切换启用/禁用：禁用会从全部分组移除该服务及其工具，需二次确认；启用直接生效。
+  const handleToggleStatus = (s: ServiceListItem) => {
+    if (s.status === 1) {
+      if (!confirm(t('services.disableConfirm', { name: s.display_name || s.name }))) return
+      toggleMutation.mutate({ id: s.id, status: 0 })
+    } else {
+      toggleMutation.mutate({ id: s.id, status: 1 })
+    }
   }
 
   return (
@@ -190,7 +205,7 @@ export function ServiceListPage() {
                       className="cursor-pointer"
                       title={s.status === 1 ? t('services.clickDisable') : t('services.clickEnable')}
                       aria-label={s.status === 1 ? t('services.clickDisable') : t('services.clickEnable')}
-                      onClick={() => toggleMutation.mutate({ id: s.id, status: s.status === 1 ? 0 : 1 })}
+                      onClick={() => handleToggleStatus(s)}
                     >
                       <StatusBadge status={s.status} />
                     </button>
@@ -304,7 +319,7 @@ export function ServiceListPage() {
                           className="cursor-pointer"
                           title={s.status === 1 ? t('services.clickDisable') : t('services.clickEnable')}
                           aria-label={s.status === 1 ? t('services.clickDisable') : t('services.clickEnable')}
-                          onClick={() => toggleMutation.mutate({ id: s.id, status: s.status === 1 ? 0 : 1 })}
+                          onClick={() => handleToggleStatus(s)}
                         >
                           <StatusBadge status={s.status} />
                         </button>

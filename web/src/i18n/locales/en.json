@@ -272,6 +272,8 @@
     "testRequestFailed": "Test request failed",
     "deleteConfirm": "Delete service \"{{name}}\"?",
     "deleteSuccess": "Service deleted",
+    "disableConfirm": "Disable service \"{{name}}\"? It and its tools will be removed from all groups.",
+    "disabledToast": "Service disabled and removed from all groups",
     "connectSuccess": "Connected, {{count}} tools, latency {{ms}}ms",
     "connectFailed": "Connection failed: {{error}}",
     "healthHealthy": "Healthy",

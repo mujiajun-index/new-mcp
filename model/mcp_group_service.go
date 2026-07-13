@@ -45,6 +45,12 @@ func RemoveServiceFromGroup(groupID, serviceID int64) error {
 	return DB.Where("group_id = ? AND service_id = ?", groupID, serviceID).Delete(&McpGroupService{}).Error
 }
 
+// DeleteGroupServicesByServiceID 将服务从所属的全部分组中移除（解除关联）。
+// 用于禁用/删除服务时清理，避免向分组继续暴露已停用的服务。
+func DeleteGroupServicesByServiceID(serviceID int64) error {
+	return DB.Where("service_id = ?", serviceID).Delete(&McpGroupService{}).Error
+}
+
 // GroupServicePair pairs a service with one of the groups through which it is enabled.
 type GroupServicePair struct {
 	Group   McpGroup

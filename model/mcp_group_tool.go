@@ -38,3 +38,9 @@ func GetGroupTool(groupID, serviceID int64, toolName string) (*McpGroupTool, err
 func (t *McpGroupTool) Upsert() error {
 	return DB.Save(t).Error
 }
+
+// DeleteGroupToolsByServiceID 删除该服务在所有分组中的工具级覆盖（启用状态/重命名等）。
+// 与 DeleteGroupServicesByServiceID 配合，在禁用/删除服务时一并清理。
+func DeleteGroupToolsByServiceID(serviceID int64) error {
+	return DB.Where("service_id = ?", serviceID).Delete(&McpGroupTool{}).Error
+}

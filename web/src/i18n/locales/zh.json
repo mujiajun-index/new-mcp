@@ -272,6 +272,8 @@
     "testRequestFailed": "测试请求失败",
     "deleteConfirm": "确定删除服务 \"{{name}}\"？",
     "deleteSuccess": "服务已删除",
+    "disableConfirm": "确定禁用服务「{{name}}」？禁用后，该服务及其工具将从所有分组中移除。",
+    "disabledToast": "服务已禁用，并已从所有分组移除",
     "connectSuccess": "连接成功，{{count}} 个工具，延迟 {{ms}}ms",
     "connectFailed": "连接失败: {{error}}",
     "healthHealthy": "健康",

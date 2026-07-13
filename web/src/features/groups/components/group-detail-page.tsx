@@ -118,7 +118,8 @@ export function GroupDetailPage() {
   const endpoint = endpointData?.data
   const allServices = servicesData?.data || []
   const existingIds = new Set((group?.services || []).map((s: { id: number }) => s.id))
-  const availableServices = allServices.filter((s: { id: number }) => !existingIds.has(s.id))
+  // 添加服务时隐藏已禁用的服务（status !== 1），禁用服务不应再被加入分组
+  const availableServices = allServices.filter((s: { id: number; status: number }) => !existingIds.has(s.id) && s.status === 1)
 
   // Group tools by service
   const toolsByService = useMemo(() => {

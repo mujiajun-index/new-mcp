@@ -200,6 +200,17 @@ func (s *McpServiceService) Update(userID, serviceID int64, req *dto.UpdateServi
 	if err := svc.Update(); err != nil {
 		return err
 	}
+	// 禁用服务（status 置为非启用值）时，从全部分组中移除该服务及其工具配置。
+	// 分组聚合工具时只看 group_service.enabled，不检查 service.status，仅置 0 无法隐藏，
+	// 必须删除 mcp_group_services / mcp_group_tools 中的关联行，否则分组仍会暴露已停用的服务。
+	if req.Status != nil && *req.Status != common.StatusEnabled {
+		if err := model.DeleteGroupServicesByServiceID(serviceID); err != nil {
+			return err
+		}
+		if err := model.DeleteGroupToolsByServiceID(serviceID); err != nil {
+			return err
+		}
+	}
 	// 配置（command/args/env/registry/url/headers）变更后，运行中的连接/子进程仍带旧配置。
 	// 踢掉旧 session 并按新配置异步重连（与 Create 一致）：让新 env 立即生效，同时刷新
 	// tools_cache 并预热连接。AuthConfig 不喂给 adapter、DisplayName/Description/Tags 为展示字段，均无需重连。
