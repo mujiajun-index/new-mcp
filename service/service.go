@@ -233,6 +233,14 @@ func (s *McpServiceService) Delete(userID, serviceID int64) error {
 		}
 		return fmt.Errorf("虚拟服务无法直接删除，请在%s配置页面操作", sourceLabel)
 	}
+	// 先清理该服务在全部分组中的关联与工具配置，再硬删除服务本身，
+	// 避免留下指向已删除服务的孤儿关联行（分组聚合时会逐条查服务，孤儿行会刷 record not found 日志）。
+	if err := model.DeleteGroupServicesByServiceID(serviceID); err != nil {
+		return err
+	}
+	if err := model.DeleteGroupToolsByServiceID(serviceID); err != nil {
+		return err
+	}
 	if err := svc.Delete(); err != nil {
 		return err
 	}

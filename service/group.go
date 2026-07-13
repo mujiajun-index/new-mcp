@@ -237,6 +237,7 @@ func (s *GroupService) getAggregatedTools(groupID int64) ([]dto.GroupToolItem, e
 	if err != nil {
 		return nil, err
 	}
+	svcByID := servicesByMembership(groupServices)
 
 	toolFilters, _ := model.GetGroupTools(groupID)
 	filterMap := make(map[string]*model.McpGroupTool)
@@ -247,8 +248,9 @@ func (s *GroupService) getAggregatedTools(groupID int64) ([]dto.GroupToolItem, e
 
 	var result []dto.GroupToolItem
 	for _, gs := range groupServices {
-		svc, err := model.GetServiceByIDWithoutUser(gs.ServiceID)
-		if err != nil {
+		svc := svcByID[gs.ServiceID]
+		if svc == nil {
+			// 服务已被删除但分组关联未清理（孤儿行）：静默跳过，不再逐条 First 触发 record not found 日志
 			continue
 		}
 		var tools []struct {
@@ -282,11 +284,13 @@ func (s *GroupService) getAggregatedTools(groupID int64) ([]dto.GroupToolItem, e
 
 func (s *GroupService) toDetail(group *model.McpGroup) (*dto.GroupDetail, error) {
 	groupServices, _ := model.GetGroupServices(group.ID)
+	svcByID := servicesByMembership(groupServices)
 
-	services := make([]dto.GroupServiceItem, 0)
+	services := make([]dto.GroupServiceItem, 0, len(groupServices))
 	for _, gs := range groupServices {
-		svc, err := model.GetServiceByIDWithoutUser(gs.ServiceID)
-		if err != nil {
+		svc := svcByID[gs.ServiceID]
+		if svc == nil {
+			// 服务已被删除但分组关联未清理（孤儿行）：静默跳过
 			continue
 		}
 		var tools []interface{}
@@ -339,4 +343,26 @@ func (s *GroupService) buildEndpointInfo(group *model.McpGroup) (*dto.EndpointIn
 			},
 		},
 	}, nil
+}
+
+// servicesByMembership 用单次 IN 查询批量解析成员关系对应的服务，返回 service_id -> *McpService。
+// 相比逐条 GetServiceByIDWithoutUser（First）：消除 N+1；且当某成员关系指向已删除服务（孤儿行）
+// 时，map 中无该键、返回 nil，由调用方静默跳过——First 在记录不存在时会打 record not found 日志，Find 不会。
+func servicesByMembership(members []model.McpGroupService) map[int64]*model.McpService {
+	m := make(map[int64]*model.McpService, len(members))
+	if len(members) == 0 {
+		return m
+	}
+	ids := make([]int64, 0, len(members))
+	for _, gs := range members {
+		ids = append(ids, gs.ServiceID)
+	}
+	svcs, err := model.GetServicesByIDs(ids)
+	if err != nil {
+		return m
+	}
+	for i := range svcs {
+		m[svcs[i].ID] = &svcs[i]
+	}
+	return m
 }
