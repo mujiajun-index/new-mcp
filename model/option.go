@@ -26,6 +26,7 @@ var defaultOptions = map[string]string{
 	"EmailVerificationEnabled":      "false",
 	"EmailDomainRestrictionEnabled": "false",
 	"EmailDomainWhitelist":          "",
+	"UserGroupOptions":              "default,vip,svip",
 	"RateLimitEnabled":              "false",
 	"RateLimitMaxRequests":          "60",
 	"RateLimitWindowMinutes":        "1",
@@ -49,6 +50,7 @@ var publicKeys = map[string]bool{
 	"ServerAddress":            true,
 	"RegisterEnabled":          true,
 	"EmailVerificationEnabled": true,
+	"UserGroupOptions":         true,
 }
 
 func InitOptionMap() {
@@ -100,6 +102,27 @@ func GetOptionInt(key string) int {
 	OptionMapMutex.RUnlock()
 	n, _ := strconv.Atoi(v)
 	return n
+}
+
+// GetUserGroupOptions parses the comma-separated "UserGroupOptions" setting
+// into a deduplicated list of group names. It always contains at least
+// "default", so user creation/editing can always pick a valid group.
+func GetUserGroupOptions() []string {
+	raw := GetOptionString("UserGroupOptions")
+	var opts []string
+	seen := make(map[string]bool)
+	for _, p := range strings.Split(raw, ",") {
+		p = strings.TrimSpace(p)
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		opts = append(opts, p)
+	}
+	if len(opts) == 0 {
+		opts = []string{"default"}
+	}
+	return opts
 }
 
 func IsSensitiveKey(key string) bool {

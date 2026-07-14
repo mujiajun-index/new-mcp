@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MobileListCard } from '@/components/ui/mobile-list-card'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useSystemConfigStore } from '@/stores/system-config-store'
 import { toast } from 'sonner'
 import { Plus, Pencil, Search, ChevronLeft, ChevronRight, X, Eye } from 'lucide-react'
 
@@ -17,6 +18,7 @@ export function AdminUsersPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
+  const groupOptions = useSystemConfigStore((s) => s.config.userGroupOptions)
   const [page, setPage] = useState(1)
   const [keyword, setKeyword] = useState('')
   const pageSize = 20
@@ -138,6 +140,17 @@ export function AdminUsersPage() {
   // 普通管理员在列表中看不到超级管理员，故此处只影响超级管理员编辑自己的情形。
   const isProtectedTarget = editingUser?.id === 1 || editingUser?.role === 'super_admin'
 
+  // 分组下拉的候选项：来自系统设置的「用户分组选项值」，若当前表单值不在列表中则补上，
+  // 避免已有值在 UI 上被清空（编辑旧数据或新建时默认值被移除的情形）。
+  const selectableGroups = (() => {
+    const list = [...groupOptions]
+    const current = form.group || editingUser?.group || ''
+    if (current && !list.includes(current)) {
+      list.push(current)
+    }
+    return list
+  })()
+
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <div className="flex items-center justify-between">
@@ -214,7 +227,14 @@ export function AdminUsersPage() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('admin.users.groups')}</label>
-              <Input placeholder="default" value={form.group} onChange={e => setForm({ ...form, group: e.target.value })} />
+              <Select value={form.group} onValueChange={v => setForm({ ...form, group: v })}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {selectableGroups.map(g => (
+                    <SelectItem key={g} value={g}>{g}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             {editingUser && (
               <div className="space-y-2">

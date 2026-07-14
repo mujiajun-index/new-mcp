@@ -2,6 +2,22 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { api } from '@/lib/api'
 
+// parseGroupOptions splits the comma-separated "UserGroupOptions" setting into
+// a deduplicated list. Always returns at least ["default"].
+function parseGroupOptions(raw: unknown): string[] {
+  if (typeof raw !== 'string' || raw.trim() === '') return ['default']
+  const seen = new Set<string>()
+  const opts: string[] = []
+  for (const part of raw.split(',')) {
+    const name = part.trim()
+    if (name && !seen.has(name)) {
+      seen.add(name)
+      opts.push(name)
+    }
+  }
+  return opts.length ? opts : ['default']
+}
+
 interface SystemConfig {
   systemName: string
   serverAddress: string
@@ -9,6 +25,7 @@ interface SystemConfig {
   registerEnabled: boolean
   emailVerificationEnabled: boolean
   smtpConfigured: boolean
+  userGroupOptions: string[]
 }
 
 interface SystemConfigState {
@@ -27,6 +44,7 @@ export const useSystemConfigStore = create<SystemConfigState>()(
         registerEnabled: true,
         emailVerificationEnabled: false,
         smtpConfigured: false,
+        userGroupOptions: ['default', 'vip', 'svip'],
       },
       setConfig: (partial) =>
         set((state) => ({
@@ -45,6 +63,7 @@ export const useSystemConfigStore = create<SystemConfigState>()(
               registerEnabled: data.RegisterEnabled === undefined ? state.config.registerEnabled : data.RegisterEnabled === 'true',
               emailVerificationEnabled: data.EmailVerificationEnabled === 'true',
               smtpConfigured: data.SMTPConfigured === 'true',
+              userGroupOptions: parseGroupOptions(data.UserGroupOptions),
             },
           }))
         } catch {

@@ -43,6 +43,27 @@ func IsEmailAlreadyTaken(email string) bool {
 	return count > 0
 }
 
+// GroupsInUse returns the subset of `groups` that have at least one user bound
+// to them. The group column is a reserved word in MySQL/PostgreSQL, so it is
+// queried via a map condition (GORM quotes the column per dialect) rather than a
+// raw SQL fragment. Used to prevent removing a user group option still in use.
+func GroupsInUse(groups []string) ([]string, error) {
+	var inUse []string
+	for _, g := range groups {
+		if g == "" {
+			continue
+		}
+		var count int64
+		if err := DB.Model(&User{}).Where(map[string]interface{}{"group": g}).Count(&count).Error; err != nil {
+			return nil, err
+		}
+		if count > 0 {
+			inUse = append(inUse, g)
+		}
+	}
+	return inUse, nil
+}
+
 // GetUserByUsernameOrEmail looks up a user by username OR email, so users can
 // sign in with either identifier.
 func GetUserByUsernameOrEmail(identifier string) (*User, error) {

@@ -6,6 +6,7 @@ import { api, getSystemInfo, checkSystemUpdate } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
   Dialog,
@@ -16,6 +17,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
+import { useSystemConfigStore } from '@/stores/system-config-store'
 import {
   Settings,
   Shield,
@@ -72,6 +74,8 @@ function parseGroupConfig(json: string): Record<string, RateLimitGroup> {
 export function AdminSettingsPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const fetchPublicSettings = useSystemConfigStore((s) => s.fetchPublicSettings)
+  const userGroupOptions = useSystemConfigStore((s) => s.config.userGroupOptions)
 
   const { data: settings, isLoading } = useQuery({
     queryKey: ['admin-settings'],
@@ -115,8 +119,16 @@ export function AdminSettingsPage() {
     onSuccess: () => {
       toast.success(t('settings.saveSuccess'))
       queryClient.invalidateQueries({ queryKey: ['admin-settings'] })
+      // Keep the global public-settings store fresh so other pages (e.g. user
+      // management group dropdown) reflect changes immediately.
+      fetchPublicSettings()
     },
-    onError: () => toast.error(t('settings.saveFailed')),
+    onError: (err: any, variables: { key: string; value: string }) => {
+      toast.error(err?.response?.data?.message || t('settings.saveFailed'))
+      // Revert the rejected field so the UI reflects the real server state
+      // (e.g. a group removal blocked because users are still bound to it).
+      setLocalValues((prev) => ({ ...prev, [variables.key]: settings?.[variables.key] ?? '' }))
+    },
   })
 
   const [localValues, setLocalValues] = useState<Record<string, string>>({})
@@ -150,6 +162,9 @@ export function AdminSettingsPage() {
   // Rate limit group config helpers
   const [groupConfig, setGroupConfig] = useState<Record<string, RateLimitGroup>>({})
   const [newGroupName, setNewGroupName] = useState('')
+
+  // Groups from system settings that are not yet configured with a rate limit.
+  const availableGroups = userGroupOptions.filter((g) => !groupConfig[g])
 
   useEffect(() => {
     if (localValues.RateLimitGroupConfig) {
@@ -254,6 +269,16 @@ export function AdminSettingsPage() {
                   value={localValues.Footer ?? ''}
                   onChange={(e) => updateLocal('Footer', e.target.value)}
                   onBlur={() => saveField('Footer')}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{t('settings.userGroupOptions')}</label>
+                <p className="text-xs text-muted-foreground">{t('settings.userGroupOptionsDesc')}</p>
+                <Input
+                  placeholder={t('settings.userGroupOptionsPlaceholder')}
+                  value={localValues.UserGroupOptions ?? ''}
+                  onChange={(e) => updateLocal('UserGroupOptions', e.target.value)}
+                  onBlur={() => saveField('UserGroupOptions')}
                 />
               </div>
             </div>
@@ -383,17 +408,26 @@ export function AdminSettingsPage() {
                     </div>
                   ))}
                   <div className="flex items-center gap-2">
-                    <Input
-                      value={newGroupName}
-                      onChange={(e) => setNewGroupName(e.target.value)}
-                      className="w-32"
-                      placeholder={t('settings.groupName')}
-                      onKeyDown={(e) => e.key === 'Enter' && addGroup()}
-                    />
-                    <Button variant="outline" size="sm" onClick={addGroup} disabled={!newGroupName.trim()}>
-                      <Plus className="h-4 w-4 mr-1" />
-                      {t('settings.addGroup')}
-                    </Button>
+                    {availableGroups.length > 0 ? (
+                      <>
+                        <Select value={newGroupName} onValueChange={setNewGroupName}>
+                          <SelectTrigger className="w-40 h-9">
+                            <SelectValue placeholder={t('settings.groupName')} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableGroups.map((g) => (
+                              <SelectItem key={g} value={g}>{g}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button variant="outline" size="sm" onClick={addGroup} disabled={!newGroupName.trim()}>
+                          <Plus className="h-4 w-4 mr-1" />
+                          {t('settings.addGroup')}
+                        </Button>
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">{t('settings.noAvailableGroups')}</p>
+                    )}
                   </div>
                 </div>
               </div>
