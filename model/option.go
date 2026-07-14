@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 	"sync"
@@ -123,6 +124,36 @@ func GetUserGroupOptions() []string {
 		opts = []string{"default"}
 	}
 	return opts
+}
+
+// RateLimitGroupRule is one group's rate-limit override: at most Max requests
+// per WindowMinutes.
+type RateLimitGroupRule struct {
+	Max           int
+	WindowMinutes int
+}
+
+// GetRateLimitGroupConfig parses the "RateLimitGroupConfig" option, stored as
+// JSON shaped {"group": {"max": N, "window": M}, ...} with window in minutes.
+// Returns nil when unset or invalid (callers then fall back to the global
+// RateLimitMaxRequests / RateLimitWindowMinutes defaults).
+func GetRateLimitGroupConfig() map[string]RateLimitGroupRule {
+	raw := GetOptionString("RateLimitGroupConfig")
+	if raw == "" {
+		return nil
+	}
+	var m map[string]struct {
+		Max    int `json:"max"`
+		Window int `json:"window"`
+	}
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return nil
+	}
+	out := make(map[string]RateLimitGroupRule, len(m))
+	for k, v := range m {
+		out[k] = RateLimitGroupRule{Max: v.Max, WindowMinutes: v.Window}
+	}
+	return out
 }
 
 func IsSensitiveKey(key string) bool {

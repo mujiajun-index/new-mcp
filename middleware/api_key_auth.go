@@ -65,6 +65,9 @@ func APIKeyAuth() gin.HandlerFunc {
 		c.Set("api_key_id", apiKey.ID)
 		c.Set("api_key_user_id", apiKey.UserID)
 		c.Set("api_key_permissions", apiKey.Permissions)
+		// user.Group is needed downstream by the per-group rate limiter; expose
+		// it here so the limiter need not re-query the user.
+		c.Set("user_group", user.Group)
 		c.Next()
 	}
 }

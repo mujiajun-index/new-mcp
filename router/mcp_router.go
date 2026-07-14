@@ -17,22 +17,22 @@ func SetMCPRouter(engine *gin.Engine, h *handler.GatewayHandler) {
 	gatewayHandler = h
 
 	// Streamable HTTP - Direct mode (expose all tools from APIKey's groups)
-	engine.POST("/mcp", middleware.APIKeyAuth(), handleStreamableHTTP("direct"))
+	engine.POST("/mcp", middleware.APIKeyAuth(), middleware.RateLimit(), handleStreamableHTTP("direct"))
 
 	// Streamable HTTP - Smart mode (expose 3 meta-tools)
-	engine.POST("/smart/mcp", middleware.APIKeyAuth(), handleStreamableHTTP("smart"))
+	engine.POST("/smart/mcp", middleware.APIKeyAuth(), middleware.RateLimit(), handleStreamableHTTP("smart"))
 
 	// Streamable HTTP - Group endpoint (mode from group config)
-	engine.POST("/mcp/group/:slug", middleware.APIKeyAuth(), handleStreamableHTTPWithSlug())
+	engine.POST("/mcp/group/:slug", middleware.APIKeyAuth(), middleware.RateLimit(), handleStreamableHTTPWithSlug())
 
 	// WebSocket - Direct mode
-	engine.GET("/mcp/ws", middleware.APIKeyAuth(), handleWebSocket("direct"))
+	engine.GET("/mcp/ws", middleware.APIKeyAuth(), middleware.RateLimit(), handleWebSocket("direct"))
 
 	// WebSocket - Smart mode
-	engine.GET("/smart/mcp/ws", middleware.APIKeyAuth(), handleWebSocket("smart"))
+	engine.GET("/smart/mcp/ws", middleware.APIKeyAuth(), middleware.RateLimit(), handleWebSocket("smart"))
 
 	// WebSocket - Group endpoint
-	engine.GET("/mcp/ws/group/:slug", middleware.APIKeyAuth(), handleWebSocketWithSlug())
+	engine.GET("/mcp/ws/group/:slug", middleware.APIKeyAuth(), middleware.RateLimit(), handleWebSocketWithSlug())
 }
 
 func buildLogContext(c *gin.Context, exposeMode string) *handler.LogContext {
