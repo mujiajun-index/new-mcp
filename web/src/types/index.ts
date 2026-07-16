@@ -350,7 +350,11 @@ export interface MarketplaceListItem {
   rating_avg: number
   rating_count: number
   status: number
+  sort_order: number
   created_at: string
+  // 商业化定价(§5):供市场列表展示价格/免费标记
+  billing_type: string   // free / per_call
+  price_per_call: number // 展示货币单价(per_call)
 }
 
 export interface MarketplaceDetail {
@@ -375,6 +379,9 @@ export interface MarketplaceDetail {
   status: number
   created_at: string
   updated_at: string
+  // 商业化定价
+  billing_type: string
+  price_per_call: number
 }
 
 export interface MarketplaceListParams extends ListParams {
@@ -463,4 +470,93 @@ export interface LogFilter {
   keyword?: string
   page?: number
   page_size?: number
+}
+
+// --- 商业化:Wallet(我的额度/消费明细/用量统计) ---
+export interface WalletOverview {
+  quota: number          // 可用余额(quota)
+  used_quota: number     // 累计已用(quota)
+  request_count: number  // 累计请求数
+  total_topup: number    // 累计充值(quota)
+  group: string          // 用户套餐分组
+}
+
+export interface WalletBillingItem {
+  id: number
+  tool_name: string
+  method: string
+  service_name: string
+  group_name: string
+  billing_status: string // charged / refunded / blocked / debt
+  billing_type: string   // free / per_call
+  unit_price: number     // 展示货币单价快照
+  quota_consumed: number // 本次实扣 quota
+  price_scope: string    // tool/service/marketplace/global
+  marketplace_item_id: number | null
+  created_at: string
+}
+
+export interface WalletUsageStats {
+  consumed_today: number
+  consumed_week: number
+  consumed_total: number
+}
+
+// --- 商业化:Redemption(兑换码) ---
+export interface RedemptionItem {
+  id: number
+  code: string
+  name: string
+  quota: number
+  status: number // 1=可用 2=已兑换 3=已禁用
+  user_id: number | null
+  expired_at: number // Unix 秒,0=永不过期
+  created_at: string
+  redeemed_at: string
+}
+
+export interface RedemptionCreateReq {
+  name?: string
+  quota: number
+  count?: number
+  expired_at?: number
+}
+
+export interface RedeemReq {
+  code: string
+}
+
+export interface RedeemResp {
+  quota: number
+}
+
+// --- 商业化:Marketplace 批量定价 / 克隆 ---
+export interface BatchPricingItem {
+  id: number
+  billing_type: string // free / per_call
+  price_per_call?: number
+}
+
+export interface BatchPricingReq {
+  items: BatchPricingItem[]
+}
+
+export interface CloneMarketplaceReq {
+  from_service_id: number
+  name: string
+  display_name?: string
+  description?: string
+  billing_type?: string
+  price_per_call?: number
+}
+
+// --- 商业化:管理员调额(POST /admin/users/:id/quota) ---
+export interface AdminAdjustQuotaReq {
+  mode: 'add' | 'sub' | 'set'
+  value: number
+  remark?: string
+}
+
+export interface AdminAdjustQuotaResp {
+  new_quota: number
 }

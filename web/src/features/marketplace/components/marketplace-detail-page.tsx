@@ -1,15 +1,18 @@
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
-import { getMarketplaceItem, installFromMarketplace } from '../api'
+import { getMarketplaceItem, addToMyServices } from '../api'
+import { useSystemConfigStore } from '@/stores/system-config-store'
+import { priceLabel } from '@/lib/billing'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
-import { ArrowLeft, Download, Star, Zap, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Download, Star, Zap, ExternalLink, Plus } from 'lucide-react'
 
 export function MarketplaceDetailPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { id } = useParams({ strict: false }) as { id: string }
+  const { config } = useSystemConfigStore()
 
   const { data, isLoading } = useQuery({
     queryKey: ['marketplace-item', id],
@@ -17,14 +20,15 @@ export function MarketplaceDetailPage() {
   })
 
   const installMutation = useMutation({
-    mutationFn: () => installFromMarketplace({ item_id: Number(id) }),
+    mutationFn: () => addToMyServices(Number(id)),
     onSuccess: (res) => {
-      toast.success(t('marketplace.installSuccess', { name: res.data?.name }))
+      toast.success(t('marketplace.addSuccess', { name: res.data?.name }))
       navigate({ to: '/services' })
     },
   })
 
   const item = data?.data
+  const priceText = priceLabel(item?.billing_type ?? '', item?.price_per_call ?? 0, config.displayCurrency)
 
   if (isLoading) return <div className="flex items-center justify-center py-20 text-muted-foreground">{t('common.loading')}</div>
   if (!item) return <div className="flex items-center justify-center py-20 text-muted-foreground">{t('marketplace.notFound')}</div>
@@ -75,13 +79,18 @@ export function MarketplaceDetailPage() {
       {/* Install action */}
       <div className="rounded-xl border bg-card p-5">
         {item.category === 'instant' ? (
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">{t('marketplace.oneClickInstall')}</p>
-              <p className="text-xs text-muted-foreground">{t('marketplace.oneClickInstallDesc')}</p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <p className="text-lg font-semibold text-primary">{priceText}</p>
+                <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                  {t('marketplace.platformHosted')}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">{t('marketplace.platformHostedDesc')}</p>
             </div>
             <Button className="gap-2" onClick={() => installMutation.mutate()} disabled={installMutation.isPending}>
-              <Zap className="h-4 w-4" />
+              {installMutation.isPending ? <Zap className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
               {installMutation.isPending ? t('marketplace.installing') : t('marketplace.addToMyServices')}
             </Button>
           </div>

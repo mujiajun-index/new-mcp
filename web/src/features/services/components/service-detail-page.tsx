@@ -262,6 +262,11 @@ export function ServiceDetailPage() {
             <h1 className="text-xl font-semibold">{service.display_name || service.name}</h1>
             <div className="mt-0.5 flex items-center gap-2">
               <p className="text-sm text-muted-foreground">{service.name}</p>
+              {service.source === 'marketplace' && (
+                <span className="inline-flex items-center rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                  {t('marketplace.platformHosted')}
+                </span>
+              )}
               {virtualSource && (
                 <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium ${virtualSource.color}`}>
                   {virtualSource.label}
@@ -280,7 +285,7 @@ export function ServiceDetailPage() {
             <RefreshCw className={`h-3.5 w-3.5 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
             {t('services.refreshTools')}
           </Button>
-          {!isVirtual && !editing && (
+          {!isVirtual && !editing && service.source !== 'marketplace' && (
             <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
               <Pencil className="h-3.5 w-3.5 mr-1.5" />{t('common.edit')}
             </Button>
@@ -294,6 +299,13 @@ export function ServiceDetailPage() {
           )}
         </div>
       </div>
+
+      {service.source === 'marketplace' && (
+        <div className="flex items-start gap-2 rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-primary">
+          <span className="font-medium">{t('marketplace.platformHosted')}</span>
+          <span className="text-primary/80">{t('marketplace.platformHostedDesc')}</span>
+        </div>
+      )}
 
       {/* Info cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

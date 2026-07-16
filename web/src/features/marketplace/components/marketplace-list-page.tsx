@@ -3,6 +3,8 @@ import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { getMarketplaceItems } from '../api'
+import { useSystemConfigStore } from '@/stores/system-config-store'
+import { priceLabel } from '@/lib/billing'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import type { MarketplaceListItem } from '@/types'
@@ -10,6 +12,7 @@ import { Search, Store, Download, Star, Zap, Code2 } from 'lucide-react'
 
 export function MarketplaceListPage() {
   const { t } = useTranslation()
+  const { config } = useSystemConfigStore()
   const [keyword, setKeyword] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [category, setCategory] = useState<'' | 'instant' | 'source'>('')
@@ -93,15 +96,24 @@ export function MarketplaceListPage() {
                 {item.description && (
                   <p className="mt-3 text-sm text-muted-foreground line-clamp-2 flex-1">{item.description}</p>
                 )}
-                <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1"><Download className="h-3 w-3" />{item.install_count}</span>
-                  {item.rating_count > 0 && (
-                    <span className="flex items-center gap-1"><Star className="h-3 w-3" />{item.rating_avg.toFixed(1)}</span>
-                  )}
-                  {item.tags?.slice(0, 2).map((tag) => (
-                    <span key={tag} className="rounded bg-muted px-1.5 py-0.5">{tag}</span>
-                  ))}
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-primary">
+                    {priceLabel(item.billing_type, item.price_per_call, config.displayCurrency)}
+                  </span>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1"><Download className="h-3 w-3" />{item.install_count}</span>
+                    {item.rating_count > 0 && (
+                      <span className="flex items-center gap-1"><Star className="h-3 w-3" />{item.rating_avg.toFixed(1)}</span>
+                    )}
+                  </div>
                 </div>
+                {item.tags?.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {item.tags.slice(0, 2).map((tag) => (
+                      <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[10px]">{tag}</span>
+                    ))}
+                  </div>
+                )}
               </div>
             </Link>
           ))}

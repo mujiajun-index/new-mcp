@@ -26,6 +26,12 @@ interface SystemConfig {
   emailVerificationEnabled: boolean
   smtpConfigured: boolean
   userGroupOptions: string[]
+  // 商业化公开键(§15)
+  billingEnabled: boolean
+  displayCurrency: string
+  selfUseModeEnabled: boolean
+  redemptionEnabled: boolean
+  userOwnedServicesEnabled: boolean
 }
 
 interface SystemConfigState {
@@ -33,6 +39,9 @@ interface SystemConfigState {
   setConfig: (config: Partial<SystemConfig>) => void
   fetchPublicSettings: () => Promise<void>
 }
+
+const boolOr = (data: Record<string, unknown>, key: string, fallback: boolean): boolean =>
+  data[key] === undefined ? fallback : data[key] === 'true' || data[key] === true
 
 export const useSystemConfigStore = create<SystemConfigState>()(
   persist(
@@ -45,6 +54,12 @@ export const useSystemConfigStore = create<SystemConfigState>()(
         emailVerificationEnabled: false,
         smtpConfigured: false,
         userGroupOptions: ['default', 'vip', 'svip'],
+        // 商业化默认(与后端 model/option.go defaultOptions 一致)
+        billingEnabled: false,
+        displayCurrency: 'CNY',
+        selfUseModeEnabled: false,
+        redemptionEnabled: true,
+        userOwnedServicesEnabled: true,
       },
       setConfig: (partial) =>
         set((state) => ({
@@ -60,10 +75,16 @@ export const useSystemConfigStore = create<SystemConfigState>()(
               systemName: data.SystemName ?? state.config.systemName,
               serverAddress: data.ServerAddress ?? state.config.serverAddress,
               footer: data.Footer ?? state.config.footer,
-              registerEnabled: data.RegisterEnabled === undefined ? state.config.registerEnabled : data.RegisterEnabled === 'true',
-              emailVerificationEnabled: data.EmailVerificationEnabled === 'true',
-              smtpConfigured: data.SMTPConfigured === 'true',
+              registerEnabled: boolOr(data, 'RegisterEnabled', state.config.registerEnabled),
+              emailVerificationEnabled: boolOr(data, 'EmailVerificationEnabled', state.config.emailVerificationEnabled),
+              smtpConfigured: boolOr(data, 'SMTPConfigured', state.config.smtpConfigured),
               userGroupOptions: parseGroupOptions(data.UserGroupOptions),
+              // 商业化
+              billingEnabled: boolOr(data, 'BillingEnabled', state.config.billingEnabled),
+              displayCurrency: (data.DisplayCurrency as string) ?? state.config.displayCurrency,
+              selfUseModeEnabled: boolOr(data, 'SelfUseModeEnabled', state.config.selfUseModeEnabled),
+              redemptionEnabled: boolOr(data, 'RedemptionEnabled', state.config.redemptionEnabled),
+              userOwnedServicesEnabled: boolOr(data, 'UserOwnedServicesEnabled', state.config.userOwnedServicesEnabled),
             },
           }))
         } catch {

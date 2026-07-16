@@ -15,6 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import { CompactDateTimeRangePicker } from '@/components/ui/date-time-range-picker'
 import { Activity, CheckCircle, XCircle, Clock, Zap, Search, RotateCw, ChevronLeft, ChevronRight } from 'lucide-react'
+import { billingStatusKey, billingStatusClass, priceScopeKey, priceLabel } from '@/lib/billing'
+import { useSystemConfigStore } from '@/stores/system-config-store'
 import type { LogFilter } from '@/types'
 
 export function UserLogsPage() {
@@ -22,6 +24,8 @@ export function UserLogsPage() {
   const { auth } = useAuthStore()
   const isAdmin = isAdminRole(auth.user?.role)
   const isMobile = useIsMobile()
+  const { config } = useSystemConfigStore()
+  const showBilling = config.billingEnabled
   const [page, setPage] = useState(1)
   const pageSize = 20
   const [filter, setFilter] = useState<LogFilter>({})
@@ -205,6 +209,19 @@ export function UserLogsPage() {
                     }
                     meta={[
                       { label: t('logs.duration'), value: <span className="tabular-nums">{formatDuration(log.duration_ms)}</span> },
+                      ...(showBilling && log.billing_status && log.billing_status !== 'skipped' ? [
+                        {
+                          label: t('logs.billing'),
+                          value: (
+                            <span className="flex items-center gap-1.5">
+                              <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${billingStatusClass(log.billing_status)}`}>
+                                {t(billingStatusKey(log.billing_status))}
+                              </span>
+                              {log.quota_consumed > 0 && <span className="tabular-nums">{log.quota_consumed}</span>}
+                            </span>
+                          ),
+                        },
+                      ] : []),
                       { label: t('logs.groupName'), value: log.group_name || '-' },
                       { label: 'IP', value: <span className="font-mono">{log.client_ip}</span> },
                       { label: t('logs.time'), value: formatTime(log.created_at) },
@@ -234,6 +251,7 @@ export function UserLogsPage() {
                   <TableHead>{t('logs.groupName')}</TableHead>
                   {isAdmin && <TableHead>{t('logs.serviceName')}</TableHead>}
                   <TableHead>{t('logs.status')}</TableHead>
+                  {showBilling && <TableHead>{t('logs.billing')}</TableHead>}
                   <TableHead>{t('logs.duration')}</TableHead>
                   <TableHead>{t('logs.errorMessage')}</TableHead>
                   <TableHead>IP</TableHead>
@@ -242,7 +260,7 @@ export function UserLogsPage() {
               </TableHeader>
               <TableBody>
                 {logs.map((log: any) => (
-                  <LogRow key={log.id} log={log} isAdmin={isAdmin} formatTime={formatTime} formatDuration={formatDuration} />
+                  <LogRow key={log.id} log={log} isAdmin={isAdmin} showBilling={showBilling} displayCurrency={config.displayCurrency} formatTime={formatTime} formatDuration={formatDuration} />
                 ))}
               </TableBody>
             </Table>
@@ -281,15 +299,19 @@ export function UserLogsPage() {
   )
 }
 
-function LogRow({ log, isAdmin, formatTime, formatDuration }: {
+function LogRow({ log, isAdmin, showBilling, displayCurrency, formatTime, formatDuration }: {
   log: any
   isAdmin: boolean
+  showBilling: boolean
+  displayCurrency: string
   formatTime: (s: string) => string
   formatDuration: (ms: number) => string
 }) {
   const { t } = useTranslation()
   const isSuccess = log.response_status === 'success'
   const errorMsg = log.error_message || ''
+  const billStatus = log.billing_status || 'skipped'
+  const hasBilling = showBilling && billStatus !== 'skipped' && billStatus !== ''
 
   return (
     <TableRow>
@@ -306,6 +328,34 @@ function LogRow({ log, isAdmin, formatTime, formatDuration }: {
           {isSuccess ? t('logs.success') : t('logs.error')}
         </Badge>
       </TableCell>
+      {showBilling && (
+        <TableCell>
+          {hasBilling ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-1.5 cursor-default">
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${billingStatusClass(billStatus)}`}>
+                    {t(billingStatusKey(billStatus))}
+                  </span>
+                  {log.quota_consumed > 0 && (
+                    <span className="text-xs tabular-nums">{log.quota_consumed}</span>
+                  )}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                <div className="space-y-0.5">
+                  {log.unit_price > 0 && <div>{t('logs.billingUnitPrice')}: {priceLabel(log.billing_type, log.unit_price, displayCurrency)}</div>}
+                  {log.price_scope && <div>{t('logs.billingScope')}: {t(priceScopeKey(log.price_scope))}</div>}
+                  {log.marketplace_item_id && <div>{t('logs.billingItem')}: #{log.marketplace_item_id}</div>}
+                  <div>{t('logs.billingConsumed')}: {log.quota_consumed ?? 0}</div>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <span className="text-xs text-muted-foreground">—</span>
+          )}
+        </TableCell>
+      )}
       <TableCell className="text-sm tabular-nums">{formatDuration(log.duration_ms)}</TableCell>
       <TableCell className="max-w-[200px]">
         {errorMsg ? (

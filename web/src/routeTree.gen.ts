@@ -21,8 +21,14 @@ const R500LazyRouteImport = createFileRoute('/500')()
 const CameraLiveIdLazyRouteImport = createFileRoute('/camera-live/$id')()
 const PublicSignUpLazyRouteImport = createFileRoute('/_public/sign-up')()
 const PublicSignInLazyRouteImport = createFileRoute('/_public/sign-in')()
+const AuthenticatedWalletLazyRouteImport = createFileRoute(
+  '/_authenticated/wallet',
+)()
 const AuthenticatedSettingsLazyRouteImport = createFileRoute(
   '/_authenticated/settings',
+)()
+const AuthenticatedPricingLazyRouteImport = createFileRoute(
+  '/_authenticated/pricing',
 )()
 const AuthenticatedLogsLazyRouteImport = createFileRoute(
   '/_authenticated/logs',
@@ -93,6 +99,12 @@ const AuthenticatedAdminSystemLazyRouteImport = createFileRoute(
 const AuthenticatedAdminReviewsLazyRouteImport = createFileRoute(
   '/_authenticated/admin/reviews',
 )()
+const AuthenticatedAdminRedemptionCodesLazyRouteImport = createFileRoute(
+  '/_authenticated/admin/redemption-codes',
+)()
+const AuthenticatedAdminBillingLazyRouteImport = createFileRoute(
+  '/_authenticated/admin/billing',
+)()
 const AuthenticatedAdminMarketplaceIndexLazyRouteImport = createFileRoute(
   '/_authenticated/admin/marketplace/',
 )()
@@ -147,6 +159,13 @@ const PublicSignInLazyRoute = PublicSignInLazyRouteImport.update({
 } as any).lazy(() =>
   import('./routes/_public/sign-in.lazy').then((d) => d.Route),
 )
+const AuthenticatedWalletLazyRoute = AuthenticatedWalletLazyRouteImport.update({
+  id: '/wallet',
+  path: '/wallet',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any).lazy(() =>
+  import('./routes/_authenticated/wallet.lazy').then((d) => d.Route),
+)
 const AuthenticatedSettingsLazyRoute =
   AuthenticatedSettingsLazyRouteImport.update({
     id: '/settings',
@@ -154,6 +173,14 @@ const AuthenticatedSettingsLazyRoute =
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any).lazy(() =>
     import('./routes/_authenticated/settings.lazy').then((d) => d.Route),
+  )
+const AuthenticatedPricingLazyRoute =
+  AuthenticatedPricingLazyRouteImport.update({
+    id: '/pricing',
+    path: '/pricing',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any).lazy(() =>
+    import('./routes/_authenticated/pricing.lazy').then((d) => d.Route),
   )
 const AuthenticatedLogsLazyRoute = AuthenticatedLogsLazyRouteImport.update({
   id: '/logs',
@@ -349,6 +376,24 @@ const AuthenticatedAdminReviewsLazyRoute =
   } as any).lazy(() =>
     import('./routes/_authenticated/admin/reviews.lazy').then((d) => d.Route),
   )
+const AuthenticatedAdminRedemptionCodesLazyRoute =
+  AuthenticatedAdminRedemptionCodesLazyRouteImport.update({
+    id: '/redemption-codes',
+    path: '/redemption-codes',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any).lazy(() =>
+    import('./routes/_authenticated/admin/redemption-codes.lazy').then(
+      (d) => d.Route,
+    ),
+  )
+const AuthenticatedAdminBillingLazyRoute =
+  AuthenticatedAdminBillingLazyRouteImport.update({
+    id: '/billing',
+    path: '/billing',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any).lazy(() =>
+    import('./routes/_authenticated/admin/billing.lazy').then((d) => d.Route),
+  )
 const AuthenticatedAdminMarketplaceIndexLazyRoute =
   AuthenticatedAdminMarketplaceIndexLazyRouteImport.update({
     id: '/marketplace/',
@@ -388,10 +433,14 @@ export interface FileRoutesByFullPath {
   '/api-keys': typeof AuthenticatedApiKeysLazyRoute
   '/dashboard': typeof AuthenticatedDashboardLazyRoute
   '/logs': typeof AuthenticatedLogsLazyRoute
+  '/pricing': typeof AuthenticatedPricingLazyRoute
   '/settings': typeof AuthenticatedSettingsLazyRoute
+  '/wallet': typeof AuthenticatedWalletLazyRoute
   '/sign-in': typeof PublicSignInLazyRoute
   '/sign-up': typeof PublicSignUpLazyRoute
   '/camera-live/$id': typeof CameraLiveIdLazyRoute
+  '/admin/billing': typeof AuthenticatedAdminBillingLazyRoute
+  '/admin/redemption-codes': typeof AuthenticatedAdminRedemptionCodesLazyRoute
   '/admin/reviews': typeof AuthenticatedAdminReviewsLazyRoute
   '/admin/system': typeof AuthenticatedAdminSystemLazyRoute
   '/admin/users': typeof AuthenticatedAdminUsersLazyRoute
@@ -424,10 +473,14 @@ export interface FileRoutesByTo {
   '/api-keys': typeof AuthenticatedApiKeysLazyRoute
   '/dashboard': typeof AuthenticatedDashboardLazyRoute
   '/logs': typeof AuthenticatedLogsLazyRoute
+  '/pricing': typeof AuthenticatedPricingLazyRoute
   '/settings': typeof AuthenticatedSettingsLazyRoute
+  '/wallet': typeof AuthenticatedWalletLazyRoute
   '/sign-in': typeof PublicSignInLazyRoute
   '/sign-up': typeof PublicSignUpLazyRoute
   '/camera-live/$id': typeof CameraLiveIdLazyRoute
+  '/admin/billing': typeof AuthenticatedAdminBillingLazyRoute
+  '/admin/redemption-codes': typeof AuthenticatedAdminRedemptionCodesLazyRoute
   '/admin/reviews': typeof AuthenticatedAdminReviewsLazyRoute
   '/admin/system': typeof AuthenticatedAdminSystemLazyRoute
   '/admin/users': typeof AuthenticatedAdminUsersLazyRoute
@@ -463,10 +516,14 @@ export interface FileRoutesById {
   '/_authenticated/api-keys': typeof AuthenticatedApiKeysLazyRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardLazyRoute
   '/_authenticated/logs': typeof AuthenticatedLogsLazyRoute
+  '/_authenticated/pricing': typeof AuthenticatedPricingLazyRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsLazyRoute
+  '/_authenticated/wallet': typeof AuthenticatedWalletLazyRoute
   '/_public/sign-in': typeof PublicSignInLazyRoute
   '/_public/sign-up': typeof PublicSignUpLazyRoute
   '/camera-live/$id': typeof CameraLiveIdLazyRoute
+  '/_authenticated/admin/billing': typeof AuthenticatedAdminBillingLazyRoute
+  '/_authenticated/admin/redemption-codes': typeof AuthenticatedAdminRedemptionCodesLazyRoute
   '/_authenticated/admin/reviews': typeof AuthenticatedAdminReviewsLazyRoute
   '/_authenticated/admin/system': typeof AuthenticatedAdminSystemLazyRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersLazyRoute
@@ -501,10 +558,14 @@ export interface FileRouteTypes {
     | '/api-keys'
     | '/dashboard'
     | '/logs'
+    | '/pricing'
     | '/settings'
+    | '/wallet'
     | '/sign-in'
     | '/sign-up'
     | '/camera-live/$id'
+    | '/admin/billing'
+    | '/admin/redemption-codes'
     | '/admin/reviews'
     | '/admin/system'
     | '/admin/users'
@@ -537,10 +598,14 @@ export interface FileRouteTypes {
     | '/api-keys'
     | '/dashboard'
     | '/logs'
+    | '/pricing'
     | '/settings'
+    | '/wallet'
     | '/sign-in'
     | '/sign-up'
     | '/camera-live/$id'
+    | '/admin/billing'
+    | '/admin/redemption-codes'
     | '/admin/reviews'
     | '/admin/system'
     | '/admin/users'
@@ -575,10 +640,14 @@ export interface FileRouteTypes {
     | '/_authenticated/api-keys'
     | '/_authenticated/dashboard'
     | '/_authenticated/logs'
+    | '/_authenticated/pricing'
     | '/_authenticated/settings'
+    | '/_authenticated/wallet'
     | '/_public/sign-in'
     | '/_public/sign-up'
     | '/camera-live/$id'
+    | '/_authenticated/admin/billing'
+    | '/_authenticated/admin/redemption-codes'
     | '/_authenticated/admin/reviews'
     | '/_authenticated/admin/system'
     | '/_authenticated/admin/users'
@@ -671,11 +740,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PublicSignInLazyRouteImport
       parentRoute: typeof PublicRouteRoute
     }
+    '/_authenticated/wallet': {
+      id: '/_authenticated/wallet'
+      path: '/wallet'
+      fullPath: '/wallet'
+      preLoaderRoute: typeof AuthenticatedWalletLazyRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/settings': {
       id: '/_authenticated/settings'
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof AuthenticatedSettingsLazyRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/pricing': {
+      id: '/_authenticated/pricing'
+      path: '/pricing'
+      fullPath: '/pricing'
+      preLoaderRoute: typeof AuthenticatedPricingLazyRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/logs': {
@@ -846,6 +929,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminReviewsLazyRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
+    '/_authenticated/admin/redemption-codes': {
+      id: '/_authenticated/admin/redemption-codes'
+      path: '/redemption-codes'
+      fullPath: '/admin/redemption-codes'
+      preLoaderRoute: typeof AuthenticatedAdminRedemptionCodesLazyRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/billing': {
+      id: '/_authenticated/admin/billing'
+      path: '/billing'
+      fullPath: '/admin/billing'
+      preLoaderRoute: typeof AuthenticatedAdminBillingLazyRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
     '/_authenticated/admin/marketplace/': {
       id: '/_authenticated/admin/marketplace/'
       path: '/marketplace'
@@ -871,6 +968,8 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedAdminRouteRouteChildren {
+  AuthenticatedAdminBillingLazyRoute: typeof AuthenticatedAdminBillingLazyRoute
+  AuthenticatedAdminRedemptionCodesLazyRoute: typeof AuthenticatedAdminRedemptionCodesLazyRoute
   AuthenticatedAdminReviewsLazyRoute: typeof AuthenticatedAdminReviewsLazyRoute
   AuthenticatedAdminSystemLazyRoute: typeof AuthenticatedAdminSystemLazyRoute
   AuthenticatedAdminUsersLazyRoute: typeof AuthenticatedAdminUsersLazyRoute
@@ -881,6 +980,9 @@ interface AuthenticatedAdminRouteRouteChildren {
 
 const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren =
   {
+    AuthenticatedAdminBillingLazyRoute: AuthenticatedAdminBillingLazyRoute,
+    AuthenticatedAdminRedemptionCodesLazyRoute:
+      AuthenticatedAdminRedemptionCodesLazyRoute,
     AuthenticatedAdminReviewsLazyRoute: AuthenticatedAdminReviewsLazyRoute,
     AuthenticatedAdminSystemLazyRoute: AuthenticatedAdminSystemLazyRoute,
     AuthenticatedAdminUsersLazyRoute: AuthenticatedAdminUsersLazyRoute,
@@ -902,7 +1004,9 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedApiKeysLazyRoute: typeof AuthenticatedApiKeysLazyRoute
   AuthenticatedDashboardLazyRoute: typeof AuthenticatedDashboardLazyRoute
   AuthenticatedLogsLazyRoute: typeof AuthenticatedLogsLazyRoute
+  AuthenticatedPricingLazyRoute: typeof AuthenticatedPricingLazyRoute
   AuthenticatedSettingsLazyRoute: typeof AuthenticatedSettingsLazyRoute
+  AuthenticatedWalletLazyRoute: typeof AuthenticatedWalletLazyRoute
   AuthenticatedCamerasIdLazyRoute: typeof AuthenticatedCamerasIdLazyRoute
   AuthenticatedCamerasCreateLazyRoute: typeof AuthenticatedCamerasCreateLazyRoute
   AuthenticatedConnectionsIdLazyRoute: typeof AuthenticatedConnectionsIdLazyRoute
@@ -927,7 +1031,9 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedApiKeysLazyRoute: AuthenticatedApiKeysLazyRoute,
   AuthenticatedDashboardLazyRoute: AuthenticatedDashboardLazyRoute,
   AuthenticatedLogsLazyRoute: AuthenticatedLogsLazyRoute,
+  AuthenticatedPricingLazyRoute: AuthenticatedPricingLazyRoute,
   AuthenticatedSettingsLazyRoute: AuthenticatedSettingsLazyRoute,
+  AuthenticatedWalletLazyRoute: AuthenticatedWalletLazyRoute,
   AuthenticatedCamerasIdLazyRoute: AuthenticatedCamerasIdLazyRoute,
   AuthenticatedCamerasCreateLazyRoute: AuthenticatedCamerasCreateLazyRoute,
   AuthenticatedConnectionsIdLazyRoute: AuthenticatedConnectionsIdLazyRoute,

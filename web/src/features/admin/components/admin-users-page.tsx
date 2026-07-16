@@ -1,18 +1,22 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { getAdminUsers, createAdminUser, updateAdminUser, getAdminUserDetail } from '@/features/admin/api'
+import { getAdminUsers, createAdminUser, updateAdminUser, getAdminUserDetail, adjustUserQuota } from '@/features/admin/api'
 import type { AdminUserDetail } from '@/types'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from '@/components/ui/dialog'
 import { MobileListCard } from '@/components/ui/mobile-list-card'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import { toast } from 'sonner'
-import { Plus, Pencil, Search, ChevronLeft, ChevronRight, X, Eye } from 'lucide-react'
+import { Plus, Pencil, Search, ChevronLeft, ChevronRight, X, Eye, Scale } from 'lucide-react'
 
 export function AdminUsersPage() {
   const { t } = useTranslation()
@@ -37,6 +41,12 @@ export function AdminUsersPage() {
     group: 'default',
     remark: '',
     status: 1,
+  })
+
+  // 调额对话框(D13)
+  const [quotaUser, setQuotaUser] = useState<any>(null)
+  const [quotaForm, setQuotaForm] = useState<{ mode: 'add' | 'sub' | 'set'; value: string; remark: string }>({
+    mode: 'add', value: '', remark: '',
   })
 
   const { data, isLoading } = useQuery({
@@ -80,6 +90,17 @@ export function AdminUsersPage() {
     onError: (err: any) => toast.error(err?.response?.data?.message || t('admin.users.updateFailed')),
   })
 
+  const adjustQuotaMutation = useMutation({
+    mutationFn: (data: { id: number; body: any }) => adjustUserQuota(data.id, data.body),
+    onSuccess: (res) => {
+      toast.success(t('admin.users.adjustSuccess', { quota: res?.data?.new_quota ?? 0 }))
+      setQuotaUser(null)
+      setQuotaForm({ mode: 'add', value: '', remark: '' })
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || t('admin.users.adjustFailed')),
+  })
+
   const startEdit = (user: any) => {
     setEditingUser(user)
     setDetailUser(null)
@@ -117,6 +138,11 @@ export function AdminUsersPage() {
     } finally {
       setDetailLoading(false)
     }
+  }
+
+  const startAdjustQuota = (user: any) => {
+    setQuotaUser(user)
+    setQuotaForm({ mode: 'add', value: '', remark: '' })
   }
 
   const fmtTime = (s?: string) => (s ? new Date(s).toLocaleString() : t('admin.users.never'))
@@ -352,6 +378,9 @@ export function AdminUsersPage() {
                     <Button variant="ghost" size="sm" onClick={() => startDetail(user)}>
                       <Eye className="h-3.5 w-3.5" />{t('admin.users.detail')}
                     </Button>
+                    <Button variant="ghost" size="sm" onClick={() => startAdjustQuota(user)}>
+                      <Scale className="h-3.5 w-3.5" />{t('admin.users.adjustQuota')}
+                    </Button>
                     <Button variant="ghost" size="sm" onClick={() => startEdit(user)}>
                       <Pencil className="h-3.5 w-3.5" />{t('common.edit')}
                     </Button>
@@ -395,6 +424,9 @@ export function AdminUsersPage() {
                       <Button variant="ghost" size="sm" onClick={() => startDetail(user)} title={t('admin.users.detail')}>
                         <Eye className="h-3.5 w-3.5" />
                       </Button>
+                      <Button variant="ghost" size="sm" onClick={() => startAdjustQuota(user)} title={t('admin.users.adjustQuota')}>
+                        <Scale className="h-3.5 w-3.5" />
+                      </Button>
                       <Button variant="ghost" size="sm" onClick={() => startEdit(user)} title={t('common.edit')}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
@@ -422,6 +454,64 @@ export function AdminUsersPage() {
           </div>
         </div>
       )}
+
+      {/* Quota adjust dialog (D13) */}
+      <Dialog open={!!quotaUser} onOpenChange={(v) => !v && setQuotaUser(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('admin.users.adjustQuotaTitle')}</DialogTitle>
+            <DialogDescription>
+              {quotaUser?.username} — {t('admin.users.currentQuota')}: {quotaUser?.quota ?? 0} · {t('admin.users.currentUsed')}: {quotaUser?.used_quota ?? 0}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>{t('admin.users.adjustMode')}</Label>
+              <Select value={quotaForm.mode} onValueChange={(v) => setQuotaForm({ ...quotaForm, mode: v as 'add' | 'sub' | 'set' })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="add">{t('admin.users.modeAdd')}</SelectItem>
+                  <SelectItem value="sub">{t('admin.users.modeSub')}</SelectItem>
+                  <SelectItem value="set">{t('admin.users.modeSet')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>{t('admin.users.adjustValue')} <span className="text-destructive">*</span></Label>
+              <Input
+                type="number"
+                placeholder={t('admin.users.adjustValue')}
+                value={quotaForm.value}
+                onChange={(e) => setQuotaForm({ ...quotaForm, value: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t('admin.users.adjustRemark')}</Label>
+              <Input
+                placeholder={t('admin.users.adjustRemarkPlaceholder')}
+                value={quotaForm.remark}
+                onChange={(e) => setQuotaForm({ ...quotaForm, remark: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQuotaUser(null)}>{t('common.cancel')}</Button>
+            <Button
+              disabled={adjustQuotaMutation.isPending || !quotaForm.value || parseInt(quotaForm.value) <= 0}
+              onClick={() => adjustQuotaMutation.mutate({
+                id: quotaUser.id,
+                body: {
+                  mode: quotaForm.mode,
+                  value: parseInt(quotaForm.value),
+                  remark: quotaForm.remark || undefined,
+                },
+              })}
+            >
+              {t('admin.users.adjustConfirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

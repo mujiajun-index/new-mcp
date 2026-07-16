@@ -191,9 +191,16 @@ export function ServiceListPage() {
                   key={s.id}
                   title={
                     <div className="flex flex-col">
-                      <Link to="/services/$id" params={{ id: String(s.id) }} className="font-medium transition-colors hover:text-primary">
-                        {s.display_name || s.name}
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        <Link to="/services/$id" params={{ id: String(s.id) }} className="font-medium transition-colors hover:text-primary">
+                          {s.display_name || s.name}
+                        </Link>
+                        {s.source === 'marketplace' && (
+                          <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                            {t('marketplace.platformHosted')}
+                          </span>
+                        )}
+                      </div>
                       {s.description && (
                         <p className="line-clamp-1 text-xs text-muted-foreground">{s.description}</p>
                       )}
@@ -298,9 +305,16 @@ export function ServiceListPage() {
                   return (
                     <tr key={s.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-3">
-                        <Link to="/services/$id" params={{ id: String(s.id) }} className="font-medium hover:text-primary transition-colors">
-                          {s.display_name || s.name}
-                        </Link>
+                        <div className="flex items-center gap-2">
+                          <Link to="/services/$id" params={{ id: String(s.id) }} className="font-medium hover:text-primary transition-colors">
+                            {s.display_name || s.name}
+                          </Link>
+                          {s.source === 'marketplace' && (
+                            <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary" title={t('marketplace.platformHostedDesc')}>
+                              {t('marketplace.platformHosted')}
+                            </span>
+                          )}
+                        </div>
                         {s.description && (
                           <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">{s.description}</p>
                         )}

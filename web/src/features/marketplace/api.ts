@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import type { MarketplaceListParams, InstallReq } from '@/types'
+import type { MarketplaceListParams } from '@/types'
 
 export async function getMarketplaceItems(params?: MarketplaceListParams) {
   const res = await api.get('/marketplace', { params })
@@ -11,8 +11,10 @@ export async function getMarketplaceItem(id: number) {
   return res.data
 }
 
-export async function installFromMarketplace(data: InstallReq) {
-  const res = await api.post('/marketplace/install', data)
+// 引用式安装(D3/§11):把市场项添加为用户的引用服务(source=marketplace,空 config,平台托管)。
+// 旧 POST /marketplace/install(复制配置)已废弃,改为 POST /marketplace/:id/add。
+export async function addToMyServices(itemId: number) {
+  const res = await api.post(`/marketplace/${itemId}/add`)
   return res.data
 }
 
@@ -20,3 +22,4 @@ export async function createReview(itemId: number, data: { rating: number; revie
   const res = await api.post(`/marketplace/${itemId}/review`, data)
   return res.data
 }
+

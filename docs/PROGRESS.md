@@ -20,7 +20,7 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 | MCP 分组管理 | ✅ 已完成 | 98% | CRUD + 工具聚合 + 工具选择管理 |
 | API Key 管理 | ✅ 已完成 | 100% | 创建/编辑/删除/额度/有效期/IP白名单/分组绑定 |
 | 市场功能 | ✅ 已完成 | 90% | 管理员上架/用户浏览/安装/评价 |
-| **商业化(后端)** | **🚧 进行中** | **后端 100% / 前端 0%** | **市场服务按次计费核心闭环 + 3级定价 + 引用式安装 + 额度管理 + 兑换码 + 管理员调额 + 凭证加密(前端待开发);详见 [COMMERCIALIZATION.md](./COMMERCIALIZATION.md)** |
+| **商业化(全栈)** | **✅ 已完成** | **100%** | **市场服务按次计费核心闭环 + 3级定价 + 引用式安装 + 额度管理 + 兑换码 + 管理员调额 + 凭证加密 + 钱包/价格/计费设置/市场定价前端;详见 [COMMERCIALIZATION.md](./COMMERCIALIZATION.md)** |
 | 管理员接口 | ✅ 已完成 | 100% | 用户管理(CRUD+搜索+额度)/统计/日志/平台服务/市场管理 |
 | MCP 协议网关 | ✅ 已完成 | 95% | 双端点 Direct/Smart + 用户隔离 + 共享 Resolver + 调用日志 |
 | 云端连接 | ✅ 已完成 | 90% | XiaoZhi JWT 解析 + WSS 连接 + 自动重连 + 复用 GatewayHandler |
@@ -351,9 +351,12 @@ newmcp/
 
 > **架构要点**:计费代码在顶层 `billing/` 包(因 service→cloud→handler 链,handler 不能 import service);低额度邮件经 `billing.LowQuotaNotifier` 钩子由 service 注入解耦。市场 session 当前按引用行 ID 连接,跨用户共享平台 session 留作 V1.1 优化。
 
-### 8.2 前端 🔲 待开发
+### 8.2 前端 ✅ 已完成(tsc -b + rsbuild build 双绿)
 
-钱包页 / 兑换码兑换 / 公开价格页 / 管理员-计费设置 / 管理员-兑换码管理 / 用户额度调整对话框 / 市场列表价格展示 + "添加到我的服务" / 管理员上架定价 + 批量定价 + 克隆(凭证替换提示) / 服务列表市场徽标(只读配置) / 调用日志计费列 / API Key 余额用量。详见 COMMERCIALIZATION.md §14。
+- **基础层**:`types` 补 wallet/redemption/批量定价/克隆/调额类型 + marketplace 定价字段;`lib/billing.ts` 价格与计费状态 helper;`system-config-store` 暴露 billingEnabled/displayCurrency/selfUseModeEnabled/redemptionEnabled/userOwnedServicesEnabled;zh/en 新增 billing/wallet/pricing/redemptionCodes 命名空间并扩展 nav/marketplace/logs/admin.users;侧边栏加 wallet/pricing(主导航)、adminBilling/adminRedemption(管理导航)。
+- **新页面**:`/wallet`(额度概览 + 用量统计 + 兑换码卡片 + 消费明细表)、`/pricing`(公开价目表)、`/admin/redemption-codes`(兑换码 CRUD + 批量生成)、`/admin/billing`(计费设置 4 Tab,含分组倍率编辑器)。
+- **既有页扩展**:市场 `install→POST /:id/add` 修正 + 价格展示 + 添加按钮;`/admin/marketplace`(原占位符)新建完整管理页(列表/创建/克隆含凭证替换提示/批量定价/删除);服务列表/详情 source=marketplace 徽标 + 只读横幅;调用日志计费列(状态徽标 + 消耗 + tooltip 单价/来源/市场项);管理员用户调额对话框(add/sub/set + 备注)。
+- **展示约定**:额度统一按原始 quota 整数(QuotaPerUnit 未公开,与既有页一致);市场价格直接展示 price_per_call 货币值。
 
 ### 8.3 V2 占位
 

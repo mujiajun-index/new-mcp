@@ -10,7 +10,7 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import {
   LayoutDashboard, Server, FolderTree, Cloud, Eye, Camera,
   Key, Store, Settings, Shield, Users, Wrench,
-  ClipboardCheck, ChevronLeft, Activity,
+  ClipboardCheck, ChevronLeft, Activity, Wallet, Tag, CreditCard, Ticket,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useSystemConfigStore } from '@/stores/system-config-store'
@@ -32,12 +32,16 @@ const mainNav: NavItem[] = [
   { label: 'nav.apiKeys', icon: Key, href: '/api-keys' },
   { label: 'nav.logs', icon: Activity, href: '/logs' },
   { label: 'nav.marketplace', icon: Store, href: '/marketplace' },
+  { label: 'nav.wallet', icon: Wallet, href: '/wallet' },
+  { label: 'nav.pricing', icon: Tag, href: '/pricing' },
   { label: 'nav.settings', icon: Settings, href: '/settings' },
 ]
 
 const adminNav: NavItem[] = [
   { label: 'nav.adminUsers', icon: Users, href: '/admin/users', adminOnly: true },
   { label: 'nav.adminMarketplace', icon: Wrench, href: '/admin/marketplace', adminOnly: true },
+  { label: 'nav.adminBilling', icon: CreditCard, href: '/admin/billing', adminOnly: true },
+  { label: 'nav.adminRedemption', icon: Ticket, href: '/admin/redemption-codes', adminOnly: true },
   { label: 'nav.adminReviews', icon: ClipboardCheck, href: '/admin/reviews', adminOnly: true },
   { label: 'nav.adminSystem', icon: Shield, href: '/admin/system', adminOnly: true },
 ]
