@@ -16,12 +16,15 @@ type McpSession struct {
 	ServiceID   int64
 	ServiceName string
 	UserID      int64
-	Adapter     transport.TransportAdapter
-	Tools       []transport.Tool
-	LastUsed    time.Time
-	LastRefresh time.Time
-	Health      string
-	failCount   int
+	// 商业化:服务来源(user/admin/marketplace)。计费 hook 据此判定是否扣费(§6)。
+	Source            string
+	MarketplaceItemID *int64
+	Adapter           transport.TransportAdapter
+	Tools             []transport.Tool
+	LastUsed          time.Time
+	LastRefresh       time.Time
+	Health            string
+	failCount         int
 }
 
 type SessionPool struct {
@@ -67,14 +70,16 @@ func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (
 	}
 
 	session := &McpSession{
-		ServiceID:   svc.ID,
-		ServiceName: svc.Name,
-		UserID:      svc.UserID,
-		Adapter:     adapter,
-		Tools:       adapter.GetTools(),
-		LastUsed:    time.Now(),
-		LastRefresh: time.Now(),
-		Health:      "healthy",
+		ServiceID:         svc.ID,
+		ServiceName:       svc.Name,
+		UserID:            svc.UserID,
+		Source:            svc.Source,
+		MarketplaceItemID: svc.MarketplaceItemID,
+		Adapter:           adapter,
+		Tools:             adapter.GetTools(),
+		LastUsed:          time.Now(),
+		LastRefresh:       time.Now(),
+		Health:            "healthy",
 	}
 
 	p.sessions[svc.ID] = session

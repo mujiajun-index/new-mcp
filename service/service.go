@@ -51,6 +51,10 @@ func (s *McpServiceService) List(userID int64, page, pageSize int, filters map[s
 }
 
 func (s *McpServiceService) Create(userID int64, req *dto.CreateServiceReq) (*dto.ServiceDetail, error) {
+	// 纯市场模式:禁止用户添加自有服务(§7.5)。市场引用服务经 /marketplace/:id/add 添加,不受此限。
+	if !model.GetOptionBool("UserOwnedServicesEnabled") {
+		return nil, fmt.Errorf("当前为纯市场模式,不允许添加自有服务")
+	}
 	// 检查同名服务是否已存在
 	var count int64
 	model.DB.Model(&model.McpService{}).Where("user_id = ? AND name = ?", userID, req.Name).Count(&count)

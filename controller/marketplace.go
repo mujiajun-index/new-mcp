@@ -72,6 +72,37 @@ func AdminDeleteMarketplaceItem(c *gin.Context) {
 	common.Success(c, nil)
 }
 
+// AdminBatchUpdateMarketplacePricing 批量设置已上架市场服务价格(§5.5)。
+func AdminBatchUpdateMarketplacePricing(c *gin.Context) {
+	var req dto.BatchPricingReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	affected, err := marketplaceService.BatchUpdatePricing(req.Items)
+	if err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, gin.H{"affected": affected})
+}
+
+// AdminCloneMarketplaceItem 从自有服务克隆上架(D14)。
+func AdminCloneMarketplaceItem(c *gin.Context) {
+	adminID := c.GetInt64("user_id")
+	var req dto.CloneMarketplaceReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	resp, err := marketplaceService.CloneFromService(adminID, &req)
+	if err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Created(c, resp)
+}
+
 // --- Public/User browsing ---
 
 func BrowseMarketplace(c *gin.Context) {
@@ -98,14 +129,15 @@ func GetMarketplaceItem(c *gin.Context) {
 
 // --- User actions ---
 
-func InstallFromMarketplace(c *gin.Context) {
+// AddMarketplaceItem 引用式安装:把市场项添加为用户的引用服务(source=marketplace,空 config)。
+func AddMarketplaceItem(c *gin.Context) {
 	userID := c.GetInt64("user_id")
-	var req dto.InstallFromMarketplaceReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+	itemID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	if itemID <= 0 {
+		common.Error(c, http.StatusBadRequest, "无效的市场项 ID")
 		return
 	}
-	resp, err := marketplaceService.Install(userID, &req)
+	resp, err := marketplaceService.AddToMyServices(userID, itemID)
 	if err != nil {
 		common.Error(c, http.StatusBadRequest, err.Error())
 		return

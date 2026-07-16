@@ -1,6 +1,6 @@
 # NewMCP 开发进度文档
 
-> 最后更新: 2026-05-20 | 后端: 6,000+ 行 Go (57 源文件) | 前端: React 19 + TanStack 全家桶
+> 最后更新: 2026-07-16 | 后端: 7,000+ 行 Go (60+ 源文件) | 前端: React 19 + TanStack 全家桶
 
 ---
 
@@ -20,6 +20,7 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 | MCP 分组管理 | ✅ 已完成 | 98% | CRUD + 工具聚合 + 工具选择管理 |
 | API Key 管理 | ✅ 已完成 | 100% | 创建/编辑/删除/额度/有效期/IP白名单/分组绑定 |
 | 市场功能 | ✅ 已完成 | 90% | 管理员上架/用户浏览/安装/评价 |
+| **商业化(后端)** | **🚧 进行中** | **后端 100% / 前端 0%** | **市场服务按次计费核心闭环 + 3级定价 + 引用式安装 + 额度管理 + 兑换码 + 管理员调额 + 凭证加密(前端待开发);详见 [COMMERCIALIZATION.md](./COMMERCIALIZATION.md)** |
 | 管理员接口 | ✅ 已完成 | 100% | 用户管理(CRUD+搜索+额度)/统计/日志/平台服务/市场管理 |
 | MCP 协议网关 | ✅ 已完成 | 95% | 双端点 Direct/Smart + 用户隔离 + 共享 Resolver + 调用日志 |
 | 云端连接 | ✅ 已完成 | 90% | XiaoZhi JWT 解析 + WSS 连接 + 自动重连 + 复用 GatewayHandler |
@@ -134,10 +135,10 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 ```
  1. 管理员上架 MCP 服务到市场 POST /admin/marketplace ✅
  2. 用户浏览市场 GET /marketplace ✅
- 3. 用户从市场安装 POST /marketplace/install ✅
+ 3. 用户从市场引用式安装 POST /marketplace/:id/add ✅(空 config,平台托管)
  4. 用户创建分组 + 添加服务 POST /groups ✅ + POST /groups/:id/services ✅
  5. 用户创建 API Key 并绑定分组 POST /api-keys ✅
- 6. AI Agent 通过 MCP 端点使用工具 POST /mcp/group/search ✅
+ 6. AI Agent 通过 MCP 端点使用工具 POST /mcp/group/:slug ✅(source=marketplace 按市场价扣费 / source=user 免费)
 ```
 
 ### 4.3 前端流程 (新增) ✅
@@ -319,6 +320,42 @@ newmcp/
 │   ├── ARCHITECTURE.md      # 架构设计
 │   ├── API.md               # API 文档
 │   ├── DATABASE.md          # 数据库设计
+│   ├── COMMERCIALIZATION.md # 商业化模块设计 (V1.7)
 │   └── PROGRESS.md          # 本文档
 └── data/                    # 数据目录 (SQLite)
 ```
+
+---
+
+## 8. 商业化模块进度 (V1,2026-07-16)
+
+> 设计文档:[COMMERCIALIZATION.md](./COMMERCIALIZATION.md) V1.7。市场来源服务按次固定单价计费,用户自有服务免费,共用同一条分组调用路径按 `service.source` 门控。
+
+### 8.1 后端 ✅ 已完成(build + vet + 运行时启动验证通过)
+
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| 数据模型 | ✅ | users 加 billing_preference/total_topup;marketplace_items 加 billing_type/price_per_call/subscription_only;mcp_call_logs 加计费6列;新表 mcp_tool_prices / redemptions;AutoMigrate 已注册 |
+| 配置项 | ✅ | options 加齐 §15 计费/额度/日志/自有服务/自用模式默认项 + 公开键 + GetOptionInt64/Float/GetGroupRatio |
+| 原子额度 | ✅ | DecreaseUserQuotaAtomic / SetUserQuota / Adjust*UsedQuota(符号无关) / Key 预算原子占用;兑换码 status 1→2 原子占领(三库通用) |
+| 定价解析 `billing/pricing.go` | ✅ | 工具>服务>全局 3 级 + 分组倍率 + 自用模式门控 + 60s 缓存 + Invalidate* |
+| 计费服务 `billing/billing.go` | ✅ | PreConsume/Confirm/Refund + 信任旁路 + 余额不足拒(不禁Key)+ request_id 幂等 + FailOpen 欠账 + 低额度提醒 |
+| 网关接入 | ✅ | handleToolsCall/routeAndCall/handleExecute 接入计费插入点 A/B(仅 source=marketplace);materializeMarketplaceConfig 注入平台凭证(引用行 config 恒空) |
+| 引用式安装 | ✅ | POST /marketplace/:id/add(空 config + marketplace 哨兵 transport + 去重) |
+| 自有服务守卫 | ✅ | UserOwnedServicesEnabled=false 时禁 source=user 创建/调用 |
+| 管理员定价/批量/克隆 | ✅ | 非自用模式显式定价门控;PUT /admin/marketplace/pricing/batch;POST /admin/marketplace/clone;config_template 加密落库 |
+| 兑换码 | ✅ | admin CRUD + 用户 POST /redemptions/redeem(RedemptionEnabled 开关) |
+| 管理员调额 | ✅ | POST /admin/users/:id/quota(add/sub/set + canManageTargetRole + 审计) |
+| 钱包/用量 | ✅ | GET /wallet、/wallet/billing、/wallet/usage/stats |
+| 日志 TTL 清理 | ✅ | LogRetentionDays 定时清理过期 mcp_call_logs |
+
+> **架构要点**:计费代码在顶层 `billing/` 包(因 service→cloud→handler 链,handler 不能 import service);低额度邮件经 `billing.LowQuotaNotifier` 钩子由 service 注入解耦。市场 session 当前按引用行 ID 连接,跨用户共享平台 session 留作 V1.1 优化。
+
+### 8.2 前端 🔲 待开发
+
+钱包页 / 兑换码兑换 / 公开价格页 / 管理员-计费设置 / 管理员-兑换码管理 / 用户额度调整对话框 / 市场列表价格展示 + "添加到我的服务" / 管理员上架定价 + 批量定价 + 克隆(凭证替换提示) / 服务列表市场徽标(只读配置) / 调用日志计费列 / API Key 余额用量。详见 COMMERCIALIZATION.md §14。
+
+### 8.3 V2 占位
+
+充值/在线支付、订阅套餐、用量看板(图表)、工具级精确定价 UI、市场引用 tools_cache 自动同步、余额变更流水表。
+

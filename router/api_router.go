@@ -112,8 +112,16 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.GET("/logs/stats", controller.GetLogStats)
 
 		// Marketplace user actions
-		auth.POST("/marketplace/install", controller.InstallFromMarketplace)
+		auth.POST("/marketplace/:id/add", controller.AddMarketplaceItem) // 引用式安装(空 config,平台托管)
 		auth.POST("/marketplace/:id/review", controller.CreateMarketplaceReview)
+
+		// 兑换码兑换
+		auth.POST("/redemptions/redeem", controller.RedeemCode)
+
+		// 钱包/额度(商业化)
+		auth.GET("/wallet", controller.GetWallet)
+		auth.GET("/wallet/billing", controller.GetWalletBilling)
+		auth.GET("/wallet/usage/stats", controller.GetWalletUsageStats)
 	}
 
 	// Admin endpoints
@@ -123,6 +131,7 @@ func SetApiRouter(engine *gin.Engine) {
 		admin.GET("/users", controller.AdminListUsers)
 		admin.POST("/users", controller.AdminCreateUser)
 		admin.PUT("/users/:id", controller.AdminUpdateUser)
+		admin.POST("/users/:id/quota", controller.AdminAdjustQuota)
 		admin.GET("/users/:id", controller.AdminGetUserDetail)
 		admin.GET("/stats", controller.AdminGetStats)
 
@@ -133,9 +142,17 @@ func SetApiRouter(engine *gin.Engine) {
 		// Admin: Marketplace management
 		admin.GET("/marketplace", controller.AdminListMarketplaceItems)
 		admin.POST("/marketplace", controller.AdminCreateMarketplaceItem)
+		admin.POST("/marketplace/clone", controller.AdminCloneMarketplaceItem)
+		admin.PUT("/marketplace/pricing/batch", controller.AdminBatchUpdateMarketplacePricing)
 		admin.GET("/marketplace/:id", controller.AdminGetMarketplaceItem)
 		admin.PUT("/marketplace/:id", controller.AdminUpdateMarketplaceItem)
 		admin.DELETE("/marketplace/:id", controller.AdminDeleteMarketplaceItem)
+
+		// Admin: 兑换码管理
+		admin.GET("/redemptions", controller.AdminListRedemptions)
+		admin.POST("/redemptions", controller.AdminCreateRedemptions)
+		admin.PUT("/redemptions/:id", controller.AdminUpdateRedemptionStatus)
+		admin.DELETE("/redemptions/:id", controller.AdminDeleteRedemption)
 
 		// Admin: System settings
 		admin.GET("/settings", controller.AdminGetSettings)

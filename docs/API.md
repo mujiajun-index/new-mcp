@@ -1498,3 +1498,124 @@ wss://api.newmcp.pro/mcp/passive/?token=<PASSIVE_JWT>
 ```
 
 > 此 URL 由创建 `passive-ws` 类型服务时自动生成。外部 MCP Server 连入后，NewMCP 作为 MCP Client 发起 `initialize` → `tools/list`，自动发现并缓存工具。
+
+---
+
+## 12. 商业化接口(计费 / 额度 / 兑换 / 市场定价)
+
+> 商业化只对**市场来源服务**(`mcp_services.source='marketplace'`)按"每个工具调用收一个固定价"计费;**用户自有服务**(`source='user'`)免费。两者共用同一条分组调用路径(`/mcp`、`/smart/mcp`、`/mcp/group/:slug`),仅按 `service.source` 决定是否计费。详见 [COMMERCIALIZATION.md](./COMMERCIALIZATION.md)。
+>
+> **额度单位**:统一整数 `quota`,1 展示货币单位 = `QuotaPerUnit` quota(默认 500000,即 1 quota = 0.000002 元)。前端展示:quota ÷ QuotaPerUnit = 元。
+
+### 12.1 计费行为(MCP 网关侧)
+
+| 方法 | 端点 | 计费 |
+|------|------|------|
+| POST | `/mcp`、`/smart/mcp`、`/mcp/group/:slug` | 调用 `source=user` 服务**免费**;调用 `source=marketplace` 服务按 3 级定价**按次计费**,余额不足拒绝本次调用(不禁用 Key) |
+
+**计费口径**:仅 `tools/call`(Direct)与 `mcp.execute`(Smart)扣费;`initialize`/`tools/list`/`mcp.search`/`mcp.describe` 免费。
+
+**余额不足错误体**(MCP JSON-RPC,不禁用 Key,充值后立即可用):
+```json
+{ "jsonrpc":"2.0", "id":1, "error":{ "code":-32603, "message":"用户额度不足,剩余额度不足,请充值或兑换", "data":{ "code":"QUOTA_INSUFFICIENT" } } }
+```
+
+### 12.2 钱包与用量(用户侧,UserAuth)
+
+#### GET /wallet
+我的额度概览。
+```json
+{ "success": true, "data": { "quota": 5000000, "used_quota": 250000, "request_count": 42, "total_topup": 5000000, "group": "default" } }
+```
+
+#### GET /wallet/billing
+消费明细分页(基于 `mcp_call_logs` 计费列,仅计费相关行,排除 skipped)。支持 `page` / `page_size`。
+```json
+{ "success": true, "data": [ { "id": 1, "tool_name": "search", "billing_status": "charged", "billing_type": "per_call", "unit_price": 0.05, "quota_consumed": 25000, "price_scope": "service", "marketplace_item_id": 3, "created_at": "..." } ], "pagination": {...} }
+```
+
+#### GET /wallet/usage/stats
+用量统计(今日/本周/累计消费 quota)。
+```json
+{ "success": true, "data": { "consumed_today": 50000, "consumed_week": 200000, "consumed_total": 250000 } }
+```
+
+#### POST /redemptions/redeem
+兑换码兑换。`RedemptionEnabled=false` 时 403。
+- 请求:`{ "code": "..." }`
+- 响应:`{ "success": true, "data": { "quota": 5000000 } }`(入账额度)
+- 业务错误 400:已使用 / 已过期 / 已禁用 / 无效。
+
+### 12.3 服务市场(用户侧,UserAuth + 公开浏览)
+
+#### GET /marketplace `(公开)`
+浏览市场(含价格)。列表项含 `billing_type` / `price_per_call`。支持 `page` / `page_size` / `category` / `keyword`。
+
+#### GET /marketplace/:id `(公开)`
+市场项详情(含价格)。
+
+#### POST /marketplace/:id/add `(UserAuth)`
+**引用式安装**:把市场项添加为用户的引用服务(`source='marketplace'`,config 留空、不复制凭证、复制 tools_cache)。
+- 响应:`{ "success": true, "data": { "service_id": 12, "name": "exa" } }`
+- 去重:同一用户对同一市场项仅一份引用,重复添加返回已有引用。
+- 添加后可加入分组,经 `/mcp/group/:slug` 调用,按市场价扣费。
+
+#### POST /marketplace/:id/review `(UserAuth)`
+市场项评分/评价(1-5 分)。
+
+### 12.4 管理员侧(AdminAuth)
+
+#### POST /admin/users/:id/quota
+**管理员调额**(D13)。`value` 单位 quota。
+- 请求:`{ "mode": "add|sub|set", "value": 500000, "remark": "补偿6月故障" }`
+- 响应:`{ "success": true, "data": { "new_quota": 5500000 } }`
+- 权限:普通管理员不可操作超级管理员或同级管理员(403)。审计写入服务器日志。
+
+#### PUT /admin/marketplace/pricing/batch
+**批量设置已上架市场服务价格**(§5.5)。非自用模式逐条校验显式定价。
+- 请求:
+```json
+{ "items": [ { "id": 1, "billing_type": "per_call", "price_per_call": 0.05 }, { "id": 2, "billing_type": "free" } ] }
+```
+- 响应:`{ "success": true, "data": { "affected": 2 } }`
+
+#### POST /admin/marketplace/clone
+**从自有服务克隆上架**(D14):深拷贝 transport/config/auth/tools,与源服务无关联。克隆保留源凭证并加密落库,前端提示替换为平台凭证。非自用模式须显式定价。
+- 请求:`{ "from_service_id": 5, "name": "exa-market", "display_name": "...", "billing_type": "per_call", "price_per_call": 0.05 }`
+- 响应:市场项详情(含价格)。
+
+#### POST /admin/marketplace `(创建市场项)`
+手动添加市场项。请求体在原字段基础上新增 `billing_type` / `price_per_call`。**非自用模式启用态必须显式定价**(`price_per_call>0` 或 `billing_type='free'`),否则 400。
+
+#### PUT /admin/marketplace/:id `(更新市场项)`
+扩展支持 `billing_type` / `price_per_call`(指针,可选更新)。启用状态下非自用模式校验显式定价。`config_template` 平台凭证**加密落库**(API 不返回明文)。
+
+#### GET /admin/redemptions `(列表)` / POST /admin/redemptions `(批量生成)`
+- POST 批量生成:`{ "name": "活动码", "quota": 5000000, "count": 10, "expired_at": 0 }`(`count` 上限 100,`expired_at` 0=永久)。返回含明文 `code` 的条目(仅此一次可见)。
+- GET 列表:支持 `page` / `page_size` / `keyword` / `status`。
+
+#### PUT /admin/redemptions/:id `(启停)` / DELETE /admin/redemptions/:id `(删除)`
+- PUT:`{ "status": 1 }`(可用)或 `{ "status": 3 }`(禁用);已兑换(2)不可改。
+
+### 12.5 计费相关系统设置(经 PUT /admin/settings 配置)
+
+| Key | 默认 | 说明 |
+|-----|------|------|
+| `BillingEnabled` | false | 计费总开关 |
+| `QuotaPerUnit` | 500000 | 1 货币单位 = 多少 quota |
+| `DisplayCurrency` | CNY | 展示货币 |
+| `BillingDefaultType` | per_call | 全局默认计费类型(仅自用模式生效) |
+| `BillingDefaultPricePerCall` | 0 | 全局默认按次单价 |
+| `GroupRatio` | {"default":1,"vip":1,"svip":1} | 分组倍率 JSON |
+| `TrustQuota` | 5000000 | 信任额度旁路阈值(默认 10 元) |
+| `ChargeAdmin` | false | 是否对管理员计费 |
+| `BillingFailOpen` | true | 计费 DB 异常时是否放行(记欠账) |
+| `QuotaForNewUser` | 0 | 新用户赠送额度 |
+| `QuotaRemindThreshold` | 0 | 低额度邮件提醒阈值(0=不提醒) |
+| `LogPayloadEnabled` | true | 是否落 request/response_payload |
+| `LogRetentionDays` | 30 | 调用日志 TTL(天,0=永久) |
+| `UserOwnedServicesEnabled` | true | 是否允许用户添加/调用自有服务(false=纯市场模式) |
+| `SelfUseModeEnabled` | false | 自用模式可用全局默认;非自用上架须显式定价 |
+| `RedemptionEnabled` | true | 是否开放兑换 |
+
+> 公开设置(`GET /settings/public`)暴露:`BillingEnabled` / `DisplayCurrency` / `SelfUseModeEnabled` / `RedemptionEnabled` / `UserOwnedServicesEnabled`(供 `/pricing`、市场上架页按模式适配)。

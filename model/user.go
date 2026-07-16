@@ -20,6 +20,10 @@ type User struct {
 	RequestCount int64          `json:"request_count" gorm:"default:0"`
 	Group        string         `json:"group" gorm:"size:64;default:default"`
 	Remark       string         `json:"remark" gorm:"size:255"`
+	// 商业化:计费来源偏好(V1 固定 wallet_only,为 V2 订阅预留)
+	BillingPreference string `json:"billing_preference" gorm:"size:16;default:wallet_only"`
+	// 商业化:累计充值额度(quota),审计用
+	TotalTopup int64 `json:"total_topup" gorm:"default:0"`
 	RegisterIP   string         `json:"register_ip" gorm:"column:register_ip;size:64"`
 	LastLoginAt  *time.Time     `json:"last_login_at" gorm:"column:last_login_at"`
 	LastLoginIP  string         `json:"last_login_ip" gorm:"column:last_login_ip;size:64"`
@@ -105,6 +109,54 @@ func IncreaseUserRequestCount(id int64) error {
 
 func DecreaseUserQuota(id int64, quota int64) error {
 	return DB.Model(&User{}).Where("id = ? AND quota >= ?", id, quota).Update("quota", gorm.Expr("quota - ?", quota)).Error
+}
+
+// DecreaseUserQuotaAtomic 原子扣减用户额度,仅当余额 >= quota 时成功。
+// 返回受影响行数:0 表示余额不足(未扣)。quota <= 0 视为无需扣减,直接成功。
+// "quota" 非保留字,可直接用列条件。
+func DecreaseUserQuotaAtomic(id, quota int64) (int64, error) {
+	if quota <= 0 {
+		return 1, nil
+	}
+	res := DB.Model(&User{}).Where("id = ? AND quota >= ?", id, quota).
+		Update("quota", gorm.Expr("quota - ?", quota))
+	return res.RowsAffected, res.Error
+}
+
+// DecreaseUserQuotaUnguarded 无守卫扣减:用于信任旁路事后补扣(接受有界超支)。
+func DecreaseUserQuotaUnguarded(id, quota int64) error {
+	if quota <= 0 {
+		return nil
+	}
+	return DB.Model(&User{}).Where("id = ?", id).Update("quota", gorm.Expr("quota - ?", quota)).Error
+}
+
+// SetUserQuota 覆盖设置用户额度(管理员 mode=set)。
+func SetUserQuota(id, quota int64) error {
+	return DB.Model(&User{}).Where("id = ?", id).Update("quota", quota).Error
+}
+
+// AdjustUserUsedQuota 调整用户累计已用额度:成功消费传正、退款传负(净额反映真实消耗)。
+func AdjustUserUsedQuota(id, delta int64) error {
+	if delta == 0 {
+		return nil
+	}
+	return DB.Model(&User{}).Where("id = ?", id).Update("used_quota", gorm.Expr("used_quota + ?", delta)).Error
+}
+
+// IncreaseTotalTopup 累加用户累计充值额度(兑换/充值入账审计)。
+func IncreaseTotalTopup(id, quota int64) error {
+	if quota <= 0 {
+		return nil
+	}
+	return DB.Model(&User{}).Where("id = ?", id).Update("total_topup", gorm.Expr("total_topup + ?", quota)).Error
+}
+
+// GetUserQuota 返回用户当前可用额度(select 仅取 quota 列,轻量)。
+func GetUserQuota(id int64) (int64, error) {
+	var u User
+	err := DB.Select("quota").First(&u, id).Error
+	return u.Quota, err
 }
 
 func (u *User) Insert() error {

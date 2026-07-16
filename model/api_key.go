@@ -77,6 +77,28 @@ func BatchUpdateApiKeyStatus(userID int64, ids []int64, status int) error {
 	return DB.Model(&ApiKey{}).Where("user_id = ? AND id IN ?", userID, ids).Update("status", status).Error
 }
 
+// DecreaseApiKeyQuotaAtomic 原子占用**非无限** Key 的消费预算:仅当 quota-used_quota >= need 时
+// used_quota += need。返回受影响行数:0 表示预算不足或该 Key 为无限额度(无限 Key 由调用方另行处理)。
+// 仅对市场来源服务消费生效。
+func DecreaseApiKeyQuotaAtomic(apiKeyID, need int64) (int64, error) {
+	if need <= 0 {
+		return 1, nil
+	}
+	res := DB.Model(&ApiKey{}).
+		Where("id = ? AND unlimited_quota = ? AND quota - used_quota >= ?", apiKeyID, false, need).
+		Update("used_quota", gorm.Expr("used_quota + ?", need))
+	return res.RowsAffected, res.Error
+}
+
+// AdjustApiKeyUsedQuota 调整 Key 已用额度:成功消费传正、退款传负(净额反映真实消耗,Key 预算随之恢复)。
+// 供**无限额度** Key 记账与退款回退使用;预算 Key 的占用由 DecreaseApiKeyQuotaAtomic 原子完成。
+func AdjustApiKeyUsedQuota(apiKeyID, delta int64) error {
+	if delta == 0 {
+		return nil
+	}
+	return DB.Model(&ApiKey{}).Where("id = ?", apiKeyID).Update("used_quota", gorm.Expr("used_quota + ?", delta)).Error
+}
+
 func (k *ApiKey) Insert() error {
 	return DB.Create(k).Error
 }

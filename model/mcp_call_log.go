@@ -25,6 +25,13 @@ type McpCallLog struct {
 	ResponsePayload string    `json:"response_payload" gorm:"type:mediumtext"`
 	DurationMs      int       `json:"duration_ms" gorm:"default:0"`
 	ErrorMessage    string    `json:"error_message" gorm:"type:text"`
+	// 商业化计费列(§4.5):skipped(自有/未启用/免费) / charged(已扣) / refunded(失败退款) / blocked(余额不足拒绝) / debt(FailOpen 欠账)
+	BillingStatus     string  `json:"billing_status" gorm:"size:16;default:skipped;index"`
+	BillingType       string  `json:"billing_type" gorm:"size:16"`        // 本次解析到的计费类型 free/per_call
+	UnitPrice         float64 `json:"unit_price" gorm:"type:decimal(10,6)"` // 本次单价快照(展示货币)
+	QuotaConsumed     int64   `json:"quota_consumed" gorm:"default:0"`    // 本次实扣额度(quota)
+	PriceScope        string  `json:"price_scope" gorm:"size:16"`         // tool/service/marketplace/global
+	MarketplaceItemID *int64  `json:"marketplace_item_id" gorm:"index"`   // 市场来源服务关联的市场项 ID
 	ClientIP        string    `json:"client_ip" gorm:"size:64"`
 	UserAgent       string    `json:"user_agent" gorm:"size:512"`
 	CreatedAt       time.Time `json:"created_at" gorm:"index"`
@@ -34,6 +41,49 @@ func (McpCallLog) TableName() string { return "mcp_call_logs" }
 
 func (l *McpCallLog) Insert() error {
 	return DB.Create(l).Error
+}
+
+// HasChargedRequest 软幂等检查:该 (api_key_id, request_id) 是否已有计费成功的日志,
+// 防止 MCP 客户端重试导致重扣(§6.3)。仅 V1 软检查;硬幂等需 request_id 唯一索引(V1.7+ 硬化)。
+func HasChargedRequest(apiKeyID int64, requestID string) bool {
+	if requestID == "" || apiKeyID == 0 {
+		return false
+	}
+	var count int64
+	DB.Model(&McpCallLog{}).
+		Where("api_key_id = ? AND request_id = ? AND billing_status = ?", apiKeyID, requestID, "charged").
+		Count(&count)
+	return count > 0
+}
+
+// SumQuotaConsumedByUser 统计用户在某时间点之后的市场来源服务消费额度(quota_consumed 之和)。
+func SumQuotaConsumedByUser(userID int64, since time.Time) (int64, error) {
+	var sum int64
+	q := DB.Model(&McpCallLog{}).Where("user_id = ? AND billing_status = ?", userID, "charged")
+	if !since.IsZero() {
+		q = q.Where("created_at >= ?", since)
+	}
+	err := q.Select("COALESCE(SUM(quota_consumed), 0)").Scan(&sum).Error
+	return sum, err
+}
+
+// GetBillingLogsByUser 返回用户的消费明细(仅计费相关行,排除 skipped),按时间倒序分页。
+func GetBillingLogsByUser(userID int64, offset, limit int) ([]McpCallLog, int64, error) {
+	q := DB.Model(&McpCallLog{}).Where("user_id = ? AND billing_status != ?", userID, "skipped")
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var logs []McpCallLog
+	err := q.Order("id DESC").Offset(offset).Limit(limit).Find(&logs).Error
+	return logs, total, err
+}
+
+// DeleteCallLogsBefore 删除 created_at 早于指定时间的调用日志(TTL 清理,§4.5)。
+// 返回删除行数。三库通用(DELETE ... WHERE created_at < ?)。
+func DeleteCallLogsBefore(t time.Time) (int64, error) {
+	res := DB.Where("created_at < ?", t).Delete(&McpCallLog{})
+	return res.RowsAffected, res.Error
 }
 
 // LogFilter holds query parameters for log listing

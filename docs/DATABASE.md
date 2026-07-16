@@ -32,10 +32,23 @@ CREATE TABLE `users` (
     `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `username`   VARCHAR(64)     NOT NULL COMMENT '用户名，唯一',
     `password`   VARCHAR(255)    NOT NULL COMMENT '密码 (bcrypt hash)',
+    `display_name` VARCHAR(128)  DEFAULT '' COMMENT '显示名称',
     `email`      VARCHAR(255)    DEFAULT '' COMMENT '邮箱',
-    `role`       VARCHAR(32)     DEFAULT 'user' COMMENT '角色: admin, user',
+    `role`       VARCHAR(32)     DEFAULT 'user' COMMENT '角色: super_admin, admin, user',
     `status`     TINYINT         DEFAULT 1 COMMENT '状态: 1=启用, 2=禁用',
     `avatar_url` VARCHAR(512)    DEFAULT '' COMMENT '头像 URL',
+    -- 商业化额度(整数 quota,1 展示货币单位 = QuotaPerUnit quota,默认 500000)
+    `quota`      BIGINT          DEFAULT 0 COMMENT '可用余额(quota);仅市场来源服务消费扣减',
+    `used_quota` BIGINT          DEFAULT 0 COMMENT '累计已用额度(quota,净额,退款会回退)',
+    `request_count` BIGINT       DEFAULT 0 COMMENT '累计请求数',
+    `group`      VARCHAR(64)     DEFAULT 'default' COMMENT '用户套餐分组(分组倍率/限流作用对象,非 mcp_groups)',
+    `remark`     VARCHAR(255)    DEFAULT '' COMMENT '备注',
+    -- 商业化扩展
+    `billing_preference` VARCHAR(16) DEFAULT 'wallet_only' COMMENT '计费来源偏好: wallet_only(V1唯一) / wallet_first / subscription_first(V2)',
+    `total_topup` BIGINT         DEFAULT 0 COMMENT '累计充值额度(quota),审计用',
+    `register_ip` VARCHAR(64)    DEFAULT '' COMMENT '注册 IP',
+    `last_login_at` DATETIME     DEFAULT NULL COMMENT '最后登录时间',
+    `last_login_ip` VARCHAR(64)  DEFAULT '' COMMENT '最后登录 IP',
     `created_at` DATETIME        DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at` DATETIME        DEFAULT NULL COMMENT '软删除时间',
@@ -44,6 +57,9 @@ CREATE TABLE `users` (
     KEY `idx_deleted_at` (`deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
 ```
+
+> **额度字段**:`quota`/`used_quota`/`request_count`/`group` 已存在,V1 商业化首次激活扣减逻辑(此前为"死字段")。仅**市场来源服务**(`mcp_services.source='marketplace'`)消费扣减;用户自有服务免费。`group` 是用户套餐分组(分组倍率作用对象),与 `mcp_groups`(服务聚合容器)是两套独立概念。
+> **保留字**:`group` 在 MySQL/PostgreSQL 是保留字,GORM 查询需用 map 条件(`Where(map[string]interface{}{"group": g})`)而非裸 SQL 字符串。
 
 ### 2.3 api_keys - API 密钥表
 
@@ -336,14 +352,23 @@ CREATE TABLE `mcp_call_logs` (
     `service_id`       BIGINT UNSIGNED DEFAULT NULL COMMENT '上游服务 ID',
 
     `tool_name`        VARCHAR(255)    NOT NULL COMMENT '工具名 (namespaced)',
-    `method`           VARCHAR(64)     DEFAULT '' COMMENT 'MCP 方法: tools/call, tools/list',
+    `method`           VARCHAR(64)     DEFAULT '' COMMENT 'MCP 方法: tools/call, tools/list, mcp.search/describe/execute',
+    `request_id`       VARCHAR(64)     DEFAULT '' COMMENT 'MCP 请求 id(计费幂等键)',
 
-    `request_payload`  MEDIUMTEXT      DEFAULT NULL COMMENT '请求体 JSON',
+    `request_payload`  MEDIUMTEXT      DEFAULT NULL COMMENT '请求体 JSON(LogPayloadEnabled=false 时不落)',
     `response_status`  VARCHAR(16)     DEFAULT '' COMMENT '响应状态: success, error',
     `response_payload` MEDIUMTEXT      DEFAULT NULL COMMENT '响应体 JSON',
 
     `duration_ms`      INT             DEFAULT 0 COMMENT '耗时 (毫秒)',
     `error_message`    TEXT            DEFAULT '' COMMENT '错误信息',
+
+    -- 商业化计费列(§4.5):审计与计费合一,每次 tools/call 写一条
+    `billing_status`   VARCHAR(16)     DEFAULT 'skipped' COMMENT '计费状态: skipped(自有/免费) / charged(已扣) / refunded(失败退款) / blocked(余额不足拒绝) / debt(FailOpen欠账)',
+    `billing_type`     VARCHAR(16)     DEFAULT NULL COMMENT '本次解析计费类型: free, per_call',
+    `unit_price`       DECIMAL(10,6)   DEFAULT NULL COMMENT '本次单价快照(展示货币,未乘倍率)',
+    `quota_consumed`   BIGINT          DEFAULT 0 COMMENT '本次实扣额度(quota);自有/退款/拒绝为0(用户账单权威明细)',
+    `price_scope`      VARCHAR(16)     DEFAULT NULL COMMENT '定价来源层级: tool/service/global/free',
+    `marketplace_item_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '市场来源服务调用关联的市场项 ID',
 
     `client_ip`        VARCHAR(64)     DEFAULT '' COMMENT '客户端 IP',
     `user_agent`       VARCHAR(512)    DEFAULT '' COMMENT 'User-Agent',
@@ -354,9 +379,15 @@ CREATE TABLE `mcp_call_logs` (
     KEY `idx_created_at` (`created_at`),
     KEY `idx_tool_name` (`tool_name`),
     KEY `idx_service_id` (`service_id`),
-    KEY `idx_group_id` (`group_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP 调用日志表';
+    KEY `idx_group_id` (`group_id`),
+    KEY `idx_billing_status` (`billing_status`),
+    KEY `idx_marketplace_item_id` (`marketplace_item_id`),
+    KEY `idx_api_key_id` (`api_key_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP 调用日志表(含计费明细)';
 ```
+
+> **计费与审计合一**:每次 `tools/call` / `mcp.execute` 写一条 log,计费结果同落。自有服务(`source=user`)写 `billing_status='skipped'`、`quota_consumed=0`;市场引用服务(`source=marketplace`)写实际计费结果 + `marketplace_item_id`。`quota_consumed` 是用户账单的权威明细。
+> **留存与隐私**:`request_payload`/`response_payload` 可能含敏感数据,由 `LogPayloadEnabled`(默认 true)控制是否落 payload;`LogRetentionDays`(默认 30 天,0=永久)定时清理过期日志。
 
 ### 2.12 marketplace_items - 平台市场服务表
 
@@ -373,9 +404,9 @@ CREATE TABLE `marketplace_items` (
     `version`          VARCHAR(32)     DEFAULT '1.0.0' COMMENT '版本号',
 
     -- 即用型配置 (category=instant)
-    -- 关联已配置好的 MCP 服务模板，用户添加时复制配置
+    -- 平台托管模型:管理员配置上游 transport/凭证,平台统一持有连接;用户"添加到我的服务"=建立引用(config 留空,不复制凭证)
     `transport_type`   VARCHAR(32)     DEFAULT '' COMMENT '传输类型: streamable-http, sse, websocket (即用型)',
-    `config_template`  TEXT            DEFAULT '{}' COMMENT '连接配置模板 JSON (即用型，含 URL)',
+    `config_template`  TEXT            DEFAULT '{}' COMMENT '连接配置模板 JSON(含平台上游凭证,加密落库;API 不返回明文)',
     `auth_instructions` TEXT           DEFAULT '' COMMENT '认证说明 (即用型，如"需要 Exa API Key")',
 
     -- 源码型配置 (category=source)
@@ -383,6 +414,11 @@ CREATE TABLE `marketplace_items` (
     `install_guide`    TEXT            DEFAULT '' COMMENT '安装部署文档 Markdown (源码型)',
     `config_template_source` TEXT      DEFAULT '{}' COMMENT '配置模板 JSON (源码型，供参考)',
     `required_env`     TEXT            DEFAULT '[]' COMMENT '所需环境变量说明 JSON 数组 (源码型)',
+
+    -- 商业化服务级定价(§5):3 级解析的工具级 > 服务级 > 全局默认
+    `billing_type`     VARCHAR(16)     NOT NULL DEFAULT 'per_call' COMMENT '服务级计费类型: free(免费标记), per_call',
+    `price_per_call`   DECIMAL(10,4)   NOT NULL DEFAULT 0.0000 COMMENT '服务级按次单价(展示货币);free 时忽略',
+    `subscription_only` TINYINT        DEFAULT 0 COMMENT '0=按次计费, 1=仅订阅用户可用(V2);V1固定0',
 
     -- 统计
     `install_count`    INT             DEFAULT 0 COMMENT '安装/使用人数',
@@ -470,6 +506,46 @@ CREATE TABLE `marketplace_reviews` (
 ```
 ```
 
+### 2.16 mcp_tool_prices - 市场服务工具级定价覆盖表(商业化)
+
+```sql
+CREATE TABLE `mcp_tool_prices` (
+    `id`                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `marketplace_item_id` BIGINT UNSIGNED NOT NULL COMMENT '市场服务 ID(marketplace_items.id)',
+    `tool_name`           VARCHAR(255)    NOT NULL COMMENT '原始工具名(不含命名空间前缀)',
+    `billing_type`        VARCHAR(16)     NOT NULL DEFAULT 'per_call' COMMENT 'free, per_call',
+    `price_per_call`      DECIMAL(10,4)   DEFAULT 0.0000 COMMENT '工具级按次单价(展示货币)',
+    `enabled`             TINYINT         DEFAULT 1 COMMENT '是否启用',
+    `created_at`          DATETIME        DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`          DATETIME        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `idx_item_tool` (`marketplace_item_id`, `tool_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='市场服务工具级定价覆盖表';
+```
+
+> **定价第 1 级**(§5.2):命中即生效,优先级最高。仅 `free`/`per_call`。V1 可先靠服务级 + 全局默认;V2 提供按工具调价 UI。
+
+### 2.17 redemptions - 兑换码表(商业化 V1)
+
+```sql
+CREATE TABLE `redemptions` (
+    `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `code`          CHAR(32)        NOT NULL COMMENT '兑换码(UUID 去连字符,32位 hex)',
+    `name`          VARCHAR(128)    DEFAULT '' COMMENT '兑换码名称/备注',
+    `quota`         BIGINT          NOT NULL COMMENT '面值(quota)',
+    `status`        TINYINT         DEFAULT 1 COMMENT '1=可用, 2=已兑换, 3=已禁用(独立 scheme,勿用通用 StatusEnabled/Disabled)',
+    `user_id`       BIGINT UNSIGNED DEFAULT NULL COMMENT '兑换者用户 ID',
+    `expired_at`    BIGINT          DEFAULT 0 COMMENT '过期时间戳,0=永不过期',
+    `created_at`    DATETIME        DEFAULT CURRENT_TIMESTAMP,
+    `redeemed_at`   DATETIME        DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `idx_code` (`code`),
+    KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='兑换码表';
+```
+
+> 参考 new-api `Redemption`。列名用 `code`(`key` 是 SQL 保留字)。兑换用"status 1→2 原子占领"(SQLite/MySQL/PostgreSQL 三库通用,无需 `FOR UPDATE`)+ 事务入账,受影响行数=0 即已被兑换/禁用/过期。
+
 ---
 
 ## 3. ER 关系图
@@ -501,6 +577,21 @@ mcp_services (1) ──< (N) mcp_call_logs
 mcp_groups   (1) ──< (N) mcp_call_logs
 
 marketplace_items (1) ──< (N) mcp_services (用户从市场安装)
+
+-- 商业化
+users (1) ──< (N) redemptions              (兑换记录)
+users (1) ──< (N) mcp_call_logs            (计费明细, quota_consumed)
+users (1) ──< (N) api_keys                 (Key 级消费上限,手动启停)
+
+marketplace_items (1) ──< (N) mcp_tool_prices   (工具级定价)
+marketplace_items (1) ──< (N) mcp_services      (用户添加的市场引用, source=marketplace)
+marketplace_items (1) ──< (N) mcp_call_logs     (市场来源调用明细, marketplace_item_id)
+
+mcp_groups (1) ──< (N) mcp_group_services >── mcp_services
+  (一个分组可同时含 source=user 免费服务 与 source=marketplace 付费市场引用)
+
+定价解析(运行时,仅 source=marketplace 服务):
+  mcp_tool_prices(item, tool) > marketplace_items.billing_type/price_per_call > options.BillingDefaultPricePerCall(仅自用模式)
 ```
 
 ---
@@ -515,3 +606,7 @@ marketplace_items (1) ──< (N) mcp_services (用户从市场安装)
 | 分组工具聚合 | `mcp_group_services(group_id)` | 查询分组内服务 |
 | 调用日志查询 | `mcp_call_logs(user_id, created_at)` | 按时间范围查询 |
 | 设备认证 | `devices.device_token` UNIQUE | 快速设备查找 |
+| 计费明细(用户账单) | `mcp_call_logs(marketplace_item_id)` / `(billing_status)` | 按市场服务/计费状态统计 |
+| 用户的引用服务 | `mcp_services(user_id, source, marketplace_item_id)` | 找出用户添加的市场引用 |
+| 兑换码核销 | `redemptions(code)` UNIQUE | O(1) 查找 |
+| 工具级定价 | `mcp_tool_prices(marketplace_item_id, tool_name)` UNIQUE | 命中即用 |

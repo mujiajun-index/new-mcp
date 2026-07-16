@@ -3,10 +3,13 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/mujkjk/newmcp/billing"
+	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/internal/mcp/smart"
 	"github.com/mujkjk/newmcp/internal/mcp/virtual"
@@ -50,6 +53,20 @@ type executeResult struct {
 	ServiceName string
 	GroupID     int64
 	GroupName   string
+	Billing     *billingOutcome // 市场来源服务计费结果(供日志记录);nil=自有/免费
+}
+
+// billingOutcome 一次调用的计费结算结果,写入 mcp_call_logs 计费列。
+//   Status: skipped(自有/免费) / pending(已预扣待结算) / charged / refunded / blocked(余额不足) / debt(FailOpen 欠账)
+type billingOutcome struct {
+	sess        *billing.BillingSession
+	Status      string
+	Quota       int64   // quota_consumed
+	UnitPrice   float64 // 单价快照(展示货币)
+	BillingType string  // free / per_call
+	PriceScope  string  // tool/service/global/free
+	ItemID      *int64  // marketplace_item_id
+	BlockMsg    string  // blocked 时的错误信息
 }
 
 type GatewayHandler struct {
@@ -57,6 +74,7 @@ type GatewayHandler struct {
 	toolRouter      *bridge.ToolRouter
 	searchEngine    *smart.SearchEngine
 	virtualRegistry *virtual.VirtualToolRegistry
+	billing         *billing.BillingService
 }
 
 func NewGatewayHandler(pool *bridge.SessionPool, toolRouter *bridge.ToolRouter, vr *virtual.VirtualToolRegistry) *GatewayHandler {
@@ -65,6 +83,7 @@ func NewGatewayHandler(pool *bridge.SessionPool, toolRouter *bridge.ToolRouter, 
 		toolRouter:      toolRouter,
 		searchEngine:    smart.NewSearchEngine(),
 		virtualRegistry: vr,
+		billing:         billing.NewBillingService(),
 	}
 }
 
@@ -166,7 +185,10 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 	var groupName string
 	var serviceID int64
 	var serviceName string
+	var billing *billingOutcome
 	originalToolName := "" // records meta-tool name for smart mode
+	// request_id:JSON-RPC id 作为计费幂等键(MCP 客户端重试时稳定)
+	requestID := fmt.Sprintf("%v", req.ID)
 
 	// Resolve group info
 	if logCtx.GroupSlug != "" {
@@ -186,8 +208,9 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 		resp = h.handleDescribe(ctx, req.ID, logCtx, params.Arguments)
 	case "mcp.execute":
 		originalToolName = "mcp.execute"
-		result := h.handleExecute(ctx, req.ID, logCtx, params.Arguments)
+		result := h.handleExecute(ctx, req.ID, logCtx, params.Arguments, requestID)
 		resp = result.Resp
+		billing = result.Billing
 		if result.ToolName != "" {
 			params.Name = result.ToolName
 		}
@@ -216,7 +239,8 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 		}
 
 		if resp == nil {
-			resp = h.routeAndCall(ctx, req.ID, logCtx, params.Name, params.Arguments, &serviceID, &serviceName)
+			billing = &billingOutcome{}
+			resp = h.routeAndCall(ctx, req.ID, logCtx, params.Name, params.Arguments, &serviceID, &serviceName, requestID, billing)
 		}
 	}
 
@@ -233,7 +257,7 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 		method = originalToolName
 	}
 
-	go h.recordLog(&model.McpCallLog{
+	callLog := &model.McpCallLog{
 		UserID:         logCtx.UserID,
 		Username:       logCtx.Username,
 		ApiKeyID:       logCtx.ApiKeyID,
@@ -244,22 +268,41 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 		ServiceName:    serviceName,
 		ToolName:       params.Name,
 		Method:         method,
+		RequestID:      truncate(requestID, 64),
 		RequestPayload: truncate(string(params.Arguments), 65535),
 		ResponseStatus: status,
 		DurationMs:     int(duration.Milliseconds()),
 		ErrorMessage:   truncate(errMsg, 65535),
 		ClientIP:       logCtx.ClientIP,
 		UserAgent:      truncate(logCtx.UserAgent, 512),
-	})
+	}
+	applyBillingToLog(callLog, billing)
+	go h.recordLog(callLog)
 
 	return resp
 }
 
+// applyBillingToLog 把计费结算结果写入日志的计费列(§4.5)。billing 为 nil 时保持默认 skipped。
+func applyBillingToLog(log *model.McpCallLog, b *billingOutcome) {
+	if b == nil {
+		return
+	}
+	if b.Status != "" {
+		log.BillingStatus = b.Status
+	}
+	log.BillingType = b.BillingType
+	log.UnitPrice = b.UnitPrice
+	log.QuotaConsumed = b.Quota
+	log.PriceScope = b.PriceScope
+	log.MarketplaceItemID = b.ItemID
+}
+
 // routeAndCall handles virtual tool check, session routing, and tool execution.
-func (h *GatewayHandler) routeAndCall(ctx context.Context, reqID interface{}, logCtx *LogContext, toolName string, args json.RawMessage, svcID *int64, svcName *string) *JSONRPCResponse {
+// 仅当解析到的服务为市场来源(source=marketplace)时触发计费(§6);自有/虚拟工具免费。
+func (h *GatewayHandler) routeAndCall(ctx context.Context, reqID interface{}, logCtx *LogContext, toolName string, args json.RawMessage, svcID *int64, svcName *string, requestID string, billing *billingOutcome) *JSONRPCResponse {
 	parsedSvc, parsedTool := bridge.ParseNamespacedName(toolName)
 
-	// Check virtual tools first
+	// Check virtual tools first (vision/camera 等属自有性质,免费)
 	if h.virtualRegistry != nil && parsedSvc != "" {
 		if vSvcID, entry, ok := h.virtualRegistry.LookupByName(logCtx.UserID, parsedSvc); ok {
 			vResult, vErr := h.virtualRegistry.Handle(ctx, vSvcID, entry.Config, parsedTool, args)
@@ -285,12 +328,25 @@ func (h *GatewayHandler) routeAndCall(ctx context.Context, reqID interface{}, lo
 	*svcID = session.ServiceID
 	*svcName = session.ServiceName
 
+	// 计费插入点 A:预扣(仅 marketplace)。余额不足 → 拒绝本次调用,不调上游。
+	if session.Source == "marketplace" {
+		if !h.preConsumeBilling(ctx, logCtx, session, resolvedTool, requestID, billing) {
+			return h.errorResponse(reqID, -32603, billing.BlockMsg)
+		}
+	}
+
 	callParams := map[string]interface{}{
 		"name":      resolvedTool,
 		"arguments": args,
 	}
 
 	result, err := session.Adapter.Call(ctx, "tools/call", callParams)
+
+	// 计费插入点 B:成功确认 / 失败退款(仅已启动计费的市场调用)
+	if session.Source == "marketplace" {
+		h.finalizeBilling(billing, err == nil)
+	}
+
 	if err != nil {
 		return h.errorResponse(reqID, -32603, "Tool execution failed: "+err.Error())
 	}
@@ -381,7 +437,7 @@ func (h *GatewayHandler) handleDescribe(ctx context.Context, reqID interface{}, 
 	}
 }
 
-func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, logCtx *LogContext, args json.RawMessage) *executeResult {
+func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, logCtx *LogContext, args json.RawMessage, requestID string) *executeResult {
 	var params struct {
 		ToolID    string          `json:"tool_id"`
 		Arguments json.RawMessage `json:"arguments"`
@@ -444,6 +500,23 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 
 	gID, gName := h.resolveGroupForService(session.ServiceID, logCtx)
 
+	// 计费插入点 A:预扣(仅 marketplace)。余额不足 → 拒绝,不调上游。
+	var billing *billingOutcome
+	if session.Source == "marketplace" {
+		billing = &billingOutcome{}
+		if !h.preConsumeBilling(ctx, logCtx, session, toolName, requestID, billing) {
+			return &executeResult{
+				Resp:        h.errorResponse(reqID, -32603, billing.BlockMsg),
+				ToolName:    toolName,
+				ServiceID:   session.ServiceID,
+				ServiceName: session.ServiceName,
+				GroupID:     gID,
+				GroupName:   gName,
+				Billing:     billing,
+			}
+		}
+	}
+
 	if params.TimeoutMs > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(params.TimeoutMs)*time.Millisecond)
@@ -456,6 +529,12 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 	}
 
 	result, err := session.Adapter.Call(ctx, "tools/call", callParams)
+
+	// 计费插入点 B:成功确认 / 失败退款
+	if billing != nil {
+		h.finalizeBilling(billing, err == nil)
+	}
+
 	if err != nil {
 		return &executeResult{
 			Resp:        h.errorResponse(reqID, -32603, "Execution failed: "+err.Error()),
@@ -464,6 +543,7 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 			ServiceName: session.ServiceName,
 			GroupID:     gID,
 			GroupName:   gName,
+			Billing:     billing,
 		}
 	}
 
@@ -478,6 +558,7 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 		ServiceName: session.ServiceName,
 		GroupID:     gID,
 		GroupName:   gName,
+		Billing:     billing,
 	}
 }
 
@@ -558,6 +639,12 @@ func (h *GatewayHandler) routeOrConnect(ctx context.Context, namespacedTool stri
 		if dbErr := model.DB.Where("name = ? AND user_id = ?", svcName, userID).First(&svc).Error; dbErr != nil {
 			return nil, "", fmt.Errorf("service not found: %s", svcName)
 		}
+		if !h.userOwnedServicesAllowed(svc.Source) {
+			return nil, "", fmt.Errorf("user-owned services are disabled")
+		}
+		if mErr := h.materializeMarketplaceConfig(&svc); mErr != nil {
+			return nil, "", mErr
+		}
 		session, connErr := h.pool.GetOrConnect(ctx, &svc)
 		if connErr != nil {
 			return nil, "", fmt.Errorf("failed to connect service %s: %v", svcName, connErr)
@@ -575,6 +662,12 @@ func (h *GatewayHandler) routeOrConnect(ctx context.Context, namespacedTool stri
 		if json.Unmarshal([]byte(services[i].ToolsCache), &tools) == nil {
 			for _, t := range tools {
 				if t.Name == namespacedTool {
+					if !h.userOwnedServicesAllowed(services[i].Source) {
+						return nil, "", fmt.Errorf("user-owned services are disabled")
+					}
+					if mErr := h.materializeMarketplaceConfig(&services[i]); mErr != nil {
+						return nil, "", mErr
+					}
 					session, connErr := h.pool.GetOrConnect(ctx, &services[i])
 					if connErr != nil {
 						return nil, "", fmt.Errorf("failed to connect service %s: %v", services[i].Name, connErr)
@@ -586,6 +679,127 @@ func (h *GatewayHandler) routeOrConnect(ctx context.Context, namespacedTool stri
 	}
 
 	return nil, "", fmt.Errorf("tool not found: %s", namespacedTool)
+}
+
+// userOwnedServicesAllowed 报告当前是否允许调用给定来源的服务(§7.5)。
+// UserOwnedServicesEnabled=false(纯市场模式)时,仅禁止 source=user 自有服务;
+// 市场引用/平台/虚拟服务不受影响。
+func (h *GatewayHandler) userOwnedServicesAllowed(source string) bool {
+	if source == "user" && !model.GetOptionBool("UserOwnedServicesEnabled") {
+		return false
+	}
+	return true
+}
+
+// materializeMarketplaceConfig 为市场引用服务(source=marketplace)从 marketplace_items
+// 注入平台上游配置/凭证到内存 McpService(不落库:引用行 config 始终为空,凭证不暴露给用户)。
+// transport_type 哨兵值 "marketplace" 会被还原为市场项的真实 transport。
+func (h *GatewayHandler) materializeMarketplaceConfig(svc *model.McpService) error {
+	if svc.Source != "marketplace" || svc.MarketplaceItemID == nil {
+		return nil
+	}
+	item, err := model.GetMarketplaceItemByID(*svc.MarketplaceItemID)
+	if err != nil {
+		return fmt.Errorf("marketplace item not found for service %s", svc.Name)
+	}
+	if item.Status != common.StatusEnabled {
+		return fmt.Errorf("marketplace item %s is not available", item.Name)
+	}
+	// config_template 加密落库(§4.3):平台凭证 Decrypt 后注入;存量明文项 Decrypt 失败则回退原值
+	if plain, dErr := common.Decrypt(item.ConfigTemplate); dErr == nil && plain != "" {
+		svc.Config = plain
+	} else {
+		svc.Config = item.ConfigTemplate // 兼容未加密的存量项
+	}
+	if svc.TransportType == "" || svc.TransportType == "marketplace" {
+		svc.TransportType = item.TransportType
+	}
+	return nil
+}
+
+// preConsumeBilling 计费插入点 A:解析 3 级定价并预扣(§6.2)。
+// 返回 true=放行(含免费/欠账/已预扣),false=拒绝本次调用(余额不足/未定价/计费不可用)。
+// 仅市场来源服务调用(调用方已按 session.Source == "marketplace" 判定)。
+func (h *GatewayHandler) preConsumeBilling(ctx context.Context, logCtx *LogContext, session *bridge.McpSession, toolName, requestID string, out *billingOutcome) bool {
+	out.ItemID = session.MarketplaceItemID
+	if session.MarketplaceItemID == nil {
+		out.Status = "skipped"
+		return true // 无市场项关联,不计费
+	}
+	user, err := model.GetUserByID(logCtx.UserID)
+	if err != nil {
+		out.Status = "skipped"
+		return true // 无法取用户信息:FailOpen 放行(免费)
+	}
+
+	price, perr := billing.ResolveMarketplacePrice(*session.MarketplaceItemID, toolName, user.Group)
+	out.UnitPrice = price.UnitPriceDecimal
+	out.BillingType = price.BillingType
+	out.PriceScope = price.Scope
+
+	// 免费:放行,记 skipped
+	if price.BillingType == billing.BillingTypeFree || price.UnitPriceQuota <= 0 {
+		out.Status = "skipped"
+		return true
+	}
+	// 价格未配置(非自用模式未显式定价):拒绝
+	if errors.Is(perr, billing.ErrPriceNotConfigured) {
+		out.Status = "blocked"
+		out.BlockMsg = "marketplace service price not configured"
+		return false
+	}
+	// 价格加载失败:FailOpen 放行
+	if perr != nil {
+		out.Status = "skipped"
+		return true
+	}
+
+	sess, err := h.billing.PreConsume(billing.PreConsumeRequest{
+		Price:     price,
+		UserID:    logCtx.UserID,
+		ApiKeyID:  logCtx.ApiKeyID,
+		UserRole:  user.Role,
+		RequestID: requestID,
+	})
+	if errors.Is(err, billing.ErrInsufficientQuota) {
+		out.Status = "blocked"
+		out.BlockMsg = "用户额度不足,剩余额度不足,请充值或兑换"
+		return false
+	}
+	if err != nil {
+		// 计费 DB 异常且非 FailOpen:拒绝;FailOpen 时 PreConsume 返回 nil err + sess.Debt
+		out.Status = "blocked"
+		out.BlockMsg = "计费服务暂时不可用,请稍后重试"
+		return false
+	}
+	out.sess = sess
+	if sess.Debt {
+		out.Status = "debt"
+	} else {
+		out.Status = "pending"
+	}
+	return true
+}
+
+// finalizeBilling 计费插入点 B:成功确认 / 失败退款(§6.2)。仅对已启动计费的会话结算。
+func (h *GatewayHandler) finalizeBilling(out *billingOutcome, success bool) {
+	if out == nil || out.sess == nil {
+		return
+	}
+	if out.sess.Debt {
+		out.Status = "debt"
+		out.Quota = 0
+		return
+	}
+	if success {
+		_ = h.billing.Confirm(out.sess)
+		out.Status = "charged"
+		out.Quota = out.sess.ConsumedQuota
+	} else {
+		_ = h.billing.Refund(out.sess)
+		out.Status = "refunded"
+		out.Quota = 0
+	}
 }
 
 func (h *GatewayHandler) errorResponse(id interface{}, code int, message string) *JSONRPCResponse {

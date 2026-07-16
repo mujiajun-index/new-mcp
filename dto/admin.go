@@ -31,6 +31,18 @@ type AdminCreateUserReq struct {
 	Group       string `json:"group"`
 }
 
+// AdminAdjustQuotaReq 管理员调额(D13,参考 new-api POST /api/user/manage add_quota)。
+// Value 单位为 quota(整数,前端按 QuotaPerUnit 换算展示货币)。
+type AdminAdjustQuotaReq struct {
+	Mode   string `json:"mode" binding:"required,oneof=add sub set"`
+	Value  int64  `json:"value" binding:"min=0"`
+	Remark string `json:"remark"`
+}
+
+type AdminAdjustQuotaResp struct {
+	NewQuota int64 `json:"new_quota"`
+}
+
 type UserListItem struct {
 	ID           int64  `json:"id"`
 	Username     string `json:"username"`
@@ -78,11 +90,19 @@ type LogItem struct {
 	ServiceName    string `json:"service_name"`
 	ToolName       string `json:"tool_name"`
 	Method         string `json:"method"`
+	RequestID      string `json:"request_id"`
 	ResponseStatus string `json:"response_status"`
 	DurationMs     int    `json:"duration_ms"`
 	ErrorMessage   string `json:"error_message"`
 	ClientIP       string `json:"client_ip"`
 	CreatedAt      string `json:"created_at"`
+	// 计费列(§4.5)
+	BillingStatus     string  `json:"billing_status"`
+	BillingType       string  `json:"billing_type"`
+	UnitPrice         float64 `json:"unit_price"`
+	QuotaConsumed     int64   `json:"quota_consumed"`
+	PriceScope        string  `json:"price_scope"`
+	MarketplaceItemID *int64  `json:"marketplace_item_id"`
 }
 
 type LogStats struct {

@@ -19,6 +19,9 @@ type CreateMarketplaceItemReq struct {
 	RequiredEnv          []string               `json:"required_env"`
 	ToolsSnapshot        []interface{}          `json:"tools_snapshot"`
 	Status               *int                   `json:"status"`
+	// 商业化定价(§5):非自用模式上架必须显式定价(§5.6)
+	BillingType   string  `json:"billing_type"`     // free / per_call(默认 per_call)
+	PricePerCall  float64 `json:"price_per_call"`   // 展示货币单价(per_call 时需 >0,非自用模式)
 }
 
 type UpdateMarketplaceItemReq struct {
@@ -38,6 +41,30 @@ type UpdateMarketplaceItemReq struct {
 	ToolsSnapshot        []interface{}          `json:"tools_snapshot"`
 	Status               *int                   `json:"status"`
 	SortOrder            *int                   `json:"sort_order"`
+	// 商业化定价:启用/上架时非自用模式须显式定价(§5.6)
+	BillingType  *string  `json:"billing_type"`
+	PricePerCall *float64 `json:"price_per_call"`
+}
+
+// BatchPricingReq 批量设置已上架市场服务价格(§5.5)。
+type BatchPricingReq struct {
+	Items []BatchPricingItem `json:"items" binding:"required,min=1,dive"`
+}
+
+type BatchPricingItem struct {
+	ID           int64   `json:"id" binding:"required"`
+	BillingType  string  `json:"billing_type" binding:"required,oneof=free per_call"`
+	PricePerCall float64 `json:"price_per_call"`
+}
+
+// CloneMarketplaceReq 从自有服务克隆上架(§11/D14):深拷贝 transport/config/auth/tools,与源服务无关联。
+type CloneMarketplaceReq struct {
+	FromServiceID int64   `json:"from_service_id" binding:"required"`
+	Name          string  `json:"name" binding:"required,min=1,max=128"`
+	DisplayName   string  `json:"display_name"`
+	Description   string  `json:"description"`
+	BillingType   string  `json:"billing_type"`
+	PricePerCall  float64 `json:"price_per_call"`
 }
 
 type MarketplaceListItem struct {
@@ -56,6 +83,9 @@ type MarketplaceListItem struct {
 	Status        int      `json:"status"`
 	SortOrder     int      `json:"sort_order"`
 	CreatedAt     string   `json:"created_at"`
+	// 商业化定价(供市场列表展示价格/免费标记)
+	BillingType  string  `json:"billing_type"`
+	PricePerCall float64 `json:"price_per_call"`
 }
 
 type MarketplaceDetail struct {
@@ -80,6 +110,9 @@ type MarketplaceDetail struct {
 	Status               int                    `json:"status"`
 	CreatedAt            string                 `json:"created_at"`
 	UpdatedAt            string                 `json:"updated_at"`
+	// 商业化定价
+	BillingType  string  `json:"billing_type"`
+	PricePerCall float64 `json:"price_per_call"`
 }
 
 // --- User: Install from marketplace ---

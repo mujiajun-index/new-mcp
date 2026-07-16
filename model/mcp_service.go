@@ -96,3 +96,15 @@ func ListServicesBySource(source string, offset, limit int) ([]McpService, int64
 	err := query.Order("created_at DESC").Offset(offset).Limit(limit).Find(&services).Error
 	return services, total, err
 }
+
+// GetMarketplaceReferenceByUser 返回用户对某市场项已建立的引用(source=marketplace);不存在返回 nil。
+// 用于引用式安装去重(§11):同一用户对同一市场项仅一份引用。
+func GetMarketplaceReferenceByUser(userID, itemID int64) (*McpService, error) {
+	var svc McpService
+	err := DB.Where("user_id = ? AND source = ? AND marketplace_item_id = ?", userID, "marketplace", itemID).
+		First(&svc).Error
+	if err != nil {
+		return nil, err
+	}
+	return &svc, nil
+}

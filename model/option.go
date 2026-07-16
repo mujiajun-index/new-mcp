@@ -39,19 +39,54 @@ var defaultOptions = map[string]string{
 	"SMTPFrom":                      "",
 	"SMTPSSLEnabled":                "false",
 	"CloudflareProxyEnabled":        "false",
+
+	// --- 商业化计费(§15)---
+	"BillingEnabled":              "false", // 总开关,false 时市场服务也跳过计费
+	"QuotaPerUnit":                "500000", // 1 货币单位 = 多少 quota
+	"DisplayCurrency":             "CNY",
+	"BillingDefaultType":          "per_call", // 全局默认计费类型(仅 free/per_call)
+	"BillingDefaultPricePerCall":  "0",        // 全局默认按次单价(市场服务第 3 级,展示货币)
+	"GroupRatio":                  `{"default":1,"vip":1,"svip":1}`, // 分组倍率 JSON
+	"TrustQuota":                  "5000000", // 信任额度旁路阈值(默认 10 元)
+	"ChargeAdmin":                 "false",   // 是否对管理员计费
+	"ChargeOnClientError":         "false",   // 客户端参数错误是否收费
+	"ChargeOnTimeout":             "false",   // 超时是否收费
+	"BillingFailOpen":             "true",    // 计费 DB 异常时是否放行(记欠账)
+	// --- 额度 ---
+	"QuotaForNewUser":             "0",   // 新用户赠送额度
+	"QuotaRemindThreshold":        "0",   // 低额度邮件提醒阈值(0=不提醒)
+	// --- 日志 ---
+	"LogPayloadEnabled":           "true",  // 是否落 request/response_payload
+	"LogRetentionDays":            "30",    // 调用日志 TTL(天),0=永久
+	// --- 自有服务 / 自用模式 ---
+	"UserOwnedServicesEnabled":    "true",  // 是否允许用户添加/调用自有服务(false=纯市场模式)
+	"SelfUseModeEnabled":          "false", // 自用模式可用全局默认;非自用(默认)上架必须显式定价
+	// --- 兑换 ---
+	"RedemptionEnabled":           "true",
+	// --- 支付(V2)---
+	"PaymentEnabled":              "false",
+	"EpayEndpoint":                "",
+	"EpayPID":                     "",
+	"EpayKey":                     "",
 }
 
 var sensitiveKeys = map[string]bool{
 	"SMTPToken": true,
+	"EpayKey":   true,
 }
 
 var publicKeys = map[string]bool{
-	"SystemName":               true,
-	"Footer":                   true,
-	"ServerAddress":            true,
-	"RegisterEnabled":          true,
-	"EmailVerificationEnabled": true,
-	"UserGroupOptions":         true,
+	"SystemName":                  true,
+	"Footer":                      true,
+	"ServerAddress":               true,
+	"RegisterEnabled":             true,
+	"EmailVerificationEnabled":    true,
+	"UserGroupOptions":            true,
+	"BillingEnabled":              true,
+	"DisplayCurrency":             true,
+	"SelfUseModeEnabled":          true,
+	"RedemptionEnabled":           true,
+	"UserOwnedServicesEnabled":    true,
 }
 
 func InitOptionMap() {
@@ -103,6 +138,41 @@ func GetOptionInt(key string) int {
 	OptionMapMutex.RUnlock()
 	n, _ := strconv.Atoi(v)
 	return n
+}
+
+// GetOptionInt64 读取大额类配置(quota/阈值),避免 32 位溢出。
+func GetOptionInt64(key string) int64 {
+	OptionMapMutex.RLock()
+	v := OptionMap[key]
+	OptionMapMutex.RUnlock()
+	n, _ := strconv.ParseInt(v, 10, 64)
+	return n
+}
+
+// GetOptionFloat 读取浮点配置(单价等)。
+func GetOptionFloat(key string) float64 {
+	OptionMapMutex.RLock()
+	v := OptionMap[key]
+	OptionMapMutex.RUnlock()
+	f, _ := strconv.ParseFloat(v, 64)
+	return f
+}
+
+// GetGroupRatio 解析 "GroupRatio"(JSON),返回 group→倍率。缺失 key 默认 1.0。
+// 解析失败返回仅含 "default":1.0 的安全默认。
+func GetGroupRatio() map[string]float64 {
+	raw := GetOptionString("GroupRatio")
+	if raw == "" {
+		return map[string]float64{"default": 1.0}
+	}
+	m := make(map[string]float64)
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return map[string]float64{"default": 1.0}
+	}
+	if _, ok := m["default"]; !ok {
+		m["default"] = 1.0
+	}
+	return m
 }
 
 // GetUserGroupOptions parses the comma-separated "UserGroupOptions" setting

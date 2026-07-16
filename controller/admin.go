@@ -74,6 +74,30 @@ func AdminCreateUser(c *gin.Context) {
 	common.Created(c, user)
 }
 
+// AdminAdjustQuota 管理员调额:mode=add/sub/set,value 单位 quota(D13)。
+func AdminAdjustQuota(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	var req dto.AdminAdjustQuotaReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	newQuota, err := adminService.AdjustUserQuota(c.GetString("role"), c.GetInt64("user_id"), id, &req)
+	if err != nil {
+		if errors.Is(err, service.ErrSuperAdminProtected) || errors.Is(err, service.ErrCannotManageTarget) {
+			common.Error(c, http.StatusForbidden, err.Error())
+			return
+		}
+		if errors.Is(err, service.ErrUserNotFound) {
+			common.Error(c, http.StatusNotFound, err.Error())
+			return
+		}
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, dto.AdminAdjustQuotaResp{NewQuota: newQuota})
+}
+
 func AdminGetStats(c *gin.Context) {
 	stats, err := adminService.GetStats()
 	if err != nil {
