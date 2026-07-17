@@ -101,15 +101,15 @@ export function AdminBillingPage() {
     <div className="p-6 lg:p-8 space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">{t('nav.adminBilling')}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{t('billing.enabled')} / {t('billing.disabled')}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{t('adminBilling.subtitle')}</p>
       </div>
 
       <Tabs defaultValue="basics">
         <TabsList className="flex w-full max-w-2xl flex-wrap h-auto gap-1">
-          <TabsTrigger value="basics" className="gap-1.5"><CreditCard className="h-3.5 w-3.5" />{t('billing.enabled')}</TabsTrigger>
-          <TabsTrigger value="charging" className="gap-1.5"><Coins className="h-3.5 w-3.5" />{t('marketplace.pricing')}</TabsTrigger>
-          <TabsTrigger value="quota" className="gap-1.5"><SlidersHorizontal className="h-3.5 w-3.5" />{t('wallet.balance')}</TabsTrigger>
-          <TabsTrigger value="advanced" className="gap-1.5"><ScrollText className="h-3.5 w-3.5" />{t('billing.scopeGlobal')}</TabsTrigger>
+          <TabsTrigger value="basics" className="gap-1.5"><CreditCard className="h-3.5 w-3.5" />{t('adminBilling.tabBasics')}</TabsTrigger>
+          <TabsTrigger value="charging" className="gap-1.5"><Coins className="h-3.5 w-3.5" />{t('adminBilling.tabCharging')}</TabsTrigger>
+          <TabsTrigger value="quota" className="gap-1.5"><SlidersHorizontal className="h-3.5 w-3.5" />{t('adminBilling.tabQuota')}</TabsTrigger>
+          <TabsTrigger value="advanced" className="gap-1.5"><ScrollText className="h-3.5 w-3.5" />{t('adminBilling.tabAdvanced')}</TabsTrigger>
         </TabsList>
 
         {/* Basics: master switch, currency, per-unit */}
@@ -117,37 +117,38 @@ export function AdminBillingPage() {
           <div className="rounded-xl border bg-card p-5 space-y-5 max-w-2xl">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium">{t('billing.enabled')}</p>
-                <p className="text-xs text-muted-foreground">BillingEnabled</p>
+                <p className="text-sm font-medium">{t('adminBilling.billingEnabled')}</p>
+                <p className="text-xs text-muted-foreground">{t('adminBilling.billingEnabledDesc')}</p>
               </div>
               <Switch checked={localValues.BillingEnabled === 'true'} onCheckedChange={() => toggleBool('BillingEnabled')} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>DisplayCurrency</Label>
+                <Label>{t('adminBilling.displayCurrency')}</Label>
                 <Select value={localValues.DisplayCurrency ?? 'CNY'} onValueChange={(v) => { updateLocal('DisplayCurrency', v); }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="CNY">CNY (¥)</SelectItem>
-                    <SelectItem value="USD">USD ($)</SelectItem>
-                    <SelectItem value="EUR">EUR (€)</SelectItem>
+                    <SelectItem value="CNY">{t('adminBilling.currencyCNY')}</SelectItem>
+                    <SelectItem value="USD">{t('adminBilling.currencyUSD')}</SelectItem>
+                    <SelectItem value="EUR">{t('adminBilling.currencyEUR')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>QuotaPerUnit</Label>
+                <Label>{t('adminBilling.quotaPerUnit')}</Label>
                 <Input
                   type="number"
                   value={localValues.QuotaPerUnit ?? '500000'}
                   onChange={(e) => updateLocal('QuotaPerUnit', e.target.value)}
                   onBlur={() => saveField('QuotaPerUnit')}
                 />
+                <p className="text-xs text-muted-foreground">{t('adminBilling.quotaPerUnitDesc')}</p>
               </div>
             </div>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium">{t('marketplace.clone')}</p>
-                <p className="text-xs text-muted-foreground">RedemptionEnabled</p>
+                <p className="text-sm font-medium">{t('adminBilling.redemptionEnabled')}</p>
+                <p className="text-xs text-muted-foreground">{t('adminBilling.redemptionEnabledDesc')}</p>
               </div>
               <Switch checked={localValues.RedemptionEnabled === 'true'} onCheckedChange={() => toggleBool('RedemptionEnabled')} />
             </div>
@@ -159,7 +160,7 @@ export function AdminBillingPage() {
           <div className="rounded-xl border bg-card p-5 space-y-5 max-w-2xl">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>BillingDefaultType</Label>
+                <Label>{t('adminBilling.billingDefaultType')}</Label>
                 <Select
                   value={localValues.BillingDefaultType ?? 'per_call'}
                   onValueChange={(v) => updateLocal('BillingDefaultType', v)}
@@ -175,7 +176,7 @@ export function AdminBillingPage() {
                 </Button>
               </div>
               <div className="space-y-2">
-                <Label>BillingDefaultPricePerCall</Label>
+                <Label>{t('adminBilling.billingDefaultPricePerCall')}</Label>
                 <Input
                   type="number"
                   step="0.0001"
@@ -187,8 +188,8 @@ export function AdminBillingPage() {
             </div>
 
             <div className="space-y-2 border-t pt-4">
-              <Label>GroupRatio</Label>
-              <p className="text-xs text-muted-foreground">{t('pricing.defaultDesc')}</p>
+              <Label>{t('adminBilling.groupRatio')}</Label>
+              <p className="text-xs text-muted-foreground">{t('adminBilling.groupRatioDesc')}</p>
               <div className="space-y-2">
                 {userGroupOptions.map((g) => (
                   <div key={g} className="flex items-center gap-2">
@@ -207,13 +208,16 @@ export function AdminBillingPage() {
 
             <div className="space-y-3 border-t pt-4">
               {[
-                { key: 'ChargeAdmin', label: 'ChargeAdmin' },
-                { key: 'ChargeOnClientError', label: 'ChargeOnClientError' },
-                { key: 'ChargeOnTimeout', label: 'ChargeOnTimeout' },
-                { key: 'BillingFailOpen', label: 'BillingFailOpen' },
+                { key: 'ChargeAdmin', label: t('adminBilling.chargeAdmin'), desc: t('adminBilling.chargeAdminDesc') },
+                { key: 'ChargeOnClientError', label: t('adminBilling.chargeOnClientError'), desc: t('adminBilling.chargeOnClientErrorDesc') },
+                { key: 'ChargeOnTimeout', label: t('adminBilling.chargeOnTimeout'), desc: t('adminBilling.chargeOnTimeoutDesc') },
+                { key: 'BillingFailOpen', label: t('adminBilling.billingFailOpen'), desc: t('adminBilling.billingFailOpenDesc') },
               ].map((row) => (
                 <div key={row.key} className="flex items-center justify-between">
-                  <p className="text-sm font-medium">{row.label}</p>
+                  <div>
+                    <p className="text-sm font-medium">{row.label}</p>
+                    <p className="text-xs text-muted-foreground">{row.desc}</p>
+                  </div>
                   <Switch checked={localValues[row.key] === 'true'} onCheckedChange={() => toggleBool(row.key)} />
                 </div>
               ))}
@@ -226,31 +230,34 @@ export function AdminBillingPage() {
           <div className="rounded-xl border bg-card p-5 space-y-5 max-w-2xl">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>TrustQuota</Label>
+                <Label>{t('adminBilling.trustQuota')}</Label>
                 <Input
                   type="number"
                   value={localValues.TrustQuota ?? '5000000'}
                   onChange={(e) => updateLocal('TrustQuota', e.target.value)}
                   onBlur={() => saveField('TrustQuota')}
                 />
+                <p className="text-xs text-muted-foreground">{t('adminBilling.trustQuotaDesc')}</p>
               </div>
               <div className="space-y-2">
-                <Label>QuotaForNewUser</Label>
+                <Label>{t('adminBilling.quotaForNewUser')}</Label>
                 <Input
                   type="number"
                   value={localValues.QuotaForNewUser ?? '0'}
                   onChange={(e) => updateLocal('QuotaForNewUser', e.target.value)}
                   onBlur={() => saveField('QuotaForNewUser')}
                 />
+                <p className="text-xs text-muted-foreground">{t('adminBilling.quotaForNewUserDesc')}</p>
               </div>
               <div className="space-y-2">
-                <Label>QuotaRemindThreshold</Label>
+                <Label>{t('adminBilling.quotaRemindThreshold')}</Label>
                 <Input
                   type="number"
                   value={localValues.QuotaRemindThreshold ?? '0'}
                   onChange={(e) => updateLocal('QuotaRemindThreshold', e.target.value)}
                   onBlur={() => saveField('QuotaRemindThreshold')}
                 />
+                <p className="text-xs text-muted-foreground">{t('adminBilling.quotaRemindThresholdDesc')}</p>
               </div>
             </div>
           </div>
@@ -261,14 +268,14 @@ export function AdminBillingPage() {
           <div className="rounded-xl border bg-card p-5 space-y-5 max-w-2xl">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-medium">SelfUseModeEnabled</p>
+                <p className="text-sm font-medium">{t('adminBilling.selfUseModeEnabled')}</p>
                 <p className="text-xs text-muted-foreground">{t('pricing.selfUseNote')}</p>
               </div>
               <Switch checked={localValues.SelfUseModeEnabled === 'true'} onCheckedChange={() => toggleBool('SelfUseModeEnabled')} />
             </div>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-medium">UserOwnedServicesEnabled</p>
+                <p className="text-sm font-medium">{t('adminBilling.userOwnedServicesEnabled')}</p>
                 <p className="text-xs text-muted-foreground">{t('pricing.commercialNote')}</p>
               </div>
               <Switch checked={localValues.UserOwnedServicesEnabled === 'true'} onCheckedChange={() => toggleBool('UserOwnedServicesEnabled')} />
@@ -276,12 +283,15 @@ export function AdminBillingPage() {
 
             <div className="space-y-3 border-t pt-4">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">LogPayloadEnabled</p>
+                <div>
+                  <p className="text-sm font-medium">{t('adminBilling.logPayloadEnabled')}</p>
+                  <p className="text-xs text-muted-foreground">{t('adminBilling.logPayloadEnabledDesc')}</p>
+                </div>
                 <Switch checked={localValues.LogPayloadEnabled === 'true'} onCheckedChange={() => toggleBool('LogPayloadEnabled')} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>LogRetentionDays</Label>
+                  <Label>{t('adminBilling.logRetentionDays')}</Label>
                   <Input
                     type="number"
                     value={localValues.LogRetentionDays ?? '30'}
@@ -292,7 +302,7 @@ export function AdminBillingPage() {
               </div>
               <div className="flex items-start gap-2 rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
                 <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span>LogRetentionDays=0 {t('billing.scopeGlobal')} · TTL {t('settings.maintenance')}</span>
+                <span>{t('adminBilling.logRetentionHint')}</span>
               </div>
             </div>
           </div>
