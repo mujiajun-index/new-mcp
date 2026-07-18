@@ -103,6 +103,19 @@ func AdminCloneMarketplaceItem(c *gin.Context) {
 	common.Created(c, resp)
 }
 
+// AdminListCloneSources 列出当前管理员自己账户下可克隆上架的来源服务(其账户下 source=user/admin,
+// 自动排除虚拟服务与市场引用),供"从自有服务克隆"下拉使用(§11)。
+func AdminListCloneSources(c *gin.Context) {
+	adminID := c.GetInt64("user_id")
+	page, pageSize := common.GetPagination(c)
+	items, total, err := mcpServiceService.ListClonableServices(adminID, page, pageSize)
+	if err != nil {
+		common.Error(c, http.StatusInternalServerError, "获取可克隆服务列表失败")
+		return
+	}
+	common.PageOf(c, items, page, pageSize, total)
+}
+
 // --- Public/User browsing ---
 
 func BrowseMarketplace(c *gin.Context) {

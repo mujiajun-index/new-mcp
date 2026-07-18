@@ -41,8 +41,8 @@ export async function adminCloneMarketplace(data: CloneMarketplaceReq) {
   return res.data
 }
 
-// 自有服务列表(克隆来源选择用)
-export async function adminListServices() {
-  const res = await api.get('/admin/services')
+// 可克隆来源服务列表(克隆来源选择用):GET /admin/marketplace/clone-sources
+export async function adminListCloneSources() {
+  const res = await api.get('/admin/marketplace/clone-sources')
   return res.data
 }

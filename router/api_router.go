@@ -144,6 +144,7 @@ func SetApiRouter(engine *gin.Engine) {
 		admin.POST("/marketplace", controller.AdminCreateMarketplaceItem)
 		admin.POST("/marketplace/clone", controller.AdminCloneMarketplaceItem)
 		admin.PUT("/marketplace/pricing/batch", controller.AdminBatchUpdateMarketplacePricing)
+		admin.GET("/marketplace/clone-sources", controller.AdminListCloneSources)
 		admin.GET("/marketplace/:id", controller.AdminGetMarketplaceItem)
 		admin.PUT("/marketplace/:id", controller.AdminUpdateMarketplaceItem)
 		admin.DELETE("/marketplace/:id", controller.AdminDeleteMarketplaceItem)

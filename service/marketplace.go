@@ -17,6 +17,15 @@ type MarketplaceService struct{}
 // ErrExplicitPricingRequired 非自用模式下市场上架/启用须显式定价(§5.6)。
 var ErrExplicitPricingRequired = errors.New("非自用模式下,市场上架/启用必须显式定价(设置价格或标记免费)")
 
+// ErrVirtualServiceNotListable 虚拟服务(vision/camera 等,transport_type='virtual')仅自有配置免费使用,
+// 不可上架市场:其 config/凭证绑定配置者私有资源(如 vision_configs.ref_id),克隆或手动上架后无法作为
+// 平台托管服务运行。与定价/自用模式无关的上架硬约束(D16/§11)。
+var ErrVirtualServiceNotListable = errors.New("虚拟服务(视觉/摄像头等)仅支持自有配置免费使用,不可上架到服务市场")
+
+// ErrServiceNotOwned 克隆上架的源服务不属于当前管理员(§11):管理员只能上架自己账户下的自有服务,
+// 不得克隆/上架其他用户的服务。
+var ErrServiceNotOwned = errors.New("无权克隆该服务:仅可克隆自己账户下的自有服务")
+
 // explicitlyPriced 判断是否"已显式定价":free 或 (per_call 且 price>0)。
 func explicitlyPriced(billingType string, price float64) bool {
 	if billingType == "free" {
@@ -50,6 +59,10 @@ func encryptConfigTemplate(plain string) string {
 // --- Admin operations ---
 
 func (s *MarketplaceService) CreateItem(adminID int64, req *dto.CreateMarketplaceItemReq) (*dto.MarketplaceDetail, error) {
+	// 虚拟服务(vision/camera 等)不可上架(D16/§11):virtual 是内置 handler,非平台可托管传输类型。
+	if req.TransportType == "virtual" {
+		return nil, ErrVirtualServiceNotListable
+	}
 	billingType := req.BillingType
 	if billingType == "" {
 		billingType = "per_call"
@@ -226,12 +239,22 @@ func (s *MarketplaceService) BatchUpdatePricing(items []dto.BatchPricingItem) (i
 	return affected, nil
 }
 
-// CloneFromService 从自有服务克隆上架(D14/§11):深拷贝 transport/config/auth/tools,
-// 与源服务无关联。保留源凭证但调用方应替换为平台凭证(前端高亮提示)。非自用模式须显式定价。
+// CloneFromService 从**管理员自己账户下**的自有服务克隆上架(D14/§11):深拷贝 transport/config/auth/tools,
+// 与源服务无关联。仅允许克隆 svc.UserID==adminID 的服务(不得上架其他用户的服务);虚拟服务(virtual)拒绝。
+// 保留源凭证但调用方应替换为平台凭证(前端高亮提示)。非自用模式须显式定价。
 func (s *MarketplaceService) CloneFromService(adminID int64, req *dto.CloneMarketplaceReq) (*dto.MarketplaceDetail, error) {
 	svc, err := model.GetServiceByIDWithoutUser(req.FromServiceID)
 	if err != nil {
 		return nil, fmt.Errorf("源服务不存在")
+	}
+	// 仅允许克隆自己账户下的服务(§11):管理员不得上架其他用户的服务。
+	if svc.UserID != adminID {
+		return nil, ErrServiceNotOwned
+	}
+	// 虚拟服务(vision/camera 等)不可上架(D16/§11):其 config 指向配置者私有资源(如 vision_configs.ref_id),
+	// 克隆后无法作为平台托管服务运行。
+	if svc.TransportType == "virtual" {
+		return nil, ErrVirtualServiceNotListable
 	}
 	billingType := req.BillingType
 	if billingType == "" {

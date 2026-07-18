@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import {
   adminListMarketplace, adminCreateMarketplace, adminDeleteMarketplace,
-  adminBatchPricing, adminCloneMarketplace, adminListServices,
+  adminBatchPricing, adminCloneMarketplace, adminListCloneSources,
 } from '../api'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import { priceLabel, isExplicitlyPriced } from '@/lib/billing'
@@ -362,8 +362,8 @@ function CloneDialog({
     billing_type: 'per_call', price_per_call: '0',
   })
   const { data: servicesData } = useQuery({
-    queryKey: ['admin-services'],
-    queryFn: adminListServices,
+    queryKey: ['marketplace-clone-sources'],
+    queryFn: adminListCloneSources,
     enabled: open,
   })
   const services: any[] = servicesData?.data ?? []

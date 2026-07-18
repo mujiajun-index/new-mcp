@@ -385,6 +385,22 @@ func (s *McpServiceService) ListAdminServices(page, pageSize int) ([]dto.Service
 	if err != nil {
 		return nil, 0, err
 	}
+	return s.toServiceListItems(services), total, nil
+}
+
+// ListClonableServices 返回指定管理员(userID)可克隆上架的来源服务(其账户下 source=user/admin,
+// 自动排除虚拟服务与市场引用),供"从自有服务克隆"下拉使用(§11)。
+func (s *McpServiceService) ListClonableServices(userID int64, page, pageSize int) ([]dto.ServiceListItem, int64, error) {
+	offset := common.GetOffset(page, pageSize)
+	services, total, err := model.ListClonableServices(userID, offset, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+	return s.toServiceListItems(services), total, nil
+}
+
+// toServiceListItems 把 McpService 列表统一转为列表项 DTO(解析 tools_cache 统计工具数)。
+func (s *McpServiceService) toServiceListItems(services []model.McpService) []dto.ServiceListItem {
 	items := make([]dto.ServiceListItem, len(services))
 	for i, svc := range services {
 		var tools []interface{}
@@ -402,7 +418,7 @@ func (s *McpServiceService) ListAdminServices(page, pageSize int) ([]dto.Service
 			CreatedAt:     svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		}
 	}
-	return items, total, nil
+	return items
 }
 
 func (s *McpServiceService) toDetail(svc *model.McpService) *dto.ServiceDetail {
