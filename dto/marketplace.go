@@ -8,6 +8,7 @@ type CreateMarketplaceItemReq struct {
 	Description          string                 `json:"description"`
 	IconURL              string                 `json:"icon_url" binding:"omitempty,max=512"`
 	Category             string                 `json:"category" binding:"required,oneof=instant source"`
+	GroupID              *int64                 `json:"group_id"`
 	Tags                 []string               `json:"tags"`
 	Version              string                 `json:"version" binding:"omitempty,max=32"`
 	TransportType        string                 `json:"transport_type" binding:"required,oneof=stdio sse streamable-http websocket passive-ws"`
@@ -21,7 +22,7 @@ type CreateMarketplaceItemReq struct {
 	Status               *int                   `json:"status"`
 	// 商业化定价(§5):非自用模式上架必须显式定价(§5.6)
 	BillingType   string  `json:"billing_type"`     // free / per_call(默认 per_call)
-	PricePerCall  float64 `json:"price_per_call"`   // 展示货币单价(per_call 时需 >0,非自用模式)
+	PricePerCall  float64 `json:"price_per_call" binding:"gte=0"`   // 展示货币单价(per_call 时需 >0,非自用模式)
 }
 
 type UpdateMarketplaceItemReq struct {
@@ -29,6 +30,7 @@ type UpdateMarketplaceItemReq struct {
 	Description          *string                `json:"description"`
 	IconURL              *string                `json:"icon_url"`
 	Category             *string                `json:"category"`
+	GroupID              *int64                 `json:"group_id"`
 	Tags                 []string               `json:"tags"`
 	Version              *string                `json:"version"`
 	TransportType        *string                `json:"transport_type"`
@@ -42,8 +44,8 @@ type UpdateMarketplaceItemReq struct {
 	Status               *int                   `json:"status"`
 	SortOrder            *int                   `json:"sort_order"`
 	// 商业化定价:启用/上架时非自用模式须显式定价(§5.6)
-	BillingType  *string  `json:"billing_type"`
-	PricePerCall *float64 `json:"price_per_call"`
+	BillingType  *string  `json:"billing_type" binding:"omitempty,oneof=free per_call"`
+	PricePerCall *float64 `json:"price_per_call" binding:"omitempty,gte=0"`
 }
 
 // BatchPricingReq 批量设置已上架市场服务价格(§5.5)。
@@ -54,7 +56,7 @@ type BatchPricingReq struct {
 type BatchPricingItem struct {
 	ID           int64   `json:"id" binding:"required"`
 	BillingType  string  `json:"billing_type" binding:"required,oneof=free per_call"`
-	PricePerCall float64 `json:"price_per_call"`
+	PricePerCall float64 `json:"price_per_call" binding:"gte=0"`
 }
 
 // CloneMarketplaceReq 从自有服务克隆上架(§11/D14):深拷贝 transport/config/auth/tools,与源服务无关联。
@@ -64,7 +66,7 @@ type CloneMarketplaceReq struct {
 	DisplayName   string  `json:"display_name"`
 	Description   string  `json:"description"`
 	BillingType   string  `json:"billing_type"`
-	PricePerCall  float64 `json:"price_per_call"`
+	PricePerCall  float64 `json:"price_per_call" binding:"gte=0"`
 }
 
 type MarketplaceListItem struct {
@@ -74,6 +76,8 @@ type MarketplaceListItem struct {
 	Description   string   `json:"description"`
 	IconURL       string   `json:"icon_url"`
 	Category      string   `json:"category"`
+	GroupID       *int64   `json:"group_id"`
+	GroupName     string   `json:"group_name"`
 	Tags          []string `json:"tags"`
 	Version       string   `json:"version"`
 	TransportType string   `json:"transport_type"`
@@ -95,6 +99,8 @@ type MarketplaceDetail struct {
 	Description          string                 `json:"description"`
 	IconURL              string                 `json:"icon_url"`
 	Category             string                 `json:"category"`
+	GroupID              *int64                 `json:"group_id"`
+	GroupName            string                 `json:"group_name"`
 	Tags                 []string               `json:"tags"`
 	Version              string                 `json:"version"`
 	TransportType        string                 `json:"transport_type"`

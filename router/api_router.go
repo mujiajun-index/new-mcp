@@ -20,6 +20,7 @@ func SetApiRouter(engine *gin.Engine) {
 	// Public marketplace browsing
 	api.GET("/marketplace", controller.BrowseMarketplace)
 	api.GET("/marketplace/:id", controller.GetMarketplaceItem)
+	api.GET("/marketplace-groups", controller.BrowseMarketplaceGroups) // 启用分组(广场左侧筛选)
 
 	// Public settings (system name, footer, etc.)
 	api.GET("/settings/public", controller.GetPublicSettings)
@@ -148,6 +149,17 @@ func SetApiRouter(engine *gin.Engine) {
 		admin.GET("/marketplace/:id", controller.AdminGetMarketplaceItem)
 		admin.PUT("/marketplace/:id", controller.AdminUpdateMarketplaceItem)
 		admin.DELETE("/marketplace/:id", controller.AdminDeleteMarketplaceItem)
+
+		// Admin: marketplace groups(业务分类) + tags(标签字典)
+		admin.GET("/marketplace-groups", controller.AdminListMarketplaceGroups)
+		admin.GET("/marketplace-groups/all", controller.AdminListAllMarketplaceGroups)
+		admin.POST("/marketplace-groups", controller.AdminCreateMarketplaceGroup)
+		admin.PUT("/marketplace-groups/:id", controller.AdminUpdateMarketplaceGroup)
+		admin.DELETE("/marketplace-groups/:id", controller.AdminDeleteMarketplaceGroup)
+		admin.GET("/marketplace-tags", controller.AdminListMarketplaceTags)
+		admin.POST("/marketplace-tags", controller.AdminCreateMarketplaceTag)
+		admin.PUT("/marketplace-tags/:id", controller.AdminUpdateMarketplaceTag)
+		admin.DELETE("/marketplace-tags/:id", controller.AdminDeleteMarketplaceTag)
 
 		// Admin: 兑换码管理
 		admin.GET("/redemptions", controller.AdminListRedemptions)

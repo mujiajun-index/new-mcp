@@ -34,6 +34,8 @@ type MarketplaceItem struct {
 	PricePerCall float64 `json:"price_per_call" gorm:"type:decimal(10,4);default:0"`
 	// 商业化:0=按次计费,1=仅订阅用户可用(V2);V1 固定 false
 	SubscriptionOnly bool `json:"subscription_only" gorm:"default:false"`
+	// 市场分组(marketplace_groups.id);NULL=未分组(§11),区别于 category(instant/source 部署形态)
+	GroupID *int64 `json:"group_id" gorm:"index"`
 	Status               int            `json:"status" gorm:"default:1;index"`
 	SortOrder            int            `json:"sort_order" gorm:"default:0"`
 	CreatedAt            time.Time      `json:"created_at"`
@@ -68,10 +70,13 @@ func GetMarketplaceItemByID(id int64) (*MarketplaceItem, error) {
 	return &item, err
 }
 
-func ListPublishedMarketplaceItems(offset, limit int, category, keyword string) ([]MarketplaceItem, int64, error) {
+func ListPublishedMarketplaceItems(offset, limit int, category, keyword string, groupID int64) ([]MarketplaceItem, int64, error) {
 	query := DB.Where("status = ?", common.StatusEnabled)
 	if category != "" {
 		query = query.Where("category = ?", category)
+	}
+	if groupID > 0 {
+		query = query.Where("group_id = ?", groupID)
 	}
 	if keyword != "" {
 		query = query.Where("name LIKE ? OR display_name LIKE ? OR description LIKE ?",

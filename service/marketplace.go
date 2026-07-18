@@ -26,6 +26,61 @@ var ErrVirtualServiceNotListable = errors.New("虚拟服务(视觉/摄像头等)
 // 不得克隆/上架其他用户的服务。
 var ErrServiceNotOwned = errors.New("无权克隆该服务:仅可克隆自己账户下的自有服务")
 
+// ErrNegativePrice 价格不能为负数(§5.5)。
+var ErrNegativePrice = errors.New("价格不能为负数")
+
+// ErrTagNotInDictionary 提交的标签不在启用标签库中(§11)。
+var ErrTagNotInDictionary = errors.New("标签不在标签库中,请先在标签库中创建")
+
+// ErrGroupNotFound 市场分组不存在或未启用(§11)。
+var ErrGroupNotFound = errors.New("市场分组不存在或未启用")
+
+// validatePrice 校验价格非负(§5.5)。
+func validatePrice(price float64) error {
+	if price < 0 {
+		return ErrNegativePrice
+	}
+	return nil
+}
+
+// validateTags 校验标签均存在于启用标签库(去重后匹配,§11)。
+func validateTags(tags []string) error {
+	if len(tags) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool)
+	unique := make([]string, 0, len(tags))
+	for _, t := range tags {
+		if t == "" || seen[t] {
+			continue
+		}
+		seen[t] = true
+		unique = append(unique, t)
+	}
+	if len(unique) == 0 {
+		return nil
+	}
+	count, err := model.CountEnabledTagsByNames(unique)
+	if err != nil {
+		return err
+	}
+	if int64(len(unique)) != count {
+		return ErrTagNotInDictionary
+	}
+	return nil
+}
+
+// validateGroupID 校验分组存在且启用;groupID 为 nil 或 <=0 视为未分组(允许)。
+func validateGroupID(groupID *int64) error {
+	if groupID == nil || *groupID <= 0 {
+		return nil
+	}
+	if _, err := model.GetEnabledMarketplaceGroupByID(*groupID); err != nil {
+		return ErrGroupNotFound
+	}
+	return nil
+}
+
 // explicitlyPriced 判断是否"已显式定价":free 或 (per_call 且 price>0)。
 func explicitlyPriced(billingType string, price float64) bool {
 	if billingType == "free" {
@@ -63,6 +118,15 @@ func (s *MarketplaceService) CreateItem(adminID int64, req *dto.CreateMarketplac
 	if req.TransportType == "virtual" {
 		return nil, ErrVirtualServiceNotListable
 	}
+	if err := validatePrice(req.PricePerCall); err != nil {
+		return nil, err
+	}
+	if err := validateTags(req.Tags); err != nil {
+		return nil, err
+	}
+	if err := validateGroupID(req.GroupID); err != nil {
+		return nil, err
+	}
 	billingType := req.BillingType
 	if billingType == "" {
 		billingType = "per_call"
@@ -89,6 +153,7 @@ func (s *MarketplaceService) CreateItem(adminID int64, req *dto.CreateMarketplac
 		Description:          req.Description,
 		IconURL:              req.IconURL,
 		Category:             req.Category,
+		GroupID:              req.GroupID,
 		Tags:                 tags,
 		Version:              req.Version,
 		TransportType:        req.TransportType,
@@ -122,6 +187,22 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 	if err != nil {
 		return err
 	}
+	// 校验(仅对传入字段,§11/§5.5)
+	if req.PricePerCall != nil {
+		if err := validatePrice(*req.PricePerCall); err != nil {
+			return err
+		}
+	}
+	if req.Tags != nil {
+		if err := validateTags(req.Tags); err != nil {
+			return err
+		}
+	}
+	if req.GroupID != nil {
+		if err := validateGroupID(req.GroupID); err != nil {
+			return err
+		}
+	}
 	if req.DisplayName != nil {
 		item.DisplayName = *req.DisplayName
 	}
@@ -133,6 +214,9 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 	}
 	if req.Category != nil {
 		item.Category = *req.Category
+	}
+	if req.GroupID != nil {
+		item.GroupID = req.GroupID
 	}
 	if req.Tags != nil {
 		item.Tags = strings.Join(req.Tags, ",")
@@ -213,6 +297,11 @@ func (s *MarketplaceService) DeleteItem(itemID int64) error {
 
 // BatchUpdatePricing 批量设置已上架市场服务价格(§5.5)。非自用模式逐条校验显式定价。
 func (s *MarketplaceService) BatchUpdatePricing(items []dto.BatchPricingItem) (int64, error) {
+	for _, it := range items {
+		if err := validatePrice(it.PricePerCall); err != nil {
+			return 0, fmt.Errorf("%w: 市场项 id=%d", err, it.ID)
+		}
+	}
 	if !model.GetOptionBool("SelfUseModeEnabled") {
 		for _, it := range items {
 			if !explicitlyPriced(it.BillingType, it.PricePerCall) {
@@ -255,6 +344,9 @@ func (s *MarketplaceService) CloneFromService(adminID int64, req *dto.CloneMarke
 	// 克隆后无法作为平台托管服务运行。
 	if svc.TransportType == "virtual" {
 		return nil, ErrVirtualServiceNotListable
+	}
+	if err := validatePrice(req.PricePerCall); err != nil {
+		return nil, err
 	}
 	billingType := req.BillingType
 	if billingType == "" {
@@ -306,9 +398,9 @@ func (s *MarketplaceService) ListItemsAdmin(page, pageSize int) ([]dto.Marketpla
 
 // --- Public/User browsing ---
 
-func (s *MarketplaceService) ListPublished(page, pageSize int, category, keyword string) ([]dto.MarketplaceListItem, int64, error) {
+func (s *MarketplaceService) ListPublished(page, pageSize int, category, keyword string, groupID int64) ([]dto.MarketplaceListItem, int64, error) {
 	offset := common.GetOffset(page, pageSize)
-	items, total, err := model.ListPublishedMarketplaceItems(offset, pageSize, category, keyword)
+	items, total, err := model.ListPublishedMarketplaceItems(offset, pageSize, category, keyword, groupID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -432,6 +524,13 @@ func (s *MarketplaceService) toDetail(item *model.MarketplaceItem) *dto.Marketpl
 		tags = []string{}
 	}
 
+	groupName := ""
+	if item.GroupID != nil {
+		if g, e := model.GetMarketplaceGroupByID(*item.GroupID); e == nil {
+			groupName = g.Name
+		}
+	}
+
 	return &dto.MarketplaceDetail{
 		ID:                   item.ID,
 		Name:                 item.Name,
@@ -439,6 +538,8 @@ func (s *MarketplaceService) toDetail(item *model.MarketplaceItem) *dto.Marketpl
 		Description:          item.Description,
 		IconURL:              item.IconURL,
 		Category:             item.Category,
+		GroupID:              item.GroupID,
+		GroupName:            groupName,
 		Tags:                 tags,
 		Version:              item.Version,
 		TransportType:        item.TransportType,
@@ -460,6 +561,22 @@ func (s *MarketplaceService) toDetail(item *model.MarketplaceItem) *dto.Marketpl
 }
 
 func (s *MarketplaceService) toListItems(items []model.MarketplaceItem) []dto.MarketplaceListItem {
+	// 批量取分组名(避免 N+1)
+	groupIDs := make([]int64, 0, len(items))
+	for _, it := range items {
+		if it.GroupID != nil {
+			groupIDs = append(groupIDs, *it.GroupID)
+		}
+	}
+	groupNameByID := make(map[int64]string)
+	if len(groupIDs) > 0 {
+		if groups, e := model.GetMarketplaceGroupsByIDs(groupIDs); e == nil {
+			for _, g := range groups {
+				groupNameByID[g.ID] = g.Name
+			}
+		}
+	}
+
 	result := make([]dto.MarketplaceListItem, len(items))
 	for i, item := range items {
 		var tags []string
@@ -468,6 +585,10 @@ func (s *MarketplaceService) toListItems(items []model.MarketplaceItem) []dto.Ma
 		} else {
 			tags = []string{}
 		}
+		var groupName string
+		if item.GroupID != nil {
+			groupName = groupNameByID[*item.GroupID]
+		}
 		result[i] = dto.MarketplaceListItem{
 			ID:            item.ID,
 			Name:          item.Name,
@@ -475,6 +596,8 @@ func (s *MarketplaceService) toListItems(items []model.MarketplaceItem) []dto.Ma
 			Description:   item.Description,
 			IconURL:       item.IconURL,
 			Category:      item.Category,
+			GroupID:       item.GroupID,
+			GroupName:     groupName,
 			Tags:          tags,
 			Version:       item.Version,
 			TransportType: item.TransportType,

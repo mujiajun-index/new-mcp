@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import {
@@ -18,11 +19,12 @@ import {
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { toast } from 'sonner'
 import {
-  Plus, Copy, Trash2, CheckSquare, Square, Tag, AlertTriangle, Store,
+  Plus, Copy, Trash2, CheckSquare, Square, Tag, AlertTriangle, Store, Eye,
 } from 'lucide-react'
 
 export function AdminMarketplacePage() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { config } = useSystemConfigStore()
 
@@ -186,6 +188,10 @@ export function AdminMarketplacePage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="px-4 text-right">
+                      <Button variant="ghost" size="sm" title={t('common.details')}
+                        onClick={() => navigate({ to: '/admin/marketplace/$id', params: { id: String(item.id) } })}>
+                        <Eye className="h-3.5 w-3.5" />
+                      </Button>
                       <Button variant="ghost" size="sm" className="text-destructive" title={t('common.delete')}
                         onClick={() => { if (confirm(t('services.deleteConfirm', { name: item.display_name || item.name }))) deleteMutation.mutate(item.id) }}>
                         <Trash2 className="h-3.5 w-3.5" />
@@ -255,6 +261,10 @@ function CreateDialog({
   const submit = () => {
     const billingType = form.billing_type
     const price = parseFloat(form.price_per_call) || 0
+    if (price < 0) {
+      toast.error(t('marketplace.priceNegative'))
+      return
+    }
     if (notSelfUse && billingType !== 'free' && price <= 0) {
       toast.error(t('pricing.commercialNote'))
       return
@@ -329,7 +339,7 @@ function CreateDialog({
             </div>
             <div className="space-y-2">
               <Label>{t('marketplace.pricePerCall')}</Label>
-              <Input type="number" step="0.0001" disabled={form.billing_type === 'free'}
+              <Input type="number" min="0" step="0.0001" disabled={form.billing_type === 'free'}
                 value={form.price_per_call} onChange={(e) => setForm({ ...form, price_per_call: e.target.value })} />
             </div>
           </div>
@@ -371,6 +381,10 @@ function CloneDialog({
   const submit = () => {
     const billingType = form.billing_type
     const price = parseFloat(form.price_per_call) || 0
+    if (price < 0) {
+      toast.error(t('marketplace.priceNegative'))
+      return
+    }
     if (notSelfUse && billingType !== 'free' && price <= 0) {
       toast.error(t('pricing.commercialNote'))
       return
@@ -414,6 +428,10 @@ function CloneDialog({
               <Input value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} />
             </div>
           </div>
+          <div className="space-y-2">
+            <Label>{t('services.description')}</Label>
+            <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          </div>
           <div className="grid grid-cols-2 gap-4 border-t pt-4">
             <div className="space-y-2">
               <Label>{t('marketplace.billingType')}</Label>
@@ -427,7 +445,7 @@ function CloneDialog({
             </div>
             <div className="space-y-2">
               <Label>{t('marketplace.pricePerCall')}</Label>
-              <Input type="number" step="0.0001" disabled={form.billing_type === 'free'}
+              <Input type="number" min="0" step="0.0001" disabled={form.billing_type === 'free'}
                 value={form.price_per_call} onChange={(e) => setForm({ ...form, price_per_call: e.target.value })} />
             </div>
           </div>
@@ -466,6 +484,10 @@ function BatchDialog({
 
   const submit = () => {
     const p = parseFloat(price) || 0
+    if (p < 0) {
+      toast.error(t('marketplace.priceNegative'))
+      return
+    }
     onConfirm(
       selectedItems.map((i) => ({
         id: i.id,
@@ -496,7 +518,7 @@ function BatchDialog({
             </div>
             <div className="space-y-2">
               <Label>{t('marketplace.pricePerCall')}</Label>
-              <Input type="number" step="0.0001" disabled={billingType === 'free'} value={price} onChange={(e) => setPrice(e.target.value)} />
+              <Input type="number" min="0" step="0.0001" disabled={billingType === 'free'} value={price} onChange={(e) => setPrice(e.target.value)} />
             </div>
           </div>
         </div>

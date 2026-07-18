@@ -10,7 +10,7 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import {
   LayoutDashboard, Server, FolderTree, Cloud, Eye, Camera,
   Key, Store, Settings, Shield, Users, Wrench,
-  ClipboardCheck, ChevronLeft, Activity, Wallet, Tag, CreditCard, Ticket,
+  ClipboardCheck, ChevronLeft, Activity, Wallet, CreditCard, Ticket,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useSystemConfigStore } from '@/stores/system-config-store'
@@ -33,13 +33,13 @@ const mainNav: NavItem[] = [
   { label: 'nav.logs', icon: Activity, href: '/logs' },
   { label: 'nav.marketplace', icon: Store, href: '/marketplace' },
   { label: 'nav.wallet', icon: Wallet, href: '/wallet' },
-  { label: 'nav.pricing', icon: Tag, href: '/pricing' },
   { label: 'nav.settings', icon: Settings, href: '/settings' },
 ]
 
 const adminNav: NavItem[] = [
   { label: 'nav.adminUsers', icon: Users, href: '/admin/users', adminOnly: true },
   { label: 'nav.adminMarketplace', icon: Wrench, href: '/admin/marketplace', adminOnly: true },
+  { label: 'nav.adminCategories', icon: FolderTree, href: '/admin/marketplace-categories', adminOnly: true },
   { label: 'nav.adminBilling', icon: CreditCard, href: '/admin/billing', adminOnly: true },
   { label: 'nav.adminRedemption', icon: Ticket, href: '/admin/redemption-codes', adminOnly: true },
   { label: 'nav.adminReviews', icon: ClipboardCheck, href: '/admin/reviews', adminOnly: true },
@@ -69,7 +69,9 @@ function SidebarNav({
 
   const isActive = (href: string) => {
     if (href === '/dashboard') return currentPath === '/dashboard'
-    return currentPath.startsWith(href)
+    // 必须跟 '/' 或到字符串末尾,避免 /admin/marketplace 同时匹配 /admin/marketplace-categories
+    if (currentPath === href) return true
+    return currentPath.startsWith(href + '/')
   }
 
   const renderLinks = (items: NavItem[]) =>

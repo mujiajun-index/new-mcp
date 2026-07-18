@@ -40,7 +40,10 @@
     "items": "条",
     "viewAll": "查看全部",
     "backHome": "返回首页",
-    "backPrev": "返回上一页"
+    "backPrev": "返回上一页",
+    "details": "详情",
+    "description": "描述",
+    "createdAt": "创建时间"
   },
   "nav": {
     "home": "主页",
@@ -57,6 +60,7 @@
     "adminUsers": "用户管理",
     "adminLogs": "调用日志",
     "adminMarketplace": "市场管理",
+    "adminCategories": "市场分类",
     "adminReviews": "审核管理",
     "adminSystem": "系统设置",
     "logs": "调用日志",
@@ -313,6 +317,7 @@
     "displayName": "显示名称",
     "serviceIdentifier": "服务标识",
     "description": "描述",
+    "iconUrl": "图标 URL",
     "command": "命令",
     "commandRequired": "命令 *",
     "args": "参数",
@@ -857,7 +862,23 @@
     "batchPricingTitle": "批量设置市场服务价格",
     "clone": "从自有服务克隆上架",
     "cloneFrom": "克隆自服务 #{{id}}",
-    "credentialReplaceHint": "克隆保留了源服务的凭证，请尽快替换为平台专用凭证，避免复用个人 Key 承担全平台流量。"
+    "credentialReplaceHint": "克隆保留了源服务的凭证，请尽快替换为平台专用凭证，避免复用个人 Key 承担全平台流量。",
+    "priceNegative": "价格不能为负数",
+    "noGroup": "无分组",
+    "noTagsHint": "请先在市场分类中创建标签",
+    "version": "版本",
+    "tags": "标签",
+    "rating": "评分"
+  },
+  "categories": {
+    "subtitle": "管理市场的业务分组与标签字典",
+    "groups": "分组",
+    "tags": "标签",
+    "colName": "名称",
+    "colDisplayName": "显示名称",
+    "colSortOrder": "排序",
+    "groupDesc": "市场业务分组，市场项可归属一个分组",
+    "tagDesc": "标签字典，市场项从中勾选标签"
   },
   "settings": {
     "title": "系统设置",

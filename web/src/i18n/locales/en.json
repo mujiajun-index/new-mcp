@@ -40,7 +40,10 @@
     "items": "items",
     "viewAll": "View all",
     "backHome": "Back to Home",
-    "backPrev": "Go back"
+    "backPrev": "Go back",
+    "details": "Details",
+    "description": "Description",
+    "createdAt": "Created At"
   },
   "nav": {
     "home": "Home",
@@ -57,6 +60,7 @@
     "adminUsers": "Users",
     "adminLogs": "Call Logs",
     "adminMarketplace": "Marketplace Mgmt",
+    "adminCategories": "Categories",
     "adminReviews": "Reviews",
     "adminSystem": "System",
     "logs": "Call Logs",
@@ -313,6 +317,7 @@
     "displayName": "Display Name",
     "serviceIdentifier": "Service Identifier",
     "description": "Description",
+    "iconUrl": "Icon URL",
     "command": "Command",
     "commandRequired": "Command *",
     "args": "Arguments",
@@ -857,7 +862,23 @@
     "batchPricingTitle": "Batch set marketplace service prices",
     "clone": "Clone from a user-owned service",
     "cloneFrom": "Cloned from service #{{id}}",
-    "credentialReplaceHint": "The clone kept the source service credentials. Replace them with platform credentials soon to avoid reusing a personal key for all platform traffic."
+    "credentialReplaceHint": "The clone kept the source service credentials. Replace them with platform credentials soon to avoid reusing a personal key for all platform traffic.",
+    "priceNegative": "Price cannot be negative",
+    "noGroup": "No group",
+    "noTagsHint": "Create tags in Marketplace Categories first",
+    "version": "Version",
+    "tags": "Tags",
+    "rating": "Rating"
+  },
+  "categories": {
+    "subtitle": "Manage marketplace business groups and tag dictionary",
+    "groups": "Groups",
+    "tags": "Tags",
+    "colName": "Name",
+    "colDisplayName": "Display Name",
+    "colSortOrder": "Sort Order",
+    "groupDesc": "Marketplace business group; an item belongs to one group",
+    "tagDesc": "Tag dictionary; items pick tags from here"
   },
   "settings": {
     "title": "System Settings",

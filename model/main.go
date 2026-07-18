@@ -78,6 +78,8 @@ func migrateDB() error {
 		&CloudEndpoint{},
 		&McpCallLog{},
 		&MarketplaceItem{},
+		&MarketplaceGroup{},
+		&MarketplaceTag{},
 		&MarketplaceReview{},
 		&McpToolPrice{},
 		&Redemption{},

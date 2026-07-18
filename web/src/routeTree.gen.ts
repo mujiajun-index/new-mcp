@@ -27,9 +27,6 @@ const AuthenticatedWalletLazyRouteImport = createFileRoute(
 const AuthenticatedSettingsLazyRouteImport = createFileRoute(
   '/_authenticated/settings',
 )()
-const AuthenticatedPricingLazyRouteImport = createFileRoute(
-  '/_authenticated/pricing',
-)()
 const AuthenticatedLogsLazyRouteImport = createFileRoute(
   '/_authenticated/logs',
 )()
@@ -108,6 +105,8 @@ const AuthenticatedAdminBillingLazyRouteImport = createFileRoute(
 const AuthenticatedAdminMarketplaceIndexLazyRouteImport = createFileRoute(
   '/_authenticated/admin/marketplace/',
 )()
+const AuthenticatedAdminMarketplaceCategoriesIndexLazyRouteImport =
+  createFileRoute('/_authenticated/admin/marketplace-categories/')()
 const AuthenticatedAdminMarketplaceCreateLazyRouteImport = createFileRoute(
   '/_authenticated/admin/marketplace/create',
 )()
@@ -173,14 +172,6 @@ const AuthenticatedSettingsLazyRoute =
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any).lazy(() =>
     import('./routes/_authenticated/settings.lazy').then((d) => d.Route),
-  )
-const AuthenticatedPricingLazyRoute =
-  AuthenticatedPricingLazyRouteImport.update({
-    id: '/pricing',
-    path: '/pricing',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any).lazy(() =>
-    import('./routes/_authenticated/pricing.lazy').then((d) => d.Route),
   )
 const AuthenticatedLogsLazyRoute = AuthenticatedLogsLazyRouteImport.update({
   id: '/logs',
@@ -404,6 +395,16 @@ const AuthenticatedAdminMarketplaceIndexLazyRoute =
       (d) => d.Route,
     ),
   )
+const AuthenticatedAdminMarketplaceCategoriesIndexLazyRoute =
+  AuthenticatedAdminMarketplaceCategoriesIndexLazyRouteImport.update({
+    id: '/marketplace-categories/',
+    path: '/marketplace-categories/',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any).lazy(() =>
+    import('./routes/_authenticated/admin/marketplace-categories/index.lazy').then(
+      (d) => d.Route,
+    ),
+  )
 const AuthenticatedAdminMarketplaceCreateLazyRoute =
   AuthenticatedAdminMarketplaceCreateLazyRouteImport.update({
     id: '/marketplace/create',
@@ -433,7 +434,6 @@ export interface FileRoutesByFullPath {
   '/api-keys': typeof AuthenticatedApiKeysLazyRoute
   '/dashboard': typeof AuthenticatedDashboardLazyRoute
   '/logs': typeof AuthenticatedLogsLazyRoute
-  '/pricing': typeof AuthenticatedPricingLazyRoute
   '/settings': typeof AuthenticatedSettingsLazyRoute
   '/wallet': typeof AuthenticatedWalletLazyRoute
   '/sign-in': typeof PublicSignInLazyRoute
@@ -463,6 +463,7 @@ export interface FileRoutesByFullPath {
   '/vision/': typeof AuthenticatedVisionIndexLazyRoute
   '/admin/marketplace/$id': typeof AuthenticatedAdminMarketplaceIdLazyRoute
   '/admin/marketplace/create': typeof AuthenticatedAdminMarketplaceCreateLazyRoute
+  '/admin/marketplace-categories/': typeof AuthenticatedAdminMarketplaceCategoriesIndexLazyRoute
   '/admin/marketplace/': typeof AuthenticatedAdminMarketplaceIndexLazyRoute
 }
 export interface FileRoutesByTo {
@@ -473,7 +474,6 @@ export interface FileRoutesByTo {
   '/api-keys': typeof AuthenticatedApiKeysLazyRoute
   '/dashboard': typeof AuthenticatedDashboardLazyRoute
   '/logs': typeof AuthenticatedLogsLazyRoute
-  '/pricing': typeof AuthenticatedPricingLazyRoute
   '/settings': typeof AuthenticatedSettingsLazyRoute
   '/wallet': typeof AuthenticatedWalletLazyRoute
   '/sign-in': typeof PublicSignInLazyRoute
@@ -503,6 +503,7 @@ export interface FileRoutesByTo {
   '/vision': typeof AuthenticatedVisionIndexLazyRoute
   '/admin/marketplace/$id': typeof AuthenticatedAdminMarketplaceIdLazyRoute
   '/admin/marketplace/create': typeof AuthenticatedAdminMarketplaceCreateLazyRoute
+  '/admin/marketplace-categories': typeof AuthenticatedAdminMarketplaceCategoriesIndexLazyRoute
   '/admin/marketplace': typeof AuthenticatedAdminMarketplaceIndexLazyRoute
 }
 export interface FileRoutesById {
@@ -516,7 +517,6 @@ export interface FileRoutesById {
   '/_authenticated/api-keys': typeof AuthenticatedApiKeysLazyRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardLazyRoute
   '/_authenticated/logs': typeof AuthenticatedLogsLazyRoute
-  '/_authenticated/pricing': typeof AuthenticatedPricingLazyRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsLazyRoute
   '/_authenticated/wallet': typeof AuthenticatedWalletLazyRoute
   '/_public/sign-in': typeof PublicSignInLazyRoute
@@ -546,6 +546,7 @@ export interface FileRoutesById {
   '/_authenticated/vision/': typeof AuthenticatedVisionIndexLazyRoute
   '/_authenticated/admin/marketplace/$id': typeof AuthenticatedAdminMarketplaceIdLazyRoute
   '/_authenticated/admin/marketplace/create': typeof AuthenticatedAdminMarketplaceCreateLazyRoute
+  '/_authenticated/admin/marketplace-categories/': typeof AuthenticatedAdminMarketplaceCategoriesIndexLazyRoute
   '/_authenticated/admin/marketplace/': typeof AuthenticatedAdminMarketplaceIndexLazyRoute
 }
 export interface FileRouteTypes {
@@ -558,7 +559,6 @@ export interface FileRouteTypes {
     | '/api-keys'
     | '/dashboard'
     | '/logs'
-    | '/pricing'
     | '/settings'
     | '/wallet'
     | '/sign-in'
@@ -588,6 +588,7 @@ export interface FileRouteTypes {
     | '/vision/'
     | '/admin/marketplace/$id'
     | '/admin/marketplace/create'
+    | '/admin/marketplace-categories/'
     | '/admin/marketplace/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -598,7 +599,6 @@ export interface FileRouteTypes {
     | '/api-keys'
     | '/dashboard'
     | '/logs'
-    | '/pricing'
     | '/settings'
     | '/wallet'
     | '/sign-in'
@@ -628,6 +628,7 @@ export interface FileRouteTypes {
     | '/vision'
     | '/admin/marketplace/$id'
     | '/admin/marketplace/create'
+    | '/admin/marketplace-categories'
     | '/admin/marketplace'
   id:
     | '__root__'
@@ -640,7 +641,6 @@ export interface FileRouteTypes {
     | '/_authenticated/api-keys'
     | '/_authenticated/dashboard'
     | '/_authenticated/logs'
-    | '/_authenticated/pricing'
     | '/_authenticated/settings'
     | '/_authenticated/wallet'
     | '/_public/sign-in'
@@ -670,6 +670,7 @@ export interface FileRouteTypes {
     | '/_authenticated/vision/'
     | '/_authenticated/admin/marketplace/$id'
     | '/_authenticated/admin/marketplace/create'
+    | '/_authenticated/admin/marketplace-categories/'
     | '/_authenticated/admin/marketplace/'
   fileRoutesById: FileRoutesById
 }
@@ -752,13 +753,6 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof AuthenticatedSettingsLazyRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/pricing': {
-      id: '/_authenticated/pricing'
-      path: '/pricing'
-      fullPath: '/pricing'
-      preLoaderRoute: typeof AuthenticatedPricingLazyRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/logs': {
@@ -950,6 +944,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminMarketplaceIndexLazyRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
+    '/_authenticated/admin/marketplace-categories/': {
+      id: '/_authenticated/admin/marketplace-categories/'
+      path: '/marketplace-categories'
+      fullPath: '/admin/marketplace-categories/'
+      preLoaderRoute: typeof AuthenticatedAdminMarketplaceCategoriesIndexLazyRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
     '/_authenticated/admin/marketplace/create': {
       id: '/_authenticated/admin/marketplace/create'
       path: '/marketplace/create'
@@ -975,6 +976,7 @@ interface AuthenticatedAdminRouteRouteChildren {
   AuthenticatedAdminUsersLazyRoute: typeof AuthenticatedAdminUsersLazyRoute
   AuthenticatedAdminMarketplaceIdLazyRoute: typeof AuthenticatedAdminMarketplaceIdLazyRoute
   AuthenticatedAdminMarketplaceCreateLazyRoute: typeof AuthenticatedAdminMarketplaceCreateLazyRoute
+  AuthenticatedAdminMarketplaceCategoriesIndexLazyRoute: typeof AuthenticatedAdminMarketplaceCategoriesIndexLazyRoute
   AuthenticatedAdminMarketplaceIndexLazyRoute: typeof AuthenticatedAdminMarketplaceIndexLazyRoute
 }
 
@@ -990,6 +992,8 @@ const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren
       AuthenticatedAdminMarketplaceIdLazyRoute,
     AuthenticatedAdminMarketplaceCreateLazyRoute:
       AuthenticatedAdminMarketplaceCreateLazyRoute,
+    AuthenticatedAdminMarketplaceCategoriesIndexLazyRoute:
+      AuthenticatedAdminMarketplaceCategoriesIndexLazyRoute,
     AuthenticatedAdminMarketplaceIndexLazyRoute:
       AuthenticatedAdminMarketplaceIndexLazyRoute,
   }
@@ -1004,7 +1008,6 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedApiKeysLazyRoute: typeof AuthenticatedApiKeysLazyRoute
   AuthenticatedDashboardLazyRoute: typeof AuthenticatedDashboardLazyRoute
   AuthenticatedLogsLazyRoute: typeof AuthenticatedLogsLazyRoute
-  AuthenticatedPricingLazyRoute: typeof AuthenticatedPricingLazyRoute
   AuthenticatedSettingsLazyRoute: typeof AuthenticatedSettingsLazyRoute
   AuthenticatedWalletLazyRoute: typeof AuthenticatedWalletLazyRoute
   AuthenticatedCamerasIdLazyRoute: typeof AuthenticatedCamerasIdLazyRoute
@@ -1031,7 +1034,6 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedApiKeysLazyRoute: AuthenticatedApiKeysLazyRoute,
   AuthenticatedDashboardLazyRoute: AuthenticatedDashboardLazyRoute,
   AuthenticatedLogsLazyRoute: AuthenticatedLogsLazyRoute,
-  AuthenticatedPricingLazyRoute: AuthenticatedPricingLazyRoute,
   AuthenticatedSettingsLazyRoute: AuthenticatedSettingsLazyRoute,
   AuthenticatedWalletLazyRoute: AuthenticatedWalletLazyRoute,
   AuthenticatedCamerasIdLazyRoute: AuthenticatedCamerasIdLazyRoute,

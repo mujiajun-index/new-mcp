@@ -343,6 +343,8 @@ export interface MarketplaceListItem {
   description: string
   icon_url: string
   category: 'instant' | 'source'
+  group_id?: number
+  group_name?: string
   tags: string[]
   version: string
   transport_type: TransportType
@@ -364,6 +366,8 @@ export interface MarketplaceDetail {
   description: string
   icon_url: string
   category: 'instant' | 'source'
+  group_id?: number
+  group_name?: string
   tags: string[]
   version: string
   transport_type: TransportType
@@ -386,6 +390,27 @@ export interface MarketplaceDetail {
 
 export interface MarketplaceListParams extends ListParams {
   category?: 'instant' | 'source'
+  group_id?: number
+}
+
+export interface MarketplaceGroup {
+  id: number
+  name: string
+  display_name: string
+  description: string
+  icon_url: string
+  sort_order: number
+  status: number
+  created_at: string
+}
+
+export interface MarketplaceTag {
+  id: number
+  name: string
+  description: string
+  sort_order: number
+  status: number
+  created_at: string
 }
 
 export interface InstallReq {
