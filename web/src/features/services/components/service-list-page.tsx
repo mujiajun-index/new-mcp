@@ -50,11 +50,11 @@ function HealthBadge({ status }: { status: string }) {
   return <span className="inline-flex h-2 w-2 rounded-full bg-zinc-300 dark:bg-zinc-600" title={t('services.healthUnknown')} />
 }
 
-function healthLabel(status: string) {
+function HealthLabel({ status }: { status: string }) {
   const { t } = useTranslation()
-  if (status === 'healthy') return t('services.healthHealthy')
-  if (status === 'unhealthy') return t('services.healthUnhealthy')
-  return t('services.healthUnknown')
+  if (status === 'healthy') return <>{t('services.healthHealthy')}</>
+  if (status === 'unhealthy') return <>{t('services.healthUnhealthy')}</>
+  return <>{t('services.healthUnknown')}</>
 }
 
 export function ServiceListPage() {
@@ -233,7 +233,7 @@ export function ServiceListPage() {
                       value: (
                         <span className="inline-flex items-center gap-1.5">
                           <HealthBadge status={s.health_status} />
-                          {healthLabel(s.health_status)}
+                          <HealthLabel status={s.health_status} />
                         </span>
                       ),
                     },

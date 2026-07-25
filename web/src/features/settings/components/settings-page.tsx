@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/lib/api'
@@ -37,13 +37,13 @@ export function SettingsPage() {
 
   const [profileForm, setProfileForm] = useState({ display_name: '' })
   const [passwordForm, setPasswordForm] = useState({ old_password: '', new_password: '', confirm: '' })
-  const [profileLoaded, setProfileLoaded] = useState(false)
 
-  // Initialize form when profile loads
-  if (profile && !profileLoaded) {
-    setProfileForm({ display_name: profile.display_name || '' })
-    setProfileLoaded(true)
-  }
+  // Initialize the display-name form once the profile has loaded.
+  useEffect(() => {
+    if (profile) {
+      setProfileForm({ display_name: profile.display_name || '' })
+    }
+  }, [profile])
 
   const refreshProfile = () => queryClient.invalidateQueries({ queryKey: ['profile'] })
 
