@@ -240,7 +240,7 @@ export function GroupDetailPage() {
   return (
     <div className="p-6 lg:p-8 space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3 flex-1 min-w-0">
           <Button variant="ghost" size="icon" onClick={() => navigate({ to: '/groups' })}>
             <ArrowLeft className="h-4 w-4" />
@@ -310,7 +310,7 @@ export function GroupDetailPage() {
             )}
           </div>
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex flex-wrap gap-2 shrink-0">
           {!editing && (
             <Button variant="outline" size="sm" onClick={() => {
               setEditForm({ name: group.name, display_name: group.display_name || '', description: group.description || '' })

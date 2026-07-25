@@ -107,7 +107,7 @@ export function ConnectionDetailPage() {
   return (
     <div className={`p-6 lg:p-8 space-y-6${isDisabled ? ' opacity-60' : ''}`}>
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3">
           <Button variant="ghost" size="icon" onClick={() => navigate({ to: '/connections' })}>
             <ArrowLeft className="h-4 w-4" />
@@ -120,7 +120,7 @@ export function ConnectionDetailPage() {
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {/* Enable/Disable toggle */}
           <Button
             variant="outline"

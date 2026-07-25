@@ -126,7 +126,7 @@ export function CameraDetailPage() {
   return (
     <div className="p-6 lg:p-8 space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3">
           <Button variant="ghost" size="icon" onClick={() => navigate({ to: '/cameras' })}>
             <ArrowLeft className="h-4 w-4" />
@@ -141,7 +141,7 @@ export function CameraDetailPage() {
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {!editing && (
             <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
               <Pencil className="h-4 w-4 mr-1.5" />{t('cameras.detail.edit')}
