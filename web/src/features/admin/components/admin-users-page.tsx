@@ -247,10 +247,12 @@ export function AdminUsersPage() {
                 </Select>
               )}
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">{t('admin.users.quota')}</label>
-              <Input type="number" placeholder="0" value={form.quota} onChange={e => setForm({ ...form, quota: e.target.value })} />
-            </div>
+            {!editingUser && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{t('admin.users.quota')}</label>
+                <Input type="number" placeholder="0" value={form.quota} onChange={e => setForm({ ...form, quota: e.target.value })} />
+              </div>
+            )}
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('admin.users.groups')}</label>
               <Select value={form.group} onValueChange={v => setForm({ ...form, group: v })}>
@@ -290,7 +292,6 @@ export function AdminUsersPage() {
                     display_name: form.display_name || undefined,
                     email: form.email || undefined,
                     role: form.role,
-                    quota: form.quota ? parseInt(form.quota) : undefined,
                     group: form.group || undefined,
                     remark: form.remark || undefined,
                     status: form.status,

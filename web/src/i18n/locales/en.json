@@ -834,6 +834,7 @@
     "backToMarketplace": "Back to Marketplace",
     "notFound": "Service does not exist",
     "installs": "{{count}} installs",
+    "installCount": "Installs",
     "oneClickInstall": "One-Click Install",
     "oneClickInstallDesc": "Auto-create MCP service config",
     "installing": "Installing...",
@@ -868,7 +869,11 @@
     "noTagsHint": "Create tags in Marketplace Categories first",
     "version": "Version",
     "tags": "Tags",
-    "rating": "Rating"
+    "rating": "Rating",
+    "category": "Category",
+    "repoUrl": "Repository URL",
+    "installGuide": "Install Guide",
+    "sourceFieldsHint": "Source-type services show users: repository URL and install guide"
   },
   "categories": {
     "subtitle": "Manage marketplace business groups and tag dictionary",

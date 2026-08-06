@@ -834,6 +834,7 @@
     "backToMarketplace": "返回广场",
     "notFound": "服务不存在",
     "installs": "{{count}} 次安装",
+    "installCount": "安装数",
     "oneClickInstall": "一键安装",
     "oneClickInstallDesc": "自动创建 MCP 服务配置",
     "installing": "安装中...",
@@ -868,7 +869,11 @@
     "noTagsHint": "请先在市场分类中创建标签",
     "version": "版本",
     "tags": "标签",
-    "rating": "评分"
+    "rating": "评分",
+    "category": "分类",
+    "repoUrl": "仓库地址",
+    "installGuide": "安装指南",
+    "sourceFieldsHint": "源码型服务展示给用户:仓库地址与安装指南"
   },
   "categories": {
     "subtitle": "管理市场的业务分组与标签字典",

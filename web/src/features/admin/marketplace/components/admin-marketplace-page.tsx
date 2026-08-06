@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import {
-  adminListMarketplace, adminCreateMarketplace, adminDeleteMarketplace,
+  adminListMarketplace, adminCreateMarketplace, adminUpdateMarketplace, adminDeleteMarketplace,
   adminBatchPricing, adminCloneMarketplace, adminListCloneSources,
 } from '../api'
 import { useSystemConfigStore } from '@/stores/system-config-store'
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -59,6 +60,16 @@ export function AdminMarketplacePage() {
     mutationFn: adminDeleteMarketplace,
     onSuccess: () => {
       toast.success(t('common.delete'))
+      queryClient.invalidateQueries({ queryKey: ['admin-marketplace'] })
+    },
+  })
+
+  // 行内启用/禁用:复用 adminUpdateMarketplace({status})。失败时(如非自用模式启用未定价项)
+  // 由全局响应拦截器 toast 错误信息,开关因数据未变而保持在原位。
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: number }) => adminUpdateMarketplace(id, { status }),
+    onSuccess: () => {
+      toast.success(t('common.success'))
       queryClient.invalidateQueries({ queryKey: ['admin-marketplace'] })
     },
   })
@@ -182,10 +193,16 @@ export function AdminMarketplacePage() {
                       </span>
                     </TableCell>
                     <TableCell className="px-4">
-                      <Badge variant={item.status === 1 ? 'outline' : 'secondary'}
-                        className={item.status === 1 ? 'text-emerald-600 border-emerald-300' : ''}>
-                        {item.status === 1 ? t('common.enabled') : t('common.disabled')}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={item.status === 1}
+                          onCheckedChange={(checked) => statusMutation.mutate({ id: item.id, status: checked ? 1 : 2 })}
+                          disabled={statusMutation.isPending && statusMutation.variables?.id === item.id}
+                        />
+                        <span className={`text-xs ${item.status === 1 ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+                          {item.status === 1 ? t('common.enabled') : t('common.disabled')}
+                        </span>
+                      </div>
                     </TableCell>
                     <TableCell className="px-4 text-right">
                       <Button variant="ghost" size="sm" title={t('common.details')}

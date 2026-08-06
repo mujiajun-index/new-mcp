@@ -9,6 +9,7 @@ import { priceLabel } from '@/lib/billing'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
@@ -77,7 +78,7 @@ export function AdminMarketplaceDetailPage() {
           </Badge>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-          <div><span className="text-muted-foreground">{t('marketplace.installs')}</span>: {item.install_count}</div>
+          <div><span className="text-muted-foreground">{t('marketplace.installCount')}</span>: {item.install_count}</div>
           <div><span className="text-muted-foreground">{t('marketplace.rating')}</span>: {item.rating_count > 0 ? item.rating_avg.toFixed(1) : '-'}</div>
           <div><span className="text-muted-foreground">{t('services.transportType')}</span>: {item.transport_type}</div>
           <div><span className="text-muted-foreground">{t('common.createdAt')}</span>: {item.created_at.slice(0, 10)}</div>
@@ -105,8 +106,11 @@ function EditForm({ item, groups, tagsLib, notSelfUse, onSave, pending }: {
     display_name: item.display_name,
     description: item.description,
     icon_url: item.icon_url,
+    category: item.category,
     version: item.version,
     group_id: item.group_id ? String(item.group_id) : '',
+    repo_url: item.repo_url,
+    install_guide: item.install_guide,
     billing_type: item.billing_type,
     price_per_call: String(item.price_per_call),
     status: String(item.status),
@@ -125,9 +129,12 @@ function EditForm({ item, groups, tagsLib, notSelfUse, onSave, pending }: {
       display_name: form.display_name,
       description: form.description,
       icon_url: form.icon_url,
+      category: form.category,
       version: form.version,
       group_id: form.group_id ? Number(form.group_id) : null,
       tags: selectedTags,
+      repo_url: form.repo_url,
+      install_guide: form.install_guide,
       billing_type: billingType,
       price_per_call: billingType === 'free' ? 0 : price,
       status: Number(form.status),
@@ -153,9 +160,21 @@ function EditForm({ item, groups, tagsLib, notSelfUse, onSave, pending }: {
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
+          <Label>{t('marketplace.category')}</Label>
+          <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: v as 'instant' | 'source' })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="instant">{t('marketplace.ready')}</SelectItem>
+              <SelectItem value="source">{t('marketplace.source')}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
           <Label>{t('marketplace.version')}</Label>
           <Input value={form.version} onChange={(e) => setForm({ ...form, version: e.target.value })} />
         </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>{t('categories.groups')}</Label>
           <Select value={form.group_id || '__none__'} onValueChange={(v) => setForm({ ...form, group_id: v === '__none__' ? '' : v })}>
@@ -166,7 +185,30 @@ function EditForm({ item, groups, tagsLib, notSelfUse, onSave, pending }: {
             </SelectContent>
           </Select>
         </div>
+        <div className="space-y-2">
+          <Label>{t('common.status')}</Label>
+          <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1">{t('common.enabled')}</SelectItem>
+              <SelectItem value="2">{t('common.disabled')}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
+      {form.category === 'source' && (
+        <div className="space-y-4 rounded-lg border border-dashed bg-muted/20 p-4">
+          <p className="text-xs text-muted-foreground">{t('marketplace.sourceFieldsHint')}</p>
+          <div className="space-y-2">
+            <Label>{t('marketplace.repoUrl')}</Label>
+            <Input value={form.repo_url} onChange={(e) => setForm({ ...form, repo_url: e.target.value })} placeholder="https://github.com/..." />
+          </div>
+          <div className="space-y-2">
+            <Label>{t('marketplace.installGuide')}</Label>
+            <Textarea rows={4} value={form.install_guide} onChange={(e) => setForm({ ...form, install_guide: e.target.value })} />
+          </div>
+        </div>
+      )}
       <div className="space-y-2">
         <Label>{t('marketplace.tags')}</Label>
         <div className="flex flex-wrap gap-2">
@@ -198,16 +240,6 @@ function EditForm({ item, groups, tagsLib, notSelfUse, onSave, pending }: {
           <Input type="number" min="0" step="0.0001" disabled={form.billing_type === 'free'}
             value={form.price_per_call} onChange={(e) => setForm({ ...form, price_per_call: e.target.value })} />
         </div>
-      </div>
-      <div className="space-y-2">
-        <Label>{t('common.status')}</Label>
-        <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="1">{t('common.enabled')}</SelectItem>
-            <SelectItem value="2">{t('common.disabled')}</SelectItem>
-          </SelectContent>
-        </Select>
       </div>
       <div className="flex justify-end">
         <Button className="gap-2" disabled={pending} onClick={submit}><Save className="h-4 w-4" />{t('common.save')}</Button>
