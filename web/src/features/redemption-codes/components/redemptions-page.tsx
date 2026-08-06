@@ -25,9 +25,23 @@ const fmtExpiry = (unix: number) => {
   return new Date(unix * 1000).toLocaleString()
 }
 
-function copyText(text: string) {
-  if (navigator.clipboard) return navigator.clipboard.writeText(text)
-  return Promise.resolve()
+async function copyText(text: string) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  // 非安全上下文(如 HTTP 自部署)回退到 execCommand,保证手机端/非 HTTPS 也能真正写入剪贴板
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'
+  ta.style.top = '0'
+  ta.style.opacity = '0'
+  document.body.appendChild(ta)
+  ta.focus()
+  ta.select()
+  const ok = document.execCommand('copy')
+  document.body.removeChild(ta)
+  if (!ok) throw new Error('copy failed')
 }
 
 function StatusBadge({ status, expired }: { status: number; expired: boolean }) {
@@ -108,7 +122,7 @@ export function RedemptionsPage() {
   const copyAllCodes = () => {
     if (!generated?.length) return
     const text = generated.map((c) => c.code).join('\n')
-    copyText(text).then(() => toast.success(t('common.copied')))
+    copyText(text).then(() => toast.success(t('common.copied'))).catch(() => toast.error(t('common.copyFailed')))
   }
 
   return (
@@ -169,11 +183,12 @@ export function RedemptionsPage() {
                     { label: t('redemptionCodes.name'), value: item.name || '-' },
                     { label: t('redemptionCodes.quota'), value: <span className="tabular-nums">{item.quota}</span> },
                     { label: t('redemptionCodes.expiry'), value: fmtExpiry(item.expired_at) || t('redemptionCodes.neverExpires') },
+                    { label: t('redemptionCodes.redeemer'), value: item.username || '-' },
                     { label: t('redemptionCodes.createdAt'), value: fmtTime(item.created_at) },
                   ]}
                   actions={
                     <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => { copyText(item.code); toast.success(t('common.copied')) }}>
+                      <Button variant="ghost" size="sm" onClick={() => copyText(item.code).then(() => toast.success(t('common.copied'))).catch(() => toast.error(t('common.copyFailed')))}>
                         <Copy className="h-3.5 w-3.5" />
                       </Button>
                       {item.status === 1 && (
@@ -211,6 +226,7 @@ export function RedemptionsPage() {
                 <TableHead>{t('redemptionCodes.status')}</TableHead>
                 <TableHead>{t('redemptionCodes.expiry')}</TableHead>
                 <TableHead>{t('redemptionCodes.redeemedAt')}</TableHead>
+                <TableHead>{t('redemptionCodes.redeemer')}</TableHead>
                 <TableHead className="text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
@@ -223,7 +239,7 @@ export function RedemptionsPage() {
                       <button
                         className="font-mono text-xs text-muted-foreground hover:text-foreground transition-colors"
                         title={t('redemptionCodes.copyCode')}
-                        onClick={() => { copyText(item.code); toast.success(t('common.copied')) }}
+                        onClick={() => copyText(item.code).then(() => toast.success(t('common.copied'))).catch(() => toast.error(t('common.copyFailed')))}
                       >
                         {item.code}
                       </button>
@@ -235,6 +251,7 @@ export function RedemptionsPage() {
                       {fmtExpiry(item.expired_at) || t('redemptionCodes.neverExpires')}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground tabular-nums">{fmtTime(item.redeemed_at)}</TableCell>
+                    <TableCell className="text-sm">{item.username || '-'}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
                         {item.status === 1 && (
@@ -292,7 +309,7 @@ export function RedemptionsPage() {
                 {generated.map((c) => (
                   <div key={c.id} className="flex items-center justify-between py-1">
                     <code className="font-mono text-xs">{c.code}</code>
-                    <Button variant="ghost" size="sm" className="h-6" onClick={() => { copyText(c.code); toast.success(t('common.copied')) }}>
+                    <Button variant="ghost" size="sm" className="h-6" onClick={() => copyText(c.code).then(() => toast.success(t('common.copied'))).catch(() => toast.error(t('common.copyFailed')))}>
                       <Copy className="h-3 w-3" />
                     </Button>
                   </div>

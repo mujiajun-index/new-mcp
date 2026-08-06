@@ -15,6 +15,7 @@ type RedemptionItem struct {
 	Quota      int64  `json:"quota"`
 	Status     int    `json:"status"` // 1=可用 2=已兑换 3=已禁用
 	UserID     *int64 `json:"user_id"`
+	Username   string `json:"username"` // 兑换者用户名(未兑换时为空)
 	ExpiredAt  int64  `json:"expired_at"`
 	CreatedAt  string `json:"created_at"`
 	RedeemedAt string `json:"redeemed_at"`

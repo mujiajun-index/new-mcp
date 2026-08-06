@@ -49,9 +49,28 @@ func (s *RedemptionService) List(page, pageSize int, keyword string, status int)
 	if err != nil {
 		return nil, 0, err
 	}
+	// 批量解析兑换者用户名(避免 N+1):收集本页所有已兑换码的 user_id 一次性查询。
+	uidSet := make(map[int64]struct{})
+	for _, r := range rs {
+		if r.UserID != nil {
+			uidSet[*r.UserID] = struct{}{}
+		}
+	}
+	uids := make([]int64, 0, len(uidSet))
+	for id := range uidSet {
+		uids = append(uids, id)
+	}
+	users, _ := model.GetUsersByIDs(uids)
+
 	out := make([]dto.RedemptionItem, len(rs))
 	for i, r := range rs {
-		out[i] = toRedemptionItem(&r)
+		item := toRedemptionItem(&r)
+		if r.UserID != nil {
+			if u, ok := users[*r.UserID]; ok {
+				item.Username = u.Username
+			}
+		}
+		out[i] = item
 	}
 	return out, total, nil
 }

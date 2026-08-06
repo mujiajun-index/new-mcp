@@ -82,6 +82,22 @@ func GetUserByID(id int64) (*User, error) {
 	return &user, err
 }
 
+// GetUsersByIDs 一次查询取回多个用户(按 ID)。返回 id→User 映射,供列表批量解析用户名等,避免 N+1。
+func GetUsersByIDs(ids []int64) (map[int64]User, error) {
+	result := make(map[int64]User, len(ids))
+	if len(ids) == 0 {
+		return result, nil
+	}
+	var users []User
+	if err := DB.Where("id IN ?", ids).Find(&users).Error; err != nil {
+		return nil, err
+	}
+	for _, u := range users {
+		result[u.ID] = u
+	}
+	return result, nil
+}
+
 func ListUsersWithPaged(offset, limit int, keyword string, excludeID int64) ([]User, int64, error) {
 	var users []User
 	var total int64

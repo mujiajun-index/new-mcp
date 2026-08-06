@@ -535,6 +535,7 @@ export interface RedemptionItem {
   quota: number
   status: number // 1=可用 2=已兑换 3=已禁用
   user_id: number | null
+  username: string // 兑换者用户名(未兑换时为空)
   expired_at: number // Unix 秒,0=永不过期
   created_at: string
   redeemed_at: string
