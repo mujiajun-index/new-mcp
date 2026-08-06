@@ -15,10 +15,11 @@ import (
 
 type ApiKeyService struct{}
 
-func (s *ApiKeyService) List(userID int64, keyword string) ([]dto.ApiKeyListItem, error) {
-	keys, err := model.ListApiKeysByUser(userID, keyword)
+func (s *ApiKeyService) List(userID int64, keyword string, page, pageSize int) ([]dto.ApiKeyListItem, int64, error) {
+	offset := common.GetOffset(page, pageSize)
+	keys, total, err := model.ListApiKeysByUser(userID, keyword, offset, pageSize)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	items := make([]dto.ApiKeyListItem, len(keys))
@@ -55,7 +56,7 @@ func (s *ApiKeyService) List(userID int64, keyword string) ([]dto.ApiKeyListItem
 			CreatedAt:      k.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		}
 	}
-	return items, nil
+	return items, total, nil
 }
 
 func (s *ApiKeyService) Create(userID int64, req *dto.CreateApiKeyReq) (*dto.ApiKeyCreateResult, error) {
@@ -189,17 +190,16 @@ func (s *ApiKeyService) Update(userID, keyID int64, req *dto.UpdateApiKeyReq) er
 	return apiKey.Update()
 }
 
+// Delete 删除指定 Key:按 ID 取出后校验归属再删,避免为删一个 Key 而全量拉取用户所有 Key。
 func (s *ApiKeyService) Delete(userID, keyID int64) error {
-	keys, err := model.ListApiKeysByUser(userID, "")
+	apiKey, err := model.GetApiKeyByID(keyID)
 	if err != nil {
-		return err
+		return fmt.Errorf("API Key 不存在")
 	}
-	for _, k := range keys {
-		if k.ID == keyID {
-			return k.Delete()
-		}
+	if apiKey.UserID != userID {
+		return fmt.Errorf("无权操作")
 	}
-	return nil
+	return apiKey.Delete()
 }
 
 func (s *ApiKeyService) GetKey(userID, keyID int64) (string, error) {

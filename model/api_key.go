@@ -59,14 +59,23 @@ func GetApiKeyByID(id int64) (*ApiKey, error) {
 	return &key, err
 }
 
-func ListApiKeysByUser(userID int64, keyword string) ([]ApiKey, error) {
+// ListApiKeysByUser 分页返回该用户的 API Key 列表(offset/limit 为 0/0 时退化为全量,供非分页场景)。
+func ListApiKeysByUser(userID int64, keyword string, offset, limit int) ([]ApiKey, int64, error) {
 	q := DB.Where("user_id = ?", userID)
 	if keyword != "" {
 		q = q.Where("name LIKE ? OR key_prefix LIKE ? OR `key` LIKE ?", "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
 	}
+	var total int64
+	if err := q.Model(&ApiKey{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 	var keys []ApiKey
-	err := q.Order("created_at DESC").Find(&keys).Error
-	return keys, err
+	find := q.Order("created_at DESC")
+	if limit > 0 {
+		find = find.Offset(offset).Limit(limit)
+	}
+	err := find.Find(&keys).Error
+	return keys, total, err
 }
 
 func BatchDeleteApiKeys(userID int64, ids []int64) error {

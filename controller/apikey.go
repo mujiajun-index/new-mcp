@@ -15,12 +15,24 @@ var apiKeyService = &service.ApiKeyService{}
 func ListApiKeys(c *gin.Context) {
 	userID := c.GetInt64("user_id")
 	keyword := c.Query("keyword")
-	items, err := apiKeyService.List(userID, keyword)
+	// 兼容不分页场景(如连接页面的 Key 下拉,需要全量):未带 page 参数时返回全量列表(无 pagination),
+	// 带 page 参数时分页。这样既支持 API Keys 页面的分页,又不破坏旧的下拉调用方。
+	if c.Query("page") == "" {
+		items, _, err := apiKeyService.List(userID, keyword, 0, 0)
+		if err != nil {
+			common.Error(c, http.StatusInternalServerError, "获取 API Key 列表失败")
+			return
+		}
+		common.Success(c, items)
+		return
+	}
+	page, pageSize := common.GetPagination(c)
+	items, total, err := apiKeyService.List(userID, keyword, page, pageSize)
 	if err != nil {
 		common.Error(c, http.StatusInternalServerError, "获取 API Key 列表失败")
 		return
 	}
-	common.Success(c, items)
+	common.PageOf(c, items, page, pageSize, total)
 }
 
 func CreateApiKey(c *gin.Context) {

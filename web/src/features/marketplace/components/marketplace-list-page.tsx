@@ -18,20 +18,26 @@ export function MarketplaceListPage() {
   const [category, setCategory] = useState<'' | 'instant' | 'source'>('')
   const [groupId, setGroupId] = useState<number | ''>('')
   const [groupsOpen, setGroupsOpen] = useState(false)
+  const [page, setPage] = useState(1)
+  const pageSize = 12
 
   const { data: groupsData } = useQuery({ queryKey: ['marketplace-groups'], queryFn: getMarketplaceGroups })
   const groups: any[] = groupsData?.data ?? []
 
   const { data, isLoading } = useQuery({
-    queryKey: ['marketplace', keyword, category, groupId],
+    queryKey: ['marketplace', keyword, category, groupId, page],
     queryFn: () => getMarketplaceItems({
       keyword: keyword || undefined,
       category: category || undefined,
       group_id: groupId || undefined,
+      page,
+      page_size: pageSize,
     }),
   })
 
   const items: MarketplaceListItem[] = data?.data || []
+  const pagination = data?.pagination
+  const totalPages = pagination?.total_pages ?? 1
 
   return (
     <div className="flex gap-6 p-4 sm:p-6 lg:p-8">
@@ -43,13 +49,13 @@ export function MarketplaceListPage() {
               {t('categories.groups')}
             </p>
             <button
-              onClick={() => setGroupId('')}
+              onClick={() => { setGroupId(''); setPage(1) }}
               className={`flex w-full items-center rounded-lg px-3 py-2 text-sm transition-colors ${groupId === '' ? 'bg-primary/10 font-medium text-primary' : 'text-sidebar-foreground/70 hover:bg-muted'}`}
             >
               {t('marketplace.filterAll')}
             </button>
             {groups.map((g) => (
-              <button key={g.id} onClick={() => setGroupId(g.id)}
+              <button key={g.id} onClick={() => { setGroupId(g.id); setPage(1) }}
                 className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${groupId === g.id ? 'bg-primary/10 font-medium text-primary' : 'text-sidebar-foreground/70 hover:bg-muted'}`}>
                 {g.icon_url ? <img src={g.icon_url} alt="" className="h-4 w-4" /> : <FolderTree className="h-3.5 w-3.5 shrink-0" />}
                 <span className="truncate">{g.display_name || g.name}</span>
@@ -68,7 +74,7 @@ export function MarketplaceListPage() {
 
         {/* Filters */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <form onSubmit={(e) => { e.preventDefault(); setKeyword(searchInput) }} className="relative max-w-sm flex-1">
+          <form onSubmit={(e) => { e.preventDefault(); setKeyword(searchInput); setPage(1) }} className="relative max-w-sm flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input placeholder={t('marketplace.searchPlaceholder')} value={searchInput} onChange={(e) => setSearchInput(e.target.value)} className="pl-9" />
           </form>
@@ -76,11 +82,11 @@ export function MarketplaceListPage() {
             <FolderTree className="h-3.5 w-3.5" />{t('categories.groups')}
           </Button>
           <div className="flex flex-wrap gap-2">
-            <Button variant={category === '' ? 'default' : 'outline'} size="sm" onClick={() => setCategory('')}>{t('marketplace.filterAll')}</Button>
-            <Button variant={category === 'instant' ? 'default' : 'outline'} size="sm" className="gap-1.5" onClick={() => setCategory('instant')}>
+            <Button variant={category === '' ? 'default' : 'outline'} size="sm" onClick={() => { setCategory(''); setPage(1) }}>{t('marketplace.filterAll')}</Button>
+            <Button variant={category === 'instant' ? 'default' : 'outline'} size="sm" className="gap-1.5" onClick={() => { setCategory('instant'); setPage(1) }}>
               <Zap className="h-3.5 w-3.5" />{t('marketplace.filterReady')}
             </Button>
-            <Button variant={category === 'source' ? 'default' : 'outline'} size="sm" className="gap-1.5" onClick={() => setCategory('source')}>
+            <Button variant={category === 'source' ? 'default' : 'outline'} size="sm" className="gap-1.5" onClick={() => { setCategory('source'); setPage(1) }}>
               <Code2 className="h-3.5 w-3.5" />{t('marketplace.filterSource')}
             </Button>
         </div>
@@ -130,6 +136,18 @@ export function MarketplaceListPage() {
                 </div>
               </Link>
             ))}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {pagination && (
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">{t('common.total')} {pagination.total} {t('common.items')}</p>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>‹</Button>
+              <span className="text-sm tabular-nums">{page} / {totalPages}</span>
+              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>›</Button>
+            </div>
           </div>
         )}
       </div>

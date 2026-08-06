@@ -284,6 +284,8 @@ export function ApiKeyPage() {
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const pageSize = 15
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [showCreate, setShowCreate] = useState(false)
   const [editingKey, setEditingKey] = useState<ApiKeyListItem | null>(null)
@@ -309,8 +311,8 @@ export function ApiKeyPage() {
   })
 
   const { data: keysData, isLoading } = useQuery({
-    queryKey: ['api-keys', search],
-    queryFn: () => getApiKeys(search || undefined),
+    queryKey: ['api-keys', search, page],
+    queryFn: () => getApiKeys({ keyword: search || undefined, page, page_size: pageSize }),
   })
 
   const { data: groupsData } = useQuery({
@@ -403,19 +405,27 @@ export function ApiKeyPage() {
     })
   }
 
-  const toggleSelectAll = () => {
-    const keys = keysData?.data || []
-    if (selected.size === keys.length && keys.length > 0) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(keys.map((k: ApiKeyListItem) => k.id)))
-    }
-  }
-
   const keys = keysData?.data || []
   const groups: GroupListItem[] = groupsData?.data || []
-  const allSelected = keys.length > 0 && selected.size === keys.length
-  const someSelected = selected.size > 0 && !allSelected
+  const pagination = keysData?.pagination
+  const totalPages = pagination?.total_pages ?? 1
+
+  // 分页后"全选"按当前页作用域:仅勾选/取消本页 ID,跨页已选累计保留,批量操作作用于全部已选。
+  const pageIds: number[] = keys.map((k: ApiKeyListItem) => k.id)
+  const allSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id))
+  const someSelected = pageIds.some((id) => selected.has(id)) && !allSelected
+
+  const toggleSelectAll = () => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (pageIds.length > 0 && pageIds.every((id) => next.has(id))) {
+        pageIds.forEach((id) => next.delete(id))
+      } else {
+        pageIds.forEach((id) => next.add(id))
+      }
+      return next
+    })
+  }
 
   const locale = i18n.language?.startsWith('zh') ? 'zh-CN' : 'en-US'
 
@@ -589,7 +599,7 @@ export function ApiKeyPage() {
           <Input
             placeholder={t('apiKeys.searchPlaceholder')}
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => { setSearch(e.target.value); setPage(1) }}
             className="pl-9"
           />
           {search && (
@@ -598,7 +608,7 @@ export function ApiKeyPage() {
               className="absolute right-2 top-1/2 z-10 -translate-y-1/2 cursor-pointer rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
               title={t('common.clear')}
               aria-label={t('common.clear')}
-              onClick={() => setSearch('')}
+              onClick={() => { setSearch(''); setPage(1) }}
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -833,6 +843,18 @@ export function ApiKeyPage() {
           </Table>
         )}
       </div>
+
+      {/* Pagination */}
+      {pagination && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">{t('common.total')} {pagination.total} {t('common.items')}</p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>‹</Button>
+            <span className="text-sm tabular-nums">{page} / {totalPages}</span>
+            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>›</Button>
+          </div>
+        </div>
+      )}
 
       {/* Click outside to close batch menu */}
       {showBatchMenu && (

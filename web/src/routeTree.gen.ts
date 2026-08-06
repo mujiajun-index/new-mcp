@@ -15,6 +15,7 @@ import { Route as PublicRouteRouteImport } from './routes/_public/route'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedAdminRouteRouteImport } from './routes/_authenticated/admin/route'
+import { Route as AuthenticatedAdminMarketplaceCreateRouteImport } from './routes/_authenticated/admin/marketplace/create'
 
 const SetupLazyRouteImport = createFileRoute('/setup')()
 const R500LazyRouteImport = createFileRoute('/500')()
@@ -107,9 +108,6 @@ const AuthenticatedAdminMarketplaceIndexLazyRouteImport = createFileRoute(
 )()
 const AuthenticatedAdminMarketplaceCategoriesIndexLazyRouteImport =
   createFileRoute('/_authenticated/admin/marketplace-categories/')()
-const AuthenticatedAdminMarketplaceCreateLazyRouteImport = createFileRoute(
-  '/_authenticated/admin/marketplace/create',
-)()
 const AuthenticatedAdminMarketplaceIdLazyRouteImport = createFileRoute(
   '/_authenticated/admin/marketplace/$id',
 )()
@@ -405,16 +403,6 @@ const AuthenticatedAdminMarketplaceCategoriesIndexLazyRoute =
       (d) => d.Route,
     ),
   )
-const AuthenticatedAdminMarketplaceCreateLazyRoute =
-  AuthenticatedAdminMarketplaceCreateLazyRouteImport.update({
-    id: '/marketplace/create',
-    path: '/marketplace/create',
-    getParentRoute: () => AuthenticatedAdminRouteRoute,
-  } as any).lazy(() =>
-    import('./routes/_authenticated/admin/marketplace/create.lazy').then(
-      (d) => d.Route,
-    ),
-  )
 const AuthenticatedAdminMarketplaceIdLazyRoute =
   AuthenticatedAdminMarketplaceIdLazyRouteImport.update({
     id: '/marketplace/$id',
@@ -425,6 +413,12 @@ const AuthenticatedAdminMarketplaceIdLazyRoute =
       (d) => d.Route,
     ),
   )
+const AuthenticatedAdminMarketplaceCreateRoute =
+  AuthenticatedAdminMarketplaceCreateRouteImport.update({
+    id: '/marketplace/create',
+    path: '/marketplace/create',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -461,8 +455,8 @@ export interface FileRoutesByFullPath {
   '/marketplace/': typeof AuthenticatedMarketplaceIndexLazyRoute
   '/services/': typeof AuthenticatedServicesIndexLazyRoute
   '/vision/': typeof AuthenticatedVisionIndexLazyRoute
+  '/admin/marketplace/create': typeof AuthenticatedAdminMarketplaceCreateRoute
   '/admin/marketplace/$id': typeof AuthenticatedAdminMarketplaceIdLazyRoute
-  '/admin/marketplace/create': typeof AuthenticatedAdminMarketplaceCreateLazyRoute
   '/admin/marketplace-categories/': typeof AuthenticatedAdminMarketplaceCategoriesIndexLazyRoute
   '/admin/marketplace/': typeof AuthenticatedAdminMarketplaceIndexLazyRoute
 }
@@ -501,8 +495,8 @@ export interface FileRoutesByTo {
   '/marketplace': typeof AuthenticatedMarketplaceIndexLazyRoute
   '/services': typeof AuthenticatedServicesIndexLazyRoute
   '/vision': typeof AuthenticatedVisionIndexLazyRoute
+  '/admin/marketplace/create': typeof AuthenticatedAdminMarketplaceCreateRoute
   '/admin/marketplace/$id': typeof AuthenticatedAdminMarketplaceIdLazyRoute
-  '/admin/marketplace/create': typeof AuthenticatedAdminMarketplaceCreateLazyRoute
   '/admin/marketplace-categories': typeof AuthenticatedAdminMarketplaceCategoriesIndexLazyRoute
   '/admin/marketplace': typeof AuthenticatedAdminMarketplaceIndexLazyRoute
 }
@@ -544,8 +538,8 @@ export interface FileRoutesById {
   '/_authenticated/marketplace/': typeof AuthenticatedMarketplaceIndexLazyRoute
   '/_authenticated/services/': typeof AuthenticatedServicesIndexLazyRoute
   '/_authenticated/vision/': typeof AuthenticatedVisionIndexLazyRoute
+  '/_authenticated/admin/marketplace/create': typeof AuthenticatedAdminMarketplaceCreateRoute
   '/_authenticated/admin/marketplace/$id': typeof AuthenticatedAdminMarketplaceIdLazyRoute
-  '/_authenticated/admin/marketplace/create': typeof AuthenticatedAdminMarketplaceCreateLazyRoute
   '/_authenticated/admin/marketplace-categories/': typeof AuthenticatedAdminMarketplaceCategoriesIndexLazyRoute
   '/_authenticated/admin/marketplace/': typeof AuthenticatedAdminMarketplaceIndexLazyRoute
 }
@@ -586,8 +580,8 @@ export interface FileRouteTypes {
     | '/marketplace/'
     | '/services/'
     | '/vision/'
-    | '/admin/marketplace/$id'
     | '/admin/marketplace/create'
+    | '/admin/marketplace/$id'
     | '/admin/marketplace-categories/'
     | '/admin/marketplace/'
   fileRoutesByTo: FileRoutesByTo
@@ -626,8 +620,8 @@ export interface FileRouteTypes {
     | '/marketplace'
     | '/services'
     | '/vision'
-    | '/admin/marketplace/$id'
     | '/admin/marketplace/create'
+    | '/admin/marketplace/$id'
     | '/admin/marketplace-categories'
     | '/admin/marketplace'
   id:
@@ -668,8 +662,8 @@ export interface FileRouteTypes {
     | '/_authenticated/marketplace/'
     | '/_authenticated/services/'
     | '/_authenticated/vision/'
-    | '/_authenticated/admin/marketplace/$id'
     | '/_authenticated/admin/marketplace/create'
+    | '/_authenticated/admin/marketplace/$id'
     | '/_authenticated/admin/marketplace-categories/'
     | '/_authenticated/admin/marketplace/'
   fileRoutesById: FileRoutesById
@@ -951,18 +945,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminMarketplaceCategoriesIndexLazyRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
-    '/_authenticated/admin/marketplace/create': {
-      id: '/_authenticated/admin/marketplace/create'
-      path: '/marketplace/create'
-      fullPath: '/admin/marketplace/create'
-      preLoaderRoute: typeof AuthenticatedAdminMarketplaceCreateLazyRouteImport
-      parentRoute: typeof AuthenticatedAdminRouteRoute
-    }
     '/_authenticated/admin/marketplace/$id': {
       id: '/_authenticated/admin/marketplace/$id'
       path: '/marketplace/$id'
       fullPath: '/admin/marketplace/$id'
       preLoaderRoute: typeof AuthenticatedAdminMarketplaceIdLazyRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/marketplace/create': {
+      id: '/_authenticated/admin/marketplace/create'
+      path: '/marketplace/create'
+      fullPath: '/admin/marketplace/create'
+      preLoaderRoute: typeof AuthenticatedAdminMarketplaceCreateRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
   }
@@ -974,8 +968,8 @@ interface AuthenticatedAdminRouteRouteChildren {
   AuthenticatedAdminReviewsLazyRoute: typeof AuthenticatedAdminReviewsLazyRoute
   AuthenticatedAdminSystemLazyRoute: typeof AuthenticatedAdminSystemLazyRoute
   AuthenticatedAdminUsersLazyRoute: typeof AuthenticatedAdminUsersLazyRoute
+  AuthenticatedAdminMarketplaceCreateRoute: typeof AuthenticatedAdminMarketplaceCreateRoute
   AuthenticatedAdminMarketplaceIdLazyRoute: typeof AuthenticatedAdminMarketplaceIdLazyRoute
-  AuthenticatedAdminMarketplaceCreateLazyRoute: typeof AuthenticatedAdminMarketplaceCreateLazyRoute
   AuthenticatedAdminMarketplaceCategoriesIndexLazyRoute: typeof AuthenticatedAdminMarketplaceCategoriesIndexLazyRoute
   AuthenticatedAdminMarketplaceIndexLazyRoute: typeof AuthenticatedAdminMarketplaceIndexLazyRoute
 }
@@ -988,10 +982,10 @@ const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren
     AuthenticatedAdminReviewsLazyRoute: AuthenticatedAdminReviewsLazyRoute,
     AuthenticatedAdminSystemLazyRoute: AuthenticatedAdminSystemLazyRoute,
     AuthenticatedAdminUsersLazyRoute: AuthenticatedAdminUsersLazyRoute,
+    AuthenticatedAdminMarketplaceCreateRoute:
+      AuthenticatedAdminMarketplaceCreateRoute,
     AuthenticatedAdminMarketplaceIdLazyRoute:
       AuthenticatedAdminMarketplaceIdLazyRoute,
-    AuthenticatedAdminMarketplaceCreateLazyRoute:
-      AuthenticatedAdminMarketplaceCreateLazyRoute,
     AuthenticatedAdminMarketplaceCategoriesIndexLazyRoute:
       AuthenticatedAdminMarketplaceCategoriesIndexLazyRoute,
     AuthenticatedAdminMarketplaceIndexLazyRoute:

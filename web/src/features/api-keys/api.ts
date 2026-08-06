@@ -1,8 +1,8 @@
 import { api } from '@/lib/api'
 import type { CreateApiKeyReq, UpdateApiKeyReq } from '@/types'
 
-export async function getApiKeys(keyword?: string) {
-  const res = await api.get('/api-keys', { params: keyword ? { keyword } : {} })
+export async function getApiKeys(params: { keyword?: string; page?: number; page_size?: number } = {}) {
+  const res = await api.get('/api-keys', { params })
   return res.data
 }
 
