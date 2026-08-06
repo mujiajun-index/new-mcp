@@ -89,6 +89,8 @@ func RedeemCode(c *gin.Context) {
 			common.Error(c, http.StatusBadRequest, "兑换码已过期")
 		case errors.Is(err, model.ErrRedemptionDisabled):
 			common.Error(c, http.StatusBadRequest, "兑换码已禁用")
+		case errors.Is(err, model.ErrRedemptionNotAvailable):
+			common.Error(c, http.StatusBadRequest, "兑换码无效或已被兑换")
 		default:
 			common.Error(c, http.StatusBadRequest, err.Error())
 		}

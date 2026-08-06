@@ -53,6 +53,11 @@ func (s *AuthService) Register(registerIP string, req *dto.RegisterReq) (*dto.Au
 		return nil, err
 	}
 
+	// 注册赠送额度(§7.1 QuotaForNewUser,可配)。默认 0=不赠送。
+	newUserQuota := model.GetOptionInt64("QuotaForNewUser")
+	if newUserQuota < 0 {
+		newUserQuota = 0
+	}
 	user := &model.User{
 		Username:   req.Username,
 		Password:   hash,
@@ -60,6 +65,7 @@ func (s *AuthService) Register(registerIP string, req *dto.RegisterReq) (*dto.Au
 		Role:       common.RoleCommonUser,
 		Status:     common.StatusEnabled,
 		Group:      "default",
+		Quota:      newUserQuota,
 		RegisterIP: registerIP,
 	}
 	if err := user.Insert(); err != nil {

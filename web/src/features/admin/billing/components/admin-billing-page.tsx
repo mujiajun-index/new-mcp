@@ -26,11 +26,12 @@ function updateSetting(key: string, value: string) {
   return api.put('/admin/settings', { key, value })
 }
 
-function parseRatio(json: string): Record<string, number> {
+// 以字符串持有每个分组倍率的输入,允许临时清空重输(避免 Number("")→0 导致输入跳 0)。
+function parseRatioInputs(json: string): Record<string, string> {
   try {
     const obj = JSON.parse(json || '{}')
-    const out: Record<string, number> = {}
-    for (const [k, v] of Object.entries(obj)) out[k] = Number(v) || 0
+    const out: Record<string, string> = {}
+    for (const [k, v] of Object.entries(obj)) out[k] = String(v)
     return out
   } catch {
     return {}
@@ -78,20 +79,30 @@ export function AdminBillingPage() {
     updateMutation.mutate({ key, value: String(next) })
   }
 
-  // Group ratio editor
-  const [ratio, setRatio] = useState<Record<string, number>>({})
+  // Group ratio editor:本地以字符串持有输入(避免清空跳 0),失焦时统一提交(避免逐键 PUT)。
+  const [ratioInputs, setRatioInputs] = useState<Record<string, string>>({})
   useEffect(() => {
-    setRatio(parseRatio(localValues.GroupRatio ?? ''))
+    setRatioInputs(parseRatioInputs(localValues.GroupRatio ?? ''))
   }, [localValues.GroupRatio])
 
-  const saveRatio = (next: Record<string, number>) => {
-    setRatio(next)
+  const setGroupRatioInput = (name: string, raw: string) =>
+    setRatioInputs((prev) => ({ ...prev, [name]: raw }))
+
+  // 失焦时把字符串输入归一为非负数字并提交;与后端一致才发请求。
+  const commitGroupRatio = () => {
+    const next: Record<string, number> = {}
+    for (const [k, raw] of Object.entries(ratioInputs)) {
+      const n = Number(raw)
+      next[k] = Number.isFinite(n) && n >= 0 ? n : 1
+    }
     const json = JSON.stringify(next)
+    if (json === (localValues.GroupRatio ?? '')) return
     updateLocal('GroupRatio', json)
     updateMutation.mutate({ key: 'GroupRatio', value: json })
   }
 
-  const updateGroupRatio = (name: string, value: number) => saveRatio({ ...ratio, [name]: value })
+  // 展示并集:用户分组选项 ∪ 已有倍率配置(避免遗留分组被静默丢弃)。
+  const ratioGroups = Array.from(new Set([...userGroupOptions, ...Object.keys(ratioInputs)]))
 
   if (isLoading) {
     return <div className="p-6 lg:p-8"><p className="text-sm text-muted-foreground">{t('common.loading')}</p></div>
@@ -125,7 +136,10 @@ export function AdminBillingPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>{t('adminBilling.displayCurrency')}</Label>
-                <Select value={localValues.DisplayCurrency ?? 'CNY'} onValueChange={(v) => { updateLocal('DisplayCurrency', v); }}>
+                <Select value={localValues.DisplayCurrency ?? 'CNY'} onValueChange={(v) => {
+                  updateLocal('DisplayCurrency', v)
+                  updateMutation.mutate({ key: 'DisplayCurrency', value: v })
+                }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="CNY">{t('adminBilling.currencyCNY')}</SelectItem>
@@ -191,14 +205,16 @@ export function AdminBillingPage() {
               <Label>{t('adminBilling.groupRatio')}</Label>
               <p className="text-xs text-muted-foreground">{t('adminBilling.groupRatioDesc')}</p>
               <div className="space-y-2">
-                {userGroupOptions.map((g) => (
+                {ratioGroups.map((g) => (
                   <div key={g} className="flex items-center gap-2">
                     <Input value={g} disabled className="w-32 bg-muted" />
                     <Input
                       type="number"
                       step="0.01"
-                      value={ratio[g] ?? 1}
-                      onChange={(e) => updateGroupRatio(g, Number(e.target.value))}
+                      min="0"
+                      value={ratioInputs[g] ?? '1'}
+                      onChange={(e) => setGroupRatioInput(g, e.target.value)}
+                      onBlur={commitGroupRatio}
                       className="w-28"
                     />
                   </div>

@@ -446,9 +446,26 @@ func (s *MarketplaceService) AddToMyServices(userID, itemID int64) (*dto.Install
 		return &dto.InstallResult{ServiceID: existing.ID, Name: existing.Name}, nil
 	}
 
+	// 命名冲突规避:mcp_services 上 (user_id,name) 唯一。若用户已有同名服务(其他市场引用或自有服务),
+	// 自动追加后缀直到唯一,避免落到唯一索引冲突的晦涩错误。最终仍以唯一索引为兜底。
+	name := item.Name
+	for i := 2; ; i++ {
+		exists, e := model.ServiceNameExists(userID, name)
+		if e != nil {
+			return nil, e
+		}
+		if !exists {
+			break
+		}
+		name = fmt.Sprintf("%s-%d", item.Name, i)
+		if i > 1000 { // 安全上限,理论上不会触达
+			break
+		}
+	}
+
 	svc := &model.McpService{
 		UserID:            userID,
-		Name:              item.Name,
+		Name:              name,
 		DisplayName:       item.DisplayName,
 		Description:       item.Description,
 		TransportType:     "marketplace", // 哨兵值:resolver 见此改用平台 session(真实 transport 在调用时从 item 注入)

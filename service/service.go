@@ -263,6 +263,12 @@ func (s *McpServiceService) RefreshTools(userID, serviceID int64) (*dto.RefreshT
 		return nil, err
 	}
 
+	// 市场引用服务(source=marketplace):平台托管,用户侧无上游配置/凭证,不能直连上游刷新。
+	// "重新同步"= 用市场项最新的 tools_snapshot 覆盖引用行的 tools_cache 快照(§4.2/§11 工具同步)。
+	if svc.Source == "marketplace" && svc.MarketplaceItemID != nil {
+		return s.refreshMarketplaceTools(svc)
+	}
+
 	if SessionPool == nil {
 		return nil, nil
 	}
@@ -286,12 +292,60 @@ func (s *McpServiceService) RefreshTools(userID, serviceID int64) (*dto.RefreshT
 	}, nil
 }
 
+// refreshMarketplaceTools 用市场项最新的 tools_snapshot 刷新用户引用服务的 tools_cache 快照(§4.2/§11)。
+// 市场引用服务上游由平台托管,用户侧不持有配置/凭证,故无法直连上游刷新——以平台维护的工具快照为准。
+func (s *McpServiceService) refreshMarketplaceTools(svc *model.McpService) (*dto.RefreshToolsResult, error) {
+	item, err := model.GetMarketplaceItemByID(*svc.MarketplaceItemID)
+	if err != nil {
+		return nil, fmt.Errorf("市场项不存在或已下架")
+	}
+	now := time.Now()
+	if err := model.DB.Model(&model.McpService{}).Where("id = ?", svc.ID).Updates(map[string]interface{}{
+		"tools_cache":      item.ToolsSnapshot,
+		"tools_updated_at": now,
+	}).Error; err != nil {
+		return nil, err
+	}
+	var tools []interface{}
+	_ = json.Unmarshal([]byte(item.ToolsSnapshot), &tools)
+	return &dto.RefreshToolsResult{ToolsCount: len(tools), Tools: tools}, nil
+}
+
+// materializeMarketplace 为市场引用服务(source=marketplace)从 marketplace_items 注入平台上游
+// 配置/凭证到内存 McpService(不落库:引用行 config 始终为空,凭证不暴露给用户),并还原真实 transport_type。
+// 与 internal/mcp/handler/gateway_handler.go materializeMarketplaceConfig 保持一致(§6.1)。
+func (s *McpServiceService) materializeMarketplace(svc *model.McpService) error {
+	item, err := model.GetMarketplaceItemByID(*svc.MarketplaceItemID)
+	if err != nil {
+		return fmt.Errorf("市场项不存在或已下架")
+	}
+	if item.Status != common.StatusEnabled {
+		return fmt.Errorf("市场项 %s 已下架", item.Name)
+	}
+	// config_template 加密落库(§4.3):平台凭证 Decrypt 后注入;存量明文项 Decrypt 失败则回退原值
+	if plain, dErr := common.Decrypt(item.ConfigTemplate); dErr == nil && plain != "" {
+		svc.Config = plain
+	} else {
+		svc.Config = item.ConfigTemplate
+	}
+	if svc.TransportType == "" || svc.TransportType == "marketplace" {
+		svc.TransportType = item.TransportType
+	}
+	return nil
+}
+
 func (s *McpServiceService) Test(userID, serviceID int64) (*dto.TestResult, error) {
 	svc, err := model.GetServiceByID(userID, serviceID)
 	if err != nil {
 		return nil, err
 	}
 
+	// 市场引用服务:注入平台上游配置/凭证后再测试连通性(与网关 materializeMarketplaceConfig 一致,§6.1)。
+	if svc.Source == "marketplace" && svc.MarketplaceItemID != nil {
+		if mErr := s.materializeMarketplace(svc); mErr != nil {
+			return &dto.TestResult{Connected: false, Error: mErr.Error()}, nil
+		}
+	}
 
 	adapter := bridge.CreateAdapter(svc)
 	if adapter == nil {

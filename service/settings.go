@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -10,6 +11,9 @@ import (
 )
 
 type SettingsService struct{}
+
+// ErrUserGroupInUse 校验类错误:待删除的用户分组仍有用户绑定(400,而非 500)。
+var ErrUserGroupInUse = errors.New("user group still in use")
 
 func (s *SettingsService) GetAllSettings() []dto.SettingItem {
 	model.OptionMapMutex.RLock()
@@ -79,7 +83,7 @@ func denyRemovalOfBoundGroups(oldKeys, newKeys []string) error {
 		return err
 	}
 	if len(inUse) > 0 {
-		return fmt.Errorf("以下分组仍有用户绑定，无法删除: %s", strings.Join(inUse, ", "))
+		return fmt.Errorf("%w: 以下分组仍有用户绑定，无法删除: %s", ErrUserGroupInUse, strings.Join(inUse, ", "))
 	}
 	return nil
 }

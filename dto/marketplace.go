@@ -21,7 +21,7 @@ type CreateMarketplaceItemReq struct {
 	ToolsSnapshot        []interface{}          `json:"tools_snapshot"`
 	Status               *int                   `json:"status"`
 	// 商业化定价(§5):非自用模式上架必须显式定价(§5.6)
-	BillingType   string  `json:"billing_type"`     // free / per_call(默认 per_call)
+	BillingType   string  `json:"billing_type" binding:"omitempty,oneof=free per_call"`     // free / per_call(默认 per_call)
 	PricePerCall  float64 `json:"price_per_call" binding:"gte=0"`   // 展示货币单价(per_call 时需 >0,非自用模式)
 }
 
@@ -65,7 +65,7 @@ type CloneMarketplaceReq struct {
 	Name          string  `json:"name" binding:"required,min=1,max=128"`
 	DisplayName   string  `json:"display_name"`
 	Description   string  `json:"description"`
-	BillingType   string  `json:"billing_type"`
+	BillingType   string  `json:"billing_type" binding:"omitempty,oneof=free per_call"`
 	PricePerCall  float64 `json:"price_per_call" binding:"gte=0"`
 }
 

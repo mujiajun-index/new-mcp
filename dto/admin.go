@@ -15,7 +15,7 @@ type AdminUpdateUserReq struct {
 	Status      *int    `json:"status"`
 	Role        *string `json:"role"`
 	Email       *string `json:"email"`
-	Quota       *int64  `json:"quota"`
+	Quota       *int64  `json:"quota" binding:"omitempty,min=0"`
 	Group       *string `json:"group"`
 	Remark      *string `json:"remark"`
 	Password    *string `json:"password"`
@@ -27,7 +27,7 @@ type AdminCreateUserReq struct {
 	Email       string `json:"email" binding:"omitempty,email"`
 	DisplayName string `json:"display_name"`
 	Role        string `json:"role"`
-	Quota       int64  `json:"quota"`
+	Quota       int64  `json:"quota" binding:"min=0"`
 	Group       string `json:"group"`
 }
 

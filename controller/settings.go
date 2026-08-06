@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -23,6 +24,11 @@ func AdminUpdateSetting(c *gin.Context) {
 		return
 	}
 	if err := settingsService.UpdateSetting(req.Key, req.Value); err != nil {
+		// 校验类错误(如分组仍有用户绑定)返回 400,而非 500
+		if errors.Is(err, service.ErrUserGroupInUse) {
+			common.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
 		common.Error(c, http.StatusInternalServerError, "更新失败: "+err.Error())
 		return
 	}

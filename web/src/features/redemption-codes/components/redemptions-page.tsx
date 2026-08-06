@@ -65,12 +65,16 @@ export function RedemptionsPage() {
   const items: RedemptionItem[] = data?.data ?? []
   const pagination = data?.pagination
   const totalPages = pagination?.total_pages ?? 1
+  // 生成数量须在 1~100(后端上限),越界时禁用提交按钮,给即时反馈。
+  const countNum = Number(form.count)
+  const countValid = Number.isInteger(countNum) && countNum >= 1 && countNum <= 100
 
   const createMutation = useMutation({
     mutationFn: () => createRedemptions({
       name: form.name || undefined,
       quota: parseInt(form.quota) || 0,
-      count: parseInt(form.count) || 1,
+      // 后端单次最多 100 个;客户端兜底夹紧,避免粘贴超大值触发 400。
+      count: Math.min(100, Math.max(1, parseInt(form.count) || 1)),
       expired_at: form.neverExpires ? 0 : (form.expires_at ? Math.floor(new Date(form.expires_at).getTime() / 1000) : 0),
     }),
     onSuccess: (res) => {
@@ -361,7 +365,7 @@ export function RedemptionsPage() {
               <>
                 <Button variant="outline" onClick={() => setCreateOpen(false)}>{t('common.cancel')}</Button>
                 <Button
-                  disabled={createMutation.isPending || !form.quota || parseInt(form.quota) <= 0}
+                  disabled={createMutation.isPending || !form.quota || parseInt(form.quota) <= 0 || !countValid}
                   onClick={() => createMutation.mutate()}
                 >
                   {t('redemptionCodes.create')}

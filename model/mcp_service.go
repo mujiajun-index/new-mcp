@@ -122,3 +122,11 @@ func GetMarketplaceReferenceByUser(userID, itemID int64) (*McpService, error) {
 	}
 	return &svc, nil
 }
+
+// ServiceNameExists 报告该用户下是否已存在同名服务。
+// mcp_services 上 (user_id,name) 为唯一索引(idx_svc_user_name),引用式安装需据此避开命名冲突。
+func ServiceNameExists(userID int64, name string) (bool, error) {
+	var count int64
+	err := DB.Model(&McpService{}).Where("user_id = ? AND name = ?", userID, name).Count(&count).Error
+	return count > 0, err
+}

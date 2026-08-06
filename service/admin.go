@@ -227,10 +227,14 @@ func (s *AdminService) AdjustUserQuota(actorRole string, actorID, targetID int64
 		newQuota = user.Quota + value
 	case "sub":
 		if user.Quota >= value {
-			_ = model.DecreaseUserQuotaUnguarded(targetID, value)
+			if err := model.DecreaseUserQuotaUnguarded(targetID, value); err != nil {
+				return 0, err
+			}
 			newQuota = user.Quota - value
 		} else {
-			_ = model.SetUserQuota(targetID, 0) // 不足则清零,不允许负额度
+			if err := model.SetUserQuota(targetID, 0); err != nil { // 不足则清零,不允许负额度
+				return 0, err
+			}
 			newQuota = 0
 		}
 	case "set":
