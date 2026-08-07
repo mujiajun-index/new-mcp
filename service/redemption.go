@@ -14,7 +14,7 @@ import (
 type RedemptionService struct{}
 
 // Generate 批量生成兑换码(§8.1)。count 上限 100,统一面值与有效期。返回含明文 code 的条目(仅此一次可见)。
-func (s *RedemptionService) Generate(req *dto.RedemptionCreateReq) ([]dto.RedemptionItem, error) {
+func (s *RedemptionService) Generate(actor model.Operator, req *dto.RedemptionCreateReq) ([]dto.RedemptionItem, error) {
 	if req.Count <= 0 {
 		req.Count = 1
 	}
@@ -40,6 +40,9 @@ func (s *RedemptionService) Generate(req *dto.RedemptionCreateReq) ([]dto.Redemp
 		}
 		items = append(items, toRedemptionItem(r))
 	}
+	model.RecordManageLog(actor.ID, actor.Username,
+		fmt.Sprintf("生成 %d 个兑换码(面值 %d)", req.Count, req.Quota),
+		0, actor, map[string]any{"count": req.Count, "quota": req.Quota, "name": req.Name})
 	return items, nil
 }
 
@@ -76,7 +79,7 @@ func (s *RedemptionService) List(page, pageSize int, keyword string, status int)
 }
 
 // UpdateStatus 启停兑换码(仅可在 1↔3 间切换;已兑换(2)不可改)。
-func (s *RedemptionService) UpdateStatus(id int64, status int) error {
+func (s *RedemptionService) UpdateStatus(actor model.Operator, id int64, status int) error {
 	r, err := model.GetRedemptionByID(id)
 	if err != nil {
 		return errors.New("兑换码不存在")
@@ -88,19 +91,30 @@ func (s *RedemptionService) UpdateStatus(id int64, status int) error {
 		return errors.New("无效的状态")
 	}
 	r.Status = status
-	return r.Update()
+	if err := r.Update(); err != nil {
+		return err
+	}
+	model.RecordManageLog(actor.ID, actor.Username, "兑换码状态变更", 0, actor, map[string]any{
+		"redemption_id": r.ID,
+		"status":        status,
+	})
+	return nil
 }
 
-func (s *RedemptionService) Delete(id int64) error {
+func (s *RedemptionService) Delete(actor model.Operator, id int64) error {
 	r, err := model.GetRedemptionByID(id)
 	if err != nil {
 		return errors.New("兑换码不存在")
 	}
-	return r.Delete()
+	if err := r.Delete(); err != nil {
+		return err
+	}
+	model.RecordManageLog(actor.ID, actor.Username, "删除兑换码", 0, actor, map[string]any{"redemption_id": r.ID})
+	return nil
 }
 
-// Redeem 用户兑换(§8.2):model.Redeem 原子占领 + 入账。返回入账额度。
-func (s *RedemptionService) Redeem(userID int64, code string) (int64, error) {
+// Redeem 用户兑换(§8.2):model.Redeem 原子占领 + 入账,并写入 Topup 日志。返回入账额度。
+func (s *RedemptionService) Redeem(userID int64, username, code, clientIP string) (int64, error) {
 	r, err := model.GetRedemptionByCode(code)
 	if err != nil {
 		return 0, errors.New("兑换码无效")
@@ -109,6 +123,10 @@ func (s *RedemptionService) Redeem(userID int64, code string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	model.RecordTopupLog(userID, username, fmt.Sprintf("兑换码充值 +%d", quota), quota, clientIP, map[string]any{
+		"redemption_id": r.ID,
+		"name":          r.Name,
+	})
 	return quota, nil
 }
 

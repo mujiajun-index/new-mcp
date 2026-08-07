@@ -1,35 +1,22 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { getWalletOverview, getWalletBilling, getWalletUsageStats, redeemCode } from '../api'
+import { useNavigate } from '@tanstack/react-router'
+import { getWalletOverview, getWalletUsageStats, redeemCode } from '../api'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
-import { useIsMobile } from '@/hooks/use-mobile'
-import { MobileListCard } from '@/components/ui/mobile-list-card'
-import { billingStatusKey, billingStatusClass, priceScopeKey, priceLabel } from '@/lib/billing'
 import { toast } from 'sonner'
 import {
-  Wallet as WalletIcon, TrendingUp, History, Gift, Activity,
-  ChevronLeft, ChevronRight, Zap, Coins,
+  Wallet as WalletIcon, TrendingUp, History, Gift, Activity, Zap, Coins, ArrowRight,
 } from 'lucide-react'
 import type { WalletOverview, WalletUsageStats } from '@/types'
-
-const formatTime = (s: string) => {
-  if (!s) return '-'
-  return new Date(s).toLocaleString('zh-CN', {
-    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-  })
-}
 
 export function WalletPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const isMobile = useIsMobile()
+  const navigate = useNavigate()
   const { config } = useSystemConfigStore()
-  const [page, setPage] = useState(1)
-  const pageSize = 15
   const [redeemInput, setRedeemInput] = useState('')
 
   const { data: overviewData, isLoading: overviewLoading } = useQuery({
@@ -44,14 +31,6 @@ export function WalletPage() {
   })
   const stats: WalletUsageStats | undefined = statsData?.data
 
-  const { data: billingData, isLoading: billingLoading, isFetching } = useQuery({
-    queryKey: ['wallet-billing', page],
-    queryFn: () => getWalletBilling({ page, page_size: pageSize }),
-  })
-  const billing = billingData?.data ?? []
-  const pagination = billingData?.pagination
-  const totalPages = pagination?.total_pages ?? 1
-
   const redeemMutation = useMutation({
     mutationFn: () => redeemCode({ code: redeemInput.trim() }),
     onSuccess: (res) => {
@@ -59,6 +38,9 @@ export function WalletPage() {
       setRedeemInput('')
       queryClient.invalidateQueries({ queryKey: ['wallet-overview'] })
       queryClient.invalidateQueries({ queryKey: ['wallet-usage-stats'] })
+      // 充值后刷新统一日志,使新的充值记录可见。
+      queryClient.invalidateQueries({ queryKey: ['user-logs'] })
+      queryClient.invalidateQueries({ queryKey: ['user-log-stats'] })
     },
   })
 
@@ -163,95 +145,13 @@ export function WalletPage() {
         ))}
       </div>
 
-      {/* Billing details */}
-      <div>
-        <h2 className="mb-1 text-lg font-semibold">{t('wallet.billingTitle')}</h2>
-        <p className="mb-3 text-xs text-muted-foreground">{t('wallet.billingDesc')}</p>
-        <div className="rounded-xl border bg-card">
-          {billingLoading ? (
-            <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">{t('common.loading')}</div>
-          ) : billing.length === 0 ? (
-            <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">{t('wallet.noBilling')}</div>
-          ) : isMobile ? (
-            <div className="divide-y">
-              {billing.map((item: any) => (
-                <MobileListCard
-                  key={item.id}
-                  title={
-                    <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{item.tool_name}</code>
-                  }
-                  badge={
-                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${billingStatusClass(item.billing_status)}`}>
-                      {t(billingStatusKey(item.billing_status))}
-                    </span>
-                  }
-                  meta={[
-                    { label: t('wallet.consumed'), value: <span className="tabular-nums">{item.quota_consumed}</span> },
-                    { label: t('wallet.unitPrice'), value: priceLabel(item.billing_type, item.unit_price, config.displayCurrency) },
-                    { label: t('wallet.service'), value: item.service_name || '-' },
-                    { label: t('wallet.time'), value: formatTime(item.created_at) },
-                  ]}
-                />
-              ))}
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('wallet.tool')}</TableHead>
-                  <TableHead>{t('wallet.service')}</TableHead>
-                  <TableHead>{t('wallet.status')}</TableHead>
-                  <TableHead>{t('wallet.unitPrice')}</TableHead>
-                  <TableHead>{t('wallet.consumed')}</TableHead>
-                  <TableHead>{t('wallet.scope')}</TableHead>
-                  <TableHead>{t('wallet.time')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {billing.map((item: any) => (
-                  <TableRow key={item.id}>
-                    <TableCell>
-                      <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{item.tool_name}</code>
-                    </TableCell>
-                    <TableCell className="text-sm">{item.service_name || '-'}</TableCell>
-                    <TableCell>
-                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${billingStatusClass(item.billing_status)}`}>
-                        {t(billingStatusKey(item.billing_status))}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-sm tabular-nums">
-                      {priceLabel(item.billing_type, item.unit_price, config.displayCurrency)}
-                    </TableCell>
-                    <TableCell className="text-sm tabular-nums">{item.quota_consumed}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {item.price_scope ? t(priceScopeKey(item.price_scope)) : '-'}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground tabular-nums">{formatTime(item.created_at)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </div>
+      {/* 消费明细已合并到「调用日志」页统一展示 */}
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={() => navigate({ to: '/logs', search: { type: 2 } })}>
+          {t('wallet.viewDetails')}
+          <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+        </Button>
       </div>
-
-      {/* Pagination */}
-      {pagination && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {t('wallet.total')} {pagination.total} {t('wallet.records')}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled={page <= 1 || isFetching} onClick={() => setPage((p) => p - 1)}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="text-sm tabular-nums">{page} / {totalPages}</span>
-            <Button variant="outline" size="sm" disabled={page >= totalPages || isFetching} onClick={() => setPage((p) => p + 1)}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

@@ -47,7 +47,7 @@ func (s *SettingsService) GetPublicSettings() map[string]string {
 	return result
 }
 
-func (s *SettingsService) UpdateSetting(key string, value string) error {
+func (s *SettingsService) UpdateSetting(actor model.Operator, key string, value string) error {
 	if model.IsSensitiveKey(key) && value == "***" {
 		return nil
 	}
@@ -56,7 +56,19 @@ func (s *SettingsService) UpdateSetting(key string, value string) error {
 			return err
 		}
 	}
-	return model.UpdateOption(key, value)
+	if err := model.UpdateOption(key, value); err != nil {
+		return err
+	}
+	// 审计:敏感 key 的值脱敏为 ***。
+	logValue := value
+	if model.IsSensitiveKey(key) {
+		logValue = "***"
+	}
+	model.RecordManageLog(actor.ID, actor.Username, "修改系统设置:"+key, 0, actor, map[string]any{
+		"key":   key,
+		"value": logValue,
+	})
+	return nil
 }
 
 // denyRemovalOfBoundGroups returns an error if any group present in oldKeys but

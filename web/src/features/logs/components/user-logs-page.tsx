@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
+import { useSearch } from '@tanstack/react-router'
 import dayjs from 'dayjs'
 import { getUserLogs, getUserLogStats } from '@/features/logs/api'
 import { useAuthStore } from '@/stores/auth-store'
@@ -19,6 +20,37 @@ import { billingStatusKey, billingStatusClass, priceScopeKey, priceLabel } from 
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import type { LogFilter } from '@/types'
 
+// 日志类型徽标配置(对齐后端 LogType*:1充值/2消费/3管理/4系统/7登录)。
+const CONSUME_META = { key: 'logs.typeConsume', cls: 'bg-sky-500/10 text-sky-600 dark:text-sky-400' }
+const LOG_TYPE_META: Record<number, { key: string; cls: string }> = {
+  1: { key: 'logs.typeTopup', cls: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
+  2: CONSUME_META,
+  3: { key: 'logs.typeManage', cls: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
+  4: { key: 'logs.typeSystem', cls: 'bg-violet-500/10 text-violet-600 dark:text-violet-400' },
+  7: { key: 'logs.typeLogin', cls: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400' },
+}
+function logTypeMeta(type?: number): { key: string; cls: string } {
+  return LOG_TYPE_META[type ?? 2] ?? CONSUME_META
+}
+
+// 从 extra JSON 解析管理日志的操作者(管理员)展示文本,对齐 new-api 的 "username (ID: n)"。
+// 普通用户视图的 extra 已在后端剥离 operator,故仅管理员可见。
+function getOperatorDisplay(extra?: string): string | null {
+  if (!extra) return null
+  try {
+    const op = (JSON.parse(extra) || {}).operator
+    if (!op || typeof op !== 'object') return null
+    const name = op.username ? String(op.username) : ''
+    const id = op.id != null && op.id !== '' ? String(op.id) : ''
+    if (name && id) return `${name} (ID: ${id})`
+    if (name) return name
+    if (id) return `ID: ${id}`
+  } catch {
+    /* ignore malformed extra */
+  }
+  return null
+}
+
 export function UserLogsPage() {
   const { t } = useTranslation()
   const { auth } = useAuthStore()
@@ -26,9 +58,11 @@ export function UserLogsPage() {
   const isMobile = useIsMobile()
   const { config } = useSystemConfigStore()
   const showBilling = config.billingEnabled
+  // 支持外部带 ?type=N 跳转预选类型(如钱包页「查看消费明细」→ /logs?type=2)。
+  const urlSearch = useSearch({ strict: false }) as { type?: string | number }
   const [page, setPage] = useState(1)
   const pageSize = 20
-  const [filter, setFilter] = useState<LogFilter>({})
+  const [filter, setFilter] = useState<LogFilter>({ type: urlSearch.type ? Number(urlSearch.type) : undefined })
   const [dateRange, setDateRange] = useState<{ start?: Date; end?: Date }>({})
 
   const apiFilter = useMemo(() => {
@@ -54,6 +88,11 @@ export function UserLogsPage() {
 
   const updateFilter = (key: keyof LogFilter, value: string) => {
     setFilter(prev => ({ ...prev, [key]: value || undefined }))
+    setPage(1)
+  }
+
+  const setType = (v: string) => {
+    setFilter(prev => ({ ...prev, type: v === '0' ? undefined : Number(v) }))
     setPage(1)
   }
 
@@ -125,6 +164,20 @@ export function UserLogsPage() {
             />
           </div>
 
+          <Select value={String(filter.type ?? 0)} onValueChange={setType}>
+            <SelectTrigger className="w-[120px] h-9">
+              <SelectValue placeholder={t('logs.type')} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="0">{t('logs.typeAll')}</SelectItem>
+              <SelectItem value="2">{t('logs.typeConsume')}</SelectItem>
+              <SelectItem value="1">{t('logs.typeTopup')}</SelectItem>
+              <SelectItem value="3">{t('logs.typeManage')}</SelectItem>
+              <SelectItem value="4">{t('logs.typeSystem')}</SelectItem>
+              <SelectItem value="7">{t('logs.typeLogin')}</SelectItem>
+            </SelectContent>
+          </Select>
+
           <Select value={filter.status ?? 'all'} onValueChange={v => updateFilter('status', v === 'all' ? '' : v)}>
             <SelectTrigger className="w-[130px] h-9">
               <SelectValue placeholder={t('logs.status')} />
@@ -191,61 +244,24 @@ export function UserLogsPage() {
             </div>
           ) : isMobile ? (
             <div className="divide-y">
-              {logs.map((log: any) => {
-                const isSuccess = log.response_status === 'success'
-                const errorMsg = log.error_message || ''
-                return (
-                  <MobileListCard
-                    key={log.id}
-                    title={
-                      <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                        {log.tool_name}
-                      </code>
-                    }
-                    badge={
-                      <Badge variant={isSuccess ? 'success' : 'destructive'}>
-                        {isSuccess ? t('logs.success') : t('logs.error')}
-                      </Badge>
-                    }
-                    meta={[
-                      { label: t('logs.duration'), value: <span className="tabular-nums">{formatDuration(log.duration_ms)}</span> },
-                      ...(showBilling && log.billing_status && log.billing_status !== 'skipped' ? [
-                        {
-                          label: t('logs.billing'),
-                          value: (
-                            <span className="flex items-center gap-1.5">
-                              <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${billingStatusClass(log.billing_status)}`}>
-                                {t(billingStatusKey(log.billing_status))}
-                              </span>
-                              {log.quota_consumed > 0 && <span className="tabular-nums">{log.quota_consumed}</span>}
-                            </span>
-                          ),
-                        },
-                      ] : []),
-                      { label: t('logs.groupName'), value: log.group_name || '-' },
-                      { label: 'IP', value: <span className="font-mono">{log.client_ip}</span> },
-                      { label: t('logs.time'), value: formatTime(log.created_at) },
-                      ...(isAdmin ? [
-                        { label: t('logs.username'), value: log.username || '-' },
-                        { label: t('logs.apiKeyName'), value: log.api_key_name || '-' },
-                        { label: t('logs.serviceName'), value: log.service_name || '-' },
-                      ] : []),
-                    ]}
-                    note={
-                      errorMsg ? (
-                        <span className="line-clamp-2 text-red-500">{errorMsg}</span>
-                      ) : undefined
-                    }
-                  />
-                )
-              })}
+              {logs.map((log: any) => (
+                <LogMobileCard
+                  key={log.id}
+                  log={log}
+                  isAdmin={isAdmin}
+                  showBilling={showBilling}
+                  formatTime={formatTime}
+                  formatDuration={formatDuration}
+                />
+              ))}
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[50px]">ID</TableHead>
-                  {isAdmin && <TableHead>{t('logs.username')}</TableHead>}
+                  <TableHead>{t('logs.type')}</TableHead>
+                  <TableHead>{t('logs.username')}</TableHead>
                   {isAdmin && <TableHead>{t('logs.apiKeyName')}</TableHead>}
                   <TableHead>{t('logs.toolName')}</TableHead>
                   <TableHead>{t('logs.groupName')}</TableHead>
@@ -260,7 +276,15 @@ export function UserLogsPage() {
               </TableHeader>
               <TableBody>
                 {logs.map((log: any) => (
-                  <LogRow key={log.id} log={log} isAdmin={isAdmin} showBilling={showBilling} displayCurrency={config.displayCurrency} formatTime={formatTime} formatDuration={formatDuration} />
+                  <LogRow
+                    key={log.id}
+                    log={log}
+                    isAdmin={isAdmin}
+                    showBilling={showBilling}
+                    displayCurrency={config.displayCurrency}
+                    formatTime={formatTime}
+                    formatDuration={formatDuration}
+                  />
                 ))}
               </TableBody>
             </Table>
@@ -299,6 +323,98 @@ export function UserLogsPage() {
   )
 }
 
+// 额度变动展示(非消费类):正数=入账(绿),负数=扣除(红)。
+function QuotaDelta({ value }: { value: number }) {
+  if (!value) return null
+  return (
+    <span className={`text-xs font-medium tabular-nums ${value > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+      {value > 0 ? '+' : ''}{value}
+    </span>
+  )
+}
+
+function LogMobileCard({ log, isAdmin, showBilling, formatTime, formatDuration }: {
+  log: any
+  isAdmin: boolean
+  showBilling: boolean
+  formatTime: (s: string) => string
+  formatDuration: (ms: number) => string
+}) {
+  const { t } = useTranslation()
+  const meta = logTypeMeta(log.type)
+  const isConsume = !log.type || log.type === 2
+
+  // 非消费行(充值/管理/系统/登录):展示用户、描述、操作者、额度变动。
+  if (!isConsume) {
+    const quota = log.quota_consumed ?? 0
+    const operator = getOperatorDisplay(log.extra)
+    return (
+      <MobileListCard
+        title={<span className="text-sm font-medium">{log.content || '-'}</span>}
+        badge={
+          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${meta.cls}`}>
+            {t(meta.key)}
+          </span>
+        }
+        meta={[
+          { label: t('logs.username'), value: log.username || '-' },
+          ...(operator ? [{ label: t('logs.operator'), value: operator }] : []),
+          ...(quota !== 0 ? [{ label: t('logs.billingConsumed'), value: <QuotaDelta value={quota} /> }] : []),
+          { label: 'IP', value: <span className="font-mono">{log.client_ip || '-'}</span> },
+          { label: t('logs.time'), value: formatTime(log.created_at) },
+        ]}
+      />
+    )
+  }
+
+  // 消费行:沿用调用明细。
+  const isSuccess = log.response_status === 'success'
+  const errorMsg = log.error_message || ''
+  return (
+    <MobileListCard
+      title={
+        <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+          {log.tool_name}
+        </code>
+      }
+      badge={
+        <Badge variant={isSuccess ? 'success' : 'destructive'}>
+          {isSuccess ? t('logs.success') : t('logs.error')}
+        </Badge>
+      }
+      meta={[
+        { label: t('logs.username'), value: log.username || '-' },
+        { label: t('logs.duration'), value: <span className="tabular-nums">{formatDuration(log.duration_ms)}</span> },
+        ...(showBilling && log.billing_status && log.billing_status !== 'skipped' ? [
+          {
+            label: t('logs.billing'),
+            value: (
+              <span className="flex items-center gap-1.5">
+                <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${billingStatusClass(log.billing_status)}`}>
+                  {t(billingStatusKey(log.billing_status))}
+                </span>
+                {log.quota_consumed > 0 && <span className="tabular-nums">{log.quota_consumed}</span>}
+              </span>
+            ),
+          },
+        ] : []),
+        { label: t('logs.groupName'), value: log.group_name || '-' },
+        { label: 'IP', value: <span className="font-mono">{log.client_ip}</span> },
+        { label: t('logs.time'), value: formatTime(log.created_at) },
+        ...(isAdmin ? [
+          { label: t('logs.apiKeyName'), value: log.api_key_name || '-' },
+          { label: t('logs.serviceName'), value: log.service_name || '-' },
+        ] : []),
+      ]}
+      note={
+        errorMsg ? (
+          <span className="line-clamp-2 text-red-500">{errorMsg}</span>
+        ) : undefined
+      }
+    />
+  )
+}
+
 function LogRow({ log, isAdmin, showBilling, displayCurrency, formatTime, formatDuration }: {
   log: any
   isAdmin: boolean
@@ -308,6 +424,42 @@ function LogRow({ log, isAdmin, showBilling, displayCurrency, formatTime, format
   formatDuration: (ms: number) => string
 }) {
   const { t } = useTranslation()
+  const meta = logTypeMeta(log.type)
+  const isConsume = !log.type || log.type === 2
+
+  const typeBadge = (
+    <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${meta.cls}`}>
+      {t(meta.key)}
+    </span>
+  )
+
+  // 非消费行:用户(谁)+ 描述 + 操作者(哪个管理员) + 额度变动,合并调用明细相关列。
+  if (!isConsume) {
+    // 合并 api_key/tool/group/service/status/billing/duration/errorMessage。
+    const middleCols = (isAdmin ? 7 : 5) + (showBilling ? 1 : 0)
+    const quota = log.quota_consumed ?? 0
+    const operator = getOperatorDisplay(log.extra)
+    return (
+      <TableRow>
+        <TableCell className="text-xs text-muted-foreground tabular-nums">{log.id}</TableCell>
+        <TableCell>{typeBadge}</TableCell>
+        <TableCell className="text-sm">{log.username || '-'}</TableCell>
+        <TableCell colSpan={middleCols}>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="text-sm">{log.content || '-'}</span>
+            {operator && (
+              <span className="text-xs text-muted-foreground">{t('logs.operator')}: {operator}</span>
+            )}
+            <QuotaDelta value={quota} />
+          </div>
+        </TableCell>
+        <TableCell className="text-xs text-muted-foreground font-mono">{log.client_ip || '-'}</TableCell>
+        <TableCell className="text-xs text-muted-foreground tabular-nums">{formatTime(log.created_at)}</TableCell>
+      </TableRow>
+    )
+  }
+
+  // 消费行:沿用原有调用明细列。
   const isSuccess = log.response_status === 'success'
   const errorMsg = log.error_message || ''
   const billStatus = log.billing_status || 'skipped'
@@ -316,7 +468,8 @@ function LogRow({ log, isAdmin, showBilling, displayCurrency, formatTime, format
   return (
     <TableRow>
       <TableCell className="text-xs text-muted-foreground tabular-nums">{log.id}</TableCell>
-      {isAdmin && <TableCell className="text-sm">{log.username || '-'}</TableCell>}
+      <TableCell>{typeBadge}</TableCell>
+      <TableCell className="text-sm">{log.username || '-'}</TableCell>
       {isAdmin && <TableCell className="text-sm">{log.api_key_name || '-'}</TableCell>}
       <TableCell>
         <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{log.tool_name}</code>

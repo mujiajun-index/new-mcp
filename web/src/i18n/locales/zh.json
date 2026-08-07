@@ -205,6 +205,14 @@
   "logs": {
     "title": "调用日志",
     "subtitle": "查看您 API Key 的 MCP 服务调用记录",
+    "type": "类型",
+    "typeAll": "全部",
+    "typeConsume": "消费",
+    "typeTopup": "充值",
+    "typeManage": "管理",
+    "typeSystem": "系统",
+    "typeLogin": "登录",
+    "operator": "操作者",
     "totalCalls": "总调用",
     "successCalls": "成功调用",
     "failedCalls": "失败调用",
@@ -1029,7 +1037,8 @@
     "redeem": "兑换",
     "redeeming": "兑换中...",
     "redeemSuccess": "兑换成功,入账 {{quota}} 额度",
-    "redeemClosed": "兑换功能未开放"
+    "redeemClosed": "兑换功能未开放",
+    "viewDetails": "查看消费明细"
   },
   "pricing": {
     "title": "服务定价",
@@ -1056,10 +1065,9 @@
     "expiresAt": "到期时间",
     "status": "状态",
     "code": "兑换码",
-    "redeemer": "兑换者",
+    "redeemer": "兑换用户",
     "createdAt": "生成时间",
     "redeemedAt": "兑换时间",
-    "redeemer": "兑换用户",
     "searchPlaceholder": "搜索名称或兑换码...",
     "statusAvailable": "可用",
     "statusRedeemed": "已兑换",

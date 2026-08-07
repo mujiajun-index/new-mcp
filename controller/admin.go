@@ -41,7 +41,7 @@ func AdminUpdateUser(c *gin.Context) {
 		common.Error(c, http.StatusBadRequest, "请求参数错误")
 		return
 	}
-	if err := adminService.UpdateUser(c.GetString("role"), id, &req); err != nil {
+	if err := adminService.UpdateUser(operatorFromContext(c), id, &req); err != nil {
 		// 触发超级管理员保护（普通管理员改超管信息 / 改超管角色 / 禁用超管 / 分配超管角色）时返回明确的 403。
 		if errors.Is(err, service.ErrSuperAdminProtected) ||
 			errors.Is(err, service.ErrSuperAdminRoleProtected) ||
@@ -62,7 +62,7 @@ func AdminCreateUser(c *gin.Context) {
 		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
 		return
 	}
-	user, err := adminService.CreateUser(&req)
+	user, err := adminService.CreateUser(operatorFromContext(c), &req)
 	if err != nil {
 		if errors.Is(err, service.ErrSuperAdminRoleReserved) {
 			common.Error(c, http.StatusForbidden, err.Error())
@@ -82,7 +82,7 @@ func AdminAdjustQuota(c *gin.Context) {
 		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
 		return
 	}
-	newQuota, err := adminService.AdjustUserQuota(c.GetString("role"), c.GetInt64("user_id"), id, &req)
+	newQuota, err := adminService.AdjustUserQuota(operatorFromContext(c), id, &req)
 	if err != nil {
 		if errors.Is(err, service.ErrSuperAdminProtected) || errors.Is(err, service.ErrCannotManageTarget) {
 			common.Error(c, http.StatusForbidden, err.Error())

@@ -103,6 +103,10 @@ type LogItem struct {
 	QuotaConsumed     int64   `json:"quota_consumed"`
 	PriceScope        string  `json:"price_scope"`
 	MarketplaceItemID *int64  `json:"marketplace_item_id"`
+	// 统一日志扩展
+	Type    int    `json:"type"`    // 日志类型(LogType*)
+	Content string `json:"content"` // 非消费类日志的人类可读描述
+	Extra   string `json:"extra"`   // 结构化元数据 JSON(普通用户视图已剥离 operator)
 }
 
 type LogStats struct {
@@ -122,4 +126,5 @@ type LogFilter struct {
 	Username    string `form:"username"`
 	ServiceName string `form:"service_name"`
 	Keyword     string `form:"keyword"`
+	Type        int    `form:"type"` // 0=全部(哨兵),否则按 LogType 过滤
 }

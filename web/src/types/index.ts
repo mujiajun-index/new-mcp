@@ -493,6 +493,7 @@ export interface LogFilter {
   username?: string
   service_name?: string
   keyword?: string
+  type?: number // 0=全部(哨兵),否则按日志类型(LogType)过滤
   page?: number
   page_size?: number
 }
@@ -504,21 +505,6 @@ export interface WalletOverview {
   request_count: number  // 累计请求数
   total_topup: number    // 累计充值(quota)
   group: string          // 用户套餐分组
-}
-
-export interface WalletBillingItem {
-  id: number
-  tool_name: string
-  method: string
-  service_name: string
-  group_name: string
-  billing_status: string // charged / refunded / blocked / debt
-  billing_type: string   // free / per_call
-  unit_price: number     // 展示货币单价快照
-  quota_consumed: number // 本次实扣 quota
-  price_scope: string    // tool/service/marketplace/global
-  marketplace_item_id: number | null
-  created_at: string
 }
 
 export interface WalletUsageStats {

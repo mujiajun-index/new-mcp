@@ -65,7 +65,7 @@ func InitDB() error {
 }
 
 func migrateDB() error {
-	return DB.AutoMigrate(
+	if err := DB.AutoMigrate(
 		&Setup{},
 		&User{},
 		&ApiKey{},
@@ -84,7 +84,12 @@ func migrateDB() error {
 		&McpToolPrice{},
 		&Redemption{},
 		&Option{},
-	)
+	); err != nil {
+		return err
+	}
+	// 统一日志回填:历史 mcp_call_logs 行均为 MCP 调用,
+	// type 列新增后(default:2)兜底把任何 0/NULL 行置为 Consume。
+	return DB.Model(&McpCallLog{}).Where("type = 0 OR type IS NULL").Update("type", LogTypeConsume).Error
 }
 
 func CloseDB() error {

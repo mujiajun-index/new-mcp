@@ -3,7 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
-	"log"
+	"strings"
 
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
@@ -88,7 +88,7 @@ func (s *AdminService) GetUserDetail(actorRole string, userID int64) (*dto.UserD
 	return resp, nil
 }
 
-func (s *AdminService) UpdateUser(actorRole string, userID int64, req *dto.AdminUpdateUserReq) error {
+func (s *AdminService) UpdateUser(actor model.Operator, userID int64, req *dto.AdminUpdateUserReq) error {
 	var user model.User
 	if err := model.DB.First(&user, userID).Error; err != nil {
 		return err
@@ -98,7 +98,7 @@ func (s *AdminService) UpdateUser(actorRole string, userID int64, req *dto.Admin
 	targetIsSuper := user.ID == common.SuperAdminUserID || user.Role == common.RoleSuperAdmin
 	if targetIsSuper {
 		// 普通管理员不能修改超级管理员的任何信息。
-		if actorRole != common.RoleSuperAdmin {
+		if actor.Role != common.RoleSuperAdmin {
 			return ErrSuperAdminProtected
 		}
 		// 超级管理员本人也不能改自己的角色或把自己禁用（防自锁）；其余字段可正常修改。
@@ -113,26 +113,41 @@ func (s *AdminService) UpdateUser(actorRole string, userID int64, req *dto.Admin
 		return ErrSuperAdminRoleReserved
 	}
 
+	// 审计:边应用变更边收集本次改动的字段。
+	var changes []string
+	extra := map[string]any{}
 	if req.Status != nil {
 		user.Status = *req.Status
+		changes = append(changes, "状态")
+		extra["status"] = *req.Status
 	}
 	if req.Role != nil {
 		user.Role = *req.Role
+		changes = append(changes, "角色")
+		extra["role"] = *req.Role
 	}
 	if req.Email != nil {
 		user.Email = *req.Email
+		changes = append(changes, "邮箱")
+		extra["email"] = *req.Email
 	}
 	if req.DisplayName != nil {
 		user.DisplayName = *req.DisplayName
+		changes = append(changes, "昵称")
 	}
 	if req.Quota != nil {
 		user.Quota = *req.Quota
+		changes = append(changes, "额度")
+		extra["quota"] = *req.Quota
 	}
 	if req.Group != nil {
 		user.Group = *req.Group
+		changes = append(changes, "分组")
+		extra["group"] = *req.Group
 	}
 	if req.Remark != nil {
 		user.Remark = *req.Remark
+		changes = append(changes, "备注")
 	}
 	if req.Password != nil && *req.Password != "" {
 		hash, err := common.Password2Hash(*req.Password)
@@ -140,11 +155,18 @@ func (s *AdminService) UpdateUser(actorRole string, userID int64, req *dto.Admin
 			return err
 		}
 		user.Password = hash
+		changes = append(changes, "密码")
 	}
-	return model.DB.Save(&user).Error
+	if err := model.DB.Save(&user).Error; err != nil {
+		return err
+	}
+	if len(changes) > 0 {
+		model.RecordManageLog(userID, user.Username, "管理员更新用户:"+strings.Join(changes, "、"), 0, actor, extra)
+	}
+	return nil
 }
 
-func (s *AdminService) CreateUser(req *dto.AdminCreateUserReq) (*dto.UserListItem, error) {
+func (s *AdminService) CreateUser(actor model.Operator, req *dto.AdminCreateUserReq) (*dto.UserListItem, error) {
 	// super_admin 固定为 id=1 独有，禁止通过后台创建该角色。
 	if req.Role == common.RoleSuperAdmin {
 		return nil, ErrSuperAdminRoleReserved
@@ -181,6 +203,12 @@ func (s *AdminService) CreateUser(req *dto.AdminCreateUserReq) (*dto.UserListIte
 		return nil, err
 	}
 
+	model.RecordManageLog(user.ID, user.Username, "管理员创建用户", req.Quota, actor, map[string]any{
+		"role":          role,
+		"group":         group,
+		"initial_quota": req.Quota,
+	})
+
 	return &dto.UserListItem{
 		ID:          user.ID,
 		Username:    user.Username,
@@ -196,9 +224,9 @@ func (s *AdminService) CreateUser(req *dto.AdminCreateUserReq) (*dto.UserListIte
 
 // AdjustUserQuota 管理员调额(D13):mode=add/sub/set,value 单位 quota。
 // 权限(canManageTargetRole):普通管理员不得操作超级管理员或同级管理员;超级管理员可操作任意用户。
-// 审计:写入服务器日志(tee 到文件);V2 可加正式 balance_changes/audit 表。
+// 审计:写入 Manage 日志,额度变动量 = 调整后 - 调整前。
 // 返回调整后的最新额度。
-func (s *AdminService) AdjustUserQuota(actorRole string, actorID, targetID int64, req *dto.AdminAdjustQuotaReq) (int64, error) {
+func (s *AdminService) AdjustUserQuota(actor model.Operator, targetID int64, req *dto.AdminAdjustQuotaReq) (int64, error) {
 	user, err := model.GetUserByID(targetID)
 	if err != nil {
 		return 0, ErrUserNotFound
@@ -206,10 +234,10 @@ func (s *AdminService) AdjustUserQuota(actorRole string, actorID, targetID int64
 
 	// canManageTargetRole
 	targetIsSuper := user.ID == common.SuperAdminUserID || user.Role == common.RoleSuperAdmin
-	if targetIsSuper && actorRole != common.RoleSuperAdmin {
+	if targetIsSuper && actor.Role != common.RoleSuperAdmin {
 		return 0, ErrSuperAdminProtected
 	}
-	if user.Role == common.RoleAdminUser && actorRole != common.RoleSuperAdmin {
+	if user.Role == common.RoleAdminUser && actor.Role != common.RoleSuperAdmin {
 		return 0, ErrCannotManageTarget // 普通管理员不能操作同级管理员
 	}
 
@@ -218,6 +246,7 @@ func (s *AdminService) AdjustUserQuota(actorRole string, actorID, targetID int64
 		value = -value
 	}
 
+	oldQuota := user.Quota
 	var newQuota int64
 	switch req.Mode {
 	case "add":
@@ -246,8 +275,19 @@ func (s *AdminService) AdjustUserQuota(actorRole string, actorID, targetID int64
 		return 0, ErrInvalidQuotaMode
 	}
 
-	log.Printf("[audit] admin(uid=%d,role=%s) %s quota %d on user(uid=%d,role=%s), remark=%q, new_quota=%d",
-		actorID, actorRole, req.Mode, value, targetID, user.Role, req.Remark, newQuota)
+	modeText := req.Mode
+	switch req.Mode {
+	case "add":
+		modeText = "增加"
+	case "sub":
+		modeText = "减少"
+	case "set":
+		modeText = "设置"
+	}
+	model.RecordManageLog(targetID, user.Username,
+		fmt.Sprintf("管理员调整额度(%s %d),%d → %d", modeText, value, oldQuota, newQuota),
+		newQuota-oldQuota, actor,
+		map[string]any{"mode": req.Mode, "value": value, "remark": req.Remark, "before": oldQuota, "after": newQuota})
 	return newQuota, nil
 }
 
@@ -314,6 +354,13 @@ func (s *AdminService) GetLogsForUser(userID int64, isAdmin bool, filter *dto.Lo
 			QuotaConsumed:     l.QuotaConsumed,
 			PriceScope:        l.PriceScope,
 			MarketplaceItemID: l.MarketplaceItemID,
+			Type:              l.Type,
+			Content:           l.Content,
+			Extra:             l.Extra,
+		}
+		// 普通用户视图剥离 operator 等审计字段。
+		if !isAdmin {
+			items[i].Extra = model.StripAuditExtra(l.Extra)
 		}
 	}
 	return items, total, nil
@@ -347,5 +394,6 @@ func dtoToModelFilter(f *dto.LogFilter) *model.LogFilter {
 		Username:    f.Username,
 		ServiceName: f.ServiceName,
 		Keyword:     f.Keyword,
+		Type:        f.Type,
 	}
 }

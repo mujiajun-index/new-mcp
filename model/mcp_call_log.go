@@ -35,6 +35,11 @@ type McpCallLog struct {
 	ClientIP        string    `json:"client_ip" gorm:"size:64"`
 	UserAgent       string    `json:"user_agent" gorm:"size:512"`
 	CreatedAt       time.Time `json:"created_at" gorm:"index"`
+	// 统一日志扩展:区分日志类型 + 人类可读描述 + 结构化元数据(见 model/log.go)。
+	// 历史行经回填后 type=Consume;新写入由各 Record* 助手显式赋值。
+	Type    int    `json:"type" gorm:"index;default:2"`        // 日志类型(LogType*);默认 Consume
+	Content string `json:"content" gorm:"size:512;default:''"` // 非消费类日志的人类可读描述
+	Extra   string `json:"extra" gorm:"type:text"`             // 结构化元数据 JSON(operator/action/params 等)
 }
 
 func (McpCallLog) TableName() string { return "mcp_call_logs" }
@@ -67,18 +72,6 @@ func SumQuotaConsumedByUser(userID int64, since time.Time) (int64, error) {
 	return sum, err
 }
 
-// GetBillingLogsByUser 返回用户的消费明细(仅计费相关行,排除 skipped),按时间倒序分页。
-func GetBillingLogsByUser(userID int64, offset, limit int) ([]McpCallLog, int64, error) {
-	q := DB.Model(&McpCallLog{}).Where("user_id = ? AND billing_status != ?", userID, "skipped")
-	var total int64
-	if err := q.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-	var logs []McpCallLog
-	err := q.Order("id DESC").Offset(offset).Limit(limit).Find(&logs).Error
-	return logs, total, err
-}
-
 // DeleteCallLogsBefore 删除 created_at 早于指定时间的调用日志(TTL 清理,§4.5)。
 // 返回删除行数。三库通用(DELETE ... WHERE created_at < ?)。
 func DeleteCallLogsBefore(t time.Time) (int64, error) {
@@ -96,11 +89,15 @@ type LogFilter struct {
 	Username    string
 	ServiceName string
 	Keyword     string
+	Type        int // 0=全部(哨兵),否则按 LogType 过滤
 }
 
 func applyLogFilter(query *gorm.DB, f *LogFilter) *gorm.DB {
 	if f == nil {
 		return query
+	}
+	if f.Type != 0 {
+		query = query.Where("type = ?", f.Type)
 	}
 	if f.StartDate != "" {
 		if t, err := time.Parse("2006-01-02", f.StartDate); err == nil {
@@ -169,8 +166,15 @@ type LogStatsResult struct {
 }
 
 func GetCallLogStats(filter *LogFilter) (*LogStatsResult, error) {
+	// 统计恒为消费行,忽略调用方传入的 type 过滤,避免登录/注册/管理行污染调用统计。
+	statFilter := &LogFilter{}
+	if filter != nil {
+		*statFilter = *filter
+	}
+	statFilter.Type = LogTypeConsume
+
 	query := DB.Model(&McpCallLog{})
-	query = applyLogFilter(query, filter)
+	query = applyLogFilter(query, statFilter)
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -179,17 +183,17 @@ func GetCallLogStats(filter *LogFilter) (*LogStatsResult, error) {
 
 	var successCount int64
 	DB.Model(&McpCallLog{}).Scopes(func(db *gorm.DB) *gorm.DB {
-		return applyLogFilter(db, filter)
+		return applyLogFilter(db, statFilter)
 	}).Where("response_status = ?", "success").Count(&successCount)
 
 	var avgDuration float64
 	db := DB.Model(&McpCallLog{})
-	db = applyLogFilter(db, filter)
+	db = applyLogFilter(db, statFilter)
 	db.Where("tool_name NOT IN ?", []string{"mcp.search", "mcp.describe"}).Select("COALESCE(AVG(duration_ms), 0)").Scan(&avgDuration)
 
 	today := time.Now().Truncate(24 * time.Hour)
 	var todayCount int64
-	DB.Model(&McpCallLog{}).Where("created_at >= ?", today).Count(&todayCount)
+	DB.Model(&McpCallLog{}).Where("type = ?", LogTypeConsume).Where("created_at >= ?", today).Count(&todayCount)
 
 	return &LogStatsResult{
 		TotalCalls:    total,
@@ -231,6 +235,8 @@ func getCallLogStatsInternal(userID int64, filter *LogFilter) (*LogStatsResult, 
 	if filter != nil {
 		*userFilter = *filter
 	}
+	// 统计恒为消费行,忽略调用方的 type 过滤。
+	userFilter.Type = LogTypeConsume
 
 	baseQuery := DB.Model(&McpCallLog{})
 	if userID > 0 {
@@ -265,7 +271,7 @@ func getCallLogStatsInternal(userID int64, filter *LogFilter) (*LogStatsResult, 
 		todayQuery = todayQuery.Where("user_id = ?", userID)
 	}
 	var todayCount int64
-	todayQuery.Where("created_at >= ?", today).Count(&todayCount)
+	todayQuery.Where("type = ?", LogTypeConsume).Where("created_at >= ?", today).Count(&todayCount)
 
 	return &LogStatsResult{
 		TotalCalls:    total,

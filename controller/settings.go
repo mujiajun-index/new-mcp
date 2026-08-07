@@ -23,7 +23,7 @@ func AdminUpdateSetting(c *gin.Context) {
 		common.Error(c, http.StatusBadRequest, "请求参数错误")
 		return
 	}
-	if err := settingsService.UpdateSetting(req.Key, req.Value); err != nil {
+	if err := settingsService.UpdateSetting(operatorFromContext(c), req.Key, req.Value); err != nil {
 		// 校验类错误(如分组仍有用户绑定)返回 400,而非 500
 		if errors.Is(err, service.ErrUserGroupInUse) {
 			common.Error(c, http.StatusBadRequest, err.Error())

@@ -258,6 +258,7 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 	}
 
 	callLog := &model.McpCallLog{
+		Type:           model.LogTypeConsume,
 		UserID:         logCtx.UserID,
 		Username:       logCtx.Username,
 		ApiKeyID:       logCtx.ApiKeyID,

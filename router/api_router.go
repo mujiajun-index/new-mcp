@@ -121,7 +121,6 @@ func SetApiRouter(engine *gin.Engine) {
 
 		// 钱包/额度(商业化)
 		auth.GET("/wallet", controller.GetWallet)
-		auth.GET("/wallet/billing", controller.GetWalletBilling)
 		auth.GET("/wallet/usage/stats", controller.GetWalletUsageStats)
 	}
 

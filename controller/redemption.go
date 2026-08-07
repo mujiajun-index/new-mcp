@@ -22,7 +22,7 @@ func AdminCreateRedemptions(c *gin.Context) {
 		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
 		return
 	}
-	items, err := redemptionService.Generate(&req)
+	items, err := redemptionService.Generate(operatorFromContext(c), &req)
 	if err != nil {
 		common.Error(c, http.StatusInternalServerError, "生成兑换码失败: "+err.Error())
 		return
@@ -49,7 +49,7 @@ func AdminUpdateRedemptionStatus(c *gin.Context) {
 		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
 		return
 	}
-	if err := redemptionService.UpdateStatus(id, req.Status); err != nil {
+	if err := redemptionService.UpdateStatus(operatorFromContext(c), id, req.Status); err != nil {
 		common.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -58,7 +58,7 @@ func AdminUpdateRedemptionStatus(c *gin.Context) {
 
 func AdminDeleteRedemption(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err := redemptionService.Delete(id); err != nil {
+	if err := redemptionService.Delete(operatorFromContext(c), id); err != nil {
 		common.Error(c, http.StatusNotFound, err.Error())
 		return
 	}
@@ -79,7 +79,8 @@ func RedeemCode(c *gin.Context) {
 		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
 		return
 	}
-	quota, err := redemptionService.Redeem(userID, req.Code)
+	actor := operatorFromContext(c)
+	quota, err := redemptionService.Redeem(userID, actor.Username, req.Code, actor.IP)
 	if err != nil {
 		// 兑换码业务错误(已用/过期/禁用/无效)统一 400
 		switch {

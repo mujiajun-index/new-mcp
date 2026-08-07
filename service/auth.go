@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -72,6 +73,16 @@ func (s *AuthService) Register(registerIP string, req *dto.RegisterReq) (*dto.Au
 		return nil, err
 	}
 
+	// 系统日志:记录注册(若有注册赠送额度,一并体现在文案与额度变动量)。
+	registerContent := "用户注册"
+	if newUserQuota > 0 {
+		registerContent = fmt.Sprintf("用户注册(赠送 %d 额度)", newUserQuota)
+	}
+	model.RecordSystemLog(user.ID, user.Username, registerContent, newUserQuota, registerIP, map[string]any{
+		"email":       req.Email,
+		"register_ip": registerIP,
+	})
+
 	token, err := middleware.GenerateToken(user)
 	if err != nil {
 		return nil, err
@@ -106,6 +117,9 @@ func (s *AuthService) Login(loginIP string, req *dto.LoginReq) (*dto.AuthResp, e
 		"last_login_at": now,
 		"last_login_ip": loginIP,
 	})
+
+	// 登录日志。
+	model.RecordLoginLog(user.ID, user.Username, loginIP, nil)
 
 	token, err := middleware.GenerateToken(user)
 	if err != nil {
