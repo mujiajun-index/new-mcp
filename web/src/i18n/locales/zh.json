@@ -601,6 +601,10 @@
     "description": "描述",
     "modelName": "模型名称",
     "modelNameRequired": "模型名称 *",
+    "provider": "服务商",
+    "endpointUrl": "接口地址",
+    "apiKey": "API 密钥",
+    "maxTokens": "最大 Token 数",
     "fetchModels": "获取模型",
     "endpointPreview": "预览",
     "systemPrompt": "系统提示词",
@@ -627,6 +631,7 @@
     "placeholderProvider": "选择 Provider",
     "placeholderPrompt": "你是一个图像分析助手...",
     "placeholderKeepUnchanged": "留空则不修改",
+    "maxTokensHint": "留空或填 0 表示不限制（使用模型最大输出）",
     "create": {
       "title": "新建视觉配置",
       "subtitle": "配置视觉模型以提供图像理解能力",

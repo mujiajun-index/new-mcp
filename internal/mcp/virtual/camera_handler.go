@@ -79,6 +79,7 @@ func handleAnalyze(ctx context.Context, cam *model.Camera, args json.RawMessage)
 	_ = json.Unmarshal(args, &params)
 
 	client := &vision.VisionClient{
+		Provider:    vc.Provider,
 		EndpointURL: vc.EndpointURL,
 		ApiKey:      vc.ApiKey,
 		ModelName:   vc.ModelName,

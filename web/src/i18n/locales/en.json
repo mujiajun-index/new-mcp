@@ -601,6 +601,10 @@
     "description": "Description",
     "modelName": "Model Name",
     "modelNameRequired": "Model Name *",
+    "provider": "Provider",
+    "endpointUrl": "Endpoint URL",
+    "apiKey": "API Key",
+    "maxTokens": "Max Tokens",
     "fetchModels": "Fetch Models",
     "endpointPreview": "Preview",
     "systemPrompt": "System Prompt",
@@ -627,6 +631,7 @@
     "placeholderProvider": "Select Provider",
     "placeholderPrompt": "You are an image analysis assistant...",
     "placeholderKeepUnchanged": "Leave empty to keep unchanged",
+    "maxTokensHint": "Leave empty or 0 for no limit (use model max output)",
     "create": {
       "title": "New Vision Config",
       "subtitle": "Configure a vision model to provide image understanding capabilities",

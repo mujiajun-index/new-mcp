@@ -67,7 +67,7 @@ export function VisionCreatePage() {
         endpoint_url: form.endpoint_url,
         api_key: form.api_key,
         system_prompt: form.system_prompt || undefined,
-        max_tokens: form.max_tokens || undefined,
+        max_tokens: form.max_tokens,
       }),
     onSuccess: () => {
       toast.success(t('vision.create.success'))
@@ -171,7 +171,7 @@ export function VisionCreatePage() {
 
         {/* Provider */}
         <div className="space-y-2">
-          <Label>Provider *</Label>
+          <Label>{t('vision.provider')} *</Label>
           <Select
             value={form.provider}
             onValueChange={(v) => {
@@ -194,7 +194,7 @@ export function VisionCreatePage() {
 
         {/* Endpoint URL */}
         <div className="space-y-2">
-          <Label htmlFor="endpoint_url">Endpoint URL *</Label>
+          <Label htmlFor="endpoint_url">{t('vision.endpointUrl')} *</Label>
           <Input
             id="endpoint_url"
             placeholder={providerPlaceholders[form.provider]}
@@ -211,7 +211,7 @@ export function VisionCreatePage() {
 
         {/* API Key */}
         <div className="space-y-2">
-          <Label htmlFor="api_key">API Key *</Label>
+          <Label htmlFor="api_key">{t('vision.apiKey')} *</Label>
           <Input
             id="api_key"
             type="password"
@@ -268,17 +268,18 @@ export function VisionCreatePage() {
 
         {/* Max Tokens */}
         <div className="space-y-2">
-          <Label htmlFor="max_tokens">Max Tokens</Label>
+          <Label htmlFor="max_tokens">{t('vision.maxTokens')}</Label>
           <Input
             id="max_tokens"
             type="number"
-            min={1}
+            min={0}
             max={128000}
             value={form.max_tokens}
             onChange={(e) =>
               setForm({ ...form, max_tokens: parseInt(e.target.value, 10) || 0 })
             }
           />
+          <p className="text-xs text-muted-foreground">{t('vision.maxTokensHint')}</p>
         </div>
       </div>
 

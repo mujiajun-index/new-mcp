@@ -92,7 +92,7 @@ export function VisionDetailPage() {
         api_key: '',
         model_name: config.model_name || '',
         system_prompt: config.system_prompt || '',
-        max_tokens: config.max_tokens || 4096,
+        max_tokens: config.max_tokens,
       })
       setTools({
         analyze_image_name: config.analyze_image_name || 'analyze_image',
@@ -296,7 +296,7 @@ export function VisionDetailPage() {
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label>Provider</Label>
+            <Label>{t('vision.provider')}</Label>
             <Select
               value={form.provider}
               onValueChange={(v) => {
@@ -347,7 +347,7 @@ export function VisionDetailPage() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="endpoint_url">Endpoint URL *</Label>
+          <Label htmlFor="endpoint_url">{t('vision.endpointUrl')} *</Label>
           <Input
             id="endpoint_url"
             value={form.endpoint_url}
@@ -364,7 +364,7 @@ export function VisionDetailPage() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="api_key">API Key</Label>
+          <Label htmlFor="api_key">{t('vision.apiKey')}</Label>
           <Input
             id="api_key"
             type="password"
@@ -387,17 +387,18 @@ export function VisionDetailPage() {
         </div>
 
         <div className="space-y-2 max-w-xs">
-          <Label htmlFor="max_tokens">Max Tokens</Label>
+          <Label htmlFor="max_tokens">{t('vision.maxTokens')}</Label>
           <Input
             id="max_tokens"
             type="number"
-            min={1}
+            min={0}
             max={128000}
             value={form.max_tokens}
             onChange={(e) =>
               setForm({ ...form, max_tokens: parseInt(e.target.value, 10) || 0 })
             }
           />
+          <p className="text-xs text-muted-foreground">{t('vision.maxTokensHint')}</p>
         </div>
 
         <div className="flex justify-end pt-2">

@@ -39,11 +39,8 @@ func (s *VisionService) List(userID int64) ([]dto.VisionConfigListItem, error) {
 }
 
 func (s *VisionService) Create(userID int64, req *dto.CreateVisionConfigReq) (*dto.VisionConfigDetail, error) {
-	maxTokens := req.MaxTokens
-	if maxTokens <= 0 {
-		maxTokens = 4096
-	}
-
+	// MaxTokens == 0 means "unlimited"; the OpenAI/Gemini paths omit the field
+	// (omitempty) and the Anthropic path substitutes a high safe cap.
 	vc := &model.VisionConfig{
 		UserID:            userID,
 		Name:              req.Name,
@@ -53,7 +50,7 @@ func (s *VisionService) Create(userID int64, req *dto.CreateVisionConfigReq) (*d
 		EndpointURL:       req.EndpointURL,
 		ApiKey:            req.ApiKey,
 		SystemPrompt:      req.SystemPrompt,
-		MaxTokens:         maxTokens,
+		MaxTokens:         req.MaxTokens,
 		AutoRegister:      false,
 		Status:            common.StatusEnabled,
 		AnalyzeImageName:  "vision.analyze_image",

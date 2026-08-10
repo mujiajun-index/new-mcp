@@ -11,6 +11,12 @@ import (
 	"time"
 )
 
+// defaultMaxTokensAnthropic is substituted when MaxTokens <= 0 ("unlimited").
+// Anthropic's API requires a non-zero max_tokens and rejects 0/omitted values,
+// so we send a high safe cap. 8192 is the output ceiling for Claude 3.5
+// Sonnet/Haiku and a valid bound for the Claude 4 family.
+const defaultMaxTokensAnthropic = 8192
+
 type ModelInfo struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -201,9 +207,15 @@ func (c *VisionClient) analyzeAnthropic(ctx context.Context, systemPrompt, userP
 		}},
 	}
 
+	// Anthropic requires max_tokens > 0; map "unlimited" (0) to a high safe cap.
+	maxTokens := c.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = defaultMaxTokensAnthropic
+	}
+
 	reqBody := anthropicRequest{
 		Model:     c.ModelName,
-		MaxTokens: c.MaxTokens,
+		MaxTokens: maxTokens,
 		System:    systemPrompt,
 		Messages:  []anthropicMessage{{Role: "user", Content: blocks}},
 	}

@@ -16,7 +16,9 @@ type VisionConfig struct {
 	EndpointURL        string         `json:"endpoint_url" gorm:"size:512"`
 	ApiKey             string         `json:"-" gorm:"column:api_key;size:512"`
 	SystemPrompt       string         `json:"system_prompt" gorm:"type:text"`
-	MaxTokens          int            `json:"max_tokens" gorm:"default:4096"`
+	// MaxTokens == 0 means "unlimited"; omitting the GORM default lets 0 persist
+	// (GORM would otherwise rewrite the zero value to its column default).
+	MaxTokens          int            `json:"max_tokens"`
 	AutoRegister       bool           `json:"auto_register" gorm:"default:false"`
 	RegisteredServiceID *int64        `json:"registered_service_id"`
 	AnalyzeImageName   string         `json:"analyze_image_name" gorm:"size:128;default:vision.analyze_image"`
