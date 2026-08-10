@@ -1,6 +1,7 @@
 package virtual
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -23,7 +24,7 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 	}
 
 	var params struct {
-		Image string `json:"image"`
+		Image  string `json:"image"`
 		Prompt string `json:"prompt"`
 	}
 	_ = json.Unmarshal(args, &params)
@@ -31,11 +32,13 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 	if params.Image == "" {
 		return nil, fmt.Errorf("image parameter is required")
 	}
-	// Normalize to a raw base64 string + detected media type. Accepts raw
-	// base64, data URLs, and url()-wrapped data URLs.
-	imageBase64, mediaType := NormalizeImage(params.Image)
-	if imageBase64 == "" {
-		return nil, fmt.Errorf("image parameter is required")
+
+	// Decode the input into real image bytes first. If it isn't a valid image,
+	// fail here — never send bad data to the upstream model. This is the same
+	// form the camera path feeds Analyze: raw bytes that get re-encoded below.
+	imgBytes, mediaType, err := DecodeImage(params.Image)
+	if err != nil {
+		return nil, fmt.Errorf("invalid image: %w", err)
 	}
 
 	client := &vision.VisionClient{
@@ -73,6 +76,9 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 		return nil, fmt.Errorf("unknown vision tool: %s", toolName)
 	}
 
+	// Re-encode to clean standard base64, exactly like the camera path, so both
+	// feeds hand Analyze the same well-formed data URL.
+	imageBase64 := EncodeFrameToBase64(imgBytes)
 	result, err := client.Analyze(ctx, systemPrompt, userPrompt, imageBase64, mediaType)
 	if err != nil {
 		return nil, err
@@ -86,15 +92,40 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 	return json.Marshal(resp)
 }
 
-// NormalizeImage normalizes an image input into a raw base64 string and its
-// detected media type, the formats VisionClient.Analyze expects. It accepts:
-//   - raw base64 string: "<base64>"                -> base64, "image/jpeg"
-//   - data URL: "data:<mediatype>;base64,<base64>" -> base64, "<mediatype>"
-//   - CSS url() wrapper around a data URL: url("data:<mediatype>;base64,<base64>")
+// DecodeImage decodes an image input into its raw bytes and detected media
+// type — the same form the camera path feeds Analyze. It accepts:
+//   - raw base64 (standard or URL-safe, padded or not)
+//   - a data URL: "data:<mediatype>;base64,<base64>"
+//   - a CSS url() wrapper around either of the above
 //
-// For bare base64 with no data URL (e.g. JPEG frames from the camera) the
-// media type defaults to "image/jpeg".
-func NormalizeImage(image string) (base64Data, mediaType string) {
+// The decoded bytes are authoritative for the media type: a wrong or missing
+// label is overridden by sniffing the real format from the magic bytes. An
+// error is returned when the input is not valid base64 or not a recognized
+// image, so callers fail fast rather than burning an upstream request.
+func DecodeImage(image string) (imgBytes []byte, mediaType string, err error) {
+	b64 := extractBase64Text(image)
+	if b64 == "" {
+		return nil, "", fmt.Errorf("image data is empty")
+	}
+
+	imgBytes, err = decodeBase64Loose(b64)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(imgBytes) == 0 {
+		return nil, "", fmt.Errorf("decoded image is empty")
+	}
+
+	mediaType = sniffMediaType(imgBytes)
+	if mediaType == "" {
+		return nil, "", fmt.Errorf("unsupported or unrecognized image format")
+	}
+	return imgBytes, mediaType, nil
+}
+
+// extractBase64Text reduces any supported image input to its bare base64 text
+// by stripping a CSS url() wrapper, the data: URL header, and any whitespace.
+func extractBase64Text(image string) string {
 	s := strings.TrimSpace(image)
 
 	// Unwrap a leading CSS url(...) wrapper, e.g. url("data:...") or url(data:...).
@@ -102,55 +133,74 @@ func NormalizeImage(image string) (base64Data, mediaType string) {
 		s = strings.TrimSpace(s[4:])
 		s = strings.TrimSuffix(s, ")")
 		s = strings.TrimSpace(s)
-		s = strings.Trim(s, "\"'") // strip surrounding " or '
+		s = strings.Trim(s, "\"'")
 		s = strings.TrimSpace(s)
 	}
 
-	// Default media type for bare base64 input (e.g. camera JPEG frames).
-	mediaType = "image/jpeg"
-
-	// Strip the data URL prefix and capture its declared media type. Base64 data
-	// never contains a comma, so the comma reliably marks the end of the prefix.
+	// Strip the data URL header. Base64 data never contains a comma, so the
+	// comma reliably marks the end of the header.
 	if strings.HasPrefix(strings.ToLower(s), "data:") {
 		if idx := strings.Index(s, ","); idx >= 0 {
-			mediaType = parseDataURLMediaType(s[:idx])
 			s = s[idx+1:]
 		}
 	}
 
-	return s, mediaType
+	return stripBase64Whitespace(s)
 }
 
-// parseDataURLMediaType extracts the media type from a data-URL header portion
-// such as "data:image/png;base64" -> "image/png". Falls back to "image/jpeg"
-// when the data URL declares no media type.
-func parseDataURLMediaType(header string) string {
-	s := strings.ToLower(strings.TrimSpace(header))
-	s = strings.TrimPrefix(s, "data:")
-	if i := strings.IndexAny(s, ";,"); i >= 0 {
-		s = s[:i]
+// decodeBase64Loose decodes base64 that may be standard or URL-safe, padded or
+// not. Different sources produce different variants; trying each in turn is
+// cheap and maximizes what we accept.
+func decodeBase64Loose(s string) ([]byte, error) {
+	for _, enc := range []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	} {
+		if b, err := enc.DecodeString(s); err == nil {
+			return b, nil
+		}
 	}
-	if s = strings.TrimSpace(s); s != "" {
+	return nil, fmt.Errorf("not valid base64")
+}
+
+// sniffMediaType identifies a common image format from its magic bytes. The
+// bytes are authoritative — more reliable than any label the sender attached.
+func sniffMediaType(data []byte) string {
+	switch {
+	case bytes.HasPrefix(data, []byte{0xFF, 0xD8, 0xFF}):
+		return "image/jpeg"
+	case bytes.HasPrefix(data, []byte{0x89, 0x50, 0x4E, 0x47}): // \x89PNG
+		return "image/png"
+	case bytes.HasPrefix(data, []byte("GIF8")):
+		return "image/gif"
+	case len(data) >= 12 && bytes.Equal(data[0:4], []byte("RIFF")) && bytes.Equal(data[8:12], []byte("WEBP")):
+		return "image/webp"
+	}
+	return ""
+}
+
+// stripBase64Whitespace removes spaces, tabs, and newlines from a base64
+// string. Base64 only contains [A-Za-z0-9+/=] (and -_= for URL-safe), so
+// whitespace is never significant and only breaks the data URL we build.
+func stripBase64Whitespace(s string) string {
+	if !strings.ContainsAny(s, " \t\r\n") {
 		return s
 	}
-	return "image/jpeg"
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case ' ', '\t', '\r', '\n':
+			return -1
+		default:
+			return r
+		}
+	}, s)
 }
 
-// NormalizeImageBase64 returns just the raw base64 portion of an image input.
-// Convenience wrapper around NormalizeImage for callers that don't need the
-// media type.
-func NormalizeImageBase64(image string) string {
-	b, _ := NormalizeImage(image)
-	return b
-}
-
-// ExtractBase64Image removes the data URL prefix if present. Retained for
-// compatibility; it now also handles url()-wrapped values via NormalizeImage.
-func ExtractBase64Image(data string) string {
-	return NormalizeImageBase64(data)
-}
-
-// EncodeFrameToBase64 encodes raw JPEG bytes to base64.
+// EncodeFrameToBase64 encodes raw image bytes to standard base64. Used by both
+// the camera path (on captured frames) and the vision path (after decoding),
+// so both feed Analyze the same clean form.
 func EncodeFrameToBase64(frame []byte) string {
 	return base64.StdEncoding.EncodeToString(frame)
 }
