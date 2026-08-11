@@ -15,8 +15,8 @@ type BillingSession struct {
 	MarketplaceItemID int64
 	ConsumedQuota     int64 // 实际应扣(单价;成功后据此结算并累加 used)
 	PreConsumedQuota  int64 // 实际预扣(=Max(单价, PreConsumedQuota 下限));成功后退还(预扣-应扣)差额
-	Trusted           bool   // 命中信任旁路:未实际预扣,成功后由 Confirm 补扣
-	Debt              bool   // FailOpen 欠账:计费 DB 异常,放行调用但未扣(仅记录)
+	Trusted           bool  // 命中信任旁路:未实际预扣,成功后由 Confirm 补扣
+	Debt              bool  // FailOpen 欠账:计费 DB 异常,放行调用但未扣(仅记录)
 	Price             PriceInfo
 	RequestID         string
 
@@ -48,7 +48,8 @@ func NewBillingService() *BillingService { return &BillingService{} }
 var LowQuotaNotifier = func(userID, currentQuota int64) {}
 
 // PreConsume 预扣(§6.2 插入点 A):校验并原子扣减用户额度 + Key 预算。
-//   - 免费 / 管理员(未开启 ChargeAdmin):返回零消费会话,不扣费。
+//   - 免费 / 零价:返回零消费会话,不扣费。
+//   - 管理员:默认同样计费(ChargeAdmin=true)。仅当显式关闭 ChargeAdmin 时豁免管理员本人的平台托管服务调用。
 //   - 信任旁路(用户余额 > TrustQuota 且 Key 余额 > TrustQuota 或无限 Key):Trusted=true,不实际预扣,成功后 Confirm 补扣。
 //   - 预扣额 = Max(实际单价, PreConsumedQuota 下限);高于单价的部分在 Confirm 成功后退还(对齐 new-api PreConsumedQuota)。
 //   - 余额或 Key 预算不足:返回 ErrInsufficientQuota(调用方拒绝本次调用,不禁用 Key)。
@@ -63,10 +64,11 @@ func (s *BillingService) PreConsume(req PreConsumeRequest) (*BillingSession, err
 		RequestID:         req.RequestID,
 	}
 
-	// 不计费:免费类型 / 零价 / 管理员(未开 ChargeAdmin)
+	// 不计费:免费类型 / 零价。
 	if price.BillingType == BillingTypeFree || price.UnitPriceQuota <= 0 {
 		return sess, nil
 	}
+	// 管理员豁免:ChargeAdmin 默认开启(对管理员计费);仅当显式关闭时,豁免管理员本人的平台托管服务调用。
 	if !model.GetOptionBool("ChargeAdmin") && common.IsAdminRole(req.UserRole) {
 		return sess, nil
 	}
@@ -139,6 +141,7 @@ func (s *BillingService) PreConsume(req PreConsumeRequest) (*BillingSession, err
 // Confirm 成功确认(§6.2 插入点 B):
 //   - Trusted:事后补扣实际单价 + 记账。
 //   - 非信任:预扣已完成,退还(预扣-单价)差额(预消耗下限高于单价时),并累加 used。
+//
 // 与 Refund 互斥、且幂等(同一会话多次 Confirm 只生效一次)。低额度时异步发提醒。
 func (s *BillingService) Confirm(sess *BillingSession) error {
 	if sess == nil || sess.ConsumedQuota <= 0 {

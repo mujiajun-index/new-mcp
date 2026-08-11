@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -57,7 +58,8 @@ type executeResult struct {
 }
 
 // billingOutcome 一次调用的计费结算结果,写入 mcp_call_logs 计费列。
-//   Status: skipped(自有/免费) / pending(已预扣待结算) / charged / refunded / blocked(余额不足) / debt(FailOpen 欠账)
+//
+//	Status: skipped(自有/免费) / pending(已预扣待结算) / charged / refunded / blocked(余额不足) / debt(FailOpen 欠账)
 type billingOutcome struct {
 	sess        *billing.BillingSession
 	Status      string
@@ -187,8 +189,9 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 	var serviceName string
 	var billing *billingOutcome
 	originalToolName := "" // records meta-tool name for smart mode
-	// request_id:JSON-RPC id 作为计费幂等键(MCP 客户端重试时稳定)
-	requestID := fmt.Sprintf("%v", req.ID)
+	// request_id:计费幂等键 = JSON-RPC id + 工具与参数短哈希。纯 id 在不同客户端/会话复用同一 id 时
+	// 会把新逻辑请求误判为重试而漏扣;加入 tool/args 哈希后,仅真正的同请求重试(id/工具/参数全同)才命中跳过。
+	requestID := billingRequestID(req.ID, params.Name, params.Arguments)
 
 	// Resolve group info
 	if logCtx.GroupSlug != "" {
@@ -255,6 +258,14 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 	method := "tools/call"
 	if originalToolName != "" {
 		method = originalToolName
+	}
+
+	// 直连模式(/mcp)请求未携带分组 slug,前面不会解析到分组。这里按已路由到的 service
+	// 反查其所属分组回填,使调用日志能记录"工具所属分组"。与智能模式 handleExecute 中
+	// resolveGroupForService 的做法一致。仅在尚未确定分组时执行:分组端点(/mcp/group/:slug)
+	// 已按 slug 解析、mcp.execute 已按 service 解析的都会被跳过,不产生额外查询。
+	if groupID == 0 && serviceID != 0 {
+		groupID, groupName = h.resolveGroupForService(serviceID, logCtx)
 	}
 
 	callLog := &model.McpCallLog{
@@ -794,8 +805,15 @@ func (h *GatewayHandler) finalizeBilling(out *billingOutcome, success bool) {
 	}
 	if success {
 		_ = h.billing.Confirm(out.sess)
-		out.Status = "charged"
-		out.Quota = out.sess.ConsumedQuota
+		// 仅在真正扣费(ConsumedQuota>0)时记 charged;幂等重试等零消费记 skipped,
+		// 避免"未实扣却显示已扣费"误导日志,并防止 HasChargedRequest 误命中零额度行。
+		if out.sess.ConsumedQuota > 0 {
+			out.Status = "charged"
+			out.Quota = out.sess.ConsumedQuota
+		} else {
+			out.Status = "skipped"
+			out.Quota = 0
+		}
 	} else {
 		_ = h.billing.Refund(out.sess)
 		out.Status = "refunded"
@@ -831,6 +849,14 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen]
+}
+
+// billingRequestID 派生计费幂等键:JSON-RPC id(可读前缀,便于与客户端日志关联)+ 工具名与参数的短哈希。
+// 仅用 JSON-RPC id 时,不同客户端/会话复用同一 id 的请求会被误判为重试而漏扣;
+// 加入 tool+args 哈希后,只有同一请求的重试(id/工具/参数全同)才命中幂等跳过。
+func billingRequestID(rpcID interface{}, toolName string, args json.RawMessage) string {
+	h := sha256.Sum256([]byte(toolName + "\x00" + string(args)))
+	return fmt.Sprintf("%v:%x", rpcID, h[:8])
 }
 
 // visionImageTool reports whether the tool embeds a base64 image in its request

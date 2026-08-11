@@ -41,35 +41,35 @@ var defaultOptions = map[string]string{
 	"CloudflareProxyEnabled":        "false",
 
 	// --- 商业化计费(§15)---
-	"BillingEnabled":              "false", // 总开关,false 时市场服务也跳过计费
-	"QuotaPerUnit":                "500000", // 1 货币单位 = 多少 quota
-	"DisplayCurrency":             "CNY",
-	"BillingDefaultType":          "per_call", // 全局默认计费类型(仅 free/per_call)
-	"BillingDefaultPricePerCall":  "0",        // 全局默认按次单价(市场服务第 3 级,展示货币)
-	"GroupRatio":                  `{"default":1,"vip":1,"svip":1}`, // 分组倍率 JSON
-	"TrustQuota":                  "0", // 信任额度旁路阈值;0=按 10*QuotaPerUnit 动态缩放(对齐 new-api)
-	"PreConsumedQuota":            "500", // 预消耗配额下限(quota):每次预扣不低于此值,成功后退还差额(对齐 new-api PreConsumedQuota);0=禁用
-	"ChargeAdmin":                 "false",   // 是否对管理员计费
-	"ChargeOnClientError":         "false",   // 客户端参数错误是否收费
-	"ChargeOnTimeout":             "false",   // 超时是否收费
-	"BillingFailOpen":             "true",    // 计费 DB 异常时是否放行(记欠账)
+	"BillingEnabled":             "false",  // 总开关,false 时市场服务也跳过计费
+	"QuotaPerUnit":               "500000", // 1 货币单位 = 多少 quota
+	"DisplayCurrency":            "CNY",
+	"BillingDefaultType":         "per_call",                       // 全局默认计费类型(仅 free/per_call)
+	"BillingDefaultPricePerCall": "0",                              // 全局默认按次单价(市场服务第 3 级,展示货币)
+	"GroupRatio":                 `{"default":1,"vip":1,"svip":1}`, // 分组倍率 JSON
+	"TrustQuota":                 "0",                              // 信任额度旁路阈值;0=按 10*QuotaPerUnit 动态缩放(对齐 new-api)
+	"PreConsumedQuota":           "500",                            // 预消耗配额下限(quota):每次预扣不低于此值,成功后退还差额(对齐 new-api PreConsumedQuota);0=禁用
+	"ChargeAdmin":                "true",                           // 是否对管理员计费(默认开启:管理员本人调用平台托管服务同样扣费;关闭则豁免)
+	"ChargeOnClientError":        "false",                          // 客户端参数错误是否收费
+	"ChargeOnTimeout":            "false",                          // 超时是否收费
+	"BillingFailOpen":            "true",                           // 计费 DB 异常时是否放行(记欠账)
 	// --- 额度 ---
-	"QuotaForNewUser":             "0",   // 新用户赠送额度
-	"QuotaForInviter":             "0",   // 邀请者奖励(→ 邀请人 aff_quota 待提取,对齐 new-api QuotaForInviter)
-	"QuotaForInvitee":             "0",   // 受邀者奖励(→ 受邀者钱包 quota 直接可用,对齐 new-api QuotaForInvitee)
-	"QuotaRemindThreshold":        "0",   // 低额度邮件提醒阈值(0=不提醒)
+	"QuotaForNewUser":      "0", // 新用户赠送额度
+	"QuotaForInviter":      "0", // 邀请者奖励(→ 邀请人 aff_quota 待提取,对齐 new-api QuotaForInviter)
+	"QuotaForInvitee":      "0", // 受邀者奖励(→ 受邀者钱包 quota 直接可用,对齐 new-api QuotaForInvitee)
+	"QuotaRemindThreshold": "0", // 低额度邮件提醒阈值(0=不提醒)
 	// --- 日志 ---
-	"LogPayloadEnabled":           "true",  // 是否落 request/response_payload
+	"LogPayloadEnabled": "true", // 是否落 request/response_payload
 	// --- 自有服务 / 自用模式 ---
-	"UserOwnedServicesEnabled":    "true",  // 是否允许用户添加/调用自有服务(false=纯市场模式)
-	"SelfUseModeEnabled":          "false", // 自用模式可用全局默认;非自用(默认)上架必须显式定价
+	"UserOwnedServicesEnabled": "true",  // 是否允许用户添加/调用自有服务(false=纯市场模式)
+	"SelfUseModeEnabled":       "false", // 自用模式可用全局默认;非自用(默认)上架必须显式定价
 	// --- 兑换 ---
-	"RedemptionEnabled":           "true",
+	"RedemptionEnabled": "true",
 	// --- 支付(V2)---
-	"PaymentEnabled":              "false",
-	"EpayEndpoint":                "",
-	"EpayPID":                     "",
-	"EpayKey":                     "",
+	"PaymentEnabled": "false",
+	"EpayEndpoint":   "",
+	"EpayPID":        "",
+	"EpayKey":        "",
 }
 
 var sensitiveKeys = map[string]bool{
@@ -78,18 +78,18 @@ var sensitiveKeys = map[string]bool{
 }
 
 var publicKeys = map[string]bool{
-	"SystemName":                  true,
-	"Footer":                      true,
-	"ServerAddress":               true,
-	"RegisterEnabled":             true,
-	"EmailVerificationEnabled":    true,
-	"UserGroupOptions":            true,
-	"BillingEnabled":              true,
-	"DisplayCurrency":             true,
-	"QuotaPerUnit":                true, // 供管理员调额界面按货币换算(对齐 reference/new-api /api/status 暴露)
-	"SelfUseModeEnabled":          true,
-	"RedemptionEnabled":           true,
-	"UserOwnedServicesEnabled":    true,
+	"SystemName":               true,
+	"Footer":                   true,
+	"ServerAddress":            true,
+	"RegisterEnabled":          true,
+	"EmailVerificationEnabled": true,
+	"UserGroupOptions":         true,
+	"BillingEnabled":           true,
+	"DisplayCurrency":          true,
+	"QuotaPerUnit":             true, // 供管理员调额界面按货币换算(对齐 reference/new-api /api/status 暴露)
+	"SelfUseModeEnabled":       true,
+	"RedemptionEnabled":        true,
+	"UserOwnedServicesEnabled": true,
 }
 
 func InitOptionMap() {
