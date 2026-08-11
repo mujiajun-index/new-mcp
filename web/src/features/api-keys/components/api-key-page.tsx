@@ -13,6 +13,9 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
+import { Progress } from '@/components/ui/progress'
+import { useSystemConfigStore } from '@/stores/system-config-store'
+import { formatQuotaCurrency } from '@/lib/billing'
 import { toast } from 'sonner'
 import {
   Plus, Trash2, Copy, Key, X, Pencil, ToggleLeft, ToggleRight,
@@ -68,6 +71,10 @@ function StatusBadge({ status, expired, t }: { status: number; expired: boolean;
 }
 
 function QuotaDisplay({ used, total, unlimited, t }: { used: number; total: number; unlimited: boolean; t: (k: string, opts?: any) => string }) {
+  const quotaPerUnit = useSystemConfigStore((s) => s.config.quotaPerUnit)
+  const displayCurrency = useSystemConfigStore((s) => s.config.displayCurrency)
+  const fmtMoney = (q: number) => formatQuotaCurrency(q, quotaPerUnit, displayCurrency)
+
   if (unlimited) {
     return (
       <Badge variant="secondary" className="gap-1">
@@ -75,24 +82,36 @@ function QuotaDisplay({ used, total, unlimited, t }: { used: number; total: numb
       </Badge>
     )
   }
-  const pct = total > 0 ? (used / total) * 100 : 0
-  const remaining = total - used
-  const color = remaining <= 0 ? 'text-red-500' : pct > 70 ? 'text-amber-500' : 'text-emerald-500'
+  // 注意: 此处 total = key.quota(额度总量), remaining = total - used,
+  // 与用户管理列表的 user.quota(剩余) 语义不同。
+  const remaining = total - used > 0 ? total - used : 0
+  const pct = total > 0 ? (remaining / total) * 100 : 0
+  // 剩余 ≤10% 红、≤30% 黄、否则绿(对齐用户管理列表)
+  const color = pct <= 10
+    ? '[&_[data-slot=progress-indicator]]:bg-rose-500'
+    : pct <= 30
+      ? '[&_[data-slot=progress-indicator]]:bg-amber-500'
+      : '[&_[data-slot=progress-indicator]]:bg-emerald-500'
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className="flex items-center gap-2 min-w-[100px]">
-            <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full ${remaining <= 0 ? 'bg-red-500' : pct > 70 ? 'bg-amber-500' : 'bg-emerald-500'}`}
-                style={{ width: `${Math.min(pct, 100)}%` }}
-              />
+          <div className="w-[150px] cursor-help space-y-1">
+            <div className="flex justify-between text-xs">
+              <span className="font-medium tabular-nums">{fmtMoney(remaining)}</span>
+              <span className="text-muted-foreground tabular-nums">{fmtMoney(total)}</span>
             </div>
-            <span className={`text-xs tabular-nums ${color}`}>{used}/{total}</span>
+            <Progress value={pct} className={cn('h-1.5', color)} />
           </div>
         </TooltipTrigger>
-        <TooltipContent>{t('apiKeys.usedTotal', { used, total, remaining: remaining > 0 ? remaining : 0 })}</TooltipContent>
+        <TooltipContent>
+          <div className="space-y-1 text-xs">
+            <div>{t('apiKeys.usedQuota')}: {fmtMoney(used)} ({used.toLocaleString()})</div>
+            <div>{t('apiKeys.remainingQuota')}: {fmtMoney(remaining)} ({remaining.toLocaleString()})</div>
+            <div>{t('apiKeys.totalQuota')}: {fmtMoney(total)} ({total.toLocaleString()})</div>
+            <div>{t('apiKeys.percentage')}: {pct.toFixed(1)}%</div>
+          </div>
+        </TooltipContent>
       </Tooltip>
     </TooltipProvider>
   )
@@ -283,6 +302,18 @@ export function ApiKeyPage() {
   const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
+  // 额度按单位货币填写:提交时 × quotaPerUnit 换算为原始额度,回填时反向换算。
+  const quotaPerUnit = useSystemConfigStore((s) => s.config.quotaPerUnit) || 500000
+  const displayCurrency = useSystemConfigStore((s) => s.config.displayCurrency)
+  const currencySymbol = displayCurrency === 'USD' ? '$' : displayCurrency === 'EUR' ? '€' : '¥'
+  const currencyToQuota = (s: string) => {
+    const amt = parseFloat(s)
+    return Number.isNaN(amt) || amt <= 0 ? 0 : Math.round(amt * quotaPerUnit)
+  }
+  const quotaToCurrency = (q: number) => {
+    if (!q || quotaPerUnit <= 0) return ''
+    return String(parseFloat((q / quotaPerUnit).toFixed(4)))
+  }
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const pageSize = 15
@@ -326,7 +357,7 @@ export function ApiKeyPage() {
     mutationFn: () => createApiKey({
       name: form.name,
       groups: form.groups,
-      quota: form.unlimited_quota ? undefined : (parseInt(form.quota) || undefined),
+      quota: form.unlimited_quota ? undefined : (currencyToQuota(form.quota) || undefined),
       unlimited_quota: form.unlimited_quota,
       allow_ips: form.allow_ips || undefined,
       expires_at: form.never_expires ? undefined : (form.expires_at || undefined),
@@ -388,7 +419,7 @@ export function ApiKeyPage() {
     setForm({
       name: key.name,
       groups: key.groups || [],
-      quota: key.unlimited_quota ? '' : String(key.quota),
+      quota: key.unlimited_quota ? '' : quotaToCurrency(key.quota),
       unlimited_quota: key.unlimited_quota,
       allow_ips: key.allow_ips || '',
       expires_at: key.expires_at || '',
@@ -515,13 +546,19 @@ export function ApiKeyPage() {
             <div className="space-y-2">
               <Label>{t('apiKeys.quota')}</Label>
               <div className="flex items-center gap-2">
-                <Input
-                  placeholder={t('apiKeys.unlimited')}
-                  type="number"
-                  value={form.quota}
-                  disabled={form.unlimited_quota}
-                  onChange={e => setForm({ ...form, quota: e.target.value })}
-                />
+                <div className="relative flex-1">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">{currencySymbol}</span>
+                  <Input
+                    placeholder="0.00"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="pl-7"
+                    value={form.quota}
+                    disabled={form.unlimited_quota}
+                    onChange={e => setForm({ ...form, quota: e.target.value })}
+                  />
+                </div>
                 <Button
                   type="button"
                   variant={form.unlimited_quota ? 'default' : 'outline'}
@@ -575,7 +612,7 @@ export function ApiKeyPage() {
                     body: {
                       name: form.name,
                       groups: form.groups,
-                      quota: form.unlimited_quota ? undefined : (parseInt(form.quota) || undefined),
+                      quota: form.unlimited_quota ? undefined : (currencyToQuota(form.quota) || undefined),
                       unlimited_quota: form.unlimited_quota,
                       allow_ips: form.allow_ips || undefined,
                       expires_at: form.never_expires ? '' : (form.expires_at || undefined),

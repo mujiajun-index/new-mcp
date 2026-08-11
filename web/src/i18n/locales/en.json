@@ -199,6 +199,10 @@
     "enabled": "Enabled",
     "disabled": "Disabled",
     "usedTotal": "Used {{used}} / Total {{total}}, Remaining {{remaining}}",
+    "usedQuota": "Used",
+    "remainingQuota": "Remaining",
+    "totalQuota": "Total",
+    "percentage": "Percentage",
     "justNow": "Just now",
     "minutesAgo": "{{count}} min ago",
     "hoursAgo": "{{count}} hr ago",
@@ -1091,7 +1095,6 @@
     "colPrice": "Price",
     "colCategory": "Type",
     "defaultDesc": "Admins can configure a global default price in Billing settings. Marketplace prices resolve by Tool > Service > Global default, with an additional ratio per user plan group.",
-    "selfUseNote": "Self-use mode is on; services without explicit pricing use the global default.",
     "commercialNote": "Marketplace services must be explicitly priced or marked free to be usable.",
     "billingOff": "Billing is disabled; all service calls are currently free.",
     "free": "Free",
@@ -1173,6 +1176,8 @@
     "quotaRemindThresholdDesc": "Notify users when remaining quota drops below this",
     "selfUseModeEnabled": "Self-use Mode",
     "userOwnedServicesEnabled": "User-owned Services",
+    "selfUseModeEnabledDesc": "When on, services without explicit pricing use the global default; when off, marketplace services must be explicitly priced or marked free.",
+    "userOwnedServicesEnabledDesc": "When on, users can add and call their own configured services; when off (pure marketplace mode), only marketplace and platform services are available.",
     "logPayloadEnabled": "Log Payload",
     "logPayloadEnabledDesc": "Persist request/response payloads in billing logs"
   }

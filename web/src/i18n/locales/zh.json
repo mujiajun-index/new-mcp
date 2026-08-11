@@ -199,6 +199,10 @@
     "enabled": "已启用",
     "disabled": "已禁用",
     "usedTotal": "已用 {{used}} / 总额 {{total}}，剩余 {{remaining}}",
+    "usedQuota": "已用",
+    "remainingQuota": "剩余",
+    "totalQuota": "总量",
+    "percentage": "占比",
     "justNow": "刚刚",
     "minutesAgo": "{{count}} 分钟前",
     "hoursAgo": "{{count}} 小时前",
@@ -1091,7 +1095,6 @@
     "colPrice": "价格",
     "colCategory": "类型",
     "defaultDesc": "管理员可在计费设置中配置全局默认价;市场服务按「工具级 > 服务级 > 全局默认」三级解析,用户套餐分组另有倍率。",
-    "selfUseNote": "当前为自用模式,未显式定价的服务将使用全局默认价。",
     "commercialNote": "市场服务必须显式定价或标记为免费方可使用。",
     "billingOff": "计费当前未启用,所有服务调用暂不收费。",
     "free": "免费",
@@ -1173,6 +1176,8 @@
     "quotaRemindThresholdDesc": "剩余额度低于此值时提醒用户",
     "selfUseModeEnabled": "自用模式",
     "userOwnedServicesEnabled": "用户自有服务",
+    "selfUseModeEnabledDesc": "开启后,未显式定价的服务将使用全局默认价;关闭后,市场服务必须显式定价或标记为免费。",
+    "userOwnedServicesEnabledDesc": "开启后,用户可添加并调用自己配置的服务(自有服务);关闭后为纯市场模式,用户仅能使用市场与平台提供的服务。",
     "logPayloadEnabled": "记录请求体",
     "logPayloadEnabledDesc": "在计费日志中保存请求/响应内容"
   }

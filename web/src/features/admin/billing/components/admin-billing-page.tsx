@@ -346,14 +346,14 @@ export function AdminBillingPage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-medium">{t('adminBilling.selfUseModeEnabled')}</p>
-                <p className="text-xs text-muted-foreground">{t('pricing.selfUseNote')}</p>
+                <p className="text-xs text-muted-foreground">{t('adminBilling.selfUseModeEnabledDesc')}</p>
               </div>
               <Switch checked={localValues.SelfUseModeEnabled === 'true'} onCheckedChange={() => toggleBool('SelfUseModeEnabled')} />
             </div>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-medium">{t('adminBilling.userOwnedServicesEnabled')}</p>
-                <p className="text-xs text-muted-foreground">{t('pricing.commercialNote')}</p>
+                <p className="text-xs text-muted-foreground">{t('adminBilling.userOwnedServicesEnabledDesc')}</p>
               </div>
               <Switch checked={localValues.UserOwnedServicesEnabled === 'true'} onCheckedChange={() => toggleBool('UserOwnedServicesEnabled')} />
             </div>

@@ -37,7 +37,8 @@ export function DashboardPage() {
 
   const { data: recentLogs } = useQuery({
     queryKey: ['dashboard-recent-logs'],
-    queryFn: () => getUserLogs({ page: 1, page_size: 5 }),
+    // type: 2 = LogTypeConsume(MCP 调用消费),过滤掉充值/管理/系统/登录等非调用日志
+    queryFn: () => getUserLogs({ page: 1, page_size: 5, type: 2 }),
   })
 
   const stats = adminStats?.data
