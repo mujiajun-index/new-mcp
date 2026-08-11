@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useSearch } from '@tanstack/react-router'
 import dayjs from 'dayjs'
@@ -15,10 +15,31 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import { CompactDateTimeRangePicker } from '@/components/ui/date-time-range-picker'
-import { Activity, CheckCircle, XCircle, Clock, Zap, Search, RotateCw, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Activity, CheckCircle, XCircle, Clock, Zap, Search, RotateCw, ChevronLeft, ChevronRight, Copy, Eye } from 'lucide-react'
+import { toast } from 'sonner'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { billingStatusKey, billingStatusClass, priceScopeKey, priceLabel } from '@/lib/billing'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import type { LogFilter } from '@/types'
+
+// 安全上下文(HTTPS)用 navigator.clipboard,否则回退 execCommand,保证手机端/HTTP 自部署也能写入剪贴板。
+async function copyText(text: string) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'
+  ta.style.top = '0'
+  ta.style.opacity = '0'
+  document.body.appendChild(ta)
+  ta.focus()
+  ta.select()
+  const ok = document.execCommand('copy')
+  document.body.removeChild(ta)
+  if (!ok) throw new Error('copy failed')
+}
 
 // 日志类型徽标配置(对齐后端 LogType*:1充值/2消费/3管理/4系统/7登录)。
 const CONSUME_META = { key: 'logs.typeConsume', cls: 'bg-sky-500/10 text-sky-600 dark:text-sky-400' }
@@ -58,12 +79,15 @@ export function UserLogsPage() {
   const isMobile = useIsMobile()
   const { config } = useSystemConfigStore()
   const showBilling = config.billingEnabled
+  const queryClient = useQueryClient()
   // 支持外部带 ?type=N 跳转预选类型(如钱包页「查看消费明细」→ /logs?type=2)。
   const urlSearch = useSearch({ strict: false }) as { type?: string | number }
   const [page, setPage] = useState(1)
   const pageSize = 20
   const [filter, setFilter] = useState<LogFilter>({ type: urlSearch.type ? Number(urlSearch.type) : undefined })
   const [dateRange, setDateRange] = useState<{ start?: Date; end?: Date }>({})
+  // 错误信息预览弹窗:点击某行错误信息后展开完整内容并支持复制。
+  const [previewError, setPreviewError] = useState<string | null>(null)
 
   const apiFilter = useMemo(() => {
     const f: LogFilter = { ...filter }
@@ -100,6 +124,19 @@ export function UserLogsPage() {
     setFilter({})
     setDateRange({})
     setPage(1)
+    // 重置后强制刷新列表与统计:即便过滤条件未变化(如本就为空)也重新拉取,确保数据为最新。
+    queryClient.invalidateQueries({ queryKey: ['user-logs'] })
+    queryClient.invalidateQueries({ queryKey: ['user-log-stats'] })
+  }
+
+  const handleCopyError = async () => {
+    if (!previewError) return
+    try {
+      await copyText(previewError)
+      toast.success(t('common.copied'))
+    } catch {
+      toast.error(t('common.copyFailed'))
+    }
   }
 
   const handleDateRangeChange = (range: { start?: Date; end?: Date }) => {
@@ -252,6 +289,7 @@ export function UserLogsPage() {
                   showBilling={showBilling}
                   formatTime={formatTime}
                   formatDuration={formatDuration}
+                  onErrorClick={setPreviewError}
                 />
               ))}
             </div>
@@ -284,6 +322,7 @@ export function UserLogsPage() {
                     displayCurrency={config.displayCurrency}
                     formatTime={formatTime}
                     formatDuration={formatDuration}
+                    onErrorClick={setPreviewError}
                   />
                 ))}
               </TableBody>
@@ -318,6 +357,24 @@ export function UserLogsPage() {
             </div>
           </div>
         )}
+
+        {/* 错误信息预览弹窗:点击某行错误信息后展开完整内容并支持复制 */}
+        <Dialog open={previewError !== null} onOpenChange={open => !open && setPreviewError(null)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{t('logs.errorPreview')}</DialogTitle>
+            </DialogHeader>
+            <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs leading-relaxed text-red-600 dark:text-red-400 select-text">
+              {previewError}
+            </pre>
+            <DialogFooter>
+              <Button variant="outline" onClick={handleCopyError}>
+                <Copy className="mr-1.5 h-3.5 w-3.5" />
+                {t('common.copy')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </TooltipProvider>
   )
@@ -333,12 +390,13 @@ function QuotaDelta({ value }: { value: number }) {
   )
 }
 
-function LogMobileCard({ log, isAdmin, showBilling, formatTime, formatDuration }: {
+function LogMobileCard({ log, isAdmin, showBilling, formatTime, formatDuration, onErrorClick }: {
   log: any
   isAdmin: boolean
   showBilling: boolean
   formatTime: (s: string) => string
   formatDuration: (ms: number) => string
+  onErrorClick: (msg: string) => void
 }) {
   const { t } = useTranslation()
   const meta = logTypeMeta(log.type)
@@ -408,20 +466,27 @@ function LogMobileCard({ log, isAdmin, showBilling, formatTime, formatDuration }
       ]}
       note={
         errorMsg ? (
-          <span className="line-clamp-2 text-red-500">{errorMsg}</span>
+          <button
+            type="button"
+            onClick={() => onErrorClick(errorMsg)}
+            className="line-clamp-2 text-left text-red-500 hover:underline"
+          >
+            {errorMsg}
+          </button>
         ) : undefined
       }
     />
   )
 }
 
-function LogRow({ log, isAdmin, showBilling, displayCurrency, formatTime, formatDuration }: {
+function LogRow({ log, isAdmin, showBilling, displayCurrency, formatTime, formatDuration, onErrorClick }: {
   log: any
   isAdmin: boolean
   showBilling: boolean
   displayCurrency: string
   formatTime: (s: string) => string
   formatDuration: (ms: number) => string
+  onErrorClick: (msg: string) => void
 }) {
   const { t } = useTranslation()
   const meta = logTypeMeta(log.type)
@@ -512,16 +577,17 @@ function LogRow({ log, isAdmin, showBilling, displayCurrency, formatTime, format
       <TableCell className="text-sm tabular-nums">{formatDuration(log.duration_ms)}</TableCell>
       <TableCell className="max-w-[200px]">
         {errorMsg ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="text-xs text-red-500 truncate block cursor-default">
-                {errorMsg.length > 30 ? errorMsg.slice(0, 30) + '...' : errorMsg}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-[400px] whitespace-pre-wrap break-all">
-              {errorMsg}
-            </TooltipContent>
-          </Tooltip>
+          <button
+            type="button"
+            onClick={() => onErrorClick(errorMsg)}
+            title={t('logs.clickToPreview')}
+            className="flex w-full items-center gap-1 text-left text-xs text-red-500 hover:text-red-600 hover:underline cursor-pointer"
+          >
+            <Eye className="h-3 w-3 shrink-0" />
+            <span className="truncate">
+              {errorMsg.length > 30 ? errorMsg.slice(0, 30) + '...' : errorMsg}
+            </span>
+          </button>
         ) : (
           <span className="text-xs text-muted-foreground">-</span>
         )}

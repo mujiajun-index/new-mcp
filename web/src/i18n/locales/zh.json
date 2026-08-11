@@ -255,7 +255,9 @@
     "billingStatusBlocked": "余额不足",
     "billingStatusDebt": "欠账",
     "billingStatusSkipped": "免费",
-    "allBilling": "全部"
+    "allBilling": "全部",
+    "clickToPreview": "点击预览并复制",
+    "errorPreview": "错误详情"
   },
   "setup": {
     "title": "初始化系统",
