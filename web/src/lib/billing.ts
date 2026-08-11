@@ -1,7 +1,7 @@
 import i18n from '@/i18n/config'
 
 // 商业化展示 helper(§3/§5)。市场价格 price_per_call 已是展示货币 decimal,直接展示;
-// 用户额度统一按原始 quota 整数(与现有 admin 用户/Key 页一致,QuotaPerUnit 未公开)。
+// 用户额度按货币单位展示(quota / QuotaPerUnit,对齐 reference/new-api formatQuota)。
 
 /**
  * 市场服务价格文本:免费 / ¥0.05/次。displayCurrency 默认 CNY。
@@ -26,6 +26,20 @@ export function currencySymbol(currency: string): string {
     default:
       return '¥'
   }
+}
+
+/**
+ * 把原始 quota 整数换算成展示货币文本:quota / QuotaPerUnit。
+ * 参考 reference/new-api formatQuotaWithCurrency。单位额度非法(<=0)时回退 500000。
+ * unit 缺省时从 i18n 无法读 store,故由调用方注入(来自 system-config-store)。
+ */
+export function formatQuotaCurrency(quota: number, quotaPerUnit: number, currency = 'CNY'): string {
+  const unit = quotaPerUnit > 0 ? quotaPerUnit : 500000
+  const amount = quota / unit
+  const symbol = currencySymbol(currency)
+  // 按量级选精度:>=1 保留 2 位小数,<1 保留 4 位,避免小额被四舍五入为 0
+  const digits = amount >= 1 ? 2 : 4
+  return `${symbol}${amount.toFixed(digits)}`
 }
 
 /** 是否已显式定价(§5.6):free 或 (per_call 且 price>0)。 */

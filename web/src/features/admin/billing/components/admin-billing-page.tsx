@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { toast } from 'sonner'
-import { CreditCard, Coins, ScrollText, SlidersHorizontal, Info } from 'lucide-react'
+import { CreditCard, Coins, ScrollText, SlidersHorizontal } from 'lucide-react'
 
 interface SettingItem { key: string; value: string }
 
@@ -249,7 +249,7 @@ export function AdminBillingPage() {
                 <Label>{t('adminBilling.trustQuota')}</Label>
                 <Input
                   type="number"
-                  value={localValues.TrustQuota ?? '5000000'}
+                  value={localValues.TrustQuota ?? '0'}
                   onChange={(e) => updateLocal('TrustQuota', e.target.value)}
                   onBlur={() => saveField('TrustQuota')}
                 />
@@ -304,21 +304,6 @@ export function AdminBillingPage() {
                   <p className="text-xs text-muted-foreground">{t('adminBilling.logPayloadEnabledDesc')}</p>
                 </div>
                 <Switch checked={localValues.LogPayloadEnabled === 'true'} onCheckedChange={() => toggleBool('LogPayloadEnabled')} />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>{t('adminBilling.logRetentionDays')}</Label>
-                  <Input
-                    type="number"
-                    value={localValues.LogRetentionDays ?? '30'}
-                    onChange={(e) => updateLocal('LogRetentionDays', e.target.value)}
-                    onBlur={() => saveField('LogRetentionDays')}
-                  />
-                </div>
-              </div>
-              <div className="flex items-start gap-2 rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
-                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span>{t('adminBilling.logRetentionHint')}</span>
               </div>
             </div>
           </div>

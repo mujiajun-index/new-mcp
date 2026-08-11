@@ -830,7 +830,26 @@
       "adjustSuccess": "Quota adjusted, new quota {{quota}}",
       "adjustFailed": "Adjustment failed",
       "valueRequired": "Please enter quota",
-      "valuePositive": "Quota must be greater than 0"
+      "valuePositive": "Quota must be greater than 0",
+      "filterRole": "Role",
+      "filterStatus": "Status",
+      "filterAllRoles": "All roles",
+      "filterAllStatuses": "All statuses",
+      "adjustPreset": "Quick amount",
+      "adjustPresetPlaceholder": "Pick an amount to autofill",
+      "adjustPresetHint": "1 currency unit = {{unit}} quota",
+      "delete": "Delete",
+      "deleteTitle": "Delete user",
+      "deleteDesc": "Permanently delete user {{username}} and all their API keys",
+      "deleteWarning": "This cannot be undone. Call logs are retained as history.",
+      "deleteConfirm": "Confirm delete",
+      "deleteSuccess": "User deleted",
+      "deleteFailed": "Delete failed",
+      "noQuota": "No Quota",
+      "usedQuota": "Used",
+      "remainingQuota": "Remaining",
+      "totalQuota": "Total",
+      "percentage": "Percentage"
     },
     "marketplace": {
       "subtitleEdit": "Edit Service",
@@ -1021,6 +1040,7 @@
     "topup": "Total Top-up",
     "requestCount": "Total Calls",
     "quotaUnit": "quota",
+    "countUnit": "calls",
     "consumedToday": "Today",
     "consumedWeek": "This Week",
     "consumedTotal": "Total",
@@ -1123,7 +1143,7 @@
     "billingFailOpen": "Fail-open on Error",
     "billingFailOpenDesc": "Let calls through when the billing system itself errors",
     "trustQuota": "Trust Quota",
-    "trustQuotaDesc": "Quota usable before payment is confirmed",
+    "trustQuotaDesc": "Trust bypass threshold (quota): skip pre-deduction when remaining exceeds this, settle after success. 0=auto (10×quota-per-unit)",
     "quotaForNewUser": "Quota for New User",
     "quotaForNewUserDesc": "Quota granted to newly registered users",
     "quotaRemindThreshold": "Quota Remind Threshold",
@@ -1131,8 +1151,6 @@
     "selfUseModeEnabled": "Self-use Mode",
     "userOwnedServicesEnabled": "User-owned Services",
     "logPayloadEnabled": "Log Payload",
-    "logPayloadEnabledDesc": "Persist request/response payloads in billing logs",
-    "logRetentionDays": "Log Retention (days)",
-    "logRetentionHint": "Set to 0 to retain logs indefinitely; expired logs are purged by the maintenance task."
+    "logPayloadEnabledDesc": "Persist request/response payloads in billing logs"
   }
 }

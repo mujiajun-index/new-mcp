@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { getAdminUsers, createAdminUser, updateAdminUser, getAdminUserDetail, adjustUserQuota } from '@/features/admin/api'
+import { getAdminUsers, createAdminUser, updateAdminUser, getAdminUserDetail, adjustUserQuota, deleteAdminUser } from '@/features/admin/api'
 import type { AdminUserDetail } from '@/types'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
@@ -12,20 +12,32 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
+import { Progress } from '@/components/ui/progress'
 import { MobileListCard } from '@/components/ui/mobile-list-card'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useSystemConfigStore } from '@/stores/system-config-store'
+import { cn } from '@/lib/utils'
+import { formatQuotaCurrency } from '@/lib/billing'
 import { toast } from 'sonner'
-import { Plus, Pencil, Search, ChevronLeft, ChevronRight, X, Eye, Scale } from 'lucide-react'
+import { Plus, Pencil, Search, ChevronLeft, ChevronRight, X, Eye, Scale, Trash2 } from 'lucide-react'
 
 export function AdminUsersPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
   const groupOptions = useSystemConfigStore((s) => s.config.userGroupOptions)
+  const quotaPerUnit = useSystemConfigStore((s) => s.config.quotaPerUnit)
+  const displayCurrency = useSystemConfigStore((s) => s.config.displayCurrency)
   const [page, setPage] = useState(1)
   const [keyword, setKeyword] = useState('')
+  const [roleFilter, setRoleFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
   const pageSize = 20
+
+  // 货币符号 + 调额快捷金额(按 quotaPerUnit 换算成单位额度)
+  const currencySymbol = displayCurrency === 'USD' ? '$' : displayCurrency === 'EUR' ? '€' : '¥'
+  const presetAmounts = [1, 5, 10, 50, 100, 500]
 
   const [showCreate, setShowCreate] = useState(false)
   const [editingUser, setEditingUser] = useState<any>(null)
@@ -48,10 +60,18 @@ export function AdminUsersPage() {
   const [quotaForm, setQuotaForm] = useState<{ mode: 'add' | 'sub' | 'set'; value: string; remark: string }>({
     mode: 'add', value: '', remark: '',
   })
+  const [quotaPreset, setQuotaPreset] = useState('')
+
+  // 删除确认对话框
+  const [deleteUser, setDeleteUser] = useState<any>(null)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-users', page, keyword],
-    queryFn: () => getAdminUsers({ page, page_size: pageSize, keyword }),
+    queryKey: ['admin-users', page, keyword, roleFilter, statusFilter],
+    queryFn: () => getAdminUsers({
+      page, page_size: pageSize, keyword,
+      role: roleFilter !== 'all' ? roleFilter : undefined,
+      status: statusFilter !== 'all' ? parseInt(statusFilter) : undefined,
+    }),
   })
 
   const users = data?.data ?? []
@@ -96,9 +116,20 @@ export function AdminUsersPage() {
       toast.success(t('admin.users.adjustSuccess', { quota: res?.data?.new_quota ?? 0 }))
       setQuotaUser(null)
       setQuotaForm({ mode: 'add', value: '', remark: '' })
+      setQuotaPreset('')
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
     },
     onError: (err: any) => toast.error(err?.response?.data?.message || t('admin.users.adjustFailed')),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => deleteAdminUser(id),
+    onSuccess: () => {
+      toast.success(t('admin.users.deleteSuccess'))
+      setDeleteUser(null)
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || t('admin.users.deleteFailed')),
   })
 
   const startEdit = (user: any) => {
@@ -143,6 +174,7 @@ export function AdminUsersPage() {
   const startAdjustQuota = (user: any) => {
     setQuotaUser(user)
     setQuotaForm({ mode: 'add', value: '', remark: '' })
+    setQuotaPreset('')
   }
 
   const fmtTime = (s?: string) => (s ? new Date(s).toLocaleString() : t('admin.users.never'))
@@ -160,6 +192,51 @@ export function AdminUsersPage() {
       case 1: return <Badge variant="success">{t('admin.users.badgeEnabled')}</Badge>
       default: return <Badge variant="destructive">{t('admin.users.badgeDisabled')}</Badge>
     }
+  }
+
+  // Remaining quota color: ≤10% rose, ≤30% amber, else emerald (matches reference/new-api users-columns).
+  const quotaColor = (pct: number) =>
+    pct <= 10
+      ? '[&_[data-slot=progress-indicator]]:bg-rose-500'
+      : pct <= 30
+        ? '[&_[data-slot=progress-indicator]]:bg-amber-500'
+        : '[&_[data-slot=progress-indicator]]:bg-emerald-500'
+
+  // quotaCell: remain=user.quota, used=user.used_quota, total=used+remain。
+  // 按 quotaPerUnit 换算成货币单位展示(对齐 reference/new-api formatQuota);
+  // tooltip 同时给出货币与原始 quota 整数,保留审计精度。进度条按 remain/total 着色。
+  const quotaCell = (u: { quota: number; used_quota: number }, width = 'w-[150px]') => {
+    const remain = u.quota ?? 0
+    const used = u.used_quota ?? 0
+    const total = used + remain
+    const pct = total > 0 ? (remain / total) * 100 : 0
+    const fmtMoney = (q: number) => formatQuotaCurrency(q, quotaPerUnit, displayCurrency)
+    if (total === 0) {
+      return <Badge variant="secondary">{t('admin.users.noQuota')}</Badge>
+    }
+    return (
+      <TooltipProvider delayDuration={0}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className={`${width} cursor-help space-y-1`}>
+              <div className="flex justify-between text-xs">
+                <span className="font-medium tabular-nums">{fmtMoney(remain)}</span>
+                <span className="text-muted-foreground tabular-nums">{fmtMoney(total)}</span>
+              </div>
+              <Progress value={pct} className={cn('h-1.5', quotaColor(pct))} />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            <div className="space-y-1 text-xs">
+              <div>{t('admin.users.usedQuota')}: {fmtMoney(used)} ({used.toLocaleString()})</div>
+              <div>{t('admin.users.remainingQuota')}: {fmtMoney(remain)} ({remain.toLocaleString()})</div>
+              <div>{t('admin.users.totalQuota')}: {fmtMoney(total)} ({total.toLocaleString()})</div>
+              <div>{t('admin.users.percentage')}: {pct.toFixed(1)}%</div>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    )
   }
 
   // 超级管理员（id=1）的角色与状态不可修改：编辑时角色以只读徽章展示、状态下拉禁用。
@@ -189,9 +266,9 @@ export function AdminUsersPage() {
         </Button>
       </div>
 
-      {/* Search */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-xs">
+      {/* Search & filters */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder={t('admin.users.searchPlaceholder')}
@@ -200,6 +277,23 @@ export function AdminUsersPage() {
             className="pl-9 h-9"
           />
         </div>
+        <Select value={roleFilter} onValueChange={(v) => { setRoleFilter(v); setPage(1) }}>
+          <SelectTrigger className="h-9 w-[140px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t('admin.users.filterAllRoles')}</SelectItem>
+            <SelectItem value="user">{t('admin.users.badgeUser')}</SelectItem>
+            <SelectItem value="admin">{t('admin.users.badgeAdmin')}</SelectItem>
+            <SelectItem value="super_admin">{t('admin.users.badgeSuperAdmin')}</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1) }}>
+          <SelectTrigger className="h-9 w-[140px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t('admin.users.filterAllStatuses')}</SelectItem>
+            <SelectItem value="1">{t('admin.users.badgeEnabled')}</SelectItem>
+            <SelectItem value="2">{t('admin.users.badgeDisabled')}</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Create / Edit form */}
@@ -332,7 +426,10 @@ export function AdminUsersPage() {
               <div>{statusLabel(detailUser.status)}</div>
             </div>
             <DetailField label={t('admin.users.groups')} value={detailUser.group || '-'} />
-            <DetailField label={t('admin.users.quota')} value={`${detailUser.used_quota} / ${detailUser.quota}`} />
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">{t('admin.users.quota')}</p>
+              <div>{quotaCell(detailUser, 'w-[200px]')}</div>
+            </div>
             <DetailField label={t('admin.users.table.calls')} value={String(detailUser.request_count)} />
             <DetailField label={t('admin.users.remark')} value={detailUser.remark || '-'} />
             <DetailField label={t('admin.users.registerTime')} value={fmtTime(detailUser.created_at)} />
@@ -369,7 +466,7 @@ export function AdminUsersPage() {
                   </div>
                 }
                 meta={[
-                  { label: t('admin.users.table.quota'), value: <span className="tabular-nums">{user.used_quota}/{user.quota}</span> },
+                  { label: t('admin.users.table.quota'), value: quotaCell(user, 'w-[180px]') },
                   { label: t('admin.users.table.calls'), value: <span className="tabular-nums">{user.request_count}</span> },
                   { label: t('admin.users.email'), value: user.email || '-' },
                   { label: t('admin.users.groups'), value: user.group || '-' },
@@ -384,6 +481,15 @@ export function AdminUsersPage() {
                     </Button>
                     <Button variant="ghost" size="sm" onClick={() => startEdit(user)}>
                       <Pencil className="h-3.5 w-3.5" />{t('common.edit')}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      disabled={user.id === 1 || user.role === 'super_admin'}
+                      onClick={() => setDeleteUser(user)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />{t('admin.users.delete')}
                     </Button>
                   </div>
                 }
@@ -400,7 +506,6 @@ export function AdminUsersPage() {
                 <TableHead>{t('admin.users.table.email')}</TableHead>
                 <TableHead>{t('admin.users.table.role')}</TableHead>
                 <TableHead>{t('admin.users.table.quota')}</TableHead>
-                <TableHead>{t('admin.users.table.used')}</TableHead>
                 <TableHead>{t('admin.users.table.calls')}</TableHead>
                 <TableHead>{t('admin.users.table.status')}</TableHead>
                 <TableHead>{t('admin.users.table.groups')}</TableHead>
@@ -415,8 +520,7 @@ export function AdminUsersPage() {
                   <TableCell className="text-sm text-muted-foreground">{user.display_name || '-'}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{user.email || '-'}</TableCell>
                   <TableCell>{roleLabel(user.role)}</TableCell>
-                  <TableCell className="text-sm tabular-nums">{user.quota}</TableCell>
-                  <TableCell className="text-sm tabular-nums">{user.used_quota}</TableCell>
+                  <TableCell>{quotaCell(user)}</TableCell>
                   <TableCell className="text-sm tabular-nums">{user.request_count}</TableCell>
                   <TableCell>{statusLabel(user.status)}</TableCell>
                   <TableCell className="text-sm">{user.group}</TableCell>
@@ -430,6 +534,16 @@ export function AdminUsersPage() {
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => startEdit(user)} title={t('common.edit')}>
                         <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        disabled={user.id === 1 || user.role === 'super_admin'}
+                        onClick={() => setDeleteUser(user)}
+                        title={t('admin.users.delete')}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   </TableCell>
@@ -477,6 +591,33 @@ export function AdminUsersPage() {
                 </SelectContent>
               </Select>
             </div>
+            {quotaForm.mode === 'add' && (
+              <div className="space-y-2">
+                <Label>{t('admin.users.adjustPreset')}</Label>
+                <Select
+                  value={quotaPreset}
+                  onValueChange={(v) => {
+                    setQuotaPreset(v)
+                    const amt = parseInt(v, 10)
+                    if (!Number.isNaN(amt)) {
+                      setQuotaForm((f) => ({ ...f, value: String(amt * quotaPerUnit) }))
+                    }
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder={t('admin.users.adjustPresetPlaceholder')} /></SelectTrigger>
+                  <SelectContent>
+                    {presetAmounts.map((amt) => (
+                      <SelectItem key={amt} value={String(amt)}>
+                        {currencySymbol}{amt} = {(amt * quotaPerUnit).toLocaleString()}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {t('admin.users.adjustPresetHint', { unit: quotaPerUnit.toLocaleString() })}
+                </p>
+              </div>
+            )}
             <div className="space-y-2">
               <Label>{t('admin.users.adjustValue')} <span className="text-destructive">*</span></Label>
               <Input
@@ -509,6 +650,29 @@ export function AdminUsersPage() {
               })}
             >
               {t('admin.users.adjustConfirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirm dialog */}
+      <Dialog open={!!deleteUser} onOpenChange={(v) => !v && setDeleteUser(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('admin.users.deleteTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('admin.users.deleteDesc', { username: deleteUser?.username })}
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">{t('admin.users.deleteWarning')}</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteUser(null)}>{t('common.cancel')}</Button>
+            <Button
+              variant="destructive"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteUser && deleteMutation.mutate(deleteUser.id)}
+            >
+              {t('admin.users.deleteConfirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

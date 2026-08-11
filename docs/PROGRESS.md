@@ -347,7 +347,7 @@ newmcp/
 | 兑换码 | ✅ | admin CRUD + 用户 POST /redemptions/redeem(RedemptionEnabled 开关) |
 | 管理员调额 | ✅ | POST /admin/users/:id/quota(add/sub/set + canManageTargetRole + 审计) |
 | 钱包/用量 | ✅ | GET /wallet、/wallet/billing、/wallet/usage/stats |
-| 日志 TTL 清理 | ✅ | LogRetentionDays 定时清理过期 mcp_call_logs |
+| 日志 TTL 清理 | 已移除 | 对齐 reference/new-api,移除 LogRetentionDays 设置与定时清理任务;日志持久保留,需手动清理。视觉图片请求参数落库前脱敏 |
 
 > **架构要点**:计费代码在顶层 `billing/` 包(因 service→cloud→handler 链,handler 不能 import service);低额度邮件经 `billing.LowQuotaNotifier` 钩子由 service 注入解耦。市场 session 当前按引用行 ID 连接,跨用户共享平台 session 留作 V1.1 优化。
 

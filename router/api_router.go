@@ -131,6 +131,7 @@ func SetApiRouter(engine *gin.Engine) {
 		admin.GET("/users", controller.AdminListUsers)
 		admin.POST("/users", controller.AdminCreateUser)
 		admin.PUT("/users/:id", controller.AdminUpdateUser)
+		admin.DELETE("/users/:id", controller.AdminDeleteUser)
 		admin.POST("/users/:id/quota", controller.AdminAdjustQuota)
 		admin.GET("/users/:id", controller.AdminGetUserDetail)
 		admin.GET("/stats", controller.AdminGetStats)

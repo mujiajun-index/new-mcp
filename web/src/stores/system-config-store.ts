@@ -29,6 +29,7 @@ interface SystemConfig {
   // 商业化公开键(§15)
   billingEnabled: boolean
   displayCurrency: string
+  quotaPerUnit: number
   selfUseModeEnabled: boolean
   redemptionEnabled: boolean
   userOwnedServicesEnabled: boolean
@@ -57,6 +58,7 @@ export const useSystemConfigStore = create<SystemConfigState>()(
         // 商业化默认(与后端 model/option.go defaultOptions 一致)
         billingEnabled: false,
         displayCurrency: 'CNY',
+        quotaPerUnit: 500000,
         selfUseModeEnabled: false,
         redemptionEnabled: true,
         userOwnedServicesEnabled: true,
@@ -82,6 +84,7 @@ export const useSystemConfigStore = create<SystemConfigState>()(
               // 商业化
               billingEnabled: boolOr(data, 'BillingEnabled', state.config.billingEnabled),
               displayCurrency: (data.DisplayCurrency as string) ?? state.config.displayCurrency,
+              quotaPerUnit: data.QuotaPerUnit ? (parseInt(data.QuotaPerUnit, 10) || state.config.quotaPerUnit) : state.config.quotaPerUnit,
               selfUseModeEnabled: boolOr(data, 'SelfUseModeEnabled', state.config.selfUseModeEnabled),
               redemptionEnabled: boolOr(data, 'RedemptionEnabled', state.config.redemptionEnabled),
               userOwnedServicesEnabled: boolOr(data, 'UserOwnedServicesEnabled', state.config.userOwnedServicesEnabled),

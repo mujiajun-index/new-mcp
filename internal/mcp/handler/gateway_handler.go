@@ -270,7 +270,7 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 		ToolName:       params.Name,
 		Method:         method,
 		RequestID:      truncate(requestID, 64),
-		RequestPayload: truncate(string(params.Arguments), 65535),
+		RequestPayload: redactRequestPayload(params.Name, params.Arguments),
 		ResponseStatus: status,
 		DurationMs:     int(duration.Milliseconds()),
 		ErrorMessage:   truncate(errMsg, 65535),
@@ -831,4 +831,31 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen]
+}
+
+// visionImageTool reports whether the tool embeds a base64 image in its request
+// arguments (vision analyze_image / describe_scene). The image payload is far
+// too large to persist in call logs and is stripped by redactRequestPayload.
+// Matches the same suffix rule used in internal/mcp/virtual/vision_handler.go.
+func visionImageTool(name string) bool {
+	return strings.HasSuffix(name, "analyze_image") || strings.HasSuffix(name, "describe_scene")
+}
+
+// redactRequestPayload returns the request arguments to persist in the call log.
+// Vision image tools carry a full base64 image in the "image" field; it is
+// replaced with a short placeholder (carrying the original size) so the log row
+// stays small while the remaining arguments (e.g. the prompt) are preserved.
+func redactRequestPayload(toolName string, args json.RawMessage) string {
+	if visionImageTool(toolName) {
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(args, &m); err == nil {
+			if img, ok := m["image"]; ok {
+				m["image"] = json.RawMessage(fmt.Sprintf(`"[redacted:%db]"`, len(img)))
+				if b, err := json.Marshal(m); err == nil {
+					return truncate(string(b), 65535)
+				}
+			}
+		}
+	}
+	return truncate(string(args), 65535)
 }

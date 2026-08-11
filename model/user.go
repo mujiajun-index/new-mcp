@@ -98,7 +98,7 @@ func GetUsersByIDs(ids []int64) (map[int64]User, error) {
 	return result, nil
 }
 
-func ListUsersWithPaged(offset, limit int, keyword string, excludeID int64) ([]User, int64, error) {
+func ListUsersWithPaged(offset, limit int, keyword string, excludeID int64, role string, status int) ([]User, int64, error) {
 	var users []User
 	var total int64
 	query := DB.Model(&User{})
@@ -108,11 +108,29 @@ func ListUsersWithPaged(offset, limit int, keyword string, excludeID int64) ([]U
 	if keyword != "" {
 		query = query.Where("username LIKE ? OR email LIKE ? OR display_name LIKE ?", "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
 	}
+	if role != "" {
+		query = query.Where("role = ?", role)
+	}
+	if status > 0 {
+		query = query.Where("status = ?", status)
+	}
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	err := query.Offset(offset).Limit(limit).Order("id ASC").Find(&users).Error
 	return users, total, err
+}
+
+// HardDeleteUserByID 硬删除用户及其 API Key(管理员删除用户,参考 new-api HardDeleteUserById)。
+// 用户与 Key 均物理删除(Unscoped);调用日志(mcp_call_logs)保留作为历史审计记录。
+func HardDeleteUserByID(id int64) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		// 先删 API Key,立即终止该用户的所有 MCP 访问
+		if err := tx.Unscoped().Where("user_id = ?", id).Delete(&ApiKey{}).Error; err != nil {
+			return err
+		}
+		return tx.Unscoped().Delete(&User{}, id).Error
+	})
 }
 
 func IncreaseUserQuota(id int64, quota int64) error {

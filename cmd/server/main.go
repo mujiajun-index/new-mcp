@@ -14,7 +14,6 @@ import (
 	"github.com/mujkjk/newmcp/middleware"
 	"github.com/mujkjk/newmcp/model"
 	"github.com/mujkjk/newmcp/router"
-	"github.com/mujkjk/newmcp/service"
 )
 
 func main() {
@@ -47,9 +46,6 @@ func main() {
 	// Graceful shutdown
 	srvCtx, srvCancel := context.WithCancel(context.Background())
 	defer srvCancel()
-
-	// 后台维护任务:调用日志 TTL 清理等(每日)
-	service.StartMaintenanceTasks(srvCtx)
 
 	addr := fmt.Sprintf(":%d", common.Port)
 	log.Printf("NewMCP server starting on %s", addr)

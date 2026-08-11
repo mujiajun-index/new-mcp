@@ -1613,7 +1613,6 @@ wss://api.newmcp.pro/mcp/passive/?token=<PASSIVE_JWT>
 | `QuotaForNewUser` | 0 | 新用户赠送额度 |
 | `QuotaRemindThreshold` | 0 | 低额度邮件提醒阈值(0=不提醒) |
 | `LogPayloadEnabled` | true | 是否落 request/response_payload |
-| `LogRetentionDays` | 30 | 调用日志 TTL(天,0=永久) |
 | `UserOwnedServicesEnabled` | true | 是否允许用户添加/调用自有服务(false=纯市场模式) |
 | `SelfUseModeEnabled` | false | 自用模式可用全局默认;非自用上架须显式定价 |
 | `RedemptionEnabled` | true | 是否开放兑换 |

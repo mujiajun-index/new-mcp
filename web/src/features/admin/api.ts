@@ -6,7 +6,7 @@ export async function getAdminStats() {
   return res.data
 }
 
-export async function getAdminUsers(params?: { page?: number; page_size?: number; keyword?: string }) {
+export async function getAdminUsers(params?: { page?: number; page_size?: number; keyword?: string; role?: string; status?: number }) {
   const res = await api.get('/admin/users', { params })
   return res.data
 }
@@ -18,6 +18,11 @@ export async function createAdminUser(data: AdminCreateUserReq) {
 
 export async function updateAdminUser(id: number, data: AdminUpdateUserReq) {
   const res = await api.put(`/admin/users/${id}`, data)
+  return res.data
+}
+
+export async function deleteAdminUser(id: number) {
+  const res = await api.delete(`/admin/users/${id}`)
   return res.data
 }
 

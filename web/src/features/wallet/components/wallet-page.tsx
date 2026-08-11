@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from '@tanstack/react-router'
 import { getWalletOverview, getWalletUsageStats, redeemCode } from '../api'
 import { useSystemConfigStore } from '@/stores/system-config-store'
+import { formatQuotaCurrency } from '@/lib/billing'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
@@ -47,17 +48,21 @@ export function WalletPage() {
   const billingDisabled = !config.billingEnabled
 
   const overviewCards = [
-    { label: t('wallet.balance'), value: overview?.quota ?? 0, icon: WalletIcon, color: 'text-sky-500', bg: 'bg-sky-500/10' },
-    { label: t('wallet.used'), value: overview?.used_quota ?? 0, icon: TrendingUp, color: 'text-violet-500', bg: 'bg-violet-500/10' },
-    { label: t('wallet.topup'), value: overview?.total_topup ?? 0, icon: Coins, color: 'text-amber-500', bg: 'bg-amber-500/10' },
-    { label: t('wallet.requestCount'), value: overview?.request_count ?? 0, icon: Activity, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+    { label: t('wallet.balance'), value: overview?.quota ?? 0, icon: WalletIcon, color: 'text-sky-500', bg: 'bg-sky-500/10', isQuota: true },
+    { label: t('wallet.used'), value: overview?.used_quota ?? 0, icon: TrendingUp, color: 'text-violet-500', bg: 'bg-violet-500/10', isQuota: true },
+    { label: t('wallet.topup'), value: overview?.total_topup ?? 0, icon: Coins, color: 'text-amber-500', bg: 'bg-amber-500/10', isQuota: true },
+    { label: t('wallet.requestCount'), value: overview?.request_count ?? 0, icon: Activity, color: 'text-emerald-500', bg: 'bg-emerald-500/10', isQuota: false },
   ]
 
   const usageCards = [
-    { label: t('wallet.consumedToday'), value: stats?.consumed_today ?? 0, icon: Zap, color: 'text-amber-500', bg: 'bg-amber-500/10' },
-    { label: t('wallet.consumedWeek'), value: stats?.consumed_week ?? 0, icon: History, color: 'text-sky-500', bg: 'bg-sky-500/10' },
-    { label: t('wallet.consumedTotal'), value: stats?.consumed_total ?? 0, icon: TrendingUp, color: 'text-violet-500', bg: 'bg-violet-500/10' },
+    { label: t('wallet.consumedToday'), value: stats?.consumed_today ?? 0, icon: Zap, color: 'text-amber-500', bg: 'bg-amber-500/10', isQuota: true },
+    { label: t('wallet.consumedWeek'), value: stats?.consumed_week ?? 0, icon: History, color: 'text-sky-500', bg: 'bg-sky-500/10', isQuota: true },
+    { label: t('wallet.consumedTotal'), value: stats?.consumed_total ?? 0, icon: TrendingUp, color: 'text-violet-500', bg: 'bg-violet-500/10', isQuota: true },
   ]
+
+  // 额度类数值按货币展示(quota / QuotaPerUnit),次数类保持整数。
+  const fmt = (v: number, isQuota?: boolean) =>
+    isQuota ? formatQuotaCurrency(v, config.quotaPerUnit, config.displayCurrency) : v.toLocaleString()
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
@@ -85,8 +90,10 @@ export function WalletPage() {
                 </div>
               </div>
               <p className="mt-2 text-2xl font-semibold tabular-nums">
-                {overviewLoading ? '...' : card.value}
-                <span className="ml-1 text-xs font-normal text-muted-foreground">{t('wallet.quotaUnit')}</span>
+                {overviewLoading ? '...' : fmt(card.value, card.isQuota)}
+                {card.isQuota ? null : (
+                  <span className="ml-1 text-xs font-normal text-muted-foreground">{t('wallet.countUnit')}</span>
+                )}
               </p>
             </div>
           ))}
@@ -138,8 +145,10 @@ export function WalletPage() {
               </div>
             </div>
             <p className="mt-2 text-xl font-semibold tabular-nums">
-              {stats ? card.value : '...'}
-              <span className="ml-1 text-xs font-normal text-muted-foreground">{t('wallet.quotaUnit')}</span>
+              {stats ? fmt(card.value, card.isQuota) : '...'}
+              {card.isQuota ? null : (
+                <span className="ml-1 text-xs font-normal text-muted-foreground">{t('wallet.countUnit')}</span>
+              )}
             </p>
           </div>
         ))}

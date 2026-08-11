@@ -76,7 +76,7 @@ func (s *BillingService) PreConsume(req PreConsumeRequest) (*BillingSession, err
 	consumed := price.UnitPriceQuota
 	sess.ConsumedQuota = consumed
 
-	trustQuota := model.GetOptionInt64("TrustQuota")
+	trustQuota := model.GetTrustQuota()
 	userQuota, err := model.GetUserQuota(req.UserID)
 	if err != nil {
 		return sess, s.handleBillingDBError(sess, err)

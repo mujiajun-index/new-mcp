@@ -234,7 +234,7 @@ ALTER TABLE `mcp_call_logs`
 > 计费与审计合一:每次 `tools/call` 写一条 log,计费结果同落。**自有服务**(`source=user`)写 `billing_status='skipped'`、`quota_consumed=0`、`price_scope=NULL`;**市场引用服务**(`source=marketplace`)写实际计费结果 + `marketplace_item_id`。`quota_consumed` 是用户账单的权威明细。
 > ⚠️ 现有 `recordLog` ([internal/mcp/handler/gateway_handler.go:599](../internal/mcp/handler/gateway_handler.go)) 未写 `ResponsePayload`;本期顺带补全,便于对账。
 >
-> **留存与隐私**:`request_payload`/`response_payload` 可能含敏感数据且量级大,需配置 **TTL 清理**(`LogRetentionDays`,默认 30 天)与**敏感字段脱敏**;由 `LogPayloadEnabled`(默认 true)控制是否落 payload,关闭时只存元数据 + 计费列(见 §15)。
+> **留存与隐私**:`request_payload`/`response_payload` 可能含敏感数据且量级大;由 `LogPayloadEnabled`(默认 true)控制是否落 payload,关闭时只存元数据 + 计费列,视觉图片类工具请求参数中的 base64 图片落库前自动脱敏。对齐 reference/new-api,不提供日志保留天数设置与定时清理,日志持久保留,需手动清理(见 §15)。
 
 ### 4.6 `mcp_usage_hourly` 表 — 小时聚合(用量看板,V2)
 
@@ -888,7 +888,6 @@ features/redemption-codes/
 | 额度 | `QuotaForNewUser` | int | 0 | 新用户赠送额度 |
 | 额度 | `QuotaRemindThreshold` | int | 0 | 低额度邮件提醒阈值(0=不提醒) |
 | 日志 | `LogPayloadEnabled` | bool | true | 是否落 `request/response_payload`(false 仅存元数据+计费列,省空间/隐私) |
-| 日志 | `LogRetentionDays` | int | 30 | 调用日志 TTL(天),0=永久;定时清理过期 |
 | **自有服务** | **`UserOwnedServicesEnabled`** | **bool** | **true** | **是否允许用户添加/调用自有服务(source=user);false=纯市场模式(市场引用仍可用)** |
 | **自用模式** | **`SelfUseModeEnabled`** | **bool** | **false** | **自用模式可用全局默认价;非自用(默认)市场上架/启用必须显式定价(参考 new-api)** |
 | 兑换 | `RedemptionEnabled` | bool | true | 是否开放兑换 |
@@ -915,7 +914,7 @@ features/redemption-codes/
 | 8 | 市场项上架(手动 + **从自有服务克隆**)+ 服务级定价 + **批量定价接口** + 上游 transport 配置(**凭证加密落库**)+ **非自用模式强制定价门控**(§5.6)+ **存量项迁移**(显式定价) | `dto/marketplace.go`、`controller/marketplace.go`、`service/marketplace.go` | 1 |
 | 9 | 兑换码 model/service/controller/router | `model/redemption.go` 等 | 1 |
 | 10 | **管理员调额** `POST /admin/users/:id/quota`(add/sub/set + 权限 + 审计) | `controller/admin.go`、`model/user.go` | 1 |
-| 11 | 系统设置计费配置项(含 `UserOwnedServicesEnabled`、`SelfUseModeEnabled`、`LogPayloadEnabled`、`LogRetentionDays`) | `service/settings.go`、`controller/settings.go` | 1 |
+| 11 | 系统设置计费配置项(含 `UserOwnedServicesEnabled`、`SelfUseModeEnabled`、`LogPayloadEnabled`) | `service/settings.go`、`controller/settings.go` | 1 |
 | 12 | 前端:钱包/兑换/计费设置/市场价+**"添加到我的服务"**/**批量定价**/**服务列表市场徽标(只读配置)**/日志计费列/**用户调额对话框**/Key余额用量 | `web/src/features/*` | 5,6,8,9,10,11 |
 | 13 | 同步 [DATABASE.md](./DATABASE.md)(补齐过时列 + 新增表)、[API.md](./API.md)、[PROGRESS.md](./PROGRESS.md);调用日志 TTL 定时清理任务 | `docs/*`、`service/` | 1-12 |
 

@@ -113,10 +113,7 @@ func ResolveMarketplacePrice(itemID int64, toolName, userGroup string) (PriceInf
 	}
 
 	ratio := groupRatio(userGroup)
-	quotaPerUnit := model.GetOptionInt64("QuotaPerUnit")
-	if quotaPerUnit <= 0 {
-		quotaPerUnit = 500000
-	}
+	quotaPerUnit := model.GetQuotaPerUnit()
 
 	// 第 1 级:工具级
 	if tp, ok := c.toolPrices[toolName]; ok {

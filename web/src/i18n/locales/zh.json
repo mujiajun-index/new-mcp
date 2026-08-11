@@ -830,7 +830,26 @@
       "adjustSuccess": "额度已调整,新额度 {{quota}}",
       "adjustFailed": "调整失败",
       "valueRequired": "请输入额度",
-      "valuePositive": "额度需大于 0"
+      "valuePositive": "额度需大于 0",
+      "filterRole": "角色",
+      "filterStatus": "状态",
+      "filterAllRoles": "全部角色",
+      "filterAllStatuses": "全部状态",
+      "adjustPreset": "快捷金额",
+      "adjustPresetPlaceholder": "选择金额自动换算填入",
+      "adjustPresetHint": "1 货币单位 = {{unit}} 额度",
+      "delete": "删除",
+      "deleteTitle": "删除用户",
+      "deleteDesc": "将永久删除用户 {{username}} 及其所有 API Key",
+      "deleteWarning": "此操作不可撤销。调用日志将保留作为历史记录。",
+      "deleteConfirm": "确认删除",
+      "deleteSuccess": "用户已删除",
+      "deleteFailed": "删除失败",
+      "noQuota": "无额度",
+      "usedQuota": "已用",
+      "remainingQuota": "剩余",
+      "totalQuota": "总量",
+      "percentage": "占比"
     },
     "marketplace": {
       "subtitleEdit": "编辑服务",
@@ -1021,6 +1040,7 @@
     "topup": "累计充值",
     "requestCount": "累计调用",
     "quotaUnit": "额度",
+    "countUnit": "次",
     "consumedToday": "今日消费",
     "consumedWeek": "本周消费",
     "consumedTotal": "累计消费",
@@ -1123,7 +1143,7 @@
     "billingFailOpen": "计费异常放行",
     "billingFailOpenDesc": "计费系统自身异常时放行调用",
     "trustQuota": "信任额度",
-    "trustQuotaDesc": "付款确认前可使用的额度",
+    "trustQuotaDesc": "信任旁路阈值(quota):剩余额度超过此值时不预扣,改成功后补扣。0=自动按 10×单位额度",
     "quotaForNewUser": "新用户额度",
     "quotaForNewUserDesc": "新注册用户赠送的额度",
     "quotaRemindThreshold": "额度提醒阈值",
@@ -1131,8 +1151,6 @@
     "selfUseModeEnabled": "自用模式",
     "userOwnedServicesEnabled": "用户自有服务",
     "logPayloadEnabled": "记录请求体",
-    "logPayloadEnabledDesc": "在计费日志中保存请求/响应内容",
-    "logRetentionDays": "日志保留天数",
-    "logRetentionHint": "设为 0 表示永久保留;过期日志由维护任务清理。"
+    "logPayloadEnabledDesc": "在计费日志中保存请求/响应内容"
   }
 }

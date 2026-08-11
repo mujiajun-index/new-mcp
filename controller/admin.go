@@ -16,7 +16,14 @@ var adminService = &service.AdminService{}
 func AdminListUsers(c *gin.Context) {
 	page, pageSize := common.GetPagination(c)
 	keyword := c.Query("keyword")
-	items, total, err := adminService.ListUsers(c.GetString("role"), page, pageSize, keyword)
+	role := c.Query("role")
+	status := 0 // 0 = 不过滤
+	if s := c.Query("status"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil {
+			status = v
+		}
+	}
+	items, total, err := adminService.ListUsers(c.GetString("role"), page, pageSize, keyword, role, status)
 	if err != nil {
 		common.Error(c, http.StatusInternalServerError, "获取用户列表失败")
 		return
@@ -32,6 +39,26 @@ func AdminGetUserDetail(c *gin.Context) {
 		return
 	}
 	common.Success(c, resp)
+}
+
+// AdminDeleteUser 管理员硬删除用户(参考 new-api DELETE /api/user/:id)。
+func AdminDeleteUser(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err := adminService.DeleteUser(operatorFromContext(c), id); err != nil {
+		if errors.Is(err, service.ErrSuperAdminProtected) ||
+			errors.Is(err, service.ErrCannotManageTarget) ||
+			errors.Is(err, service.ErrCannotDeleteSelf) {
+			common.Error(c, http.StatusForbidden, err.Error())
+			return
+		}
+		if errors.Is(err, service.ErrUserNotFound) {
+			common.Error(c, http.StatusNotFound, err.Error())
+			return
+		}
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, nil)
 }
 
 func AdminUpdateUser(c *gin.Context) {

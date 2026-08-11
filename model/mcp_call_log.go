@@ -72,13 +72,6 @@ func SumQuotaConsumedByUser(userID int64, since time.Time) (int64, error) {
 	return sum, err
 }
 
-// DeleteCallLogsBefore 删除 created_at 早于指定时间的调用日志(TTL 清理,§4.5)。
-// 返回删除行数。三库通用(DELETE ... WHERE created_at < ?)。
-func DeleteCallLogsBefore(t time.Time) (int64, error) {
-	res := DB.Where("created_at < ?", t).Delete(&McpCallLog{})
-	return res.RowsAffected, res.Error
-}
-
 // LogFilter holds query parameters for log listing
 type LogFilter struct {
 	StartDate   string

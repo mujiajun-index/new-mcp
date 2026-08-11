@@ -47,7 +47,7 @@ var defaultOptions = map[string]string{
 	"BillingDefaultType":          "per_call", // 全局默认计费类型(仅 free/per_call)
 	"BillingDefaultPricePerCall":  "0",        // 全局默认按次单价(市场服务第 3 级,展示货币)
 	"GroupRatio":                  `{"default":1,"vip":1,"svip":1}`, // 分组倍率 JSON
-	"TrustQuota":                  "5000000", // 信任额度旁路阈值(默认 10 元)
+	"TrustQuota":                  "0", // 信任额度旁路阈值;0=按 10*QuotaPerUnit 动态缩放(对齐 new-api)
 	"ChargeAdmin":                 "false",   // 是否对管理员计费
 	"ChargeOnClientError":         "false",   // 客户端参数错误是否收费
 	"ChargeOnTimeout":             "false",   // 超时是否收费
@@ -57,7 +57,6 @@ var defaultOptions = map[string]string{
 	"QuotaRemindThreshold":        "0",   // 低额度邮件提醒阈值(0=不提醒)
 	// --- 日志 ---
 	"LogPayloadEnabled":           "true",  // 是否落 request/response_payload
-	"LogRetentionDays":            "30",    // 调用日志 TTL(天),0=永久
 	// --- 自有服务 / 自用模式 ---
 	"UserOwnedServicesEnabled":    "true",  // 是否允许用户添加/调用自有服务(false=纯市场模式)
 	"SelfUseModeEnabled":          "false", // 自用模式可用全局默认;非自用(默认)上架必须显式定价
@@ -84,6 +83,7 @@ var publicKeys = map[string]bool{
 	"UserGroupOptions":            true,
 	"BillingEnabled":              true,
 	"DisplayCurrency":             true,
+	"QuotaPerUnit":                true, // 供管理员调额界面按货币换算(对齐 reference/new-api /api/status 暴露)
 	"SelfUseModeEnabled":          true,
 	"RedemptionEnabled":           true,
 	"UserOwnedServicesEnabled":    true,
@@ -147,6 +147,30 @@ func GetOptionInt64(key string) int64 {
 	OptionMapMutex.RUnlock()
 	n, _ := strconv.ParseInt(v, 10, 64)
 	return n
+}
+
+// DefaultQuotaPerUnit 是"单位额度"的默认值:1 个货币单位对应的 quota 数量。
+// 与 reference/new-api 的 common.QuotaPerUnit(500*1000.0)保持一致。
+const DefaultQuotaPerUnit int64 = 500000
+
+// GetQuotaPerUnit 读取"单位额度"(QuotaPerUnit),未配置或非法(<=0)时回退到
+// DefaultQuotaPerUnit。集中此处,替代各业务包里重复的硬编码 500000 回退逻辑。
+func GetQuotaPerUnit() int64 {
+	if v := GetOptionInt64("QuotaPerUnit"); v > 0 {
+		return v
+	}
+	return DefaultQuotaPerUnit
+}
+
+// GetTrustQuota 读取"信任额度旁路阈值"。未配置或非法(<=0)时按 10*QuotaPerUnit 动态缩放,
+// 与 reference/new-api 的 common.GetTrustQuota()(=10*QuotaPerUnit)完全一致——
+// 信任阈值始终等价于 10 个货币单位,随单位额度变化而缩放。
+// 管理员仍可在选项里显式设置一个具体 quota 值来覆盖该动态默认。
+func GetTrustQuota() int64 {
+	if v := GetOptionInt64("TrustQuota"); v > 0 {
+		return v
+	}
+	return 10 * GetQuotaPerUnit()
 }
 
 // GetOptionFloat 读取浮点配置(单价等)。

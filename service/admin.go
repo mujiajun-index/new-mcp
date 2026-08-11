@@ -19,17 +19,18 @@ var ErrSuperAdminRoleReserved = errors.New("超级管理员角色不可分配")
 var ErrUserNotFound = errors.New("用户不存在")
 var ErrCannotManageTarget = errors.New("无权操作该用户")
 var ErrInvalidQuotaMode = errors.New("无效的调额模式")
+var ErrCannotDeleteSelf = errors.New("不能删除自己的账号")
 
 type AdminService struct{}
 
-func (s *AdminService) ListUsers(actorRole string, page, pageSize int, keyword string) ([]dto.UserListItem, int64, error) {
+func (s *AdminService) ListUsers(actorRole string, page, pageSize int, keyword, role string, status int) ([]dto.UserListItem, int64, error) {
 	offset := common.GetOffset(page, pageSize)
 	// 普通管理员看不到超级管理员（id=1）。
 	var excludeID int64
 	if actorRole != common.RoleSuperAdmin {
 		excludeID = common.SuperAdminUserID
 	}
-	users, total, err := model.ListUsersWithPaged(offset, pageSize, keyword, excludeID)
+	users, total, err := model.ListUsersWithPaged(offset, pageSize, keyword, excludeID, role, status)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -289,6 +290,34 @@ func (s *AdminService) AdjustUserQuota(actor model.Operator, targetID int64, req
 		newQuota-oldQuota, actor,
 		map[string]any{"mode": req.Mode, "value": value, "remark": req.Remark, "before": oldQuota, "after": newQuota})
 	return newQuota, nil
+}
+
+// DeleteUser 硬删除用户(管理员,参考 new-api HardDeleteUserById):物理删除用户及其
+// API Key,调用日志保留作审计。禁止删除自己、超级管理员;普通管理员仅能删除普通用户。
+func (s *AdminService) DeleteUser(actor model.Operator, targetID int64) error {
+	if actor.ID == targetID {
+		return ErrCannotDeleteSelf
+	}
+	user, err := model.GetUserByID(targetID)
+	if err != nil {
+		return ErrUserNotFound
+	}
+	// canManageTargetRole:超级管理员受保护;普通管理员不能操作管理员
+	targetIsSuper := user.ID == common.SuperAdminUserID || user.Role == common.RoleSuperAdmin
+	if targetIsSuper {
+		return ErrSuperAdminProtected
+	}
+	if user.Role == common.RoleAdminUser && actor.Role != common.RoleSuperAdmin {
+		return ErrCannotManageTarget
+	}
+	if err := model.HardDeleteUserByID(targetID); err != nil {
+		return err
+	}
+	model.RecordManageLog(targetID, user.Username,
+		fmt.Sprintf("管理员删除用户(%s)", user.Username),
+		0, actor,
+		map[string]any{"action": "delete", "username": user.Username})
+	return nil
 }
 
 func (s *AdminService) GetStats() (*dto.AdminStats, error) {
