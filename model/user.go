@@ -1,10 +1,20 @@
 package model
 
 import (
+	"crypto/rand"
+	"errors"
+	"math/big"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
 )
+
+// ErrInsufficientAffQuota 邀请奖励待提取余额不足(转账时)。
+var ErrInsufficientAffQuota = errors.New("邀请额度不足")
+
+// affCodeAlphabet 邀请码字符集(字母+数字),与 reference/new-api 的 AlphanumericCharset 对齐。
+const affCodeAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 
 type User struct {
 	ID           int64          `json:"id" gorm:"primaryKey;autoIncrement"`
@@ -24,6 +34,13 @@ type User struct {
 	BillingPreference string `json:"billing_preference" gorm:"size:16;default:wallet_only"`
 	// 商业化:累计充值额度(quota),审计用
 	TotalTopup int64 `json:"total_topup" gorm:"default:0"`
+	// 邀请(完全对齐 reference/new-api):每用户一个邀请码;注册时绑定邀请人;
+	// 邀请者奖励进入 AffQuota(待提取),需手动转入钱包;受邀者奖励直接进 Quota。
+	AffCode         string `json:"aff_code" gorm:"size:32;uniqueIndex;column:aff_code"`
+	InviterID       int64  `json:"inviter_id" gorm:"index;column:inviter_id;default:0"`
+	AffCount        int    `json:"aff_count" gorm:"default:0;column:aff_count"`             // 已邀请人数
+	AffQuota        int64  `json:"aff_quota" gorm:"default:0;column:aff_quota"`             // 邀请奖励待提取余额
+	AffHistoryQuota int64  `json:"aff_history_quota" gorm:"default:0;column:aff_history"`   // 邀请奖励累计(列名 aff_history 与 new-api 一致)
 	RegisterIP   string         `json:"register_ip" gorm:"column:register_ip;size:64"`
 	LastLoginAt  *time.Time     `json:"last_login_at" gorm:"column:last_login_at"`
 	LastLoginIP  string         `json:"last_login_ip" gorm:"column:last_login_ip;size:64"`
@@ -194,9 +211,103 @@ func GetUserQuota(id int64) (int64, error) {
 }
 
 func (u *User) Insert() error {
+	// 注册即分配邀请码(对齐 new-api 在 Insert 里 user.AffCode = GetRandomString(4))。
+	if u.AffCode == "" {
+		code, err := GenerateAffCode()
+		if err != nil {
+			return err
+		}
+		u.AffCode = code
+	}
 	return DB.Create(u).Error
 }
 
 func (u *User) Update() error {
 	return DB.Save(u).Error
+}
+
+// GetUserIDByAffCode 反查邀请码对应的用户 id(对齐 new-api GetUserIdByAffCode)。
+// 空串或未找到均返回 (0, nil)——调用方据此把 inviterID 视为 0(无邀请人),坏码不阻断注册。
+func GetUserIDByAffCode(code string) (int64, error) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return 0, nil
+	}
+	var u User
+	err := DB.Select("id").Where("aff_code = ?", code).First(&u).Error
+	if err != nil {
+		return 0, nil
+	}
+	return u.ID, nil
+}
+
+// GenerateAffCode 生成 4 位字母数字邀请码(对齐 new-api GetRandomString(4))。
+// 带 uniqueIndex,故生成后查重,碰撞则重试(安全网,不改变"4 位码"的可观测行为)。
+func GenerateAffCode() (string, error) {
+	const length = 4
+	const maxRetry = 5
+	for attempt := 0; attempt < maxRetry; attempt++ {
+		code, err := randString(length)
+		if err != nil {
+			return "", err
+		}
+		var count int64
+		if err := DB.Model(&User{}).Where("aff_code = ?", code).Count(&count).Error; err != nil {
+			return "", err
+		}
+		if count == 0 {
+			return code, nil
+		}
+	}
+	return "", errors.New("生成邀请码失败:多次碰撞")
+}
+
+// randString 用 crypto/rand 从 affCodeAlphabet 取 n 位随机串。
+func randString(n int) (string, error) {
+	out := make([]byte, n)
+	max := big.NewInt(int64(len(affCodeAlphabet)))
+	for i := 0; i < n; i++ {
+		idx, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			return "", err
+		}
+		out[i] = affCodeAlphabet[idx.Int64()]
+	}
+	return string(out), nil
+}
+
+// RewardInviter 原子发放邀请者奖励(对齐 new-api inviteUser):
+// aff_count+1、aff_quota+reward(待提取)、aff_history+reward(累计)。
+// 返回 gorm.ErrRecordNotFound 表示邀请人不存在(理论不会发生:注册时已校验存在)。
+func RewardInviter(inviterID, reward int64) error {
+	res := DB.Model(&User{}).Where("id = ?", inviterID).Updates(map[string]interface{}{
+		"aff_count":   gorm.Expr("aff_count + ?", 1),
+		"aff_quota":   gorm.Expr("aff_quota + ?", reward),
+		"aff_history": gorm.Expr("aff_history + ?", reward),
+	})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// TransferAffQuota 原子两段式转账:把 aff_quota(待提取)转为可用 quota(对齐 new-api
+// TransferAffQuotaToQuota)。用 CAS(WHERE aff_quota >= ?)+ RowsAffected 判定,
+// 三库(SQLite/MySQL/PostgreSQL)通用——与本仓 Redemption.Redeem 同一占领范式,不用 FOR UPDATE。
+// 余额不足返回 ErrInsufficientAffQuota;最小转账额由 service 层校验。
+func TransferAffQuota(userID, quota int64) error {
+	res := DB.Model(&User{}).Where("id = ? AND aff_quota >= ?", userID, quota).Updates(map[string]interface{}{
+		"aff_quota": gorm.Expr("aff_quota - ?", quota),
+		"quota":     gorm.Expr("quota + ?", quota),
+	})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrInsufficientAffQuota
+	}
+	return nil
 }

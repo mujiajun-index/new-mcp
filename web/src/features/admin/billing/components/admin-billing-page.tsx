@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/lib/api'
+import { formatQuotaCurrency } from '@/lib/billing'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -43,6 +44,7 @@ export function AdminBillingPage() {
   const queryClient = useQueryClient()
   const fetchPublicSettings = useSystemConfigStore((s) => s.fetchPublicSettings)
   const userGroupOptions = useSystemConfigStore((s) => s.config.userGroupOptions)
+  const config = useSystemConfigStore((s) => s.config)
 
   const { data: settings, isLoading } = useQuery({
     queryKey: ['admin-settings'],
@@ -77,6 +79,17 @@ export function AdminBillingPage() {
   const toggleBool = (key: string) => {
     const next = localValues[key] !== 'true'
     updateMutation.mutate({ key, value: String(next) })
+  }
+
+  // 额度输入的实时货币换算(对齐 new-api formatQuota 在设置项描述里展示等值金额)。
+  // 单位额度/币种取当前编辑值(localValues),随管理员修改 QuotaPerUnit/DisplayCurrency 实时变化;
+  // 缺失时回退到公共配置默认。始终返回字符串(0/空 → ¥0.00),确保每个额度框下方实时可见。
+  const fmtQuota = (raw: string | undefined): string => {
+    const parsed = Number(raw ?? '0')
+    const value = Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+    const unit = Number(localValues.QuotaPerUnit) > 0 ? Number(localValues.QuotaPerUnit) : config.quotaPerUnit
+    const currency = localValues.DisplayCurrency || config.displayCurrency || 'CNY'
+    return formatQuotaCurrency(value, unit, currency)
   }
 
   // Group ratio editor:本地以字符串持有输入(避免清空跳 0),失焦时统一提交(避免逐键 PUT)。
@@ -253,7 +266,10 @@ export function AdminBillingPage() {
                   onChange={(e) => updateLocal('TrustQuota', e.target.value)}
                   onBlur={() => saveField('TrustQuota')}
                 />
-                <p className="text-xs text-muted-foreground">{t('adminBilling.trustQuotaDesc')}</p>
+                <p className="text-xs text-muted-foreground">
+                  {t('adminBilling.trustQuotaDesc')}
+                  <span className="ml-1 text-primary/80">≈ {fmtQuota(localValues.TrustQuota)}</span>
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>{t('adminBilling.preConsumedQuota')}</Label>
@@ -263,7 +279,10 @@ export function AdminBillingPage() {
                   onChange={(e) => updateLocal('PreConsumedQuota', e.target.value)}
                   onBlur={() => saveField('PreConsumedQuota')}
                 />
-                <p className="text-xs text-muted-foreground">{t('adminBilling.preConsumedQuotaDesc')}</p>
+                <p className="text-xs text-muted-foreground">
+                  {t('adminBilling.preConsumedQuotaDesc')}
+                  <span className="ml-1 text-primary/80">≈ {fmtQuota(localValues.PreConsumedQuota)}</span>
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>{t('adminBilling.quotaForNewUser')}</Label>
@@ -273,7 +292,36 @@ export function AdminBillingPage() {
                   onChange={(e) => updateLocal('QuotaForNewUser', e.target.value)}
                   onBlur={() => saveField('QuotaForNewUser')}
                 />
-                <p className="text-xs text-muted-foreground">{t('adminBilling.quotaForNewUserDesc')}</p>
+                <p className="text-xs text-muted-foreground">
+                  {t('adminBilling.quotaForNewUserDesc')}
+                  <span className="ml-1 text-primary/80">≈ {fmtQuota(localValues.QuotaForNewUser)}</span>
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>{t('adminBilling.quotaForInviter')}</Label>
+                <Input
+                  type="number"
+                  value={localValues.QuotaForInviter ?? '0'}
+                  onChange={(e) => updateLocal('QuotaForInviter', e.target.value)}
+                  onBlur={() => saveField('QuotaForInviter')}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t('adminBilling.quotaForInviterDesc')}
+                  <span className="ml-1 text-primary/80">≈ {fmtQuota(localValues.QuotaForInviter)}</span>
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>{t('adminBilling.quotaForInvitee')}</Label>
+                <Input
+                  type="number"
+                  value={localValues.QuotaForInvitee ?? '0'}
+                  onChange={(e) => updateLocal('QuotaForInvitee', e.target.value)}
+                  onBlur={() => saveField('QuotaForInvitee')}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t('adminBilling.quotaForInviteeDesc')}
+                  <span className="ml-1 text-primary/80">≈ {fmtQuota(localValues.QuotaForInvitee)}</span>
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>{t('adminBilling.quotaRemindThreshold')}</Label>
@@ -283,7 +331,10 @@ export function AdminBillingPage() {
                   onChange={(e) => updateLocal('QuotaRemindThreshold', e.target.value)}
                   onBlur={() => saveField('QuotaRemindThreshold')}
                 />
-                <p className="text-xs text-muted-foreground">{t('adminBilling.quotaRemindThresholdDesc')}</p>
+                <p className="text-xs text-muted-foreground">
+                  {t('adminBilling.quotaRemindThresholdDesc')}
+                  <span className="ml-1 text-primary/80">≈ {fmtQuota(localValues.QuotaRemindThreshold)}</span>
+                </p>
               </div>
             </div>
           </div>

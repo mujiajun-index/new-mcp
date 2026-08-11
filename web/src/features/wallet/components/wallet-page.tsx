@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from '@tanstack/react-router'
-import { getWalletOverview, getWalletUsageStats, redeemCode } from '../api'
+import { getWalletOverview, getWalletUsageStats, redeemCode, getInviteOverview, transferAffQuota } from '../api'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import { formatQuotaCurrency } from '@/lib/billing'
 import { Button } from '@/components/ui/button'
@@ -10,8 +10,9 @@ import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
 import {
   Wallet as WalletIcon, TrendingUp, History, Gift, Activity, Zap, Coins, ArrowRight,
+  UserPlus, Copy, Check, ArrowDownToLine,
 } from 'lucide-react'
-import type { WalletOverview, WalletUsageStats } from '@/types'
+import type { WalletOverview, WalletUsageStats, InviteOverview } from '@/types'
 
 export function WalletPage() {
   const { t } = useTranslation()
@@ -19,6 +20,8 @@ export function WalletPage() {
   const navigate = useNavigate()
   const { config } = useSystemConfigStore()
   const [redeemInput, setRedeemInput] = useState('')
+  const [transferInput, setTransferInput] = useState('')
+  const [copiedKey, setCopiedKey] = useState('')
 
   const { data: overviewData, isLoading: overviewLoading } = useQuery({
     queryKey: ['wallet-overview'],
@@ -32,6 +35,12 @@ export function WalletPage() {
   })
   const stats: WalletUsageStats | undefined = statsData?.data
 
+  const { data: inviteData } = useQuery({
+    queryKey: ['invite-overview'],
+    queryFn: getInviteOverview,
+  })
+  const invite: InviteOverview | undefined = inviteData?.data
+
   const redeemMutation = useMutation({
     mutationFn: () => redeemCode({ code: redeemInput.trim() }),
     onSuccess: (res) => {
@@ -44,6 +53,40 @@ export function WalletPage() {
       queryClient.invalidateQueries({ queryKey: ['user-log-stats'] })
     },
   })
+
+  // 邀请奖励转入钱包:输入以货币单位计(quota / quotaPerUnit),提交时换算为 quota。
+  const minTransferCurrency = config.quotaPerUnit > 0 ? 1 : 0 // 最小 1 货币单位
+  const transferQuota = Math.round((Number(transferInput) || 0) * config.quotaPerUnit)
+  const maxTransferCurrency =
+    invite && config.quotaPerUnit > 0 ? invite.aff_quota / config.quotaPerUnit : 0
+  const canTransfer =
+    !!invite &&
+    invite.aff_quota > 0 &&
+    transferQuota >= config.quotaPerUnit &&
+    transferQuota <= invite.aff_quota
+
+  const transferMutation = useMutation({
+    mutationFn: () => transferAffQuota({ quota: transferQuota }),
+    onSuccess: (res) => {
+      toast.success(t('wallet.transferSuccess', { quota: res?.data?.quota ?? 0 }))
+      setTransferInput('')
+      queryClient.invalidateQueries({ queryKey: ['wallet-overview'] })
+      queryClient.invalidateQueries({ queryKey: ['invite-overview'] })
+      queryClient.invalidateQueries({ queryKey: ['user-logs'] })
+    },
+  })
+
+  const copyText = async (text: string, key: string) => {
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedKey(key)
+      toast.success(t('wallet.copied'))
+      setTimeout(() => setCopiedKey(''), 1500)
+    } catch {
+      toast.error(t('wallet.copyFailed'))
+    }
+  }
 
   const billingDisabled = !config.billingEnabled
 
@@ -155,6 +198,116 @@ export function WalletPage() {
       </div>
 
       {/* 消费明细已合并到「调用日志」页统一展示 */}
+
+      {/* 邀请奖励 */}
+      <div className="rounded-xl border bg-card p-4 sm:p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <UserPlus className="h-4 w-4 text-primary" />
+          <p className="text-sm font-medium">{t('wallet.inviteTitle')}</p>
+        </div>
+        <p className="text-xs text-muted-foreground">{t('wallet.inviteHint')}</p>
+
+        {/* 邀请码 + 邀请链接 */}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <p className="text-xs text-muted-foreground">{t('wallet.inviteCode')}</p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 rounded-md bg-muted px-3 py-2 font-mono text-sm tracking-wider">
+                {invite?.aff_code || '...'}
+              </code>
+              <Button
+                variant="outline"
+                size="icon"
+                className="shrink-0"
+                onClick={() => copyText(invite?.aff_code || '', 'code')}
+                disabled={!invite?.aff_code}
+              >
+                {copiedKey === 'code' ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              </Button>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-xs text-muted-foreground">{t('wallet.inviteLink')}</p>
+            <div className="flex items-center gap-2">
+              <Input
+                readOnly
+                value={invite?.invite_url || ''}
+                className="font-mono text-xs"
+                placeholder="..."
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                className="shrink-0"
+                onClick={() => copyText(invite?.invite_url || '', 'link')}
+                disabled={!invite?.invite_url}
+              >
+                {copiedKey === 'link' ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* 邀请统计 */}
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-lg bg-muted/50 p-3">
+            <p className="text-xs text-muted-foreground">{t('wallet.invitedCount')}</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums">{invite?.aff_count ?? 0}</p>
+          </div>
+          <div className="rounded-lg bg-muted/50 p-3">
+            <p className="text-xs text-muted-foreground">{t('wallet.inviteRewardBalance')}</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums">
+              {invite ? fmt(invite.aff_quota, true) : '...'}
+            </p>
+          </div>
+          <div className="rounded-lg bg-muted/50 p-3">
+            <p className="text-xs text-muted-foreground">{t('wallet.inviteRewardTotal')}</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums">
+              {invite ? fmt(invite.aff_history_quota, true) : '...'}
+            </p>
+          </div>
+        </div>
+
+        {/* 转入钱包 */}
+        <div className="space-y-2 border-t pt-4">
+          <div className="flex items-center gap-2">
+            <ArrowDownToLine className="h-4 w-4 text-primary" />
+            <p className="text-sm font-medium">{t('wallet.transferToWallet')}</p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t('wallet.transferDesc', { min: minTransferCurrency, max: maxTransferCurrency.toFixed(2) })}
+          </p>
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              inputMode="decimal"
+              placeholder={t('wallet.transferPlaceholder', { min: minTransferCurrency })}
+              value={transferInput}
+              onChange={(e) => setTransferInput(e.target.value)}
+              disabled={!invite || invite.aff_quota <= 0}
+              className="flex-1"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              disabled={!invite || invite.aff_quota <= 0}
+              onClick={() => setTransferInput(maxTransferCurrency.toString())}
+            >
+              {t('wallet.transferAll')}
+            </Button>
+            <Button
+              size="sm"
+              className="shrink-0"
+              disabled={!canTransfer || transferMutation.isPending}
+              onClick={() => transferMutation.mutate()}
+            >
+              {transferMutation.isPending ? t('common.loading') : t('wallet.transfer')}
+            </Button>
+          </div>
+        </div>
+      </div>
+
       <div className="flex justify-end">
         <Button variant="outline" size="sm" onClick={() => navigate({ to: '/logs', search: { type: 2 } })}>
           {t('wallet.viewDetails')}

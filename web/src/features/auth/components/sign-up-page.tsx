@@ -21,9 +21,16 @@ export function SignUpPage() {
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({ username: '', email: '', password: '', confirmPassword: '' })
   const [verificationCode, setVerificationCode] = useState('')
+  const [inviteCode, setInviteCode] = useState('')
   const [countdown, setCountdown] = useState(0)
   const [sendingCode, setSendingCode] = useState(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // 从 URL ?aff= 预填邀请码(邀请链接携带)。仅初始化时读取一次。
+  useEffect(() => {
+    const aff = new URLSearchParams(window.location.search).get('aff')
+    if (aff) setInviteCode(aff)
+  }, [])
 
   // Clean up the countdown timer on unmount.
   useEffect(() => {
@@ -86,6 +93,7 @@ export function SignUpPage() {
         email: form.email,
         password: form.password,
         ...(requiresVerification ? { verification_code: verificationCode } : {}),
+        ...(inviteCode.trim() ? { invite_code: inviteCode.trim() } : {}),
       })
       const { data } = res.data
       if (data?.token) {
@@ -187,6 +195,17 @@ export function SignUpPage() {
               value={form.confirmPassword}
               onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
               required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="inviteCode">{t('auth.inviteCode')}</Label>
+            <Input
+              id="inviteCode"
+              placeholder={t('auth.inviteCodePlaceholder')}
+              value={inviteCode}
+              onChange={(e) => setInviteCode(e.target.value)}
+              maxLength={32}
+              className="font-mono text-sm"
             />
           </div>
           <Button type="submit" className="w-full" disabled={loading}>

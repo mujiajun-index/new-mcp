@@ -513,6 +513,26 @@ export interface WalletUsageStats {
   consumed_total: number
 }
 
+// --- 商业化:Invite(邀请码/邀请奖励,对齐 new-api aff_code) ---
+export interface InviteOverview {
+  aff_code: string // 我的邀请码
+  invite_url: string // 邀请链接
+  aff_count: number // 已邀请人数
+  aff_quota: number // 邀请奖励待提取余额(quota)
+  aff_history_quota: number // 邀请奖励累计(quota)
+  quota_for_inviter: number // 当前邀请者奖励配置
+  quota_for_invitee: number // 当前受邀者奖励配置
+}
+
+export interface TransferAffQuotaReq {
+  quota: number
+}
+
+export interface TransferAffQuotaResp {
+  quota: number // 转账后钱包余额
+  aff_quota: number // 转账后待提取余额
+}
+
 // --- 商业化:Redemption(兑换码) ---
 export interface RedemptionItem {
   id: number

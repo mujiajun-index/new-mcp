@@ -89,7 +89,26 @@ func migrateDB() error {
 	}
 	// 统一日志回填:历史 mcp_call_logs 行均为 MCP 调用,
 	// type 列新增后(default:2)兜底把任何 0/NULL 行置为 Consume。
-	return DB.Model(&McpCallLog{}).Where("type = 0 OR type IS NULL").Update("type", LogTypeConsume).Error
+	if err := DB.Model(&McpCallLog{}).Where("type = 0 OR type IS NULL").Update("type", LogTypeConsume).Error; err != nil {
+		return err
+	}
+
+	// 邀请码回填:为历史存量用户(aff_code 列新增后为 NULL/空)补发邀请码,
+	// 使其立即可分享,无需等首次打开钱包页才惰性生成。仅补空值,不覆盖已有码。
+	var usersNeedingCode []User
+	if err := DB.Select("id").Where("aff_code = '' OR aff_code IS NULL").Find(&usersNeedingCode).Error; err != nil {
+		return err
+	}
+	for _, u := range usersNeedingCode {
+		code, err := GenerateAffCode()
+		if err != nil {
+			return err
+		}
+		if err := DB.Model(&User{}).Where("id = ?", u.ID).Update("aff_code", code).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func CloseDB() error {

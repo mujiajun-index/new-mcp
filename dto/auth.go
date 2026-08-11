@@ -5,6 +5,7 @@ type RegisterReq struct {
 	Password         string `json:"password" binding:"required,min=6,max=128"`
 	Email            string `json:"email" binding:"omitempty,email"`
 	VerificationCode string `json:"verification_code" binding:"omitempty"`
+	InviteCode       string `json:"invite_code" binding:"omitempty,max=32"` // 邀请码(选填,对齐 new-api aff_code)
 }
 
 type LoginReq struct {

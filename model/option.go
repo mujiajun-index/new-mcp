@@ -55,6 +55,8 @@ var defaultOptions = map[string]string{
 	"BillingFailOpen":             "true",    // 计费 DB 异常时是否放行(记欠账)
 	// --- 额度 ---
 	"QuotaForNewUser":             "0",   // 新用户赠送额度
+	"QuotaForInviter":             "0",   // 邀请者奖励(→ 邀请人 aff_quota 待提取,对齐 new-api QuotaForInviter)
+	"QuotaForInvitee":             "0",   // 受邀者奖励(→ 受邀者钱包 quota 直接可用,对齐 new-api QuotaForInvitee)
 	"QuotaRemindThreshold":        "0",   // 低额度邮件提醒阈值(0=不提醒)
 	// --- 日志 ---
 	"LogPayloadEnabled":           "true",  // 是否落 request/response_payload

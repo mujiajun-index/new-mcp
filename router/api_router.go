@@ -122,6 +122,10 @@ func SetApiRouter(engine *gin.Engine) {
 		// 钱包/额度(商业化)
 		auth.GET("/wallet", controller.GetWallet)
 		auth.GET("/wallet/usage/stats", controller.GetWalletUsageStats)
+
+		// 邀请码/邀请奖励(对齐 new-api /api/user/aff)
+		auth.GET("/invite/overview", controller.GetInviteOverview)
+		auth.POST("/invite/transfer", controller.TransferAffQuota)
 	}
 
 	// Admin endpoints
