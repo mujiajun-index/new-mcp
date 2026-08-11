@@ -13,12 +13,11 @@ import { Button } from '@/components/ui/button'
 import { MobileListCard } from '@/components/ui/mobile-list-card'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import { CompactDateTimeRangePicker } from '@/components/ui/date-time-range-picker'
 import { Activity, CheckCircle, XCircle, Clock, Zap, Search, RotateCw, ChevronLeft, ChevronRight, Copy, Eye } from 'lucide-react'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { billingStatusKey, billingStatusClass, priceScopeKey, priceLabel } from '@/lib/billing'
+import { formatQuotaCurrency } from '@/lib/billing'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import type { LogFilter } from '@/types'
 
@@ -79,6 +78,10 @@ export function UserLogsPage() {
   const isMobile = useIsMobile()
   const { config } = useSystemConfigStore()
   const showBilling = config.billingEnabled
+  // 货币换算:用户只看金额,不看原始额度,统一用 formatQuotaCurrency 把 quota_consumed 换算成展示货币。
+  const quotaPerUnit = config.quotaPerUnit
+  const displayCurrency = config.displayCurrency
+  const fmtMoney = (q: number) => formatQuotaCurrency(q ?? 0, quotaPerUnit, displayCurrency)
   const queryClient = useQueryClient()
   // 支持外部带 ?type=N 跳转预选类型(如钱包页「查看消费明细」→ /logs?type=2)。
   const urlSearch = useSearch({ strict: false }) as { type?: string | number }
@@ -164,8 +167,7 @@ export function UserLogsPage() {
   ]
 
   return (
-    <TooltipProvider delayDuration={200}>
-      <div className="space-y-6 p-4 sm:p-6 lg:p-8">
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
         {/* Header */}
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{t('logs.title')}</h1>
@@ -287,6 +289,7 @@ export function UserLogsPage() {
                   log={log}
                   isAdmin={isAdmin}
                   showBilling={showBilling}
+                  fmtMoney={fmtMoney}
                   formatTime={formatTime}
                   formatDuration={formatDuration}
                   onErrorClick={setPreviewError}
@@ -294,22 +297,22 @@ export function UserLogsPage() {
               ))}
             </div>
           ) : (
-            <Table>
+            <Table className="table-fixed" style={{ minWidth: `${isAdmin ? 1480 : showBilling ? 1240 : 1120}px` }}>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[50px]">ID</TableHead>
-                  <TableHead>{t('logs.type')}</TableHead>
-                  <TableHead>{t('logs.username')}</TableHead>
-                  {isAdmin && <TableHead>{t('logs.apiKeyName')}</TableHead>}
-                  <TableHead>{t('logs.toolName')}</TableHead>
-                  <TableHead>{t('logs.groupName')}</TableHead>
-                  {isAdmin && <TableHead>{t('logs.serviceName')}</TableHead>}
-                  <TableHead>{t('logs.status')}</TableHead>
-                  {showBilling && <TableHead>{t('logs.billing')}</TableHead>}
-                  <TableHead>{t('logs.duration')}</TableHead>
-                  <TableHead>{t('logs.errorMessage')}</TableHead>
-                  <TableHead>IP</TableHead>
-                  <TableHead>{t('logs.time')}</TableHead>
+                  <TableHead className="w-[64px] whitespace-nowrap">ID</TableHead>
+                  <TableHead className="w-[72px] whitespace-nowrap">{t('logs.type')}</TableHead>
+                  <TableHead className="w-[110px] whitespace-nowrap">{t('logs.username')}</TableHead>
+                  {isAdmin && <TableHead className="w-[130px] whitespace-nowrap">{t('logs.apiKeyName')}</TableHead>}
+                  <TableHead className="w-[160px] whitespace-nowrap">{t('logs.toolName')}</TableHead>
+                  <TableHead className="w-[100px] whitespace-nowrap">{t('logs.groupName')}</TableHead>
+                  {isAdmin && <TableHead className="w-[120px] whitespace-nowrap">{t('logs.serviceName')}</TableHead>}
+                  <TableHead className="w-[76px] whitespace-nowrap">{t('logs.status')}</TableHead>
+                  {showBilling && <TableHead className="w-[124px] whitespace-nowrap">{t('logs.billing')}</TableHead>}
+                  <TableHead className="w-[76px] whitespace-nowrap">{t('logs.duration')}</TableHead>
+                  <TableHead className="w-[200px] whitespace-nowrap">{t('logs.errorMessage')}</TableHead>
+                  <TableHead className="w-[120px] whitespace-nowrap">IP</TableHead>
+                  <TableHead className="w-[150px] whitespace-nowrap">{t('logs.time')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -319,7 +322,7 @@ export function UserLogsPage() {
                     log={log}
                     isAdmin={isAdmin}
                     showBilling={showBilling}
-                    displayCurrency={config.displayCurrency}
+                    fmtMoney={fmtMoney}
                     formatTime={formatTime}
                     formatDuration={formatDuration}
                     onErrorClick={setPreviewError}
@@ -375,25 +378,25 @@ export function UserLogsPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
-    </TooltipProvider>
+    </div>
   )
 }
 
-// 额度变动展示(非消费类):正数=入账(绿),负数=扣除(红)。
-function QuotaDelta({ value }: { value: number }) {
+// 额度变动展示(非消费类):正数=入账(绿),负数=扣除(红)。统一换算成展示货币。
+function QuotaDelta({ value, fmt }: { value: number; fmt: (n: number) => string }) {
   if (!value) return null
   return (
     <span className={`text-xs font-medium tabular-nums ${value > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-      {value > 0 ? '+' : ''}{value}
+      {value > 0 ? '+' : '-'}{fmt(Math.abs(value))}
     </span>
   )
 }
 
-function LogMobileCard({ log, isAdmin, showBilling, formatTime, formatDuration, onErrorClick }: {
+function LogMobileCard({ log, isAdmin, showBilling, fmtMoney, formatTime, formatDuration, onErrorClick }: {
   log: any
   isAdmin: boolean
   showBilling: boolean
+  fmtMoney: (q: number) => string
   formatTime: (s: string) => string
   formatDuration: (ms: number) => string
   onErrorClick: (msg: string) => void
@@ -417,7 +420,7 @@ function LogMobileCard({ log, isAdmin, showBilling, formatTime, formatDuration, 
         meta={[
           { label: t('logs.username'), value: log.username || '-' },
           ...(operator ? [{ label: t('logs.operator'), value: operator }] : []),
-          ...(quota !== 0 ? [{ label: t('logs.billingConsumed'), value: <QuotaDelta value={quota} /> }] : []),
+          ...(quota !== 0 ? [{ label: t('logs.billingConsumed'), value: <QuotaDelta value={quota} fmt={fmtMoney} /> }] : []),
           { label: 'IP', value: <span className="font-mono">{log.client_ip || '-'}</span> },
           { label: t('logs.time'), value: formatTime(log.created_at) },
         ]}
@@ -443,18 +446,8 @@ function LogMobileCard({ log, isAdmin, showBilling, formatTime, formatDuration, 
       meta={[
         { label: t('logs.username'), value: log.username || '-' },
         { label: t('logs.duration'), value: <span className="tabular-nums">{formatDuration(log.duration_ms)}</span> },
-        ...(showBilling && log.billing_status && log.billing_status !== 'skipped' ? [
-          {
-            label: t('logs.billing'),
-            value: (
-              <span className="flex items-center gap-1.5">
-                <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${billingStatusClass(log.billing_status)}`}>
-                  {t(billingStatusKey(log.billing_status))}
-                </span>
-                {log.quota_consumed > 0 && <span className="tabular-nums">{log.quota_consumed}</span>}
-              </span>
-            ),
-          },
+        ...(showBilling && log.billing_status && log.billing_status !== 'skipped' && log.quota_consumed > 0 ? [
+          { label: t('logs.billing'), value: <span className="font-medium tabular-nums">{fmtMoney(log.quota_consumed)}</span> },
         ] : []),
         { label: t('logs.groupName'), value: log.group_name || '-' },
         { label: 'IP', value: <span className="font-mono">{log.client_ip}</span> },
@@ -479,11 +472,11 @@ function LogMobileCard({ log, isAdmin, showBilling, formatTime, formatDuration, 
   )
 }
 
-function LogRow({ log, isAdmin, showBilling, displayCurrency, formatTime, formatDuration, onErrorClick }: {
+function LogRow({ log, isAdmin, showBilling, fmtMoney, formatTime, formatDuration, onErrorClick }: {
   log: any
   isAdmin: boolean
   showBilling: boolean
-  displayCurrency: string
+  fmtMoney: (q: number) => string
   formatTime: (s: string) => string
   formatDuration: (ms: number) => string
   onErrorClick: (msg: string) => void
@@ -508,18 +501,18 @@ function LogRow({ log, isAdmin, showBilling, displayCurrency, formatTime, format
       <TableRow>
         <TableCell className="text-xs text-muted-foreground tabular-nums">{log.id}</TableCell>
         <TableCell>{typeBadge}</TableCell>
-        <TableCell className="text-sm">{log.username || '-'}</TableCell>
+        <TableCell className="text-sm truncate" title={log.username}>{log.username || '-'}</TableCell>
         <TableCell colSpan={middleCols}>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="text-sm">{log.content || '-'}</span>
             {operator && (
               <span className="text-xs text-muted-foreground">{t('logs.operator')}: {operator}</span>
             )}
-            <QuotaDelta value={quota} />
+            <QuotaDelta value={quota} fmt={fmtMoney} />
           </div>
         </TableCell>
-        <TableCell className="text-xs text-muted-foreground font-mono">{log.client_ip || '-'}</TableCell>
-        <TableCell className="text-xs text-muted-foreground tabular-nums">{formatTime(log.created_at)}</TableCell>
+        <TableCell className="text-xs text-muted-foreground font-mono whitespace-nowrap">{log.client_ip || '-'}</TableCell>
+        <TableCell className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">{formatTime(log.created_at)}</TableCell>
       </TableRow>
     )
   }
@@ -534,13 +527,13 @@ function LogRow({ log, isAdmin, showBilling, displayCurrency, formatTime, format
     <TableRow>
       <TableCell className="text-xs text-muted-foreground tabular-nums">{log.id}</TableCell>
       <TableCell>{typeBadge}</TableCell>
-      <TableCell className="text-sm">{log.username || '-'}</TableCell>
-      {isAdmin && <TableCell className="text-sm">{log.api_key_name || '-'}</TableCell>}
-      <TableCell>
+      <TableCell className="text-sm truncate" title={log.username}>{log.username || '-'}</TableCell>
+      {isAdmin && <TableCell className="text-sm truncate" title={log.api_key_name}>{log.api_key_name || '-'}</TableCell>}
+      <TableCell className="truncate" title={log.tool_name}>
         <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{log.tool_name}</code>
       </TableCell>
-      <TableCell className="text-sm">{log.group_name || '-'}</TableCell>
-      {isAdmin && <TableCell className="text-sm">{log.service_name || '-'}</TableCell>}
+      <TableCell className="text-sm truncate" title={log.group_name}>{log.group_name || '-'}</TableCell>
+      {isAdmin && <TableCell className="text-sm truncate" title={log.service_name}>{log.service_name || '-'}</TableCell>}
       <TableCell>
         <Badge variant={isSuccess ? 'success' : 'destructive'}>
           {isSuccess ? t('logs.success') : t('logs.error')}
@@ -549,33 +542,16 @@ function LogRow({ log, isAdmin, showBilling, displayCurrency, formatTime, format
       {showBilling && (
         <TableCell>
           {hasBilling ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="flex items-center gap-1.5 cursor-default">
-                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${billingStatusClass(billStatus)}`}>
-                    {t(billingStatusKey(billStatus))}
-                  </span>
-                  {log.quota_consumed > 0 && (
-                    <span className="text-xs tabular-nums">{log.quota_consumed}</span>
-                  )}
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="text-xs">
-                <div className="space-y-0.5">
-                  {log.unit_price > 0 && <div>{t('logs.billingUnitPrice')}: {priceLabel(log.billing_type, log.unit_price, displayCurrency)}</div>}
-                  {log.price_scope && <div>{t('logs.billingScope')}: {t(priceScopeKey(log.price_scope))}</div>}
-                  {log.marketplace_item_id && <div>{t('logs.billingItem')}: #{log.marketplace_item_id}</div>}
-                  <div>{t('logs.billingConsumed')}: {log.quota_consumed ?? 0}</div>
-                </div>
-              </TooltipContent>
-            </Tooltip>
+            <span className="inline-flex h-6 w-fit items-center rounded-md border border-border/80 bg-muted/60 px-2 text-sm font-semibold leading-none tabular-nums">
+              {fmtMoney(log.quota_consumed)}
+            </span>
           ) : (
             <span className="text-xs text-muted-foreground">—</span>
           )}
         </TableCell>
       )}
-      <TableCell className="text-sm tabular-nums">{formatDuration(log.duration_ms)}</TableCell>
-      <TableCell className="max-w-[200px]">
+      <TableCell className="text-sm tabular-nums whitespace-nowrap">{formatDuration(log.duration_ms)}</TableCell>
+      <TableCell>
         {errorMsg ? (
           <button
             type="button"
@@ -592,8 +568,8 @@ function LogRow({ log, isAdmin, showBilling, displayCurrency, formatTime, format
           <span className="text-xs text-muted-foreground">-</span>
         )}
       </TableCell>
-      <TableCell className="text-xs text-muted-foreground font-mono">{log.client_ip}</TableCell>
-      <TableCell className="text-xs text-muted-foreground tabular-nums">{formatTime(log.created_at)}</TableCell>
+      <TableCell className="text-xs text-muted-foreground font-mono whitespace-nowrap">{log.client_ip}</TableCell>
+      <TableCell className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">{formatTime(log.created_at)}</TableCell>
     </TableRow>
   )
 }

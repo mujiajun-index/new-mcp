@@ -37,9 +37,10 @@ export function formatQuotaCurrency(quota: number, quotaPerUnit: number, currenc
   const unit = quotaPerUnit > 0 ? quotaPerUnit : 500000
   const amount = quota / unit
   const symbol = currencySymbol(currency)
-  // 按量级选精度:>=1 保留 2 位小数,<1 保留 4 位,避免小额被四舍五入为 0
-  const digits = amount >= 1 ? 2 : 4
-  return `${symbol}${amount.toFixed(digits)}`
+  // 按量级选精度上限:>=1 最多 2 位,<1 最多 4 位(避免小额被四舍五入为 0),再去掉尾部多余的 0(0.0100 → 0.01)。
+  const maxDigits = amount >= 1 ? 2 : 4
+  const trimmed = amount.toFixed(maxDigits).replace(/\.?0+$/, '')
+  return `${symbol}${trimmed || '0'}`
 }
 
 /** 是否已显式定价(§5.6):free 或 (per_call 且 price>0)。 */
