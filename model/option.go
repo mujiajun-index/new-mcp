@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -163,6 +164,29 @@ func GetQuotaPerUnit() int64 {
 		return v
 	}
 	return DefaultQuotaPerUnit
+}
+
+// CurrencyToQuota 把展示货币金额(如 1 元)按当前 QuotaPerUnit 换算为整数额度(四舍五入)。
+// 与 billing/pricing.go 的 priceToQuota 同算法,集中在此供 model 层调用(billing 依赖 model,
+// 反向不可),避免循环依赖与重复硬编码。
+func CurrencyToQuota(amount float64) int64 {
+	if amount <= 0 {
+		return 0
+	}
+	return int64(math.Round(amount * float64(GetQuotaPerUnit())))
+}
+
+// CurrencySymbol 把展示币种代码映射为符号(对齐前端 web/src/lib/billing.ts 的 currencySymbol)。
+// 未知币种回退到 ¥(CNY)。
+func CurrencySymbol(currency string) string {
+	switch strings.ToUpper(currency) {
+	case "USD":
+		return "$"
+	case "EUR":
+		return "€"
+	default:
+		return "¥"
+	}
 }
 
 // GetTrustQuota 读取"信任额度旁路阈值"。未配置或非法(<=0)时按 10*QuotaPerUnit 动态缩放,

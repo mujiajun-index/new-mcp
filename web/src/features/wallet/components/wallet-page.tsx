@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from '@tanstack/react-router'
 import { getWalletOverview, getWalletUsageStats, redeemCode, getInviteOverview, transferAffQuota } from '../api'
 import { useSystemConfigStore } from '@/stores/system-config-store'
-import { formatQuotaCurrency } from '@/lib/billing'
+import { formatQuotaCurrency, currencySymbol } from '@/lib/billing'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
@@ -44,7 +44,9 @@ export function WalletPage() {
   const redeemMutation = useMutation({
     mutationFn: () => redeemCode({ code: redeemInput.trim() }),
     onSuccess: (res) => {
-      toast.success(t('wallet.redeemSuccess', { quota: res?.data?.quota ?? 0 }))
+      // 直接展示兑换码存储的充值面值(货币),不做额度换算——用户无需感知额度概念。
+      const amount = res?.data?.amount ?? 0
+      toast.success(t('wallet.redeemSuccess', { amount: `${currencySymbol(config.displayCurrency)}${amount.toFixed(2)}` }))
       setRedeemInput('')
       queryClient.invalidateQueries({ queryKey: ['wallet-overview'] })
       queryClient.invalidateQueries({ queryKey: ['wallet-usage-stats'] })

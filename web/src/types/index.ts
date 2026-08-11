@@ -538,7 +538,7 @@ export interface RedemptionItem {
   id: number
   code: string
   name: string
-  quota: number
+  amount: number // 面值(货币单位)
   status: number // 1=可用 2=已兑换 3=已禁用
   user_id: number | null
   username: string // 兑换者用户名(未兑换时为空)
@@ -549,7 +549,7 @@ export interface RedemptionItem {
 
 export interface RedemptionCreateReq {
   name?: string
-  quota: number
+  amount: number // 面值(货币单位)
   count?: number
   expired_at?: number
 }
@@ -559,7 +559,7 @@ export interface RedeemReq {
 }
 
 export interface RedeemResp {
-  quota: number
+  amount: number
 }
 
 // --- 商业化:Marketplace 批量定价 / 克隆 ---

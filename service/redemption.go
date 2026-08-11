@@ -31,7 +31,7 @@ func (s *RedemptionService) Generate(actor model.Operator, req *dto.RedemptionCr
 		r := &model.Redemption{
 			Code:      code,
 			Name:      req.Name,
-			Quota:     req.Quota,
+			Amount:    req.Amount,
 			Status:    model.RedemptionStatusAvailable,
 			ExpiredAt: req.ExpiredAt,
 		}
@@ -41,8 +41,8 @@ func (s *RedemptionService) Generate(actor model.Operator, req *dto.RedemptionCr
 		items = append(items, toRedemptionItem(r))
 	}
 	model.RecordManageLog(actor.ID, actor.Username,
-		fmt.Sprintf("生成 %d 个兑换码(面值 %d)", req.Count, req.Quota),
-		0, actor, map[string]any{"count": req.Count, "quota": req.Quota, "name": req.Name})
+		fmt.Sprintf("生成 %d 个兑换码(面值 %.2f)", req.Count, req.Amount),
+		0, actor, map[string]any{"count": req.Count, "amount": req.Amount, "name": req.Name})
 	return items, nil
 }
 
@@ -113,21 +113,23 @@ func (s *RedemptionService) Delete(actor model.Operator, id int64) error {
 	return nil
 }
 
-// Redeem 用户兑换(§8.2):model.Redeem 原子占领 + 入账,并写入 Topup 日志。返回入账额度。
-func (s *RedemptionService) Redeem(userID int64, username, code, clientIP string) (int64, error) {
+// Redeem 用户兑换(§8.2):model.Redeem 原子占领 + 入账,并写入 Topup 日志。返回充值面值(货币)。
+func (s *RedemptionService) Redeem(userID int64, username, code, clientIP string) (float64, error) {
 	r, err := model.GetRedemptionByCode(code)
 	if err != nil {
 		return 0, errors.New("兑换码无效")
 	}
-	quota, err := r.Redeem(userID)
-	if err != nil {
+	if _, err := r.Redeem(userID); err != nil {
 		return 0, err
 	}
-	model.RecordTopupLog(userID, username, fmt.Sprintf("兑换码充值 +%d", quota), quota, clientIP, map[string]any{
-		"redemption_id": r.ID,
-		"name":          r.Name,
-	})
-	return quota, nil
+	// 日志只记充值金额(货币面值,带币种符号),不暴露额度概念;quota 字段置 0,日志页不渲染裸额度数值。
+	model.RecordTopupLog(userID, username,
+		fmt.Sprintf("兑换码充值 +%s%.2f", model.CurrencySymbol(model.GetOptionString("DisplayCurrency")), r.Amount),
+		0, clientIP, map[string]any{
+			"redemption_id": r.ID,
+			"name":          r.Name,
+		})
+	return r.Amount, nil
 }
 
 // generateRedemptionCode 生成 32 位十六进制兑换码(16 随机字节)。code 列唯一索引兜底碰撞。
@@ -144,7 +146,7 @@ func toRedemptionItem(r *model.Redemption) dto.RedemptionItem {
 		ID:        r.ID,
 		Code:      r.Code,
 		Name:      r.Name,
-		Quota:     r.Quota,
+		Amount:    r.Amount,
 		Status:    r.Status,
 		UserID:    r.UserID,
 		ExpiredAt: r.ExpiredAt,

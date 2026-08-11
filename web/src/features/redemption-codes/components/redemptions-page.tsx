@@ -15,6 +15,8 @@ import {
 } from '@/components/ui/dialog'
 import { MobileListCard } from '@/components/ui/mobile-list-card'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useSystemConfigStore } from '@/stores/system-config-store'
+import { currencySymbol } from '@/lib/billing'
 import { toast } from 'sonner'
 import { Plus, Search, Trash2, Copy, Ticket, Ban, CheckCircle2 } from 'lucide-react'
 import type { RedemptionItem } from '@/types'
@@ -56,6 +58,7 @@ export function RedemptionsPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
+  const { config } = useSystemConfigStore()
   const [page, setPage] = useState(1)
   const [keyword, setKeyword] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
@@ -63,8 +66,15 @@ export function RedemptionsPage() {
 
   // Create dialog
   const [createOpen, setCreateOpen] = useState(false)
-  const [form, setForm] = useState({ name: '', quota: '', count: '1', neverExpires: true, expires_at: '' })
+  const [form, setForm] = useState({ name: '', amount: '', count: '1', neverExpires: true, expires_at: '' })
   const [generated, setGenerated] = useState<RedemptionItem[] | null>(null)
+
+  // 面值已是货币单位,直接按币种符号展示(小额多用几位小数避免显示为 0)。
+  const fmtAmount = (a: number) => {
+    const v = a || 0
+    const digits = v >= 1 ? 2 : 4
+    return `${currencySymbol(config.displayCurrency)}${v.toFixed(digits)}`
+  }
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-redemptions', page, keyword, statusFilter],
@@ -86,7 +96,7 @@ export function RedemptionsPage() {
   const createMutation = useMutation({
     mutationFn: () => createRedemptions({
       name: form.name || undefined,
-      quota: parseInt(form.quota) || 0,
+      amount: parseFloat(form.amount) || 0,
       // 后端单次最多 100 个;客户端兜底夹紧,避免粘贴超大值触发 400。
       count: Math.min(100, Math.max(1, parseInt(form.count) || 1)),
       expired_at: form.neverExpires ? 0 : (form.expires_at ? Math.floor(new Date(form.expires_at).getTime() / 1000) : 0),
@@ -95,7 +105,7 @@ export function RedemptionsPage() {
       const created: RedemptionItem[] = res?.data ?? []
       toast.success(t('redemptionCodes.createSuccess', { count: created.length }))
       setGenerated(created)
-      setForm({ name: '', quota: '', count: '1', neverExpires: true, expires_at: '' })
+      setForm({ name: '', amount: '', count: '1', neverExpires: true, expires_at: '' })
       queryClient.invalidateQueries({ queryKey: ['admin-redemptions'] })
     },
     onError: () => toast.error(t('redemptionCodes.createFailed')),
@@ -181,7 +191,7 @@ export function RedemptionsPage() {
                   badge={<StatusBadge status={item.status} expired={expired} />}
                   meta={[
                     { label: t('redemptionCodes.name'), value: item.name || '-' },
-                    { label: t('redemptionCodes.quota'), value: <span className="tabular-nums">{item.quota}</span> },
+                    { label: t('redemptionCodes.amount'), value: <span className="tabular-nums">{fmtAmount(item.amount)}</span> },
                     { label: t('redemptionCodes.expiry'), value: fmtExpiry(item.expired_at) || t('redemptionCodes.neverExpires') },
                     { label: t('redemptionCodes.redeemer'), value: item.username || '-' },
                     { label: t('redemptionCodes.createdAt'), value: fmtTime(item.created_at) },
@@ -222,7 +232,7 @@ export function RedemptionsPage() {
               <TableRow>
                 <TableHead>{t('redemptionCodes.code')}</TableHead>
                 <TableHead>{t('redemptionCodes.name')}</TableHead>
-                <TableHead>{t('redemptionCodes.quota')}</TableHead>
+                <TableHead>{t('redemptionCodes.amount')}</TableHead>
                 <TableHead>{t('redemptionCodes.status')}</TableHead>
                 <TableHead>{t('redemptionCodes.expiry')}</TableHead>
                 <TableHead>{t('redemptionCodes.redeemedAt')}</TableHead>
@@ -245,7 +255,7 @@ export function RedemptionsPage() {
                       </button>
                     </TableCell>
                     <TableCell className="text-sm">{item.name || '-'}</TableCell>
-                    <TableCell className="text-sm tabular-nums">{item.quota}</TableCell>
+                    <TableCell className="text-sm tabular-nums">{fmtAmount(item.amount)}</TableCell>
                     <TableCell><StatusBadge status={item.status} expired={expired} /></TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {fmtExpiry(item.expired_at) || t('redemptionCodes.neverExpires')}
@@ -331,12 +341,14 @@ export function RedemptionsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>{t('redemptionCodes.quota')} <span className="text-destructive">*</span></Label>
+                  <Label>{t('redemptionCodes.amount')} <span className="text-destructive">*</span></Label>
                   <Input
                     type="number"
-                    placeholder={t('redemptionCodes.quotaPlaceholder')}
-                    value={form.quota}
-                    onChange={(e) => setForm({ ...form, quota: e.target.value })}
+                    step="0.01"
+                    inputMode="decimal"
+                    placeholder={t('redemptionCodes.amountPlaceholder')}
+                    value={form.amount}
+                    onChange={(e) => setForm({ ...form, amount: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
@@ -382,7 +394,7 @@ export function RedemptionsPage() {
               <>
                 <Button variant="outline" onClick={() => setCreateOpen(false)}>{t('common.cancel')}</Button>
                 <Button
-                  disabled={createMutation.isPending || !form.quota || parseInt(form.quota) <= 0 || !countValid}
+                  disabled={createMutation.isPending || !form.amount || parseFloat(form.amount) <= 0 || !countValid}
                   onClick={() => createMutation.mutate()}
                 >
                   {t('redemptionCodes.create')}

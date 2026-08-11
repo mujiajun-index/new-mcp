@@ -80,7 +80,7 @@ func RedeemCode(c *gin.Context) {
 		return
 	}
 	actor := operatorFromContext(c)
-	quota, err := redemptionService.Redeem(userID, actor.Username, req.Code, actor.IP)
+	amount, err := redemptionService.Redeem(userID, actor.Username, req.Code, actor.IP)
 	if err != nil {
 		// 兑换码业务错误(已用/过期/禁用/无效)统一 400
 		switch {
@@ -97,5 +97,5 @@ func RedeemCode(c *gin.Context) {
 		}
 		return
 	}
-	common.Success(c, dto.RedeemResp{Quota: quota})
+	common.Success(c, dto.RedeemResp{Amount: amount})
 }

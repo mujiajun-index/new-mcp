@@ -62,7 +62,7 @@ type Redemption struct {
 	ID         int64      `json:"id" gorm:"primaryKey;autoIncrement"`
 	Code       string     `json:"code" gorm:"size:32;not null;uniqueIndex"`
 	Name       string     `json:"name" gorm:"size:128;default:''"`
-	Quota      int64      `json:"quota" gorm:"not null"` // 面值(quota)
+	Amount     float64    `json:"amount" gorm:"type:decimal(10,4);default:0;not null"` // 面值(货币单位,如 CNY 元);兑换时按 QuotaPerUnit 换算为额度
 	Status     int        `json:"status" gorm:"default:1;index"` // 1=可用 2=已兑换 3=已禁用
 	UserID     *int64     `json:"user_id" gorm:"index"`          // 兑换者用户 ID
 	ExpiredAt  int64      `json:"expired_at" gorm:"default:0"`   // 过期时间戳,0=永不过期
@@ -115,6 +115,8 @@ func (r *Redemption) Delete() error { return DB.Delete(r).Error }
 func (r *Redemption) Redeem(userID int64) (int64, error) {
 	now := time.Now().Unix()
 	redeemedAt := time.Now()
+	// 面值(货币)按当前 QuotaPerUnit 换算为入账额度。
+	quota := CurrencyToQuota(r.Amount)
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		res := tx.Model(&Redemption{}).
 			Where("id = ? AND status = ? AND (expired_at = 0 OR expired_at >= ?)",
@@ -144,14 +146,14 @@ func (r *Redemption) Redeem(userID int64) (int64, error) {
 		}
 		// 入账(幂等增加)+ 累计充值审计
 		if e := tx.Model(&User{}).Where("id = ?", userID).
-			Update("quota", gorm.Expr("quota + ?", r.Quota)).Error; e != nil {
+			Update("quota", gorm.Expr("quota + ?", quota)).Error; e != nil {
 			return e
 		}
 		return tx.Model(&User{}).Where("id = ?", userID).
-			Update("total_topup", gorm.Expr("total_topup + ?", r.Quota)).Error
+			Update("total_topup", gorm.Expr("total_topup + ?", quota)).Error
 	})
 	if err != nil {
 		return 0, err
 	}
-	return r.Quota, nil
+	return quota, nil
 }
