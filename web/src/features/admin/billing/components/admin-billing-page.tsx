@@ -256,6 +256,16 @@ export function AdminBillingPage() {
                 <p className="text-xs text-muted-foreground">{t('adminBilling.trustQuotaDesc')}</p>
               </div>
               <div className="space-y-2">
+                <Label>{t('adminBilling.preConsumedQuota')}</Label>
+                <Input
+                  type="number"
+                  value={localValues.PreConsumedQuota ?? '500'}
+                  onChange={(e) => updateLocal('PreConsumedQuota', e.target.value)}
+                  onBlur={() => saveField('PreConsumedQuota')}
+                />
+                <p className="text-xs text-muted-foreground">{t('adminBilling.preConsumedQuotaDesc')}</p>
+              </div>
+              <div className="space-y-2">
                 <Label>{t('adminBilling.quotaForNewUser')}</Label>
                 <Input
                   type="number"

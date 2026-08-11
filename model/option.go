@@ -48,6 +48,7 @@ var defaultOptions = map[string]string{
 	"BillingDefaultPricePerCall":  "0",        // 全局默认按次单价(市场服务第 3 级,展示货币)
 	"GroupRatio":                  `{"default":1,"vip":1,"svip":1}`, // 分组倍率 JSON
 	"TrustQuota":                  "0", // 信任额度旁路阈值;0=按 10*QuotaPerUnit 动态缩放(对齐 new-api)
+	"PreConsumedQuota":            "500", // 预消耗配额下限(quota):每次预扣不低于此值,成功后退还差额(对齐 new-api PreConsumedQuota);0=禁用
 	"ChargeAdmin":                 "false",   // 是否对管理员计费
 	"ChargeOnClientError":         "false",   // 客户端参数错误是否收费
 	"ChargeOnTimeout":             "false",   // 超时是否收费
@@ -171,6 +172,13 @@ func GetTrustQuota() int64 {
 		return v
 	}
 	return 10 * GetQuotaPerUnit()
+}
+
+// GetPreConsumedQuota 读取"预消耗配额下限"(PreConsumedQuota):每次市场调用预扣的最低 quota。
+// 与 reference/new-api 的 common.PreConsumedQuota(=500,LLM token 估算下限)对齐——new-mcp 为按次计价,
+// 故此处直接以 quota 为单位。默认 500(≈0.001 元);管理员置 0 表示禁用下限(预扣额=实际单价)。
+func GetPreConsumedQuota() int64 {
+	return GetOptionInt64("PreConsumedQuota")
 }
 
 // GetOptionFloat 读取浮点配置(单价等)。

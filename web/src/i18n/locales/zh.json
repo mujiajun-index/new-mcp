@@ -1144,6 +1144,8 @@
     "billingFailOpenDesc": "计费系统自身异常时放行调用",
     "trustQuota": "信任额度",
     "trustQuotaDesc": "信任旁路阈值(quota):剩余额度超过此值时不预扣,改成功后补扣。0=自动按 10×单位额度",
+    "preConsumedQuota": "预消耗配额",
+    "preConsumedQuotaDesc": "每次预扣的最低 quota。低于实际单价时不生效;成功后退还差额。0=禁用",
     "quotaForNewUser": "新用户额度",
     "quotaForNewUserDesc": "新注册用户赠送的额度",
     "quotaRemindThreshold": "额度提醒阈值",

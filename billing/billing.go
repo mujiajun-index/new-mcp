@@ -13,7 +13,8 @@ type BillingSession struct {
 	UserID            int64
 	ApiKeyID          int64
 	MarketplaceItemID int64
-	ConsumedQuota     int64 // 应扣 = 预扣(成本确定,二者相等)
+	ConsumedQuota     int64 // 实际应扣(单价;成功后据此结算并累加 used)
+	PreConsumedQuota  int64 // 实际预扣(=Max(单价, PreConsumedQuota 下限));成功后退还(预扣-应扣)差额
 	Trusted           bool   // 命中信任旁路:未实际预扣,成功后由 Confirm 补扣
 	Debt              bool   // FailOpen 欠账:计费 DB 异常,放行调用但未扣(仅记录)
 	Price             PriceInfo
@@ -48,7 +49,8 @@ var LowQuotaNotifier = func(userID, currentQuota int64) {}
 
 // PreConsume 预扣(§6.2 插入点 A):校验并原子扣减用户额度 + Key 预算。
 //   - 免费 / 管理员(未开启 ChargeAdmin):返回零消费会话,不扣费。
-//   - 信任旁路(余额 > TrustQuota 且 Key 预算充足):Trusted=true,不实际预扣,成功后 Confirm 补扣。
+//   - 信任旁路(用户余额 > TrustQuota 且 Key 余额 > TrustQuota 或无限 Key):Trusted=true,不实际预扣,成功后 Confirm 补扣。
+//   - 预扣额 = Max(实际单价, PreConsumedQuota 下限);高于单价的部分在 Confirm 成功后退还(对齐 new-api PreConsumedQuota)。
 //   - 余额或 Key 预算不足:返回 ErrInsufficientQuota(调用方拒绝本次调用,不禁用 Key)。
 //   - 计费 DB 异常:按 BillingFailOpen 决定——true 则 Debt=true 放行,nil 错误;false 则返回错误拒绝。
 func (s *BillingService) PreConsume(req PreConsumeRequest) (*BillingSession, error) {
@@ -73,8 +75,14 @@ func (s *BillingService) PreConsume(req PreConsumeRequest) (*BillingSession, err
 		return sess, nil
 	}
 
-	consumed := price.UnitPriceQuota
+	consumed := price.UnitPriceQuota // 实际应扣(单价)
 	sess.ConsumedQuota = consumed
+	// 预扣下限(对齐 new-api PreConsumedQuota):预扣额不低于此值,成功后由 Confirm 退还差额。
+	preConsumed := consumed
+	if floor := model.GetPreConsumedQuota(); floor > preConsumed {
+		preConsumed = floor
+	}
+	sess.PreConsumedQuota = preConsumed
 
 	trustQuota := model.GetTrustQuota()
 	userQuota, err := model.GetUserQuota(req.UserID)
@@ -86,20 +94,23 @@ func (s *BillingService) PreConsume(req PreConsumeRequest) (*BillingSession, err
 		return sess, s.handleBillingDBError(sess, err)
 	}
 
-	// 信任旁路:余额充足且 Key 预算充足 → 不预扣
-	keyBudgetOK := key.UnlimitedQuota || (key.Quota-key.UsedQuota) > consumed
-	if userQuota > trustQuota && keyBudgetOK {
+	// 信任旁路(对齐 reference/new-api service.PreConsumeQuota):用户余额 > trustQuota
+	// 且 Key 余额 > trustQuota(或无限 Key)→ 不预扣,成功后由 Confirm 补扣。
+	// new-api 对 user 与 token 使用同一 trustQuota 门槛(=10*QuotaPerUnit);
+	// 任一不满足则落入下方正常预扣路径——仅当余额 < 本次消费时才拒绝。
+	keyTrustOK := key.UnlimitedQuota || (key.Quota-key.UsedQuota) > trustQuota
+	if userQuota > trustQuota && keyTrustOK {
 		sess.Trusted = true
 		return sess, nil
 	}
 
-	// 余额预检(快速失败,减少无效原子操作)
-	if userQuota < consumed {
+	// 余额预检(用预扣额,对齐 new-api userQuota-preConsumed<0 → 拒绝;减少无效原子操作)
+	if userQuota < preConsumed {
 		return sess, ErrInsufficientQuota
 	}
 
-	// 原子扣减用户额度(防透支)
-	rows, err := model.DecreaseUserQuotaAtomic(req.UserID, consumed)
+	// 原子扣减用户额度(按预扣额,防透支)
+	rows, err := model.DecreaseUserQuotaAtomic(req.UserID, preConsumed)
 	if err != nil {
 		return sess, s.handleBillingDBError(sess, err)
 	}
@@ -107,25 +118,27 @@ func (s *BillingService) PreConsume(req PreConsumeRequest) (*BillingSession, err
 		return sess, ErrInsufficientQuota // 并发下被扣到不足
 	}
 
-	// 原子占用 Key 预算(预算 Key);无限 Key 仅记账
+	// 原子占用 Key 预算(预算 Key,按预扣额);无限 Key 仅记账
 	if !key.UnlimitedQuota {
-		krows, err := model.DecreaseApiKeyQuotaAtomic(req.ApiKeyID, consumed)
+		krows, err := model.DecreaseApiKeyQuotaAtomic(req.ApiKeyID, preConsumed)
 		if err != nil {
-			_ = model.IncreaseUserQuota(req.UserID, consumed) // 补偿退还用户额度
+			_ = model.IncreaseUserQuota(req.UserID, preConsumed) // 补偿退还用户额度
 			return sess, s.handleBillingDBError(sess, err)
 		}
 		if krows == 0 {
-			_ = model.IncreaseUserQuota(req.UserID, consumed) // 退还用户
+			_ = model.IncreaseUserQuota(req.UserID, preConsumed) // 退还用户
 			return sess, ErrInsufficientQuota
 		}
 	} else {
-		_ = model.AdjustApiKeyUsedQuota(req.ApiKeyID, consumed)
+		_ = model.AdjustApiKeyUsedQuota(req.ApiKeyID, preConsumed)
 	}
 
 	return sess, nil
 }
 
-// Confirm 成功确认(§6.2 插入点 B):Trusted 时补扣 + 记账;否则仅累加 used 统计(预扣已完成)。
+// Confirm 成功确认(§6.2 插入点 B):
+//   - Trusted:事后补扣实际单价 + 记账。
+//   - 非信任:预扣已完成,退还(预扣-单价)差额(预消耗下限高于单价时),并累加 used。
 // 与 Refund 互斥、且幂等(同一会话多次 Confirm 只生效一次)。低额度时异步发提醒。
 func (s *BillingService) Confirm(sess *BillingSession) error {
 	if sess == nil || sess.ConsumedQuota <= 0 {
@@ -138,14 +151,17 @@ func (s *BillingService) Confirm(sess *BillingSession) error {
 		return nil // 欠账:未扣,仅调用方记 debt 日志
 	}
 
-	consumed := sess.ConsumedQuota
+	consumed := sess.ConsumedQuota // 实际应扣(单价)
 	if sess.Trusted {
-		// 信任旁路事后补扣(无守卫,接受有界超支)
+		// 信任旁路事后补扣(无守卫,接受有界超支);Key used 此前未记,此处补记
 		_ = model.DecreaseUserQuotaUnguarded(sess.UserID, consumed)
-		// 信任路径 Key used 此前未记,此处补记
 		_ = model.AdjustApiKeyUsedQuota(sess.ApiKeyID, consumed)
+	} else if excess := sess.PreConsumedQuota - consumed; excess > 0 {
+		// 非信任:预扣 > 单价(命中预消耗下限),退还差额到用户余额与 Key 预算
+		_ = model.IncreaseUserQuota(sess.UserID, excess)
+		_ = model.AdjustApiKeyUsedQuota(sess.ApiKeyID, -excess)
 	}
-	// 累加用户已用额度(预扣路径与信任路径均记)
+	// 累加用户累计已用额度(实际消费;预扣与信任路径均记)
 	_ = model.AdjustUserUsedQuota(sess.UserID, consumed)
 
 	// 低额度提醒(异步,经钩子解耦邮件发送)
@@ -161,8 +177,9 @@ func (s *BillingService) Confirm(sess *BillingSession) error {
 	return nil
 }
 
-// Refund 失败退款(§6.2 插入点 B):全额 IncreaseUserQuota(幂等)+ 回退 Key used。
-// 与 Confirm 互斥、且幂等。Trusted/Debt 未实际扣,无操作。
+// Refund 失败退款(§6.2 插入点 B):全额退还实际预扣额(幂等)+ 恢复 Key 预算。
+// 与 Confirm 互斥、且幂等。Trusted/Debt 未实际预扣,无操作。
+// 注:不调整 user used_quota——失败未实际消费,累计已用不应变化。
 func (s *BillingService) Refund(sess *BillingSession) error {
 	if sess == nil || sess.ConsumedQuota <= 0 {
 		return nil
@@ -171,14 +188,13 @@ func (s *BillingService) Refund(sess *BillingSession) error {
 		return nil // 已 Confirm 或已 Refund
 	}
 	if sess.Trusted || sess.Debt {
-		return nil // 未实际扣,无需退
+		return nil // 未实际预扣,无需退
 	}
 
-	consumed := sess.ConsumedQuota
-	_ = model.IncreaseUserQuota(sess.UserID, consumed)
-	// 回退已用额度(净额反映)+ Key 预算恢复
-	_ = model.AdjustUserUsedQuota(sess.UserID, -consumed)
-	_ = model.AdjustApiKeyUsedQuota(sess.ApiKeyID, -consumed)
+	// 全额退还实际预扣(预消耗下限包含在内);Key 预算同步恢复
+	preConsumed := sess.PreConsumedQuota
+	_ = model.IncreaseUserQuota(sess.UserID, preConsumed)
+	_ = model.AdjustApiKeyUsedQuota(sess.ApiKeyID, -preConsumed)
 	return nil
 }
 
@@ -187,7 +203,8 @@ func (s *BillingService) Refund(sess *BillingSession) error {
 func (s *BillingService) handleBillingDBError(sess *BillingSession, err error) error {
 	if model.GetOptionBool("BillingFailOpen") {
 		sess.Debt = true
-		sess.ConsumedQuota = 0 // 未实际扣
+		sess.ConsumedQuota = 0    // 未实际扣
+		sess.PreConsumedQuota = 0 // 未实际扣
 		sess.Trusted = false
 		return nil
 	}

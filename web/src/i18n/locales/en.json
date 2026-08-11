@@ -1144,6 +1144,8 @@
     "billingFailOpenDesc": "Let calls through when the billing system itself errors",
     "trustQuota": "Trust Quota",
     "trustQuotaDesc": "Trust bypass threshold (quota): skip pre-deduction when remaining exceeds this, settle after success. 0=auto (10×quota-per-unit)",
+    "preConsumedQuota": "Pre-consumed Quota",
+    "preConsumedQuotaDesc": "Minimum quota to pre-deduct per call. No effect when below the unit price; difference refunded on success. 0=disable",
     "quotaForNewUser": "Quota for New User",
     "quotaForNewUserDesc": "Quota granted to newly registered users",
     "quotaRemindThreshold": "Quota Remind Threshold",
