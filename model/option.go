@@ -86,6 +86,10 @@ var defaultOptions = map[string]string{
 	"SignedURLTTLSeconds":          "3600",       // 签名 URL 有效期(秒),1h
 	"UploadRetentionHours":         "24",         // 上传文件保留时长(小时),须 > SignedURLTTL
 	"UploadCleanupIntervalMinutes": "60",         // 过期清理扫描间隔(分钟)
+	// --- V1.1: shell 直传 / 图片管理 / 入参择优 ---
+	"PresignedPutTTLSeconds": "600",   // 预签名 PUT URL 有效期(秒),直传路径;须 < SignedURLTTL
+	"MaxUploadsPerUser":      "0",     // 每用户活跃上传数上限(护栏);0=不限
+	"VisionInlineMaxBytes":   "10240", // base64 内联软阈值(字节);超过引导走上传;0=关闭(退回 V1.0)
 }
 
 var sensitiveKeys = map[string]bool{

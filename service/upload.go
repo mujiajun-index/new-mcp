@@ -49,6 +49,9 @@ func (s *UploadService) Upload(ctx context.Context, userID int64, r io.Reader, m
 	if maxBytes <= 0 {
 		maxBytes = 10 << 20 // 10 MiB failsafe
 	}
+	if err := CheckUploadQuota(userID); err != nil {
+		return nil, err
+	}
 
 	// Read the whole image (bounded) so we can sniff + hash it. LimitReader(cap+1)
 	// lets us detect an over-limit image by reading one byte past the cap.
@@ -73,10 +76,11 @@ func (s *UploadService) Upload(ctx context.Context, userID int64, r io.Reader, m
 	ttl := signedURLTTL()
 	now := time.Now()
 
-	// Dedup: identical bytes → identical key. If a row exists, the blob is still
-	// on disk (cleanup hasn't reaped it), so skip the Put, refresh retention,
-	// and re-sign.
-	if existing, err := model.GetUploadedImageByKey(key); err == nil && existing != nil {
+	// Per-user dedup (V1.1): same user + same content key → their existing row.
+	// Refresh its retention and re-sign; the blob is still on disk (cleanup
+	// hasn't reaped it). Different users with identical bytes each get their own
+	// row sharing one blob (handled below via CountByKey).
+	if existing, err := model.GetUploadedImageByUserAndKey(userID, key); err == nil && existing != nil {
 		_ = model.TouchRefresh(existing.ID, now) // extend retention from this re-upload
 		url, err := UploadStore.PublicURL(ctx, key, ttl)
 		if err != nil {
@@ -93,9 +97,13 @@ func (s *UploadService) Upload(ctx context.Context, userID int64, r io.Reader, m
 		}, nil
 	}
 
-	// New blob: write it, then record the row.
-	if err := UploadStore.Put(ctx, key, bytes.NewReader(data), mediaType); err != nil {
-		return nil, fmt.Errorf("store image: %w", err)
+	// Blob-level dedup: even for a new (user, key) row, the blob may already
+	// exist (another user uploaded identical bytes). Skip the write then —
+	// storage keeps one copy, refcounted via CountByKey on delete.
+	if n, err := model.CountByKey(key); err != nil || n == 0 {
+		if err := UploadStore.Put(ctx, key, bytes.NewReader(data), mediaType); err != nil {
+			return nil, fmt.Errorf("store image: %w", err)
+		}
 	}
 	img := &model.UploadedImage{
 		UserID:     userID,
@@ -103,14 +111,13 @@ func (s *UploadService) Upload(ctx context.Context, userID int64, r io.Reader, m
 		MediaType:  mediaType,
 		Size:       int64(len(data)),
 		Backend:    UploadStore.Backend(),
+		Status:     model.UploadStatusUploaded,
 	}
 	if err := img.Insert(); err != nil {
-		// Two concurrent uploads of identical bytes can both miss the dedup
-		// lookup and both Put; the loser fails the unique-key constraint.
-		// Recover by treating the winner's row as the dedup hit and deleting
-		// the redundant blob we just wrote.
-		_ = UploadStore.Delete(ctx, key)
-		if existing, e2 := model.GetUploadedImageByKey(key); e2 == nil && existing != nil {
+		// Concurrent same-user+key insert: both missed the dedup lookup, the
+		// winner's row now owns the (idempotent) blob. Recover as a dedup hit.
+		// Do NOT delete the blob — it is shared/refcounted and the winner points at it.
+		if existing, e2 := model.GetUploadedImageByUserAndKey(userID, key); e2 == nil && existing != nil {
 			url, e3 := UploadStore.PublicURL(ctx, key, ttl)
 			if e3 != nil {
 				return nil, e3
@@ -148,4 +155,32 @@ func signedURLTTL() time.Duration {
 		return time.Duration(secs) * time.Second
 	}
 	return time.Hour
+}
+
+// presignedPutTTL is the lifetime of a presigned PUT URL (the shell direct-upload
+// path). Shorter than signedURLTTL: the GET URL handed to analyze must outlive
+// the upload window. Used by the cleanup loop's pending fast-reap too.
+func presignedPutTTL() time.Duration {
+	if secs := model.GetOptionInt("PresignedPutTTLSeconds"); secs > 0 {
+		return time.Duration(secs) * time.Second
+	}
+	return 10 * time.Minute
+}
+
+// CheckUploadQuota returns an error if the user has reached MaxUploadsPerUser
+// (0 = unlimited). Shared by the multipart and presigned-PUT upload paths so
+// both guardrails count against the same per-user active-upload limit.
+func CheckUploadQuota(userID int64) error {
+	max := model.GetOptionInt64("MaxUploadsPerUser")
+	if max <= 0 {
+		return nil
+	}
+	n, err := model.CountUploadsByUser(userID)
+	if err != nil {
+		return fmt.Errorf("check upload quota: %w", err)
+	}
+	if n >= max {
+		return fmt.Errorf("upload quota exceeded: %d/%d active uploads; delete old images or wait for cleanup", n, max)
+	}
+	return nil
 }

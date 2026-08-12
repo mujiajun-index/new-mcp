@@ -121,6 +121,9 @@ func (h *GatewayHandler) handleInitialize(req *JSONRPCRequest) *JSONRPCResponse 
 				"name":    "newmcp",
 				"version": "1.0.0",
 			},
+			// V1.1: declare the local-image workflow globally so smart-mode clients
+			// (whose tools/list returns only the meta-tools) still learn the path.
+			"instructions": "To analyze a LOCAL image: if it is small (roughly <= 10KB), inline it as base64 directly to vision.analyze_image; otherwise call vision.upload_image with local_path to get an upload_command + file_url, run that curl via your shell (no API key needed), then call vision.analyze_image with image_url=file_url. Never paste large image base64 into tool arguments.",
 		},
 	}
 }
@@ -133,6 +136,7 @@ func (h *GatewayHandler) handleToolsList(ctx context.Context, req *JSONRPCReques
 			if err != nil {
 				return h.errorResponse(req.ID, -32603, "Failed to get tools")
 			}
+			tools = append(tools, virtual.GlobalTools...) // V1.1 global tools (upload_image)
 			return &JSONRPCResponse{
 				JSONRPC: "2.0",
 				ID:      req.ID,
@@ -162,10 +166,11 @@ func (h *GatewayHandler) handleToolsList(ctx context.Context, req *JSONRPCReques
 		if err != nil {
 			return h.errorResponse(req.ID, -32603, "Failed to get tools")
 		}
+		tools := append(bridge.ToolsToMaps(entries), virtual.GlobalTools...) // V1.1 global tools
 		return &JSONRPCResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
-			Result:  map[string]interface{}{"tools": bridge.ToolsToMaps(entries)},
+			Result:  map[string]interface{}{"tools": tools},
 		}
 	default:
 		return h.smartToolsResponse(req.ID)
@@ -313,6 +318,23 @@ func applyBillingToLog(log *model.McpCallLog, b *billingOutcome) {
 // 仅当解析到的服务为市场来源(source=marketplace)时触发计费(§6);自有/虚拟工具免费。
 func (h *GatewayHandler) routeAndCall(ctx context.Context, reqID interface{}, logCtx *LogContext, toolName string, args json.RawMessage, svcID *int64, svcName *string, requestID string, billing *billingOutcome) *JSONRPCResponse {
 	parsedSvc, parsedTool := bridge.ParseNamespacedName(toolName)
+
+	// V1.1 global virtual tools (vision.upload_image): not tied to a per-user
+	// service, free, self-service. Checked before the per-user registry and any
+	// scope/billing logic. parsedSvc=="vision" never collides with real vision
+	// services (exposed as "vision_<id>__...").
+	if parsedSvc == "vision" && virtual.IsGlobalTool(parsedSvc + "." + parsedTool) {
+		out, gErr := virtual.HandleGlobalTool(ctx, logCtx.UserID, virtual.UploadImageToolName, args)
+		*svcName = "vision"
+		if gErr != nil {
+			return h.errorResponse(reqID, -32603, "upload_image failed: "+gErr.Error())
+		}
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      reqID,
+			Result:  json.RawMessage(out),
+		}
+	}
 
 	// Check virtual tools first (vision/camera 等属自有性质,免费)
 	if h.virtualRegistry != nil && parsedSvc != "" {
@@ -463,6 +485,15 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 
 	if params.TimeoutMs <= 0 {
 		params.TimeoutMs = 30000
+	}
+
+	// V1.1 global virtual tools bypass group-scope (they belong to no group).
+	if gSvc, gTool := bridge.ParseNamespacedName(params.ToolID); gSvc == "vision" && virtual.IsGlobalTool(gSvc+"."+gTool) {
+		out, gErr := virtual.HandleGlobalTool(ctx, logCtx.UserID, virtual.UploadImageToolName, params.Arguments)
+		if gErr != nil {
+			return &executeResult{Resp: h.errorResponse(reqID, -32603, "upload_image failed: "+gErr.Error()), ToolName: gTool, ServiceName: "vision"}
+		}
+		return &executeResult{Resp: &JSONRPCResponse{JSONRPC: "2.0", ID: reqID, Result: json.RawMessage(out)}, ToolName: gTool, ServiceName: "vision"}
 	}
 
 	// Verify group scope: the service must be in one of the API key's allowed groups

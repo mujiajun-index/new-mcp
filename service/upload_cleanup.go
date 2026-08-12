@@ -31,6 +31,7 @@ func StartCleanupLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			runCleanupSweep(ctx)
+			runPendingReapSweep(ctx)
 		}
 	}
 }
@@ -39,6 +40,9 @@ func StartCleanupLoop(ctx context.Context) {
 // large backlog cannot monopolize a tick. Per-item errors are logged and
 // skipped — one bad blob must not abort the whole sweep (the row is still
 // removed, and a leftover blob is harmless / reaped idempotently next time).
+//
+// V1.1: blobs are shared across users (content-addressed), so the blob is only
+// deleted once the last row referencing it is gone (CountByKey refcount).
 func runCleanupSweep(ctx context.Context) {
 	const sweepLimit = 500
 	cutoff := time.Now().Add(-uploadRetention())
@@ -53,16 +57,48 @@ func runCleanupSweep(ctx context.Context) {
 	deleted := 0
 	for i := range expired {
 		img := &expired[i]
-		if err := UploadStore.Delete(ctx, img.StorageKey); err != nil {
-			log.Printf("[upload-cleanup] delete blob %q: %v", img.StorageKey, err)
-		}
+		// Delete the row first, then drop the blob only if no other row still
+		// references this (shared) content key.
 		if err := model.DeleteUploadedImageByID(img.ID); err != nil {
 			log.Printf("[upload-cleanup] delete row %d: %v", img.ID, err)
 			continue
 		}
+		if n, err := model.CountByKey(img.StorageKey); err == nil && n == 0 {
+			if err := UploadStore.Delete(ctx, img.StorageKey); err != nil {
+				log.Printf("[upload-cleanup] delete blob %q: %v", img.StorageKey, err)
+			}
+		}
 		deleted++
 	}
 	log.Printf("[upload-cleanup] swept %d/%d expired uploads", deleted, len(expired))
+}
+
+// runPendingReapSweep (V1.1) fast-reaps presigned-PUT slots that never received
+// their curl: once the PUT URL has expired (plus a grace window) a pending slot
+// can never be completed, so reclaim it immediately rather than waiting the full
+// retention window. These rows have no blob on disk/bucket (the PUT never
+// landed), so only the row is deleted.
+func runPendingReapSweep(ctx context.Context) {
+	const pendingLimit = 500
+	cutoff := time.Now().Add(-(presignedPutTTL() + 5*time.Minute))
+	pending, err := model.ListPendingExpired(cutoff, pendingLimit)
+	if err != nil {
+		log.Printf("[upload-cleanup] list pending: %v", err)
+		return
+	}
+	if len(pending) == 0 {
+		return
+	}
+	deleted := 0
+	for i := range pending {
+		img := &pending[i]
+		if err := model.DeleteUploadedImageByID(img.ID); err != nil {
+			log.Printf("[upload-cleanup] delete pending row %d: %v", img.ID, err)
+			continue
+		}
+		deleted++
+	}
+	log.Printf("[upload-cleanup] reaped %d/%d abandoned pending slots", deleted, len(pending))
 }
 
 func cleanupInterval() time.Duration {

@@ -115,6 +115,49 @@ func TestSignVerify(t *testing.T) {
 	}
 }
 
+// TestSignURLForPurposeBinding covers the V1.1 purpose-bound signer (§14.5): a
+// GET serve token (SignURL) must NOT be replayable as a PUT upload token
+// (VerifyURLFor "PUT") and vice-versa, since both share the
+// /api/v1/vision/files/*key path. GET URLs are handed to third-party upstreams,
+// so this cross-method isolation is security-critical.
+func TestSignURLForPurposeBinding(t *testing.T) {
+	prev := common.SessionSecret
+	common.SessionSecret = "test-secret-only"
+	defer func() { common.SessionSecret = prev }()
+
+	key := "ab/abcdef0123456789"
+	expires := int64(1700000000)
+
+	putTok := SignURLFor("PUT", key, expires)
+	getTok := SignURL(key, expires) // legacy GET serve token
+
+	// Same purpose round-trips.
+	if !VerifyURLFor("PUT", key, expires, putTok) {
+		t.Fatal("PUT token rejected for its own purpose")
+	}
+	// Cross-purpose replay blocked both ways — the core guarantee.
+	if VerifyURLFor("PUT", key, expires, getTok) {
+		t.Fatal("GET token accepted as PUT (cross-method replay)")
+	}
+	if VerifyURL(key, expires, putTok) {
+		t.Fatal("PUT token accepted as GET (cross-method replay)")
+	}
+	// Wrong purpose tag rejected.
+	if VerifyURLFor("POST", key, expires, putTok) {
+		t.Fatal("PUT token accepted for POST purpose")
+	}
+	// Tamper / expiry / key change rejected.
+	if VerifyURLFor("PUT", key, expires+1, putTok) {
+		t.Fatal("PUT token accepted with changed expiry")
+	}
+	if VerifyURLFor("PUT", "ab/different", expires, putTok) {
+		t.Fatal("PUT token accepted with changed key")
+	}
+	if VerifyURLFor("PUT", key, expires, putTok+"deadbee") {
+		t.Fatal("tampered PUT token accepted")
+	}
+}
+
 func TestPublicURLShapeAndSignature(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

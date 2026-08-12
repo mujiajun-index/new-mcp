@@ -61,6 +61,7 @@ func initUploadStorage() {
 		log.Fatalf("[storage] init failed: %v", err)
 	}
 	service.UploadStore = store
+	virtual.UploadStore = store
 	log.Printf("[storage] vision-upload backend=%s", store.Backend())
 
 	if !storage.IsSecretConfigured() {

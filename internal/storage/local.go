@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -120,4 +121,50 @@ func (s *localStorage) PublicURL(ctx context.Context, key string, ttl time.Durat
 	expires := time.Now().Add(ttl).Unix()
 	token := SignURL(key, expires)
 	return fmt.Sprintf("%s/api/v1/vision/files/%s?expires=%d&token=%s", base, key, expires, token), nil
+}
+
+// PutURL builds a short-lived, purpose-bound HMAC URL to new-mcp's own PUT file
+// endpoint. The "PUT" purpose keeps its signature space disjoint from PublicURL's
+// GET tokens (SignURL), so a leaked GET URL cannot be replayed as a PUT.
+func (s *localStorage) PutURL(ctx context.Context, key string, ttl time.Duration) (string, error) {
+	base := strings.TrimRight(model.GetOptionString("ServerAddress"), "/")
+	expires := time.Now().Add(ttl).Unix()
+	token := SignURLFor("PUT", key, expires)
+	return fmt.Sprintf("%s/api/v1/vision/files/%s?expires=%d&token=%s", base, key, expires, token), nil
+}
+
+// Stat returns on-disk size only; MediaType is left empty (the DB row sniffs and
+// stores the real type at upload time). Missing file → ErrObjectNotFound.
+func (s *localStorage) Stat(ctx context.Context, key string) (ObjectInfo, error) {
+	full, err := s.fullpath(key)
+	if err != nil {
+		return ObjectInfo{}, err
+	}
+	st, err := os.Stat(full)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ObjectInfo{}, ErrObjectNotFound
+		}
+		return ObjectInfo{}, err
+	}
+	return ObjectInfo{Size: st.Size()}, nil
+}
+
+// OwnsURL reports whether rawurl is one of this server's own signed file URLs —
+// same host as ServerAddress and the /api/v1/vision/files/ path prefix. Used to
+// gate the Stat upload-confirm in analyze_image to own-storage URLs only.
+func (s *localStorage) OwnsURL(rawurl string) bool {
+	sa := model.GetOptionString("ServerAddress")
+	if sa == "" {
+		return false
+	}
+	su, err := url.Parse(sa)
+	if err != nil {
+		return false
+	}
+	u, err := url.Parse(rawurl)
+	if err != nil {
+		return false
+	}
+	return u.Host == su.Host && strings.HasPrefix(u.Path, "/api/v1/vision/files/")
 }

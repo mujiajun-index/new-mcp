@@ -148,6 +148,44 @@ func (s *s3Storage) PublicURL(ctx context.Context, key string, ttl time.Duration
 	return u.String(), nil
 }
 
+// PutURL returns a bucket presigned PUT — the agent's curl uploads straight to
+// the object store and the bytes never touch new-mcp (unlike local). presigned
+// PUT cannot bind size/content-type, so those are enforced at Stat/analyze time.
+func (s *s3Storage) PutURL(ctx context.Context, key string, ttl time.Duration) (string, error) {
+	obj, err := s.objectName(key)
+	if err != nil {
+		return "", err
+	}
+	u, err := s.client.PresignedPutObject(ctx, s.bucket, obj, ttl)
+	if err != nil {
+		return "", fmt.Errorf("s3 presign PUT %q: %w", obj, err)
+	}
+	return u.String(), nil
+}
+
+func (s *s3Storage) Stat(ctx context.Context, key string) (ObjectInfo, error) {
+	obj, err := s.objectName(key)
+	if err != nil {
+		return ObjectInfo{}, err
+	}
+	oi, err := s.client.StatObject(ctx, s.bucket, obj, minio.StatObjectOptions{})
+	if err != nil {
+		return ObjectInfo{}, normS3Err(err)
+	}
+	return ObjectInfo{Size: oi.Size, MediaType: oi.ContentType}, nil
+}
+
+// OwnsURL reports whether rawurl points at this bucket's endpoint host. The
+// presigned GET/PUT URLs this backend issues carry the configured endpoint host
+// (path- or virtual-host-style), so a host match means "we issued it".
+func (s *s3Storage) OwnsURL(rawurl string) bool {
+	u, err := url.Parse(rawurl)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return u.Host == s.client.EndpointURL().Host
+}
+
 // normS3Err maps S3 "no such object" responses onto the storage sentinel so the
 // file endpoint returns a clean 404 and the cleanup loop treats a reaped object
 // as already-gone. Other errors pass through unchanged.

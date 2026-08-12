@@ -42,11 +42,31 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 		if err != nil || u.Scheme != "https" || u.Host == "" {
 			return nil, fmt.Errorf("image_url must be an https URL")
 		}
+		// V1.1: confirm an own-storage upload actually landed before billing a
+		// vision call — catches "model skipped the curl". Only for local-backend
+		// URLs where the key is recoverable from the path; S3 presigned URLs
+		// skip (an absent object surfaces as an upstream fetch error instead).
+		// Arbitrary https URLs stay pure passthrough (no SSRF: we never fetch).
+		if UploadStore != nil && UploadStore.OwnsURL(params.ImageURL) {
+			if key, ok := ownStorageKeyFromURL(u); ok {
+				if oi, sErr := UploadStore.Stat(ctx, key); sErr != nil {
+					return nil, fmt.Errorf("image_url refers to an upload that was never received — run the upload_command from vision.upload_image first")
+				} else if max := model.GetOptionInt64("VisionUploadMaxBytes"); max > 0 && oi.Size > max {
+					return nil, fmt.Errorf("uploaded image (%d bytes) exceeds the %d-byte limit", oi.Size, max)
+				}
+			}
+		}
 		input.URL = params.ImageURL
 	case params.Image != "":
 		imgBytes, mediaType, err := DecodeImage(params.Image)
 		if err != nil {
 			return nil, fmt.Errorf("invalid image: %w", err)
+		}
+		// V1.1 soft cap: a large base64 bloats the calling LLM's context (~400
+		// token/KB, generated as output). Guide it to the upload path instead.
+		// VisionInlineMaxBytes=0 disables this (back to V1.0 behavior).
+		if inline := model.GetOptionInt64("VisionInlineMaxBytes"); inline > 0 && int64(len(imgBytes)) > inline {
+			return nil, fmt.Errorf("image is %d bytes, above the %d-byte inline threshold (VisionInlineMaxBytes); use vision.upload_image → curl → image_url instead (same result, far less context); set VisionInlineMaxBytes=0 to allow inlining", len(imgBytes), inline)
 		}
 		if max := model.GetOptionInt64("VisionUploadMaxBytes"); max > 0 && int64(len(imgBytes)) > max {
 			return nil, fmt.Errorf("image exceeds the %d-byte limit", max)
@@ -201,4 +221,16 @@ func stripBase64Whitespace(s string) string {
 // so both feed Analyze the same clean form.
 func EncodeFrameToBase64(frame []byte) string {
 	return base64.StdEncoding.EncodeToString(frame)
+}
+
+// ownStorageKeyFromURL extracts the storage key from one of this server's own
+// local file URLs ({ServerAddress}/api/v1/vision/files/<key>). Returns ok=false
+// for anything else (including S3 presigned URLs, where the key is not reliably
+// recoverable from the URL) so the caller skips the Stat confirm there.
+func ownStorageKeyFromURL(u *url.URL) (string, bool) {
+	const prefix = "/api/v1/vision/files/"
+	if strings.HasPrefix(u.Path, prefix) {
+		return strings.TrimPrefix(u.Path, prefix), true
+	}
+	return "", false
 }

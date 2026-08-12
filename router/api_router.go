@@ -41,6 +41,15 @@ func SetApiRouter(engine *gin.Engine) {
 	// URL handed back from /vision/upload. Catch-all key holds "ab/<sha>".
 	api.GET("/vision/files/*key", controller.GetVisionFile)
 
+	// V1.1: presigned-PUT direct upload endpoint (local backend only). Same path
+	// as GET, different method; auth is the purpose-bound HMAC signature (no API
+	// key in the curl). S3 uploads go straight to the bucket and never hit this.
+	api.PUT("/vision/files/*key", controller.PutVisionFile)
+
+	// V1.1: upload management for MCP clients (API-key auth + rate limit).
+	api.GET("/vision/mcp-uploads", middleware.APIKeyAuth(), middleware.RateLimit(), controller.ListUploads)
+	api.DELETE("/vision/mcp-uploads/:id", middleware.APIKeyAuth(), middleware.RateLimit(), controller.DeleteUpload)
+
 	// User-authenticated endpoints
 	auth := api.Group("")
 	auth.Use(middleware.UserAuth())
@@ -115,6 +124,10 @@ func SetApiRouter(engine *gin.Engine) {
 		// registered separately in the public group (gin forbids two middleware
 		// sets on one route) but shares the same handler.
 		auth.POST("/vision/upload", controller.UploadVisionImage)
+
+		// V1.1: upload management (web UI / JWT) — list/delete own uploads.
+		auth.GET("/vision/uploads", controller.ListUploads)
+		auth.DELETE("/vision/uploads/:id", controller.DeleteUpload)
 
 		// Cameras
 		auth.GET("/cameras", controller.ListCameras)
@@ -194,6 +207,10 @@ func SetApiRouter(engine *gin.Engine) {
 		// Admin: System info + update check (维护 Tab)
 		admin.GET("/system/info", controller.AdminGetSystemInfo)
 		admin.GET("/system/check-update", controller.AdminCheckUpdate)
+
+		// Admin: vision upload management (list/delete any user's uploads)
+		admin.GET("/vision/uploads", controller.AdminListUploads)
+		admin.DELETE("/vision/uploads/:id", controller.AdminDeleteUpload)
 	}
 
 	// Health check

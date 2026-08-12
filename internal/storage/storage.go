@@ -42,8 +42,33 @@ type Storage interface {
 	// new-mcp. Local builds an HMAC-signed URL; S3 returns a presigned GET.
 	PublicURL(ctx context.Context, key string, ttl time.Duration) (string, error)
 
+	// PutURL returns a short-lived URL the caller PUTs raw bytes to. The URL is
+	// the only credential — no API key travels in the upload command. Local
+	// returns a purpose-bound HMAC URL to the PUT file endpoint; S3 returns a
+	// bucket presigned PUT (bytes bypass new-mcp entirely). Size/content-type
+	// are NOT enforceable on a presigned PUT, so callers enforce them server-side.
+	PutURL(ctx context.Context, key string, ttl time.Duration) (string, error)
+
+	// Stat returns object metadata without reading the body. Used by
+	// analyze_image to confirm an own-storage upload actually landed before
+	// billing a vision call. Returns ErrObjectNotFound if the object is missing.
+	Stat(ctx context.Context, key string) (ObjectInfo, error)
+
+	// OwnsURL reports whether rawurl points into this backend (a URL this server
+	// issued), so analyze_image runs the Stat confirm only for own-storage URLs
+	// and leaves arbitrary https URLs as pure passthrough (no SSRF).
+	OwnsURL(rawurl string) bool
+
 	// Backend returns a short identifier ("local" / "s3") for metadata/logging.
 	Backend() string
+}
+
+// ObjectInfo is the lightweight metadata returned by Stat. MediaType is
+// best-effort — the local backend leaves it empty because it doesn't store
+// per-file metadata (the uploaded_images row is authoritative there).
+type ObjectInfo struct {
+	Size      int64
+	MediaType string
 }
 
 // Config is assembled once at startup from model options (see LoadConfig).
