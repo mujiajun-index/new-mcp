@@ -28,6 +28,7 @@ import {
   Trash2,
   RefreshCw,
   ExternalLink,
+  HardDrive,
 } from 'lucide-react'
 
 interface SettingItem {
@@ -159,6 +160,45 @@ export function AdminSettingsPage() {
     updateMutation.mutate({ key, value: String(next) })
   }
 
+  // Selects save immediately on change (no blur equivalent).
+  const selectField = (key: string, value: string) => {
+    updateLocal(key, value)
+    updateMutation.mutate({ key, value })
+  }
+
+  // StorageBackend is the one select that can brick the server: storage.New →
+  // newS3 → log.Fatalf on missing config. So the switch to "s3" is gated until
+  // the required S3 fields are filled. Sensitive fields read back as "***" when
+  // already configured, which counts as filled. Switching back to "local" is
+  // always allowed (local needs only a path, with a safe default).
+  const changeStorageBackend = (value: string) => {
+    if (value === 's3') {
+      const filled = (k: string) => {
+        const v = localValues[k] ?? ''
+        return v !== '' // '***' (configured sentinel) is non-empty → counts as set
+      }
+      const missing = [
+        !filled('StorageEndpoint') && 'Endpoint',
+        !filled('StorageBucket') && 'Bucket',
+        !filled('StorageAccessKey') && 'Access Key',
+        !filled('StorageSecretKey') && 'Secret Key',
+      ].filter(Boolean)
+      if (missing.length > 0) {
+        toast.error(t('settings.storageS3Blocked', { fields: missing.join(', ') }))
+        return // do not save — leaving local avoids a fatal restart
+      }
+    }
+    selectField('StorageBackend', value)
+  }
+
+  // In-s3-mode-but-incomplete drives the persistent inline warning (the gate
+  // above blocks new switches, but an admin could clear a field afterwards).
+  const s3Incomplete =
+    localValues.StorageBackend === 's3' &&
+    ['StorageEndpoint', 'StorageBucket', 'StorageAccessKey', 'StorageSecretKey'].some(
+      (k) => (localValues[k] ?? '') === '',
+    )
+
   // Rate limit group config helpers
   const [groupConfig, setGroupConfig] = useState<Record<string, RateLimitGroup>>({})
   const [newGroupName, setNewGroupName] = useState('')
@@ -236,6 +276,10 @@ export function AdminSettingsPage() {
           <TabsTrigger value="maintenance" className="gap-1.5">
             <Wrench className="h-3.5 w-3.5" />
             {t('settings.maintenance')}
+          </TabsTrigger>
+          <TabsTrigger value="storage" className="gap-1.5">
+            <HardDrive className="h-3.5 w-3.5" />
+            {t('settings.storage')}
           </TabsTrigger>
         </TabsList>
 
@@ -588,6 +632,192 @@ export function AdminSettingsPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+        </TabsContent>
+
+        {/* Storage / Vision Upload */}
+        <TabsContent value="storage">
+          <div className="space-y-5 max-w-2xl">
+            {/* Backend — changes here need a restart (initUploadStorage runs once) */}
+            <div className="rounded-xl border bg-card p-5 space-y-4">
+              <div className="space-y-1">
+                <h2 className="text-sm font-semibold">{t('settings.storageBackend')}</h2>
+                <p className="text-xs text-muted-foreground">{t('settings.storageBackendDesc')}</p>
+              </div>
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2.5 text-xs text-amber-700 dark:text-amber-400">
+                {t('settings.storageRestartHint')}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{t('settings.storageBackendLabel')}</label>
+                <Select
+                  value={localValues.StorageBackend ?? 'local'}
+                  onValueChange={changeStorageBackend}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="local">local</SelectItem>
+                    <SelectItem value="s3">s3</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {s3Incomplete && (
+                <div className="rounded-md border border-rose-500/40 bg-rose-500/5 p-2.5 text-xs text-rose-700 dark:text-rose-400">
+                  {t('settings.storageS3Incomplete')}
+                </div>
+              )}
+
+              {localValues.StorageBackend === 's3' ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">{t('settings.storageEndpoint')}</label>
+                      <Input
+                        placeholder="https://s3.amazonaws.com"
+                        value={localValues.StorageEndpoint ?? ''}
+                        onChange={(e) => updateLocal('StorageEndpoint', e.target.value)}
+                        onBlur={() => saveField('StorageEndpoint')}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">{t('settings.storageRegion')}</label>
+                      <Input
+                        placeholder="us-east-1"
+                        value={localValues.StorageRegion ?? ''}
+                        onChange={(e) => updateLocal('StorageRegion', e.target.value)}
+                        onBlur={() => saveField('StorageRegion')}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">{t('settings.storageBucket')}</label>
+                    <Input
+                      placeholder="my-vision-bucket"
+                      value={localValues.StorageBucket ?? ''}
+                      onChange={(e) => updateLocal('StorageBucket', e.target.value)}
+                      onBlur={() => saveField('StorageBucket')}
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">{t('settings.storageAccessKey')}</label>
+                      <Input
+                        type="password"
+                        placeholder={t('settings.secretPlaceholder')}
+                        value={localValues.StorageAccessKey ?? ''}
+                        onChange={(e) => updateLocal('StorageAccessKey', e.target.value)}
+                        onBlur={() => saveField('StorageAccessKey')}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">{t('settings.storageSecretKey')}</label>
+                      <Input
+                        type="password"
+                        placeholder={t('settings.secretPlaceholder')}
+                        value={localValues.StorageSecretKey ?? ''}
+                        onChange={(e) => updateLocal('StorageSecretKey', e.target.value)}
+                        onBlur={() => saveField('StorageSecretKey')}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">{t('settings.storageUseSSL')}</p>
+                    <Switch
+                      checked={localValues.StorageUseSSL === 'true'}
+                      onCheckedChange={() => toggleBool('StorageUseSSL')}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">{t('settings.storageLocalPath')}</label>
+                    <Input
+                      placeholder="./data/uploads"
+                      value={localValues.StorageLocalPath ?? ''}
+                      onChange={(e) => updateLocal('StorageLocalPath', e.target.value)}
+                      onBlur={() => saveField('StorageLocalPath')}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">{t('settings.storagePathPrefix')}</label>
+                    <Input
+                      placeholder="vision"
+                      value={localValues.StoragePathPrefix ?? ''}
+                      onChange={(e) => updateLocal('StoragePathPrefix', e.target.value)}
+                      onBlur={() => saveField('StoragePathPrefix')}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Upload tuning — takes effect immediately (read at request time) */}
+            <div className="rounded-xl border bg-card p-5 space-y-4">
+              <div className="space-y-1">
+                <h2 className="text-sm font-semibold">{t('settings.uploadTuning')}</h2>
+                <p className="text-xs text-muted-foreground">{t('settings.uploadTuningDesc')}</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{t('settings.visionUploadMaxBytes')}</label>
+                  <Input
+                    type="number"
+                    value={localValues.VisionUploadMaxBytes ?? ''}
+                    onChange={(e) => updateLocal('VisionUploadMaxBytes', e.target.value)}
+                    onBlur={() => saveField('VisionUploadMaxBytes')}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{t('settings.visionInlineMaxBytes')}</label>
+                  <Input
+                    type="number"
+                    value={localValues.VisionInlineMaxBytes ?? ''}
+                    onChange={(e) => updateLocal('VisionInlineMaxBytes', e.target.value)}
+                    onBlur={() => saveField('VisionInlineMaxBytes')}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{t('settings.signedURLTTLSeconds')}</label>
+                  <Input
+                    type="number"
+                    value={localValues.SignedURLTTLSeconds ?? ''}
+                    onChange={(e) => updateLocal('SignedURLTTLSeconds', e.target.value)}
+                    onBlur={() => saveField('SignedURLTTLSeconds')}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{t('settings.presignedPutTTLSeconds')}</label>
+                  <Input
+                    type="number"
+                    value={localValues.PresignedPutTTLSeconds ?? ''}
+                    onChange={(e) => updateLocal('PresignedPutTTLSeconds', e.target.value)}
+                    onBlur={() => saveField('PresignedPutTTLSeconds')}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{t('settings.uploadRetentionHours')}</label>
+                  <Input
+                    type="number"
+                    value={localValues.UploadRetentionHours ?? ''}
+                    onChange={(e) => updateLocal('UploadRetentionHours', e.target.value)}
+                    onBlur={() => saveField('UploadRetentionHours')}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{t('settings.maxUploadsPerUser')}</label>
+                  <Input
+                    type="number"
+                    value={localValues.MaxUploadsPerUser ?? ''}
+                    onChange={(e) => updateLocal('MaxUploadsPerUser', e.target.value)}
+                    onBlur={() => saveField('MaxUploadsPerUser')}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

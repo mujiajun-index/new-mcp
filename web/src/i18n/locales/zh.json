@@ -44,7 +44,8 @@
     "backPrev": "返回上一页",
     "details": "详情",
     "description": "描述",
-    "createdAt": "创建时间"
+    "createdAt": "创建时间",
+    "refresh": "刷新"
   },
   "nav": {
     "home": "主页",
@@ -68,7 +69,9 @@
     "wallet": "我的钱包",
     "pricing": "服务定价",
     "adminBilling": "计费设置",
-    "adminRedemption": "兑换码"
+    "adminRedemption": "兑换码",
+    "uploads": "图片管理",
+    "adminUploads": "图片管理"
   },
   "auth": {
     "signIn": "登录",
@@ -762,14 +765,14 @@
       "openFailed": "无法打开摄像头: {{error}}",
       "noCameraForFacing": "未找到对应方向的摄像头",
       "switchFailed": "切换摄像头失败",
-    "streamLoadFailed": "推流连接失败，已关闭摄像头（请检查网络或授权 token 是否有效）",
-    "permissionDeniedHook": "摄像头权限被拒绝，请在浏览器设置中允许访问摄像头",
-    "noDeviceHook": "未检测到摄像头设备",
-    "openFailedHook": "无法打开摄像头: {{error}}",
-    "noCameraFacing": "未找到对应方向的摄像头",
-    "switchFailedHook": "切换摄像头失败",
-    "httpsRequiredHook": "摄像头需要安全上下文（HTTPS 或 localhost），请使用 HTTPS 访问",
-    "notSupportedHook": "当前浏览器不支持摄像头访问"
+      "streamLoadFailed": "推流连接失败，已关闭摄像头（请检查网络或授权 token 是否有效）",
+      "permissionDeniedHook": "摄像头权限被拒绝，请在浏览器设置中允许访问摄像头",
+      "noDeviceHook": "未检测到摄像头设备",
+      "openFailedHook": "无法打开摄像头: {{error}}",
+      "noCameraFacing": "未找到对应方向的摄像头",
+      "switchFailedHook": "切换摄像头失败",
+      "httpsRequiredHook": "摄像头需要安全上下文（HTTPS 或 localhost），请使用 HTTPS 访问",
+      "notSupportedHook": "当前浏览器不支持摄像头访问"
     }
   },
   "admin": {
@@ -1020,7 +1023,31 @@
     "verifyAnd": "并完成验证",
     "noSmtpHint": " 当前未配置 SMTP 邮件，可直接绑定，无需验证码。",
     "binding": "绑定中...",
-    "bindSuccess": "邮箱绑定成功"
+    "bindSuccess": "邮箱绑定成功",
+    "storage": "存储 / 视觉上传",
+    "storageBackend": "存储后端",
+    "storageBackendDesc": "视觉图片上传的存储后端。local 为本地磁盘（零依赖），s3 走 S3 兼容对象存储（AWS S3、R2、OSS、COS 等）。",
+    "storageRestartHint": "后端类型与 S3 凭据的修改需重启服务后生效；上传调优参数即时生效。",
+    "storageBackendLabel": "后端类型",
+    "storageEndpoint": "Endpoint",
+    "storageRegion": "Region",
+    "storageBucket": "Bucket",
+    "storageAccessKey": "Access Key",
+    "storageSecretKey": "Secret Key",
+    "storageUseSSL": "使用 SSL",
+    "storageLocalPath": "本地存储路径",
+    "storagePathPrefix": "路径前缀",
+    "uploadTuning": "上传调优",
+    "uploadTuningDesc": "这些参数在请求时实时读取，修改后即时生效（无需重启）。",
+    "visionUploadMaxBytes": "单图字节上限",
+    "visionInlineMaxBytes": "Base64 内联阈值（字节）",
+    "signedURLTTLSeconds": "签名 GET URL 有效期（秒）",
+    "presignedPutTTLSeconds": "预签名 PUT URL 有效期（秒）",
+    "uploadRetentionHours": "保留时长（小时）",
+    "maxUploadsPerUser": "每用户上传上限（0=不限）",
+    "secretPlaceholder": "已配置（留空则不修改）",
+    "storageS3Blocked": "无法切换到 s3：还缺少 {{fields}}。请先填写这些字段（保存即时生效，但后端切换需重启），再切换后端。",
+    "storageS3Incomplete": "⚠️ s3 后端必填字段（Endpoint / Bucket / Access Key / Secret Key）有空值——重启服务会启动失败。请补全后再重启。"
   },
   "billing": {
     "free": "免费",
@@ -1180,5 +1207,34 @@
     "userOwnedServicesEnabledDesc": "开启后,用户可添加并调用自己配置的服务(自有服务);关闭后为纯市场模式,用户仅能使用市场与平台提供的服务。",
     "logPayloadEnabled": "记录请求体",
     "logPayloadEnabledDesc": "在计费日志中保存请求/响应内容"
+  },
+  "uploads": {
+    "title": "图片管理",
+    "subtitle": "查看和管理已上传的视觉图片（按保留期自动清理）",
+    "retentionHint": "上传的图片为短期资源，到达保留时长后会自动删除；如需长期使用请保存到本地。",
+    "empty": "暂无已上传的图片",
+    "emptyHint": "通过视觉工具上传的图片会显示在这里",
+    "preview": "预览",
+    "type": "类型",
+    "size": "大小",
+    "backend": "存储",
+    "created": "创建于",
+    "expires": "过期",
+    "user": "用户",
+    "copyUrl": "复制链接",
+    "deleteSuccess": "已删除",
+    "deleteConfirm": "确定删除这张图片？删除后不可恢复。",
+    "adminTitle": "图片管理（全部用户）",
+    "adminSubtitle": "查看和管理所有用户上传的视觉图片",
+    "adminDeleteConfirm": "确定删除这张图片？该操作不可恢复。",
+    "filterByUser": "按用户 ID 筛选...",
+    "justNow": "刚刚",
+    "inMoments": "即将",
+    "minutesAgo": "{{count}} 分钟前",
+    "inMinutes": "{{count}} 分钟后",
+    "hoursAgo": "{{count}} 小时前",
+    "inHours": "{{count}} 小时后",
+    "daysAgo": "{{count}} 天前",
+    "inDays": "{{count}} 天后"
   }
 }

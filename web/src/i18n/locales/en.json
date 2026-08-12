@@ -44,7 +44,8 @@
     "backPrev": "Go back",
     "details": "Details",
     "description": "Description",
-    "createdAt": "Created At"
+    "createdAt": "Created At",
+    "refresh": "Refresh"
   },
   "nav": {
     "home": "Home",
@@ -68,7 +69,9 @@
     "wallet": "My Wallet",
     "pricing": "Pricing",
     "adminBilling": "Billing",
-    "adminRedemption": "Redemption Codes"
+    "adminRedemption": "Redemption Codes",
+    "uploads": "Image Bin",
+    "adminUploads": "Image Bin"
   },
   "auth": {
     "signIn": "Sign In",
@@ -1020,7 +1023,31 @@
     "verifyAnd": " and complete verification",
     "noSmtpHint": " SMTP is not configured, you can bind directly without a verification code.",
     "binding": "Binding...",
-    "bindSuccess": "Email bound successfully"
+    "bindSuccess": "Email bound successfully",
+    "storage": "Storage / Vision Upload",
+    "storageBackend": "Storage backend",
+    "storageBackendDesc": "Backend for vision image uploads. 'local' uses disk (zero deps); 's3' uses an S3-compatible object store (AWS S3, R2, OSS, COS, ...).",
+    "storageRestartHint": "Backend type and S3 credential changes take effect after a server restart. Upload tuning options take effect immediately.",
+    "storageBackendLabel": "Backend",
+    "storageEndpoint": "Endpoint",
+    "storageRegion": "Region",
+    "storageBucket": "Bucket",
+    "storageAccessKey": "Access Key",
+    "storageSecretKey": "Secret Key",
+    "storageUseSSL": "Use SSL",
+    "storageLocalPath": "Local storage path",
+    "storagePathPrefix": "Path prefix",
+    "uploadTuning": "Upload tuning",
+    "uploadTuningDesc": "These are read at request time, so changes apply immediately (no restart needed).",
+    "visionUploadMaxBytes": "Per-image byte cap",
+    "visionInlineMaxBytes": "Base64 inline threshold (bytes)",
+    "signedURLTTLSeconds": "Signed GET URL TTL (seconds)",
+    "presignedPutTTLSeconds": "Presigned PUT URL TTL (seconds)",
+    "uploadRetentionHours": "Retention (hours)",
+    "maxUploadsPerUser": "Per-user upload cap (0=unlimited)",
+    "secretPlaceholder": "configured (leave blank to keep)",
+    "storageS3Blocked": "Can't switch to s3: missing {{fields}}. Fill those fields first (they save instantly, but the backend switch needs a restart), then switch.",
+    "storageS3Incomplete": "⚠️ Required s3 fields (Endpoint / Bucket / Access Key / Secret Key) are empty — the server will fail to start on restart. Complete them before restarting."
   },
   "billing": {
     "free": "Free",
@@ -1180,5 +1207,34 @@
     "userOwnedServicesEnabledDesc": "When on, users can add and call their own configured services; when off (pure marketplace mode), only marketplace and platform services are available.",
     "logPayloadEnabled": "Log Payload",
     "logPayloadEnabledDesc": "Persist request/response payloads in billing logs"
+  },
+  "uploads": {
+    "title": "Image Bin",
+    "subtitle": "Review and manage uploaded vision images (auto-cleaned on a retention schedule).",
+    "retentionHint": "Uploaded images are short-lived: they are deleted automatically once they reach the retention age. Save locally if you need them long-term.",
+    "empty": "No uploaded images",
+    "emptyHint": "Images uploaded via the vision tools appear here.",
+    "preview": "Preview",
+    "type": "Type",
+    "size": "Size",
+    "backend": "Storage",
+    "created": "Created",
+    "expires": "Expires",
+    "user": "User",
+    "copyUrl": "Copy URL",
+    "deleteSuccess": "Deleted",
+    "deleteConfirm": "Delete this image? This cannot be undone.",
+    "adminTitle": "Image Bin (all users)",
+    "adminSubtitle": "Review and manage every user's uploaded vision images.",
+    "adminDeleteConfirm": "Delete this image? This cannot be undone.",
+    "filterByUser": "Filter by user ID...",
+    "justNow": "just now",
+    "inMoments": "moments",
+    "minutesAgo": "{{count}} min ago",
+    "inMinutes": "in {{count}} min",
+    "hoursAgo": "{{count}} h ago",
+    "inHours": "in {{count}} h",
+    "daysAgo": "{{count}} d ago",
+    "inDays": "in {{count}} d"
   }
 }

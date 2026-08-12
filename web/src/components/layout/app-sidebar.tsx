@@ -11,6 +11,7 @@ import {
   LayoutDashboard, Server, FolderTree, Cloud, Eye, Camera,
   Key, Store, Settings, Shield, Users, Wrench,
   ClipboardCheck, ChevronLeft, Activity, Wallet, CreditCard, Ticket,
+  Images,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useSystemConfigStore } from '@/stores/system-config-store'
@@ -28,6 +29,7 @@ const mainNav: NavItem[] = [
   { label: 'nav.groups', icon: FolderTree, href: '/groups' },
   { label: 'nav.connections', icon: Cloud, href: '/connections' },
   { label: 'nav.vision', icon: Eye, href: '/vision' },
+  { label: 'nav.uploads', icon: Images, href: '/vision/uploads' },
   { label: 'nav.cameras', icon: Camera, href: '/cameras' },
   { label: 'nav.apiKeys', icon: Key, href: '/api-keys' },
   { label: 'nav.logs', icon: Activity, href: '/logs' },
@@ -43,6 +45,7 @@ const adminNav: NavItem[] = [
   { label: 'nav.adminBilling', icon: CreditCard, href: '/admin/billing', adminOnly: true },
   { label: 'nav.adminRedemption', icon: Ticket, href: '/admin/redemption-codes', adminOnly: true },
   { label: 'nav.adminReviews', icon: ClipboardCheck, href: '/admin/reviews', adminOnly: true },
+  { label: 'nav.adminUploads', icon: Images, href: '/admin/uploads', adminOnly: true },
   { label: 'nav.adminSystem', icon: Shield, href: '/admin/system', adminOnly: true },
 ]
 

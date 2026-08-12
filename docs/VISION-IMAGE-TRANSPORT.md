@@ -1,6 +1,6 @@
 # 视觉工具图片传参架构重构（base64 → URL 透传）
 
-> 版本: V1.1 | 状态: V1.0 已实现 · V1.1 已设计（待实现） | 更新日期: 2026-08-12
+> 版本: V1.1 | 状态: V1.0 已实现 · V1.1 已实现（后端 + 前端管理 UI） | 更新日期: 2026-08-12
 > 关联文档: [ARCHITECTURE.md](./ARCHITECTURE.md) · [API.md](./API.md) · [DATABASE.md](./DATABASE.md) · [MCP-PROTOCOL.md](./MCP-PROTOCOL.md)
 >
 > **变更摘要**:
@@ -9,7 +9,7 @@
 > - 保留 base64 入参向后兼容，并加 `VisionUploadMaxBytes` 上限。
 > - 设计参照智谱 `@z_ai/mcp-server` 视觉 MCP，适配 new-mcp 的远程 HTTP 网关形态。
 >
-> **V1.1 变更（shell 命令行直传 + 图片管理 + 入参择优，已设计待实现，详见 §14、§15、§16）**:
+> **V1.1 变更（shell 命令行直传 + 图片管理 + 入参择优，已实现，详见 §14、§15、§16）**:
 > - 新增 `upload_image` 工具：传入 `local_path`，返回**预签名 PUT 的现成 curl 命令** + `file_url`；模型用 Bash 执行 curl 把图片直传存储，**curl 命令里不含任何 API Key**（预签名 URL 本身就是凭证）。
 > - 解决 V1.0 multipart 路径在「模型自己用 curl 上传」场景下的 key 暴露问题（`Authorization: Bearer sk-...` 会进模型上下文）。
 > - 两后端（local / s3）藏在同一 `Storage.PutURL` 抽象后，模型侧 curl 形态一致；新增 `PUT /api/v1/vision/files/*key` 直传端点、purpose 绑定的 HMAC 签名、`uploaded_images.status` 状态机。
@@ -459,7 +459,7 @@ go build ./... && ./newmcp  # 启动后 uploaded_images 表自动建成
 - 过期清理后台任务 + 动态保留期
 - 全量单测 + 端到端集成测试 + 构建全绿
 
-**V1.1（shell 直传 + 图片管理 + 入参择优，已设计待实现，详见 §14、§15、§16）**：
+**V1.1（shell 直传 + 图片管理 + 入参择优，已实现，详见 §14、§15、§16）**：
 
 - `upload_image` 全局虚拟工具（入参 `local_path`，返回预签名 PUT curl + `file_url` + `next_step`）
 - `Storage.PutURL` / `Stat` / `OwnsURL` 接口扩展（local = HMAC PUT URL，s3 = `PresignedPutObject`）
@@ -478,7 +478,7 @@ go build ./... && ./newmcp  # 启动后 uploaded_images 表自动建成
 |----|------|
 | **S3 真实桶端到端** | s3 后端已 build / vet / 单测，但未对真实桶跑上传 / 拉图验证；需配 `StorageBackend=s3` + 凭证执行 §12.2 第 6 步 |
 | **存量 vision 配置重新同步** | 旧 vision 配置的 `ToolsCache` 仍是旧 schema（无 `image_url`）；**需重新保存 / 启用**才 regenerate 暴露 `image_url`。新建配置直接生效 |
-| **前端未做** | 管理后台存储配置 UI、vision 测试面板的上传按钮未做——settings 的 key / value 接口 + curl / MCP 客户端已可跑通全流程，前端可后置 |
+| **前端管理 UI** | ✅ 已实现：用户图片管理页（`/vision/uploads`，缩略图 / 复制签名 URL / 删除）+ 管理员图片管理页（`/admin/uploads`，按 user_id 筛选）+ 管理后台「存储 / 视觉上传」设置 Tab（后端选择 / S3 凭据 / 上传调优参数）。vision 测试面板的上传按钮为可选增强，未做 |
 | **Gemini 原生 file_uri** | 对任意 https URL 可能不稳（V1 可靠 URL 路径为 OpenAI 兼容与 Anthropic） |
 | **网关侧 resize**（可选降本） | 未做；OpenAI / Claude 上游本就会做长边 ≤1568px 的 resize，非阻塞 |
 | **StoreAddress 反向回退**（plan 遗留钩子） | 当 `image_url` 主机 == 自家 `ServerAddress` 主机时回退 `ImageInput{Bytes}`（无 SSRF，因是自家文件），可作 Gemini 路径兜底，未实现 |
@@ -491,7 +491,7 @@ MCP WG 的 `SEP-2532`（resources/stream）、`SEP-2166`（httpUrl/httpUrlExpire
 
 ## 14. V1.1：shell 命令行直传（预签名 PUT）
 
-> 状态：**已设计，待实现**。本节是叠加在 V1.0（§1–§13）之上的增量设计，不改已实现链路。
+> 状态：**已实现**。本节是叠加在 V1.0（§1–§13）之上的增量设计，不改已实现链路。
 
 ### 14.1 为什么需要第二条上传路径
 
@@ -702,7 +702,7 @@ input.URL = params.ImageURL
 
 ## 15. 上传图片管理与自动删除
 
-> 状态：**已设计，待实现**。V1.0 只有「上传 + 时间驱动清理」（§7、§10），无任何列表 / 删除 / 配额能力。本节补齐管理面。
+> 状态：**已实现**。V1.0 只有「上传 + 时间驱动清理」（§7、§10），无任何列表 / 删除 / 配额能力。本节补齐管理面。
 
 ### 15.1 归属与去重模型（每用户独立 + blob 共享）
 
@@ -830,7 +830,7 @@ ListPendingExpired(cutoffPending, N) → 逐项删
 
 ## 16. analyze_image 入参决策：小图 base64 / 大图上传
 
-> 状态：**已设计，待实现**。优化 `analyze_image` 的提示词与参数描述，让模型按图片尺寸择优：小图直接 base64 内联（省一次上传往返），大图走 §14 的 `upload_image` → URL（省上下文）。
+> 状态：**已实现**。优化 `analyze_image` 的提示词与参数描述，让模型按图片尺寸择优：小图直接 base64 内联（省一次上传往返），大图走 §14 的 `upload_image` → URL（省上下文）。
 
 ### 16.1 为什么改
 
