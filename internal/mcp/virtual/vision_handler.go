@@ -1,11 +1,11 @@
 package virtual
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/mujkjk/newmcp/internal/mcp/vision"
@@ -24,21 +24,36 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 	}
 
 	var params struct {
-		Image  string `json:"image"`
-		Prompt string `json:"prompt"`
+		Image    string `json:"image"`
+		ImageURL string `json:"image_url"`
+		Prompt   string `json:"prompt"`
 	}
 	_ = json.Unmarshal(args, &params)
 
-	if params.Image == "" {
-		return nil, fmt.Errorf("image parameter is required")
-	}
-
-	// Decode the input into real image bytes first. If it isn't a valid image,
-	// fail here — never send bad data to the upstream model. This is the same
-	// form the camera path feeds Analyze: raw bytes that get re-encoded below.
-	imgBytes, mediaType, err := DecodeImage(params.Image)
-	if err != nil {
-		return nil, fmt.Errorf("invalid image: %w", err)
+	// Two transports, mutually exclusive. image_url is preferred: the bytes
+	// bypass the calling LLM's context entirely (upload once, pass the signed
+	// URL) and the upstream model fetches it — new-mcp never downloads it, so
+	// there is no SSRF surface. image (base64) is kept for back-compat, now
+	// capped by VisionUploadMaxBytes after decode.
+	var input vision.ImageInput
+	switch {
+	case params.ImageURL != "":
+		u, err := url.Parse(params.ImageURL)
+		if err != nil || u.Scheme != "https" || u.Host == "" {
+			return nil, fmt.Errorf("image_url must be an https URL")
+		}
+		input.URL = params.ImageURL
+	case params.Image != "":
+		imgBytes, mediaType, err := DecodeImage(params.Image)
+		if err != nil {
+			return nil, fmt.Errorf("invalid image: %w", err)
+		}
+		if max := model.GetOptionInt64("VisionUploadMaxBytes"); max > 0 && int64(len(imgBytes)) > max {
+			return nil, fmt.Errorf("image exceeds the %d-byte limit", max)
+		}
+		input.Bytes, input.MediaType = imgBytes, mediaType
+	default:
+		return nil, fmt.Errorf("either image or image_url is required")
 	}
 
 	client := &vision.VisionClient{
@@ -76,10 +91,9 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 		return nil, fmt.Errorf("unknown vision tool: %s", toolName)
 	}
 
-	// Re-encode to clean standard base64, exactly like the camera path, so both
-	// feeds hand Analyze the same well-formed data URL.
-	imageBase64 := EncodeFrameToBase64(imgBytes)
-	result, err := client.Analyze(ctx, systemPrompt, userPrompt, imageBase64, mediaType)
+	// input is either a passthrough URL (provider fetches) or decoded bytes
+	// (client base64-encodes per provider). Either way it's a single ImageInput.
+	result, err := client.Analyze(ctx, systemPrompt, userPrompt, input)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +130,7 @@ func DecodeImage(image string) (imgBytes []byte, mediaType string, err error) {
 		return nil, "", fmt.Errorf("decoded image is empty")
 	}
 
-	mediaType = sniffMediaType(imgBytes)
+	mediaType = vision.SniffMediaType(imgBytes)
 	if mediaType == "" {
 		return nil, "", fmt.Errorf("unsupported or unrecognized image format")
 	}
@@ -163,22 +177,6 @@ func decodeBase64Loose(s string) ([]byte, error) {
 		}
 	}
 	return nil, fmt.Errorf("not valid base64")
-}
-
-// sniffMediaType identifies a common image format from its magic bytes. The
-// bytes are authoritative — more reliable than any label the sender attached.
-func sniffMediaType(data []byte) string {
-	switch {
-	case bytes.HasPrefix(data, []byte{0xFF, 0xD8, 0xFF}):
-		return "image/jpeg"
-	case bytes.HasPrefix(data, []byte{0x89, 0x50, 0x4E, 0x47}): // \x89PNG
-		return "image/png"
-	case bytes.HasPrefix(data, []byte("GIF8")):
-		return "image/gif"
-	case len(data) >= 12 && bytes.Equal(data[0:4], []byte("RIFF")) && bytes.Equal(data[8:12], []byte("WEBP")):
-		return "image/webp"
-	}
-	return ""
 }
 
 // stripBase64Whitespace removes spaces, tabs, and newlines from a base64

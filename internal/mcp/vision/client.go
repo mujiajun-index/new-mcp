@@ -3,6 +3,7 @@ package vision
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,14 +31,31 @@ type VisionClient struct {
 	MaxTokens   int
 }
 
-func (c *VisionClient) Analyze(ctx context.Context, systemPrompt, userPrompt, base64Image, mediaType string) (string, error) {
+// ImageInput is the discriminated union for the image fed to Analyze. Exactly
+// one transport is used:
+//   - Bytes: raw image bytes; each provider base64-encodes them inline in its
+//     own request shape (OpenAI data URL, Anthropic base64 source, Gemini
+//     inline_data). MediaType must be set on this path.
+//   - URL: a URL the upstream model fetches itself. new-mcp never downloads it
+//     (no SSRF, the bytes never touch this process); the URL is passed through
+//     verbatim in the provider's native url field. MediaType is optional here.
+type ImageInput struct {
+	Bytes     []byte
+	MediaType string
+	URL       string
+}
+
+// IsURL reports whether the URL transport is selected.
+func (in ImageInput) IsURL() bool { return in.URL != "" }
+
+func (c *VisionClient) Analyze(ctx context.Context, systemPrompt, userPrompt string, in ImageInput) (string, error) {
 	switch c.Provider {
 	case "anthropic":
-		return c.analyzeAnthropic(ctx, systemPrompt, userPrompt, base64Image, mediaType)
+		return c.analyzeAnthropic(ctx, systemPrompt, userPrompt, in)
 	case "gemini":
-		return c.analyzeGemini(ctx, systemPrompt, userPrompt, base64Image, mediaType)
+		return c.analyzeGemini(ctx, systemPrompt, userPrompt, in)
 	default:
-		return c.analyzeOpenAI(ctx, systemPrompt, userPrompt, base64Image, mediaType)
+		return c.analyzeOpenAI(ctx, systemPrompt, userPrompt, in)
 	}
 }
 
@@ -92,10 +110,17 @@ type openAIModelsResponse struct {
 	} `json:"data"`
 }
 
-func (c *VisionClient) analyzeOpenAI(ctx context.Context, systemPrompt, userPrompt, base64Image, mediaType string) (string, error) {
+func (c *VisionClient) analyzeOpenAI(ctx context.Context, systemPrompt, userPrompt string, in ImageInput) (string, error) {
+	// OpenAI's image_url accepts either a data URL (bytes inline) or a plain URL
+	// the model fetches itself. Passthrough for URLs means new-mcp never
+	// downloads the image.
+	imageURL := in.URL
+	if !in.IsURL() {
+		imageURL = "data:" + in.MediaType + ";base64," + base64.StdEncoding.EncodeToString(in.Bytes)
+	}
 	content := []openAIContent{
 		{Type: "text", Text: userPrompt},
-		{Type: "image_url", ImageURL: &openAIImage{URL: "data:" + mediaType + ";base64," + base64Image}},
+		{Type: "image_url", ImageURL: &openAIImage{URL: imageURL}},
 	}
 
 	messages := []openAIMessage{{Role: "user", Content: content}}
@@ -176,8 +201,9 @@ type anthropicBlock struct {
 
 type anthropicSource struct {
 	Type      string `json:"type"`
-	MediaType string `json:"media_type"`
-	Data      string `json:"data"`
+	MediaType string `json:"media_type,omitempty"`
+	Data      string `json:"data,omitempty"`
+	URL       string `json:"url,omitempty"`
 }
 
 type anthropicResponse struct {
@@ -197,14 +223,21 @@ type anthropicModelsResponse struct {
 	} `json:"data"`
 }
 
-func (c *VisionClient) analyzeAnthropic(ctx context.Context, systemPrompt, userPrompt, base64Image, mediaType string) (string, error) {
+func (c *VisionClient) analyzeAnthropic(ctx context.Context, systemPrompt, userPrompt string, in ImageInput) (string, error) {
+	// Anthropic image sources are either "base64" (inline) or "url" (the
+	// provider fetches). URLs pass through verbatim — no download here.
+	src := &anthropicSource{}
+	if in.IsURL() {
+		src.Type = "url"
+		src.URL = in.URL
+	} else {
+		src.Type = "base64"
+		src.MediaType = in.MediaType
+		src.Data = base64.StdEncoding.EncodeToString(in.Bytes)
+	}
 	blocks := []anthropicBlock{
 		{Type: "text", Text: userPrompt},
-		{Type: "image", Source: &anthropicSource{
-			Type:      "base64",
-			MediaType: mediaType,
-			Data:      base64Image,
-		}},
+		{Type: "image", Source: src},
 	}
 
 	// Anthropic requires max_tokens > 0; map "unlimited" (0) to a high safe cap.
@@ -292,11 +325,22 @@ type geminiContent struct {
 type geminiPart struct {
 	Text       string            `json:"text,omitempty"`
 	InlineData *geminiInlineData `json:"inline_data,omitempty"`
+	FileData   *geminiFileData   `json:"file_data,omitempty"`
 }
 
 type geminiInlineData struct {
 	MimeType string `json:"mime_type"`
 	Data     string `json:"data"`
+}
+
+// geminiFileData references an image by URI via Gemini's file_data part, used
+// for the URL passthrough path. NOTE: Gemini's native file_uri targets its own
+// Files API / GCS URIs, so an arbitrary https URL may not be accepted by every
+// Gemini-compatible endpoint — the OpenAI-compatible and Anthropic URL paths
+// are the reliable ones for V1; this is implemented for completeness.
+type geminiFileData struct {
+	FileURI  string `json:"file_uri"`
+	MimeType string `json:"mime_type,omitempty"`
 }
 
 type geminiGenConfig struct {
@@ -323,10 +367,16 @@ type geminiModelsResponse struct {
 	} `json:"models"`
 }
 
-func (c *VisionClient) analyzeGemini(ctx context.Context, systemPrompt, userPrompt, base64Image, mediaType string) (string, error) {
+func (c *VisionClient) analyzeGemini(ctx context.Context, systemPrompt, userPrompt string, in ImageInput) (string, error) {
+	var imgPart geminiPart
+	if in.IsURL() {
+		imgPart.FileData = &geminiFileData{FileURI: in.URL, MimeType: in.MediaType}
+	} else {
+		imgPart.InlineData = &geminiInlineData{MimeType: in.MediaType, Data: base64.StdEncoding.EncodeToString(in.Bytes)}
+	}
 	parts := []geminiPart{
 		{Text: userPrompt},
-		{InlineData: &geminiInlineData{MimeType: mediaType, Data: base64Image}},
+		imgPart,
 	}
 
 	reqBody := geminiRequest{

@@ -95,8 +95,7 @@ func handleAnalyze(ctx context.Context, cam *model.Camera, args json.RawMessage)
 		userPrompt = params.Prompt
 	}
 
-	b64 := EncodeFrameToBase64(frame)
-	result, err := client.Analyze(ctx, systemPrompt, userPrompt, b64, "image/jpeg")
+	result, err := client.Analyze(ctx, systemPrompt, userPrompt, vision.ImageInput{Bytes: frame, MediaType: "image/jpeg"})
 	if err != nil {
 		return nil, err
 	}

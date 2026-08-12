@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -231,9 +232,13 @@ func (s *VisionService) TestVision(req *dto.TestVisionReq) *dto.TestVisionResult
 	defer cancel()
 
 	// Use a tiny 1x1 white pixel PNG as test image.
-	testImage := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+	testImageB64 := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+	testImage, err := base64.StdEncoding.DecodeString(testImageB64)
+	if err != nil {
+		return &dto.TestVisionResult{Success: false, Error: fmt.Sprintf("decode test image: %v", err)}
+	}
 
-	result, err := client.Analyze(ctx, "You are a test assistant.", "Describe this image in one word.", testImage, "image/png")
+	result, err := client.Analyze(ctx, "You are a test assistant.", "Describe this image in one word.", vision.ImageInput{Bytes: testImage, MediaType: "image/png"})
 	if err != nil {
 		return &dto.TestVisionResult{Success: false, Error: err.Error()}
 	}
@@ -294,6 +299,15 @@ func (s *VisionService) syncVirtualService(vc *model.VisionConfig) {
 }
 
 func (s *VisionService) buildToolsCache(vc *model.VisionConfig) []map[string]interface{} {
+	// Both tools accept either an inline base64 image or an image_url. The URL
+	// is preferred: the bytes stay out of the calling LLM's context (upload once
+	// via /api/v1/vision/upload or /api/v1/vision/mcp-upload, pass the returned
+	// signed URL here) and the upstream model fetches it directly. Neither field
+	// is "required" in the schema because exactly one must be present; the
+	// handler enforces the either/or with a clear error.
+	const imageURLDesc = "Public https URL of the image (preferred). Obtain it via POST /api/v1/vision/upload (JWT) or /api/v1/vision/mcp-upload (API key); the upstream model fetches it directly, so the image bytes never enter the LLM context."
+	const imageB64Desc = "Base64-encoded image. Alternative to image_url; large images bloat the LLM context, so prefer image_url."
+
 	return []map[string]interface{}{
 		{
 			"name":        vc.AnalyzeImageName,
@@ -301,10 +315,10 @@ func (s *VisionService) buildToolsCache(vc *model.VisionConfig) []map[string]int
 			"inputSchema": map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"image":  map[string]string{"type": "string", "description": "Base64 encoded image"},
-					"prompt": map[string]string{"type": "string", "description": "Custom analysis prompt (optional)"},
+					"image_url": map[string]string{"type": "string", "description": imageURLDesc},
+					"image":     map[string]string{"type": "string", "description": imageB64Desc},
+					"prompt":    map[string]string{"type": "string", "description": "Custom analysis prompt (optional)"},
 				},
-				"required": []string{"image"},
 			},
 		},
 		{
@@ -313,9 +327,9 @@ func (s *VisionService) buildToolsCache(vc *model.VisionConfig) []map[string]int
 			"inputSchema": map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"image": map[string]string{"type": "string", "description": "Base64 encoded image"},
+					"image_url": map[string]string{"type": "string", "description": imageURLDesc},
+					"image":     map[string]string{"type": "string", "description": imageB64Desc},
 				},
-				"required": []string{"image"},
 			},
 		},
 	}

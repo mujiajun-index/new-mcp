@@ -31,6 +31,16 @@ func SetApiRouter(engine *gin.Engine) {
 	// Camera stream (auth via query token — WebSocket can't send custom headers)
 	api.GET("/cameras/:id/stream", HandleCameraStream)
 
+	// Vision image upload for MCP clients (API-key auth + rate limit). Separate
+	// path from the JWT /vision/upload because gin forbids two middleware sets
+	// on one route; shares the same controller handler.
+	api.POST("/vision/mcp-upload", middleware.APIKeyAuth(), middleware.RateLimit(), controller.UploadVisionImage)
+
+	// Vision file fetch — public (auth = the HMAC signature in the query). The
+	// upstream vision provider hits this to pull an uploaded image by the signed
+	// URL handed back from /vision/upload. Catch-all key holds "ab/<sha>".
+	api.GET("/vision/files/*key", controller.GetVisionFile)
+
 	// User-authenticated endpoints
 	auth := api.Group("")
 	auth.Use(middleware.UserAuth())
@@ -99,6 +109,12 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.POST("/vision/models", controller.ListVisionModels)
 		auth.POST("/vision/:id/enable", controller.EnableVisionConfig)
 		auth.POST("/vision/:id/disable", controller.DisableVisionConfig)
+
+		// Vision image upload (web UI / JWT path) → short-lived signed URL the
+		// caller passes to a vision tool's image_url. The MCP/API-key path is
+		// registered separately in the public group (gin forbids two middleware
+		// sets on one route) but shares the same handler.
+		auth.POST("/vision/upload", controller.UploadVisionImage)
 
 		// Cameras
 		auth.GET("/cameras", controller.ListCameras)

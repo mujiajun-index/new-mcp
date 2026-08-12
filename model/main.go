@@ -84,6 +84,7 @@ func migrateDB() error {
 		&McpToolPrice{},
 		&Redemption{},
 		&Option{},
+		&UploadedImage{},
 	); err != nil {
 		return err
 	}

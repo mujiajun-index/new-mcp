@@ -47,6 +47,11 @@ func main() {
 	srvCtx, srvCancel := context.WithCancel(context.Background())
 	defer srvCancel()
 
+	// Background workers (expired-upload cleanup, …) — bound to srvCtx so they
+	// exit on shutdown. Started after srvCtx exists for the same reason.
+	router.StartBackgroundJobs(srvCtx)
+	defer router.StopBackgroundJobs()
+
 	addr := fmt.Sprintf(":%d", common.Port)
 	log.Printf("NewMCP server starting on %s", addr)
 

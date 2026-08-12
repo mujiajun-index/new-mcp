@@ -71,11 +71,28 @@ var defaultOptions = map[string]string{
 	"EpayEndpoint":   "",
 	"EpayPID":        "",
 	"EpayKey":        "",
+	// --- 视觉图片上传 / 对象存储(base64→URL 透传,字节绕开 LLM 上下文)---
+	// StorageBackend=local 开箱即用零依赖;=s3 走 minio-go 兼容桶(S3/R2/OSS/COS)。
+	"StorageBackend":               "local",      // local | s3
+	"StorageLocalPath":             "./data/uploads", // local 磁盘根目录
+	"StoragePathPrefix":            "vision",     // 磁盘/桶内的物理隔离前缀
+	"StorageEndpoint":              "",           // s3 兼容端点(如 s3.amazonaws.com 或 R2 的 <acct>.r2.cloudflarestorage.com)
+	"StorageRegion":                "",           // s3 region
+	"StorageBucket":                "",           // s3 bucket 名
+	"StorageAccessKey":             "",           // s3 access key(sensitive)
+	"StorageSecretKey":             "",           // s3 secret key(sensitive)
+	"StorageUseSSL":                "true",       // s3 端点是否走 https
+	"VisionUploadMaxBytes":         "10485760",   // 单图字节上限(解码后),10MB
+	"SignedURLTTLSeconds":          "3600",       // 签名 URL 有效期(秒),1h
+	"UploadRetentionHours":         "24",         // 上传文件保留时长(小时),须 > SignedURLTTL
+	"UploadCleanupIntervalMinutes": "60",         // 过期清理扫描间隔(分钟)
 }
 
 var sensitiveKeys = map[string]bool{
-	"SMTPToken": true,
-	"EpayKey":   true,
+	"SMTPToken":       true,
+	"EpayKey":         true,
+	"StorageAccessKey": true,
+	"StorageSecretKey": true,
 }
 
 var publicKeys = map[string]bool{

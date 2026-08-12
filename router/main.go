@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"io/fs"
 	"log"
 	"net/http"
@@ -13,16 +14,18 @@ import (
 	"github.com/mujkjk/newmcp/internal/mcp/cloud"
 	"github.com/mujkjk/newmcp/internal/mcp/handler"
 	"github.com/mujkjk/newmcp/internal/mcp/virtual"
+	"github.com/mujkjk/newmcp/internal/storage"
 	"github.com/mujkjk/newmcp/model"
 	"github.com/mujkjk/newmcp/service"
 )
 
 var (
-	GatewayHandler  *handler.GatewayHandler
-	SessionPool     *bridge.SessionPool
-	CloudManager    *cloud.Manager
-	VirtualRegistry *virtual.VirtualToolRegistry
-	CameraStream    *camera.CameraStreamManager
+	GatewayHandler       *handler.GatewayHandler
+	SessionPool          *bridge.SessionPool
+	CloudManager         *cloud.Manager
+	VirtualRegistry      *virtual.VirtualToolRegistry
+	CameraStream         *camera.CameraStreamManager
+	backgroundJobsCancel context.CancelFunc
 )
 
 func InitGateway() {
@@ -42,6 +45,33 @@ func InitGateway() {
 	service.SessionPool = SessionPool
 	service.VirtualRegistry = VirtualRegistry
 	service.CameraStreamMgr = CameraStream
+
+	initUploadStorage()
+}
+
+// initUploadStorage builds the vision-upload blob backend singleton (local disk
+// by default, S3-compatible when configured) and stores it where UploadService
+// and the public file endpoint read it. It also surfaces two operational
+// warnings at startup: a missing SESSION_SECRET (signed URLs would use the weak
+// default key) and, for the local backend, a ServerAddress the upstream vision
+// provider likely cannot reach (localhost / unset).
+func initUploadStorage() {
+	store, err := storage.New(context.Background(), storage.LoadConfig())
+	if err != nil {
+		log.Fatalf("[storage] init failed: %v", err)
+	}
+	service.UploadStore = store
+	log.Printf("[storage] vision-upload backend=%s", store.Backend())
+
+	if !storage.IsSecretConfigured() {
+		log.Printf("[storage] WARNING: SESSION_SECRET unset — vision signed URLs fall back to the weak default key; set SESSION_SECRET in production")
+	}
+	if store.Backend() == "local" {
+		addr := model.GetOptionString("ServerAddress")
+		if addr == "" || strings.Contains(addr, "localhost") || strings.Contains(addr, "127.0.0.1") {
+			log.Printf("[storage] WARNING: ServerAddress=%q — local-backend signed URLs point back here, so an upstream vision provider may be unable to fetch them", addr)
+		}
+	}
 }
 
 func loadVirtualServices() {
@@ -144,5 +174,23 @@ func StartCloudConnections() {
 func StopCloudConnections() {
 	if CloudManager != nil {
 		CloudManager.StopAll()
+	}
+}
+
+// StartBackgroundJobs launches background workers whose lifetime is bound to
+// parent — currently the expired-upload cleanup loop (service.StartCleanupLoop).
+// Cancelled explicitly by StopBackgroundJobs, or implicitly when parent is
+// cancelled. Mirrors the StartCloud/StopCloud pair so cmd/server can wire it
+// symmetrically around graceful shutdown.
+func StartBackgroundJobs(parent context.Context) {
+	ctx, cancel := context.WithCancel(parent)
+	backgroundJobsCancel = cancel
+	go service.StartCleanupLoop(ctx)
+}
+
+func StopBackgroundJobs() {
+	if backgroundJobsCancel != nil {
+		backgroundJobsCancel()
+		backgroundJobsCancel = nil
 	}
 }
