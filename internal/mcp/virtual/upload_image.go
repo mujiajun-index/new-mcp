@@ -28,12 +28,8 @@ const UploadImageToolName = "vision.upload_image"
 // uploadImageDesc is the fixed description of the built-in upload_image tool.
 // It is intentionally a constant (not a per-config field) so the workflow
 // guidance stays consistent across every vision service.
-const uploadImageDesc = "Stage a LOCAL image file for vision analysis WITHOUT embedding base64. " +
-	"Pass local_path; you get back a ready curl command (upload_command) matched to YOUR OS " +
-	"(detected from the path) that uploads the file straight to storage with NO API key in it, " +
-	"plus a file_url. Workflow: 1) call this with local_path; 2) run upload_command via your " +
-	"Bash/shell tool (on Windows PowerShell it already uses curl.exe, since bare `curl` is an " +
-	"alias for Invoke-WebRequest there); 3) call vision.analyze_image with image_url=file_url. " +
+const uploadImageDesc = "Stage a LOCAL image file for vision analysis. Workflow: 1) call this with local_path; " +
+	"2) run the returned upload_command via your Bash/shell tool; 3) call vision.analyze_image with image_url=file_url. " +
 	"For SMALL images you may instead inline base64 directly to analyze_image; use this tool for larger images."
 
 const uploadLocalPathDesc = "Absolute path of the image on your machine, in your system's native form " +
