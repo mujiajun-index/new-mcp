@@ -9,8 +9,8 @@ import (
 
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
-	"github.com/mujkjk/newmcp/internal/mcp/vision"
 	"github.com/mujkjk/newmcp/internal/mcp/virtual"
+	"github.com/mujkjk/newmcp/internal/mcp/vision"
 	"github.com/mujkjk/newmcp/model"
 )
 
@@ -43,27 +43,32 @@ func (s *VisionService) Create(userID int64, req *dto.CreateVisionConfigReq) (*d
 	// MaxTokens == 0 means "unlimited"; the OpenAI/Gemini paths omit the field
 	// (omitempty) and the Anthropic path substitutes a high safe cap.
 	vc := &model.VisionConfig{
-		UserID:            userID,
-		Name:              req.Name,
-		Description:       req.Description,
-		Provider:          req.Provider,
-		ModelName:         req.ModelName,
-		EndpointURL:       req.EndpointURL,
-		ApiKey:            req.ApiKey,
-		SystemPrompt:      req.SystemPrompt,
-		MaxTokens:         req.MaxTokens,
-		AutoRegister:      false,
-		Status:            common.StatusEnabled,
-		AnalyzeImageName:  "vision.analyze_image",
-		AnalyzeImageDesc:  "Analyze image content and identify the objects, text, and scenes it contains. Best for: extracting structured info, detecting items, or reading text. Returns: a detailed breakdown of recognized elements.",
-		DescribeSceneName: "vision.describe_scene",
-		DescribeSceneDesc: "Describe the scene and overall content of an image in natural language. Best for: getting a high-level summary of what is happening. Returns: a natural-language description of the scene.",
-		ExtraConfig:       "{}",
+		UserID:                userID,
+		Name:                  req.Name,
+		Description:           req.Description,
+		Provider:              req.Provider,
+		ModelName:             req.ModelName,
+		EndpointURL:           req.EndpointURL,
+		ApiKey:                req.ApiKey,
+		SystemPrompt:          req.SystemPrompt,
+		MaxTokens:             req.MaxTokens,
+		AnalyzeTimeoutSeconds: req.AnalyzeTimeoutSeconds,
+		AutoRegister:          false,
+		Status:                common.StatusEnabled,
+		AnalyzeImageName:      "vision.analyze_image",
+		AnalyzeImageDesc:      "Analyze image content and identify the objects, text, and scenes it contains. Best for: extracting structured info, detecting items, or reading text. Returns: a detailed breakdown of recognized elements.",
+		DescribeSceneName:     "vision.describe_scene",
+		DescribeSceneDesc:     "Describe the scene and overall content of an image in natural language. Best for: getting a high-level summary of what is happening. Returns: a natural-language description of the scene.",
+		ExtraConfig:           "{}",
 	}
 
 	if err := vc.Insert(); err != nil {
 		return nil, err
 	}
+	// The create flow does not expose MaxTokens or AnalyzeTimeoutSeconds:
+	// MaxTokens==0 means unlimited, and AnalyzeTimeoutSeconds==0 picks up the
+	// column default (30s). Both stay editable on the detail page, whose
+	// Update uses DB.Save (writes zero values as-is).
 
 	return s.toDetail(vc), nil
 }
@@ -105,6 +110,9 @@ func (s *VisionService) Update(userID, id int64, req *dto.UpdateVisionConfigReq)
 	}
 	if req.MaxTokens != nil {
 		vc.MaxTokens = *req.MaxTokens
+	}
+	if req.AnalyzeTimeoutSeconds != nil {
+		vc.AnalyzeTimeoutSeconds = *req.AnalyzeTimeoutSeconds
 	}
 	if req.AnalyzeImageName != nil {
 		vc.AnalyzeImageName = *req.AnalyzeImageName
@@ -347,23 +355,24 @@ func (s *VisionService) buildToolsCache(vc *model.VisionConfig) []map[string]int
 
 func (s *VisionService) toDetail(vc *model.VisionConfig) *dto.VisionConfigDetail {
 	return &dto.VisionConfigDetail{
-		ID:                  vc.ID,
-		Name:                vc.Name,
-		Description:         vc.Description,
-		Provider:            vc.Provider,
-		ModelName:           vc.ModelName,
-		EndpointURL:         vc.EndpointURL,
-		SystemPrompt:        vc.SystemPrompt,
-		MaxTokens:           vc.MaxTokens,
-		AutoRegister:        vc.AutoRegister,
-		RegisteredServiceID: vc.RegisteredServiceID,
-		AnalyzeImageName:    vc.AnalyzeImageName,
-		AnalyzeImageDesc:    vc.AnalyzeImageDesc,
-		DescribeSceneName:   vc.DescribeSceneName,
-		DescribeSceneDesc:   vc.DescribeSceneDesc,
-		ExtraConfig:         vc.ExtraConfig,
-		Status:              vc.Status,
-		CreatedAt:           vc.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt:           vc.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		ID:                    vc.ID,
+		Name:                  vc.Name,
+		Description:           vc.Description,
+		Provider:              vc.Provider,
+		ModelName:             vc.ModelName,
+		EndpointURL:           vc.EndpointURL,
+		SystemPrompt:          vc.SystemPrompt,
+		MaxTokens:             vc.MaxTokens,
+		AnalyzeTimeoutSeconds: vc.AnalyzeTimeoutSeconds,
+		AutoRegister:          vc.AutoRegister,
+		RegisteredServiceID:   vc.RegisteredServiceID,
+		AnalyzeImageName:      vc.AnalyzeImageName,
+		AnalyzeImageDesc:      vc.AnalyzeImageDesc,
+		DescribeSceneName:     vc.DescribeSceneName,
+		DescribeSceneDesc:     vc.DescribeSceneDesc,
+		ExtraConfig:           vc.ExtraConfig,
+		Status:                vc.Status,
+		CreatedAt:             vc.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:             vc.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	}
 }

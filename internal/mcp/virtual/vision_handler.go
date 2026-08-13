@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/mujkjk/newmcp/internal/mcp/vision"
 	"github.com/mujkjk/newmcp/internal/storage"
@@ -106,11 +107,12 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 	}
 
 	client := &vision.VisionClient{
-		Provider:    vc.Provider,
-		EndpointURL: vc.EndpointURL,
-		ApiKey:      vc.ApiKey,
-		ModelName:   vc.ModelName,
-		MaxTokens:   vc.MaxTokens,
+		Provider:       vc.Provider,
+		EndpointURL:    vc.EndpointURL,
+		ApiKey:         vc.ApiKey,
+		ModelName:      vc.ModelName,
+		MaxTokens:      vc.MaxTokens,
+		AnalyzeTimeout: time.Duration(vc.AnalyzeTimeoutSeconds) * time.Second,
 	}
 
 	var systemPrompt, userPrompt string

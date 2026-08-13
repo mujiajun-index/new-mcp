@@ -69,6 +69,7 @@ export function VisionDetailPage() {
     model_name: '',
     system_prompt: '',
     max_tokens: 4096,
+    analyze_timeout_seconds: 30,
   })
 
   const [modelList, setModelList] = useState<ModelInfo[]>([])
@@ -95,6 +96,7 @@ export function VisionDetailPage() {
         model_name: config.model_name || '',
         system_prompt: config.system_prompt || '',
         max_tokens: config.max_tokens,
+        analyze_timeout_seconds: config.analyze_timeout_seconds ?? 30,
       })
       setTools({
         analyze_image_name: config.analyze_image_name || 'analyze_image',
@@ -193,6 +195,7 @@ export function VisionDetailPage() {
       endpoint_url: form.endpoint_url,
       system_prompt: form.system_prompt,
       max_tokens: form.max_tokens,
+      analyze_timeout_seconds: form.analyze_timeout_seconds,
     }
     // Only send api_key if user typed something
     if (form.api_key.trim()) {
@@ -401,6 +404,21 @@ export function VisionDetailPage() {
             }
           />
           <p className="text-xs text-muted-foreground">{t('vision.maxTokensHint')}</p>
+        </div>
+
+        {/* Analyze Timeout */}
+        <div className="space-y-2 max-w-xs">
+          <Label htmlFor="analyze_timeout_seconds">{t('vision.analyzeTimeout')}</Label>
+          <Input
+            id="analyze_timeout_seconds"
+            type="number"
+            min={0}
+            value={form.analyze_timeout_seconds}
+            onChange={(e) =>
+              setForm({ ...form, analyze_timeout_seconds: parseInt(e.target.value, 10) || 0 })
+            }
+          />
+          <p className="text-xs text-muted-foreground">{t('vision.analyzeTimeoutHint')}</p>
         </div>
 
         <div className="flex justify-end pt-2">

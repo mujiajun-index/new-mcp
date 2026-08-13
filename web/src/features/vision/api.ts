@@ -21,6 +21,7 @@ export interface VisionConfigDetail {
   endpoint_url: string
   system_prompt: string
   max_tokens: number
+  analyze_timeout_seconds: number
   auto_register: boolean
   registered_service_id: number | null
   analyze_image_name: string
@@ -42,6 +43,7 @@ export interface CreateVisionConfigReq {
   api_key: string
   system_prompt?: string
   max_tokens?: number
+  analyze_timeout_seconds?: number
 }
 
 export interface UpdateVisionConfigReq {
@@ -53,6 +55,7 @@ export interface UpdateVisionConfigReq {
   api_key?: string
   system_prompt?: string
   max_tokens?: number
+  analyze_timeout_seconds?: number
   analyze_image_name?: string
   analyze_image_desc?: string
   describe_scene_name?: string

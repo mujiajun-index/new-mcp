@@ -29,6 +29,9 @@ type VisionClient struct {
 	ApiKey      string
 	ModelName   string
 	MaxTokens   int
+	// AnalyzeTimeout bounds each Analyze call (the upstream POST). <=0 means use
+	// the 30s default. ListModels (doGet) is unaffected — it keeps its own 15s.
+	AnalyzeTimeout time.Duration
 }
 
 // ImageInput is the discriminated union for the image fed to Analyze. Exactly
@@ -440,8 +443,15 @@ func (c *VisionClient) listGeminiModels(ctx context.Context) ([]ModelInfo, error
 // ========== HTTP helpers ==========
 
 func (c *VisionClient) doPost(ctx context.Context, url string, body []byte, setupReq func(*http.Request)) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
+	// Per-config analysis timeout (set by the vision/camera handlers from
+	// VisionConfig.AnalyzeTimeoutSeconds). >0 bounds the upstream call; <=0 means
+	// "no timeout" — the request then runs under whatever deadline the caller's
+	// ctx already carries (TestVision's 15s, or none for MCP tool calls).
+	var cancel context.CancelFunc
+	if c.AnalyzeTimeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, c.AnalyzeTimeout)
+		defer cancel()
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {

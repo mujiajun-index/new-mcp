@@ -616,6 +616,7 @@
     "endpointUrl": "Endpoint URL",
     "apiKey": "API Key",
     "maxTokens": "Max Tokens",
+    "analyzeTimeout": "Analysis Timeout (s)",
     "fetchModels": "Fetch Models",
     "endpointPreview": "Preview",
     "systemPrompt": "System Prompt",
@@ -647,6 +648,7 @@
     "placeholderPrompt": "You are an image analysis assistant...",
     "placeholderKeepUnchanged": "Leave empty to keep unchanged",
     "maxTokensHint": "Leave empty or 0 for no limit (use model max output)",
+    "analyzeTimeoutHint": "Per-call image-analysis timeout in seconds; 0 or empty means no timeout (30s default for new configs)",
     "create": {
       "title": "New Vision Config",
       "subtitle": "Configure a vision model to provide image understanding capabilities",

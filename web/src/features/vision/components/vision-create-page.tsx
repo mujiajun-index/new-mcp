@@ -46,7 +46,6 @@ export function VisionCreatePage() {
     api_key: '',
     model_name: '',
     system_prompt: '',
-    max_tokens: 4096,
   })
   const [modelList, setModelList] = useState<ModelInfo[]>([])
   const [modelListLoading, setModelListLoading] = useState(false)
@@ -67,7 +66,6 @@ export function VisionCreatePage() {
         endpoint_url: form.endpoint_url,
         api_key: form.api_key,
         system_prompt: form.system_prompt || undefined,
-        max_tokens: form.max_tokens,
       }),
     onSuccess: () => {
       toast.success(t('vision.create.success'))
@@ -266,21 +264,6 @@ export function VisionCreatePage() {
           />
         </div>
 
-        {/* Max Tokens */}
-        <div className="space-y-2">
-          <Label htmlFor="max_tokens">{t('vision.maxTokens')}</Label>
-          <Input
-            id="max_tokens"
-            type="number"
-            min={0}
-            max={128000}
-            value={form.max_tokens}
-            onChange={(e) =>
-              setForm({ ...form, max_tokens: parseInt(e.target.value, 10) || 0 })
-            }
-          />
-          <p className="text-xs text-muted-foreground">{t('vision.maxTokensHint')}</p>
-        </div>
       </div>
 
       {/* Actions */}

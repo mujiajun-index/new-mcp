@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mujkjk/newmcp/internal/mcp/camera"
 	"github.com/mujkjk/newmcp/internal/mcp/vision"
@@ -79,11 +80,12 @@ func handleAnalyze(ctx context.Context, cam *model.Camera, args json.RawMessage)
 	_ = json.Unmarshal(args, &params)
 
 	client := &vision.VisionClient{
-		Provider:    vc.Provider,
-		EndpointURL: vc.EndpointURL,
-		ApiKey:      vc.ApiKey,
-		ModelName:   vc.ModelName,
-		MaxTokens:   vc.MaxTokens,
+		Provider:       vc.Provider,
+		EndpointURL:    vc.EndpointURL,
+		ApiKey:         vc.ApiKey,
+		ModelName:      vc.ModelName,
+		MaxTokens:      vc.MaxTokens,
+		AnalyzeTimeout: time.Duration(vc.AnalyzeTimeoutSeconds) * time.Second,
 	}
 
 	systemPrompt := vc.SystemPrompt

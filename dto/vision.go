@@ -9,55 +9,59 @@ type CreateVisionConfigReq struct {
 	ApiKey       string `json:"api_key" binding:"required"`
 	SystemPrompt string `json:"system_prompt"`
 	MaxTokens    int    `json:"max_tokens"`
+	// AnalyzeTimeoutSeconds: per-call image-analysis timeout in seconds; 0 = default (30s).
+	AnalyzeTimeoutSeconds int `json:"analyze_timeout_seconds"`
 }
 
 type UpdateVisionConfigReq struct {
-	Name             *string `json:"name"`
-	Description      *string `json:"description"`
-	Provider         *string `json:"provider"`
-	ModelName        *string `json:"model_name"`
-	EndpointURL      *string `json:"endpoint_url"`
-	ApiKey           *string `json:"api_key"`
-	SystemPrompt     *string `json:"system_prompt"`
-	MaxTokens        *int    `json:"max_tokens"`
-	AnalyzeImageName *string `json:"analyze_image_name"`
-	AnalyzeImageDesc *string `json:"analyze_image_desc"`
-	DescribeSceneName *string `json:"describe_scene_name"`
-	DescribeSceneDesc *string `json:"describe_scene_desc"`
-	Status           *int    `json:"status"`
+	Name                  *string `json:"name"`
+	Description           *string `json:"description"`
+	Provider              *string `json:"provider"`
+	ModelName             *string `json:"model_name"`
+	EndpointURL           *string `json:"endpoint_url"`
+	ApiKey                *string `json:"api_key"`
+	SystemPrompt          *string `json:"system_prompt"`
+	MaxTokens             *int    `json:"max_tokens"`
+	AnalyzeTimeoutSeconds *int    `json:"analyze_timeout_seconds"`
+	AnalyzeImageName      *string `json:"analyze_image_name"`
+	AnalyzeImageDesc      *string `json:"analyze_image_desc"`
+	DescribeSceneName     *string `json:"describe_scene_name"`
+	DescribeSceneDesc     *string `json:"describe_scene_desc"`
+	Status                *int    `json:"status"`
 }
 
 type VisionConfigListItem struct {
-	ID           int64  `json:"id"`
-	Name         string `json:"name"`
-	Provider     string `json:"provider"`
-	ModelName    string `json:"model_name"`
-	EndpointURL  string `json:"endpoint_url"`
-	AutoRegister bool   `json:"auto_register"`
-	RegisteredServiceID *int64 `json:"registered_service_id"`
-	Status       int    `json:"status"`
-	CreatedAt    string `json:"created_at"`
-}
-
-type VisionConfigDetail struct {
 	ID                  int64  `json:"id"`
 	Name                string `json:"name"`
-	Description         string `json:"description"`
 	Provider            string `json:"provider"`
 	ModelName           string `json:"model_name"`
 	EndpointURL         string `json:"endpoint_url"`
-	SystemPrompt        string `json:"system_prompt"`
-	MaxTokens           int    `json:"max_tokens"`
 	AutoRegister        bool   `json:"auto_register"`
 	RegisteredServiceID *int64 `json:"registered_service_id"`
-	AnalyzeImageName    string `json:"analyze_image_name"`
-	AnalyzeImageDesc    string `json:"analyze_image_desc"`
-	DescribeSceneName   string `json:"describe_scene_name"`
-	DescribeSceneDesc   string `json:"describe_scene_desc"`
-	ExtraConfig         string `json:"extra_config"`
 	Status              int    `json:"status"`
 	CreatedAt           string `json:"created_at"`
-	UpdatedAt           string `json:"updated_at"`
+}
+
+type VisionConfigDetail struct {
+	ID                    int64  `json:"id"`
+	Name                  string `json:"name"`
+	Description           string `json:"description"`
+	Provider              string `json:"provider"`
+	ModelName             string `json:"model_name"`
+	EndpointURL           string `json:"endpoint_url"`
+	SystemPrompt          string `json:"system_prompt"`
+	MaxTokens             int    `json:"max_tokens"`
+	AnalyzeTimeoutSeconds int    `json:"analyze_timeout_seconds"`
+	AutoRegister          bool   `json:"auto_register"`
+	RegisteredServiceID   *int64 `json:"registered_service_id"`
+	AnalyzeImageName      string `json:"analyze_image_name"`
+	AnalyzeImageDesc      string `json:"analyze_image_desc"`
+	DescribeSceneName     string `json:"describe_scene_name"`
+	DescribeSceneDesc     string `json:"describe_scene_desc"`
+	ExtraConfig           string `json:"extra_config"`
+	Status                int    `json:"status"`
+	CreatedAt             string `json:"created_at"`
+	UpdatedAt             string `json:"updated_at"`
 }
 
 type TestVisionReq struct {
