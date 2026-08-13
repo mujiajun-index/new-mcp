@@ -88,6 +88,45 @@ func TestLocalStorage_PathTraversalRejected(t *testing.T) {
 	}
 }
 
+func TestLocalStorage_KeyFromURL(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	// Issue a real own URL; the key must round-trip through KeyFromURL.
+	key := ContentKey("feedface")
+	if err := s.Put(ctx, key, strings.NewReader("x"), ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	raw, err := s.PublicURL(ctx, key, time.Hour)
+	if err != nil {
+		t.Fatalf("PublicURL: %v", err)
+	}
+	if got, ok := s.KeyFromURL(raw); !ok || got != key {
+		t.Fatalf("KeyFromURL own round-trip: got (%q,%v), want (%q,true)", got, ok, key)
+	}
+
+	// KeyFromURL is path-only by design — the host is gated separately by
+	// OwnsURL — so any URL carrying the own file path recovers the key.
+	if got, ok := s.KeyFromURL("https://upstream.example/api/v1/vision/files/ab/abcdef"); !ok || got != "ab/abcdef" {
+		t.Fatalf("KeyFromURL path-only: got (%q,%v), want (ab/abcdef,true)", got, ok)
+	}
+
+	// Inputs that must NOT yield a key: wrong/absent prefix, empty key, traversal,
+	// double-slash, and a structurally invalid URL.
+	for _, bad := range []string{
+		"https://example.com/foo.png",
+		"/api/v1/vision/files/",
+		"/api/v1/vision/files/../etc/passwd",
+		"/api/v1/vision/files/a//b",
+		"/other/prefix/ab/abcd",
+		"://not a url",
+	} {
+		if _, ok := s.KeyFromURL(bad); ok {
+			t.Fatalf("KeyFromURL(%q) = _, true; want false", bad)
+		}
+	}
+}
+
 func TestSignVerify(t *testing.T) {
 	// Force a known secret so the test is independent of the env default.
 	prev := common.SessionSecret

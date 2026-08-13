@@ -29,8 +29,10 @@ import {
   Wrench,
   CheckCircle2,
   List,
+  Lock,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
 
 const providerOptions = [
   { value: 'openai', label: 'OpenAI' },
@@ -536,6 +538,27 @@ export function VisionDetailPage() {
                 {t('vision.save')}
               </Button>
             </div>
+          </div>
+
+          {/* upload_image tool card (built-in, read-only) */}
+          <div className="rounded-lg border border-dashed p-4 space-y-3 bg-muted/30 sm:col-span-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center justify-center rounded-md bg-primary/10 p-1.5">
+                  <Wrench className="h-3.5 w-3.5 text-primary" />
+                </span>
+                <span className="text-sm font-semibold">
+                  {t('vision.uploadImageBuiltinName')}
+                </span>
+              </div>
+              <Badge variant="secondary" className="gap-1 font-normal">
+                <Lock className="h-3 w-3" />
+                {t('vision.uploadImageBuiltinBadge')}
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {t('vision.uploadImageBuiltinDesc')}
+            </p>
           </div>
         </div>
       </div>

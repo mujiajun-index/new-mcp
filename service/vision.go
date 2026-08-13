@@ -336,6 +336,12 @@ func (s *VisionService) buildToolsCache(vc *model.VisionConfig) []map[string]int
 				},
 			},
 		},
+		// Built-in upload_image: a fixed (non-editable) tool — its name and
+		// description are constants, not VisionConfig fields. Appended per service
+		// so it travels with the vision service like the other tools and is
+		// dispatched via the per-user VirtualToolRegistry. UploadImageTool() returns
+		// a fresh map each call (CollectToolsForGroups mutates the name in place).
+		virtual.UploadImageTool(),
 	}
 }
 

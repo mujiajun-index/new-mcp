@@ -152,7 +152,7 @@ func (s *localStorage) Stat(ctx context.Context, key string) (ObjectInfo, error)
 
 // OwnsURL reports whether rawurl is one of this server's own signed file URLs —
 // same host as ServerAddress and the /api/v1/vision/files/ path prefix. Used to
-// gate the Stat upload-confirm in analyze_image to own-storage URLs only.
+// gate the own-storage reverse-fetch in analyze_image to this backend only.
 func (s *localStorage) OwnsURL(rawurl string) bool {
 	sa := model.GetOptionString("ServerAddress")
 	if sa == "" {
@@ -167,4 +167,27 @@ func (s *localStorage) OwnsURL(rawurl string) bool {
 		return false
 	}
 	return u.Host == su.Host && strings.HasPrefix(u.Path, "/api/v1/vision/files/")
+}
+
+// KeyFromURL extracts the storage key from one of this backend's own file URLs
+// ({ServerAddress}/api/v1/vision/files/<key>?…). analyze_image uses it to read
+// the bytes back and forward them as base64 to the upstream, so the upstream
+// never has to reach ServerAddress (works behind localhost). ok=false for
+// anything that is not a valid own file-URL path; the caller then passes the URL
+// through to the upstream instead.
+func (s *localStorage) KeyFromURL(rawurl string) (string, bool) {
+	u, err := url.Parse(rawurl)
+	if err != nil {
+		return "", false
+	}
+	const prefix = "/api/v1/vision/files/"
+	if !strings.HasPrefix(u.Path, prefix) {
+		return "", false
+	}
+	key := strings.TrimPrefix(u.Path, prefix)
+	clean := strings.Trim(key, "/")
+	if clean == "" || strings.Contains(clean, "..") || strings.ContainsAny(clean, `\`) || strings.Contains(clean, "//") {
+		return "", false
+	}
+	return clean, true
 }

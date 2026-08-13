@@ -49,15 +49,25 @@ type Storage interface {
 	// are NOT enforceable on a presigned PUT, so callers enforce them server-side.
 	PutURL(ctx context.Context, key string, ttl time.Duration) (string, error)
 
-	// Stat returns object metadata without reading the body. Used by
-	// analyze_image to confirm an own-storage upload actually landed before
-	// billing a vision call. Returns ErrObjectNotFound if the object is missing.
+	// Stat returns object metadata without reading the body. Used by analyze_image
+	// to size-check an own-storage object (against VisionUploadMaxBytes) before
+	// reverse-fetching its bytes to forward to the upstream. Returns
+	// ErrObjectNotFound if the object is missing.
 	Stat(ctx context.Context, key string) (ObjectInfo, error)
 
 	// OwnsURL reports whether rawurl points into this backend (a URL this server
-	// issued), so analyze_image runs the Stat confirm only for own-storage URLs
-	// and leaves arbitrary https URLs as pure passthrough (no SSRF).
+	// issued), so analyze_image reverse-fetches own-storage bytes (and forwards
+	// them as base64) while leaving arbitrary http(s) URLs as pure passthrough
+	// (no SSRF: own bytes are read locally; external URLs are never fetched).
 	OwnsURL(rawurl string) bool
+
+	// KeyFromURL recovers the storage key from a URL this backend issued (one for
+	// which OwnsURL is true). analyze_image uses it to read own-storage bytes back
+	// out and forward them as base64 to the upstream provider — so the provider
+	// never has to reach ServerAddress (works behind localhost) and Gemini's flaky
+	// native file_uri fetch is bypassed. ok=false means the key is not recoverable
+	// from rawurl; the caller then falls back to passing the URL through.
+	KeyFromURL(rawurl string) (key string, ok bool)
 
 	// Backend returns a short identifier ("local" / "s3") for metadata/logging.
 	Backend() string

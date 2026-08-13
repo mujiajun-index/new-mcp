@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"strings"
 
 	"github.com/mujkjk/newmcp/internal/mcp/vision"
+	"github.com/mujkjk/newmcp/internal/storage"
 	"github.com/mujkjk/newmcp/model"
 )
 
@@ -21,6 +24,19 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 	vc, err := model.GetVisionConfigByServiceID(serviceID)
 	if err != nil {
 		return nil, fmt.Errorf("vision config not found: %w", err)
+	}
+
+	// Built-in upload_image tool: dispatched through this same handler (per-config,
+	// like analyze_image) rather than as a global tool. It short-circuits before the
+	// image/image_url param parsing below because its argument is local_path. The
+	// caller's userID (for upload ownership + quota) is injected into ctx by the
+	// gateway at the virtual dispatch sites; fall back to the config owner if absent.
+	if strings.HasSuffix(toolName, "upload_image") || toolName == UploadImageToolName {
+		uid := CallerUserID(ctx)
+		if uid == 0 {
+			uid = vc.UserID
+		}
+		return handleUploadImage(ctx, uid, args)
 	}
 
 	var params struct {
@@ -39,24 +55,37 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 	switch {
 	case params.ImageURL != "":
 		u, err := url.Parse(params.ImageURL)
-		if err != nil || u.Scheme != "https" || u.Host == "" {
-			return nil, fmt.Errorf("image_url must be an https URL")
+		// Both http and https are accepted. For external URLs new-mcp never
+		// fetches — it is pure passthrough to the upstream provider, so there is
+		// no SSRF surface regardless of scheme. Allowing http also covers local
+		// / non-TLS deployments where ServerAddress is http. Own-storage URLs
+		// (below) are read off local disk / the bucket, also not a fetch of an
+		// external host.
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+			return nil, fmt.Errorf("image_url must be an http(s) URL")
 		}
-		// V1.1: confirm an own-storage upload actually landed before billing a
-		// vision call — catches "model skipped the curl". Only for local-backend
-		// URLs where the key is recoverable from the path; S3 presigned URLs
-		// skip (an absent object surfaces as an upstream fetch error instead).
-		// Arbitrary https URLs stay pure passthrough (no SSRF: we never fetch).
+		// An own-storage URL is reverse-fetched here and forwarded as base64 to
+		// the upstream — the camera path, not URL passthrough. This matters for
+		// local deployments: the upstream cannot reach ServerAddress (localhost
+		// or otherwise private), and Gemini's native file_uri fetch is flaky for
+		// arbitrary URLs. Reading our own bytes has no SSRF surface (OwnsURL
+		// already verified the URL is one we issued), and the calling LLM still
+		// only ever held the short file_url — bytes stay out of its context.
+		// External URLs (or own URLs whose key we can't recover) fall through to
+		// pure passthrough; those are never fetched.
 		if UploadStore != nil && UploadStore.OwnsURL(params.ImageURL) {
-			if key, ok := ownStorageKeyFromURL(u); ok {
-				if oi, sErr := UploadStore.Stat(ctx, key); sErr != nil {
-					return nil, fmt.Errorf("image_url refers to an upload that was never received — run the upload_command from vision.upload_image first")
-				} else if max := model.GetOptionInt64("VisionUploadMaxBytes"); max > 0 && oi.Size > max {
-					return nil, fmt.Errorf("uploaded image (%d bytes) exceeds the %d-byte limit", oi.Size, max)
+			if key, ok := UploadStore.KeyFromURL(params.ImageURL); ok {
+				imgBytes, mediaType, ferr := fetchOwnImage(ctx, key)
+				if ferr != nil {
+					return nil, ferr
 				}
+				input.Bytes, input.MediaType = imgBytes, mediaType
+			} else {
+				input.URL = params.ImageURL
 			}
+		} else {
+			input.URL = params.ImageURL
 		}
-		input.URL = params.ImageURL
 	case params.Image != "":
 		imgBytes, mediaType, err := DecodeImage(params.Image)
 		if err != nil {
@@ -223,14 +252,40 @@ func EncodeFrameToBase64(frame []byte) string {
 	return base64.StdEncoding.EncodeToString(frame)
 }
 
-// ownStorageKeyFromURL extracts the storage key from one of this server's own
-// local file URLs ({ServerAddress}/api/v1/vision/files/<key>). Returns ok=false
-// for anything else (including S3 presigned URLs, where the key is not reliably
-// recoverable from the URL) so the caller skips the Stat confirm there.
-func ownStorageKeyFromURL(u *url.URL) (string, bool) {
-	const prefix = "/api/v1/vision/files/"
-	if strings.HasPrefix(u.Path, prefix) {
-		return strings.TrimPrefix(u.Path, prefix), true
+// fetchOwnImage reads an own-storage object by key, enforces the hard size cap
+// (VisionUploadMaxBytes) before materializing it, and returns its bytes + sniffed
+// media type — the same shape DecodeImage and the camera path produce. Called
+// only for URLs OwnsURL/KeyFromURL confirmed belong to this backend, so there is
+// no SSRF surface: we read our own object, never an arbitrary external URL.
+func fetchOwnImage(ctx context.Context, key string) ([]byte, string, error) {
+	oi, err := UploadStore.Stat(ctx, key)
+	if err != nil {
+		if errors.Is(err, storage.ErrObjectNotFound) {
+			return nil, "", fmt.Errorf("image_url refers to an upload that was never received — run the upload_command from vision.upload_image first")
+		}
+		return nil, "", fmt.Errorf("read uploaded image: %w", err)
 	}
-	return "", false
+	// Size-check before Get: reject oversized uploads without streaming them in.
+	// VisionInlineMaxBytes (the calling-LLM-context soft cap) does NOT apply here:
+	// these bytes go new-mcp→upstream, never into the calling LLM's context.
+	if max := model.GetOptionInt64("VisionUploadMaxBytes"); max > 0 && oi.Size > max {
+		return nil, "", fmt.Errorf("uploaded image (%d bytes) exceeds the %d-byte limit", oi.Size, max)
+	}
+	rc, err := UploadStore.Get(ctx, key)
+	if err != nil {
+		if errors.Is(err, storage.ErrObjectNotFound) {
+			return nil, "", fmt.Errorf("image_url refers to an upload that was never received — run the upload_command from vision.upload_image first")
+		}
+		return nil, "", fmt.Errorf("open uploaded image: %w", err)
+	}
+	defer rc.Close()
+	imgBytes, err := io.ReadAll(rc)
+	if err != nil {
+		return nil, "", fmt.Errorf("read uploaded image bytes: %w", err)
+	}
+	mediaType := vision.SniffMediaType(imgBytes)
+	if mediaType == "" {
+		return nil, "", fmt.Errorf("uploaded image is not a recognized image format")
+	}
+	return imgBytes, mediaType, nil
 }

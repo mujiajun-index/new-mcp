@@ -136,7 +136,10 @@ func (h *GatewayHandler) handleToolsList(ctx context.Context, req *JSONRPCReques
 			if err != nil {
 				return h.errorResponse(req.ID, -32603, "Failed to get tools")
 			}
-			tools = append(tools, virtual.GlobalTools...) // V1.1 global tools (upload_image)
+			// upload_image is no longer appended globally; it is a per-config
+			// built-in tool that travels with each vision service (see
+			// service.buildToolsCache), so CollectToolsForGroups emits it as
+			// vision_<id>__vision.upload_image alongside the other vision tools.
 			return &JSONRPCResponse{
 				JSONRPC: "2.0",
 				ID:      req.ID,
@@ -166,7 +169,7 @@ func (h *GatewayHandler) handleToolsList(ctx context.Context, req *JSONRPCReques
 		if err != nil {
 			return h.errorResponse(req.ID, -32603, "Failed to get tools")
 		}
-		tools := append(bridge.ToolsToMaps(entries), virtual.GlobalTools...) // V1.1 global tools
+		tools := bridge.ToolsToMaps(entries) // upload_image is per-config now
 		return &JSONRPCResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
@@ -319,27 +322,13 @@ func applyBillingToLog(log *model.McpCallLog, b *billingOutcome) {
 func (h *GatewayHandler) routeAndCall(ctx context.Context, reqID interface{}, logCtx *LogContext, toolName string, args json.RawMessage, svcID *int64, svcName *string, requestID string, billing *billingOutcome) *JSONRPCResponse {
 	parsedSvc, parsedTool := bridge.ParseNamespacedName(toolName)
 
-	// V1.1 global virtual tools (vision.upload_image): not tied to a per-user
-	// service, free, self-service. Checked before the per-user registry and any
-	// scope/billing logic. parsedSvc=="vision" never collides with real vision
-	// services (exposed as "vision_<id>__...").
-	if parsedSvc == "vision" && virtual.IsGlobalTool(parsedSvc + "." + parsedTool) {
-		out, gErr := virtual.HandleGlobalTool(ctx, logCtx.UserID, virtual.UploadImageToolName, args)
-		*svcName = "vision"
-		if gErr != nil {
-			return h.errorResponse(reqID, -32603, "upload_image failed: "+gErr.Error())
-		}
-		return &JSONRPCResponse{
-			JSONRPC: "2.0",
-			ID:      reqID,
-			Result:  json.RawMessage(out),
-		}
-	}
-
-	// Check virtual tools first (vision/camera 等属自有性质,免费)
+	// Check virtual tools first (vision/camera 等属自有性质,免费). upload_image is
+	// now a per-config vision tool, dispatched here like analyze_image (parsedSvc
+	// is the real "vision_<id>" service name). The caller's userID is injected so
+	// the upload branch can attribute ownership + enforce the per-user quota.
 	if h.virtualRegistry != nil && parsedSvc != "" {
 		if vSvcID, entry, ok := h.virtualRegistry.LookupByName(logCtx.UserID, parsedSvc); ok {
-			vResult, vErr := h.virtualRegistry.Handle(ctx, vSvcID, entry.Config, parsedTool, args)
+			vResult, vErr := h.virtualRegistry.Handle(virtual.WithCallerUserID(ctx, logCtx.UserID), vSvcID, entry.Config, parsedTool, args)
 			*svcID = vSvcID
 			*svcName = entry.Name
 			if vErr != nil {
@@ -487,15 +476,6 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 		params.TimeoutMs = 30000
 	}
 
-	// V1.1 global virtual tools bypass group-scope (they belong to no group).
-	if gSvc, gTool := bridge.ParseNamespacedName(params.ToolID); gSvc == "vision" && virtual.IsGlobalTool(gSvc+"."+gTool) {
-		out, gErr := virtual.HandleGlobalTool(ctx, logCtx.UserID, virtual.UploadImageToolName, params.Arguments)
-		if gErr != nil {
-			return &executeResult{Resp: h.errorResponse(reqID, -32603, "upload_image failed: "+gErr.Error()), ToolName: gTool, ServiceName: "vision"}
-		}
-		return &executeResult{Resp: &JSONRPCResponse{JSONRPC: "2.0", ID: reqID, Result: json.RawMessage(out)}, ToolName: gTool, ServiceName: "vision"}
-	}
-
 	// Verify group scope: the service must be in one of the API key's allowed groups
 	svcName, _ := bridge.ParseNamespacedName(params.ToolID)
 	if svcName == "" {
@@ -510,7 +490,7 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 		parsedSvc, parsedTool := bridge.ParseNamespacedName(params.ToolID)
 		if parsedSvc != "" {
 			if vSvcID, entry, ok := h.virtualRegistry.LookupByName(logCtx.UserID, parsedSvc); ok {
-				vResult, vErr := h.virtualRegistry.Handle(ctx, vSvcID, entry.Config, parsedTool, params.Arguments)
+				vResult, vErr := h.virtualRegistry.Handle(virtual.WithCallerUserID(ctx, logCtx.UserID), vSvcID, entry.Config, parsedTool, params.Arguments)
 				if vErr != nil {
 					return &executeResult{
 						Resp:        h.errorResponse(reqID, -32603, "Virtual tool failed: "+vErr.Error()),

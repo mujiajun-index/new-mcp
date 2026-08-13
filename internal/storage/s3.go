@@ -186,6 +186,33 @@ func (s *s3Storage) OwnsURL(rawurl string) bool {
 	return u.Host == s.client.EndpointURL().Host
 }
 
+// KeyFromURL recovers the storage key from a presigned GET/PUT URL this backend
+// issued. The object name is "<pathPrefix>/<key>" and travels in the URL path
+// (path- or virtual-host-style endpoints both put it there), so locating
+// "/<pathPrefix>/" and taking the remainder yields the key. analyze_image uses
+// it to read the object back and forward it as base64 to the upstream — same
+// reason as local (ServerAddress reachability / Gemini file_uri bypass). ok=false
+// if the marker is absent or the remainder is not a valid key.
+func (s *s3Storage) KeyFromURL(rawurl string) (string, bool) {
+	u, err := url.Parse(rawurl)
+	if err != nil {
+		return "", false
+	}
+	// pathPrefix is non-empty (newS3 defaults it to "vision"), so the marker is
+	// well-formed and appears exactly once between bucket and key.
+	marker := "/" + s.pathPrefix + "/"
+	idx := strings.Index(u.Path, marker)
+	if idx < 0 {
+		return "", false
+	}
+	key := u.Path[idx+len(marker):]
+	clean := strings.Trim(key, "/")
+	if clean == "" || strings.Contains(clean, "..") || strings.Contains(clean, "//") {
+		return "", false
+	}
+	return clean, true
+}
+
 // normS3Err maps S3 "no such object" responses onto the storage sentinel so the
 // file endpoint returns a clean 404 and the cleanup loop treats a reaped object
 // as already-gone. Other errors pass through unchanged.

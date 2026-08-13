@@ -1,6 +1,6 @@
 # 视觉工具图片传参架构重构（base64 → URL 透传）
 
-> 版本: V1.1 | 状态: V1.0 已实现 · V1.1 已实现（后端 + 前端管理 UI） | 更新日期: 2026-08-12
+> 版本: V1.3 | 状态: V1.0 已实现 · V1.1 已实现（后端 + 前端管理 UI）· V1.2 已实现（`upload_image` 移入视觉 MCP）· V1.3 已实现（自家 URL 反向取字节） | 更新日期: 2026-08-13
 > 关联文档: [ARCHITECTURE.md](./ARCHITECTURE.md) · [API.md](./API.md) · [DATABASE.md](./DATABASE.md) · [MCP-PROTOCOL.md](./MCP-PROTOCOL.md)
 >
 > **变更摘要**:
@@ -15,6 +15,17 @@
 > - 两后端（local / s3）藏在同一 `Storage.PutURL` 抽象后，模型侧 curl 形态一致；新增 `PUT /api/v1/vision/files/*key` 直传端点、purpose 绑定的 HMAC 签名、`uploaded_images.status` 状态机。
 > - **新增图片管理**（§15）：用户 / 管理员列表 + 删除 API、`pending` 行快清、`MaxUploadsPerUser` 护栏；上传仍不计费（`billing/` 只管工具调用）。
 > - **`analyze_image` 入参择优**（§16）：小图（≤ `VisionInlineMaxBytes`，默认 10KB）直接 base64 内联、大图走 `upload_image`；按尺寸分档，避免小图也强制上传、大图撑爆上下文。
+>
+> **V1.2 变更（`upload_image` 由全局工具改为 per-config 内置工具，详见 §14.2）**:
+> - `upload_image` 不再作为全局虚拟工具（`global.go`）对所有人常驻追加；改为**每个视觉服务（`vision_<id>`）的第三个内置工具**，名称 `vision.upload_image` 与描述**固定不可改**（不进 `VisionConfig` 字段），随 `buildToolsCache` 注入、经 per-user `VirtualToolRegistry` 派发（暴露名 `vision_<id>__vision.upload_image`，与 `analyze_image` 同路径）。
+> - 删除 `internal/mcp/virtual/global.go`（`GlobalTools`/`IsGlobalTool`/`HandleGlobalTool`）及 `gateway_handler` 的两处全局短路；调用方 userID 经 context（`virtual.WithCallerUserID`/`CallerUserID`）在两处 virtual 派发点注入，`VisionHandler` 的 upload 分支读取（回退 `vc.UserID`）。
+> - 视觉配置详情页新增只读 `upload_image` 卡片（标题/简介/「系统内置·不可修改」徽标）。存量已启用配置需重新保存/启用以 regenerate `ToolsCache`（沿用 `image_url` 的既定约定）；新配置直接生效。
+> - `analyze_image`/`describe_scene` 的 `image_url` 入参**放开为 http 与 https 均可**（原先仅 https）。网关永不下载 `image_url`（纯透传上游），scheme 不构成 SSRF 面；放行 http 兼容 `ServerAddress` 为 http 的本地/非 TLS 部署（如默认 `http://localhost:3000`）。
+>
+> **V1.3 变更（自家存储 URL 反向取字节，详见 §14.7）**:
+> - `image_url` 若被 `OwnsURL` 判定为**自家存储 URL**（`ServerAddress` 同主机的签名 GET URL，或 S3 presigned GET URL），网关**改读自家对象字节并以 base64 直接发上游**（`ImageInput{Bytes}`，与 camera 路径一致），不再透传 URL。任意外部 http(s) URL 仍是纯透传（网关**永不**下载外部 URL，无 SSRF）。
+> - 动机：本地部署时上游 provider 拉不到 `ServerAddress`（localhost / 内网不可达），原「上游自己 GET」路径必败；Gemini 原生 `file_uri` 对任意 URL 也不稳。自家字节经 `OwnsURL` 校验是网关自己签发的，读它无 SSRF 面；调用方 LLM 仍只持有短 `file_url`，字节不进其上下文。
+> - `Storage` 接口加 `KeyFromURL(rawurl) (key, ok)`（local 从 `/api/v1/vision/files/<key>` 路径剥 key；s3 从 presigned URL 路径定位 `/<pathPrefix>/` 取后缀）；`vision_handler` 的自家 URL 分支由「Stat 确认 + 透传」改为「`KeyFromURL` → `Stat` 大小校验 → `Get` → `SniffMediaType` → `ImageInput{Bytes}`」，原 `ownStorageKeyFromURL` 自由函数删除。`VisionInlineMaxBytes` 不适用（字节走 new-mcp→上游，不进调用方 LLM 上下文）；`VisionUploadMaxBytes` 仍是硬上限（Get 前按 `Stat` 拒大）。
 
 ---
 
@@ -42,7 +53,7 @@ new-mcp 是远程 HTTP 网关，读不到客户端本地盘，故把智谱的「
 | 调用方 LLM 上下文占用 | 整张图 base64 ≈ 50 万 token / 1-2MB | 一个短 URL，几十字节 |
 | 网关内存 | 全量解码 + 重编码 | 上传路径有界读取；分析路径零下载 |
 | 大图可用性 | 基本不可用 | 受 `VisionUploadMaxBytes` 上限约束，默认 10MB |
-| SSRF 风险 | N/A | 无：网关永不下载 `image_url`，纯透传给上游 |
+| SSRF 风险 | N/A | 无：外部 `image_url` 永不被下载（纯透传上游）；自家存储 URL 经 `OwnsURL` 校验为网关自己签发，读本地对象无 SSRF 面 |
 | 向后兼容 | — | base64 入参保留，仅加上限 |
 
 ---
@@ -58,17 +69,20 @@ new-mcp 是远程 HTTP 网关，读不到客户端本地盘，故把智谱的「
 直传(V1.1): 模型调 upload_image(local_path) --> 网关生成 uuid key + 预签名 PUT URL + 签名 GET URL
          --> 返回 {upload_command: "curl -X PUT -T <path> '<put_url>'"(无 key), file_url, next_step}
          --> 模型用 Bash 执行 curl：s3 后端直传桶(字节绕过网关) / local 后端命中 PUT /api/v1/vision/files/*key(字节经网关但无 key)
-         --> 模型调 analyze_image(image_url=file_url) --> vision_handler 对自家 URL 做 Stat 上传确认 --> ImageInput{URL} 透传上游
+         --> 模型调 analyze_image(image_url=file_url) --> vision_handler 判 OwnsURL 自家 URL
+         --> KeyFromURL 剥 key → Stat 大小校验 → Get 读字节 → SniffMediaType → ImageInput{Bytes} 发上游
+         --> 上游直接收 base64（无需回访 ServerAddress，本地部署也能跑）
 
-分析:  LLM 调 vision tool {image_url: <签名URL 或 任意外部 https URL>}
-         --> vision_handler 仅校验 https + host --> ImageInput{URL} --> Analyze 透传给上游
-         --> 上游自己 GET 该 URL（local 后端时命中公开的 /api/v1/vision/files/*key 端点；s3 后端时直连桶 presign URL）
+分析:  LLM 调 vision tool {image_url: <签名URL 或 任意外部 http(s) URL>}
+         --> vision_handler 仅校验 http(s) + host
+         --> 自家 URL: ImageInput{Bytes}（反向取字节，V1.3）；外部 URL: ImageInput{URL}（透传，上游自己 GET）
+         --> camera / base64 入参: ImageInput{Bytes} --> 客户端按 provider 编码内联
 兼容:  {image: <base64>} --> DecodeImage + 大小上限 --> ImageInput{Bytes} --> 客户端按 provider 编码内联
 camera: 本地 JPEG 字节 --> ImageInput{Bytes, "image/jpeg"} --> 不变
 清理:  后台 ticker 按 created_at < now - UploadRetentionHours 删行 + Storage.Delete 对象
 ```
 
-核心不变量：**new-mcp 永不下载 `image_url`**。URL 仅做 `https` + 非空 host 校验后透传给上游，因此没有 SSRF 面；图片字节在上传时一次性写入存储，分析阶段既不进网关内存也不进调用方 LLM 上下文。
+核心不变量：**new-mcp 永不下载外部 `image_url`**。外部 URL 仅做 `http(s)` + 非空 host 校验后透传给上游，因此没有 SSRF 面。自家存储 URL（经 `OwnsURL` 判定为网关自己签发）则反向读取本地对象字节并以 base64 发上游——读的是自家对象，同样无 SSRF 面。无论哪条路径，图片字节在分析阶段都不进调用方 LLM 上下文（调用方只持有短 `file_url`）。
 
 ---
 
@@ -198,10 +212,22 @@ var input vision.ImageInput
 switch {
 case params.ImageURL != "":
     u, err := url.Parse(params.ImageURL)
-    if err != nil || u.Scheme != "https" || u.Host == "" {
-        return nil, fmt.Errorf("image_url must be an https URL")
+    // http 与 https 均接受。外部 URL 纯透传上游（网关永不下载，无 SSRF）；
+    // 自家存储 URL 经 OwnsURL 判定后反向读本地对象字节、以 base64 发上游（V1.3）。
+    if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+        return nil, fmt.Errorf("image_url must be an http(s) URL")
     }
-    input.URL = params.ImageURL
+    if UploadStore != nil && UploadStore.OwnsURL(params.ImageURL) {
+        if key, ok := UploadStore.KeyFromURL(params.ImageURL); ok {
+            imgBytes, mediaType, err := fetchOwnImage(ctx, key)  // Stat 校验大小 + Get 读字节 + 嗅探
+            if err != nil { return nil, err }
+            input.Bytes, input.MediaType = imgBytes, mediaType   // 同 camera 路径
+        } else {
+            input.URL = params.ImageURL                          // 自家 host 但 key 不可恢复 → 透传
+        }
+    } else {
+        input.URL = params.ImageURL                              // 外部 URL → 纯透传上游
+    }
 case params.Image != "":
     imgBytes, mediaType, err := DecodeImage(params.Image)  // 复用既有解码
     if err != nil { return nil, fmt.Errorf("invalid image: %w", err) }
@@ -402,7 +428,7 @@ curl -X PUT -T './photo.jpg' 'https://.../files/a1/a1b2...?expires=...&token=...
 
 | 威胁 | 处置 |
 |------|------|
-| **SSRF** | new-mcp **永不下载** `image_url`，纯透传给上游；vision_handler 仅校验 `scheme==https && host!=""`，无出站拉取 |
+| **SSRF** | new-mcp **永不下载外部 `image_url`**，纯透传给上游；vision_handler 仅校验 `scheme ∈ {http,https} && host!=""`，无出站拉取（scheme 不构成 SSRF 面，http/https 均放行以兼容非 TLS 部署）。自家存储 URL 经 `OwnsURL` 校验为网关自己签发，反向读本地对象字节（`KeyFromURL`→`Get`）无 SSRF 面——只读自家对象、永不对外部主机发请求 |
 | **文件类型欺骗** | 上传与 serve 都走 `SniffMediaType`（magic byte），不信扩展名；空 mime 拒绝 |
 | **上传大小** | `http.MaxBytesReader`（controller，`FormFile` 前）+ base64 解码后 `len` 上限（vision_handler），双重强制 |
 | **路径遍历**（local） | `fullpath` 清洗 key，拒 `..` / 反斜杠 / 空段 / `//`，校验 `filepath.Join(root,key)` 仍在 root 下 |
@@ -414,7 +440,7 @@ curl -X PUT -T './photo.jpg' 'https://.../files/a1/a1b2...?expires=...&token=...
 | **V1.1：API Key 进模型上下文** | 直传路径的 curl 只含预签名 URL、**无 `sk-`**（预签名 URL 即凭证）；multipart 路径若由模型跑 curl 则必带 `sk-`——故 agent 自助上传场景一律走 §14 直传 |
 | **V1.1：签名 URL 跨方法重放** | PUT 路径用 purpose 标记签名 `HMAC("PUT\|key\|expires")`，与 GET 的 `HMAC("key\|expires")` 空间隔离 + gin 按 method 路由；用 GET token 冒充 PUT → 403 |
 | **V1.1：直传大小 / 类型强制** | S3 presigned PUT 无法在签名里绑 `content-length-range` / content-type（仅 POST policy 支持）→ 改服务端强制：local 走 `MaxBytesReader`，s3 在 analyze 前 `Stat` 校验大小、嗅探交给上游 |
-| **V1.1：忘传就用 / 空跑计费** | `analyze_image` 对自家存储 URL 先 `Stat` 确认对象存在再透传上游，拦截「模型跳过 curl」、避免上游空跑计费；缺失则返回带操作指引的错误 |
+| **V1.1：忘传就用 / 空跑计费** | `analyze_image` 对自家存储 URL 先 `Stat` 确认对象存在再处理，拦截「模型跳过 curl」、避免上游空跑计费；V1.3 起自家 URL 经 `KeyFromURL`→`Stat`→`Get` 反向取字节（缺失对象返回带操作指引的错误、超 `VisionUploadMaxBytes` 直接拒） |
 
 ---
 
@@ -461,11 +487,11 @@ go build ./... && ./newmcp  # 启动后 uploaded_images 表自动建成
 
 **V1.1（shell 直传 + 图片管理 + 入参择优，已实现，详见 §14、§15、§16）**：
 
-- `upload_image` 全局虚拟工具（入参 `local_path`，返回预签名 PUT curl + `file_url` + `next_step`）
-- `Storage.PutURL` / `Stat` / `OwnsURL` 接口扩展（local = HMAC PUT URL，s3 = `PresignedPutObject`）
+- `upload_image` per-config 内置工具（V1.2：随 `buildToolsCache` 注入每个视觉服务，固定名 `vision.upload_image`；入参 `local_path`，返回预签名 PUT curl + `file_url` + `next_step`）
+- `Storage.PutURL` / `Stat` / `OwnsURL`（V1.1）/ `KeyFromURL`（V1.3）接口扩展（local = HMAC PUT URL，s3 = `PresignedPutObject`）
 - `PUT /api/v1/vision/files/*key` 直传端点 + purpose 绑定的 HMAC 签名（`SignURLFor`/`VerifyURLFor`）
 - `uploaded_images.status` 状态机（`pending` / `uploaded`，默认 `uploaded`）+ `PresignedPutTTLSeconds` 配置键
-- MCP `initialize` 加 `instructions` 字段 + `analyze_image` 对自家 URL 做 `Stat` 上传确认
+- MCP `initialize` 加 `instructions` 字段 + `analyze_image` 对自家 URL 反向取字节（V1.1 为 `Stat` 确认 + 透传；V1.3 升级为 `KeyFromURL`→`Stat`→`Get`→`ImageInput{Bytes}`，见 §14.7）
 - **图片管理 API**：用户列表 / 删除（`GET/DELETE /vision/uploads`、`/vision/mcp-uploads`）+ 管理员列表 / 删除（`/admin/vision/uploads`）
 - **去重改每用户独立**：`(user_id, storage_key)` 复合唯一 + blob 引用计数（`CountByKey`，共享 blob、归零才删）；依据 = 图像字节 SHA-256（非文件名 / 大小）。须手写索引迁移
 - **自动删除完善**：`pending` 行快清 + 手动删除与自动清理互补
@@ -481,7 +507,7 @@ go build ./... && ./newmcp  # 启动后 uploaded_images 表自动建成
 | **前端管理 UI** | ✅ 已实现：用户图片管理页（`/vision/uploads`，缩略图 / 复制签名 URL / 删除）+ 管理员图片管理页（`/admin/uploads`，按 user_id 筛选）+ 管理后台「存储 / 视觉上传」设置 Tab（后端选择 / S3 凭据 / 上传调优参数）。vision 测试面板的上传按钮为可选增强，未做 |
 | **Gemini 原生 file_uri** | 对任意 https URL 可能不稳（V1 可靠 URL 路径为 OpenAI 兼容与 Anthropic） |
 | **网关侧 resize**（可选降本） | 未做；OpenAI / Claude 上游本就会做长边 ≤1568px 的 resize，非阻塞 |
-| **StoreAddress 反向回退**（plan 遗留钩子） | 当 `image_url` 主机 == 自家 `ServerAddress` 主机时回退 `ImageInput{Bytes}`（无 SSRF，因是自家文件），可作 Gemini 路径兜底，未实现 |
+| ~~**StoreAddress 反向回退**~~ | ✅ **V1.3 已实现**（原 plan 遗留钩子）：自家存储 URL（`OwnsURL` 命中）经 `KeyFromURL`→`Get` 反向取字节、以 `ImageInput{Bytes}` 发上游（无 SSRF，因是自家对象），兼作本地部署兜底与 Gemini 路径的可靠替代，见 §14.7 |
 
 ### 13.3 协议趋势（短期不依赖）
 
@@ -504,10 +530,12 @@ V1.1 新增的**预签名 PUT 直传**路径：模型调 `upload_image` 拿到�
 
 两条路径并存：multipart（§7.1）留给 Web UI / 服务端经手字节的场景；预签名 PUT（本节）留给 agent 自助上传。
 
-### 14.2 `upload_image` 全局虚拟工具
+### 14.2 `upload_image` per-config 内置工具（V1.2）
 
-- **全局单例**，不随 `VisionConfig` 走（上传与用哪个视觉模型无关；per-config 会在多配置时产生重名工具 `vision.upload_image`）。在 `gateway_handler.go` 的 tools/list 里常驻追加，派发在 `routeAndCall`（direct/group 直调）与 `handleExecute`（smart 模式 `mcp.execute`）两处、**作用域校验之前**短路命中 `vision.upload_image`。
-- 工具名 `vision.upload_image` 与既有 `vision_<id>` 真实服务命名空间不冲突（`ParseNamespacedName` 按 `__` 优先切分）。
+- **per-config 内置工具**：V1.2 起不再是全局单例，而是每个视觉服务（`vision_<id>`）的**第三个工具**（与 `analyze_image`/`describe_scene` 并列），由 `service/vision.go::buildToolsCache` 末尾追加 `virtual.UploadImageTool()`。暴露名 = `vision_<id>__vision.upload_image`（direct/group 模式，`CollectToolsForGroups` 加 `__` 前缀）；smart 模式 `tool_id` = `vision_<id>.vision.upload_image`。`ParseNamespacedName` 按 `__` 优先、其次 `.` 切分，无需特判。
+- **名称与描述固定**：`vision.upload_image` 与其描述是**硬编码常量**（`virtual.UploadImageToolName` / `uploadImageDesc`），**不进 `VisionConfig` 字段、不可编辑**——区别于 `analyze_image`/`describe_scene`（二者名/描述存库、可在详情页改）。`UploadImageTool()` 每次返回**全新 map**，因为 `CollectToolsForGroups` 会就地改写 `t["name"]` 加前缀，共享实例会被污染。
+- **派发**：经 per-user `VirtualToolRegistry` → `VisionHandler`（与 analyze_image 同一条路）。`VisionHandler` 加载 `vc` 后、解析 `image`/`image_url` 之前短路：`strings.HasSuffix(toolName,"upload_image")` → `handleUploadImage`。`upload_image` 入参是 `local_path`，与图片分析入参完全不同，故必须在分析参数校验之前短路。
+- **调用方 userID**：`upload_image` 需调用方 userID（上传归属 + `MaxUploadsPerUser` 配额，与 multipart `UploadVisionImage`、旧全局工具语义一致，按**调用方**计）。`VirtualToolHandler` 签名无 userID（改它会波及 camera），故用 context 传递：`gateway_handler` 在 `routeAndCall` / `handleExecute` 两处 virtual 派发点调 `virtual.WithCallerUserID(ctx, logCtx.UserID)`；`VisionHandler` upload 分支 `CallerUserID(ctx)` 读取，`0` 时回退 `vc.UserID`。
 
 **入参**：
 
@@ -603,23 +631,27 @@ VerifyURLFor("PUT", key, expires, token)  →  不通过 403 / 过期 410
 
 > s3 后端模型直传桶、**不经此端点**；行在 `upload_image` 时已建为 `pending`，由 §14.7 的 `Stat` 在 analyze 时确认 + 回填。
 
-### 14.7 analyze_image 上传确认（Stat）
+### 14.7 analyze_image 对自家 URL 反向取字节（V1.3）
 
-`internal/mcp/virtual/vision_handler.go` 的 `image_url` 分支，在 https 校验后、透传前加一段（只对自家存储 URL 触发；任意外部 https URL 仍是纯透传、无 SSRF）：
+`internal/mcp/virtual/vision_handler.go` 的 `image_url` 分支，在 http(s) 校验后判 `OwnsURL`：自家存储 URL 反向读字节、以 base64 发上游；任意外部 http(s) URL 仍是纯透传、无 SSRF。
 
 ```go
-if service.UploadStore != nil && service.UploadStore.OwnsURL(params.ImageURL) {
-    key := ownStorageKeyFromURL(u)                  // 从路径剥出 key
-    oi, err := service.UploadStore.Stat(ctx, key)
-    if err != nil {
-        return nil, fmt.Errorf("image_url 指向的上传尚未收到——请先执行 vision.upload_image 返回的 upload_command")
+if UploadStore != nil && UploadStore.OwnsURL(params.ImageURL) {
+    if key, ok := UploadStore.KeyFromURL(params.ImageURL); ok {   // local: 从路径剥 key；s3: 从 presign 路径取后缀
+        imgBytes, mediaType, err := fetchOwnImage(ctx, key)       // Stat(大小) → Get → io.ReadAll → SniffMediaType
+        if err != nil { return nil, err }                         // 缺失对象 → 「先跑 upload_command」；超限 → 直接拒
+        input.Bytes, input.MediaType = imgBytes, mediaType         // 同 camera 路径，上游直收 base64
+    } else {
+        input.URL = params.ImageURL                                // 自家 host 但 key 不可恢复 → 透传
     }
-    if max := model.GetOptionInt64("VisionUploadMaxBytes"); max > 0 && oi.Size > max {
-        return nil, fmt.Errorf("uploaded image (%d bytes) exceeds the %d-byte limit", oi.Size, max)
-    }
+} else {
+    input.URL = params.ImageURL                                    // 外部 URL → 纯透传上游
 }
-input.URL = params.ImageURL
 ```
+
+`fetchOwnImage`（同文件）：`Stat` 先做 `VisionUploadMaxBytes` 大小校验（Get 前拒大，不流式读超大对象）→ `Get` → `io.ReadAll` → `vision.SniffMediaType`（空 mime 拒）；`storage.ErrObjectNotFound` 转成带操作指引的错误。注意 `VisionInlineMaxBytes` **不适用**——该软阈值约束的是 base64 进「调用方 LLM 上下文」；这里字节走 new-mcp→上游，调用方只持有短 `file_url`，字节不进其上下文。
+
+**为什么反向取字节而非透传 URL**：本地部署时上游 provider（OpenAI / Claude / Gemini）拉不到 `ServerAddress`（localhost / 内网不可达），原「上游自己 GET」路径必败；Gemini 原生 `file_uri` 对任意 URL 也不稳。自家 URL 经 `OwnsURL` 校验是网关自己签发的，读本地对象无 SSRF 面。安全不变量仍成立：**new-mcp 永不下载外部 URL**。
 
 `service/vision.go::buildToolsCache` 的 `image_url` description 同步更新：把「获取方式」从 multipart 端点改为优先指向 `upload_image`。base64 兼容与外部 URL 透传都不变（功能不变）。
 
@@ -652,8 +684,8 @@ input.URL = params.ImageURL
 模型 ← { upload_command, file_url, expires_in, next_step }
 模型: Bash 执行 upload_command            # 无 key；s3 直传桶 / local 命中 PUT 端点
 模型: tools/call vision.analyze_image(image_url=file_url)
-  └─ 网关: OwnsURL 命中 → Stat 确认对象存在 + 大小合规
-          → ImageInput{URL} 透传给上游 → 上游自己 GET file_url 拉图
+  └─ 网关: OwnsURL 命中 → KeyFromURL 剥 key → Stat 大小校验 → Get 读字节 → 嗅探 mime
+          → ImageInput{Bytes} 发上游 → 上游直收 base64（无需回访 ServerAddress）
 模型 ← 分析结果
 ```
 
@@ -672,19 +704,30 @@ input.URL = params.ImageURL
 
 | 文件 | 改动 |
 |------|------|
-| `internal/storage/storage.go` | 接口加 `PutURL` / `Stat` / `OwnsURL` + `ObjectInfo` |
-| `internal/storage/s3.go` | 三方法实现（`PresignedPutObject` / `StatObject` / 端点 host 比对） |
-| `internal/storage/local.go` | 三方法实现（HMAC PUT URL / `os.Stat` / `ServerAddress` + 路径比对） |
+| `internal/storage/storage.go` | 接口加 `PutURL` / `Stat` / `OwnsURL`（V1.1）/ `KeyFromURL`（V1.3）+ `ObjectInfo` |
+| `internal/storage/s3.go` | 四方法实现（`PresignedPutObject` / `StatObject` / 端点 host 比对 / 从 presign 路径剥 key） |
+| `internal/storage/local.go` | 四方法实现（HMAC PUT URL / `os.Stat` / `ServerAddress`+路径比对 / 从文件 URL 路径剥 key） |
 | `internal/storage/sign.go` | 加 `SignURLFor` / `VerifyURLFor`（purpose 绑定）；`SignURL` / `VerifyURL` 不动 |
 | `controller/upload.go` | 加 `PutVisionFile`（复用 `UploadService` 有界读 + 嗅探） |
 | `router/api_router.go` | 公开组加 `PUT /vision/files/*key` |
 | `model/uploaded_image.go` | 加 `Status` 字段 + 常量 + `MarkUploaded` |
 | `model/option.go` | `defaultOptions` 加 `PresignedPutTTLSeconds`（600） |
 | `service/vision.go` | `imageURLDesc` 文案指向 `upload_image` |
-| `internal/mcp/virtual/vision_handler.go` | `image_url` 分支加自家 URL 的 `Stat` 确认 |
+| `internal/mcp/virtual/vision_handler.go` | 自家 URL 分支：V1.1 `Stat` 确认 → V1.3 反向取字节（`KeyFromURL`→`Stat`→`Get`→`ImageInput{Bytes}`），删 `ownStorageKeyFromURL`、加 `fetchOwnImage` |
 | `internal/mcp/handler/gateway_handler.go` | `initialize` 加 `instructions`；tools/list 追加全局工具；`routeAndCall` + `handleExecute` 短路派发 |
 
 > 零新增依赖：`google/uuid v1.6.0`、`minio-go/v7 v7.2.1` 均已在 `go.mod`。
+
+**V1.2 增量**（`upload_image` 由全局工具改为 per-config 内置工具，详见 §14.2）：
+
+| 文件 | 改动 |
+|------|------|
+| `internal/mcp/virtual/global.go` | **删除整文件**（`GlobalTools`/`IsGlobalTool`/`HandleGlobalTool` 全删） |
+| `internal/mcp/virtual/upload_image.go` | 迁入 `UploadStore`/`UploadImageToolName`；新增 `UploadImageTool()`（每次返回新 map）+ `WithCallerUserID`/`CallerUserID` context 辅助；`handleUploadImage` 逻辑不变 |
+| `service/vision.go::buildToolsCache` | 末尾追加 `virtual.UploadImageTool()`（第三个工具，固定名/描述） |
+| `internal/mcp/virtual/vision_handler.go` | 加载 `vc` 后加 `upload_image` 早返回分支（→ `handleUploadImage`，userID 从 ctx 取、回退 `vc.UserID`） |
+| `internal/mcp/handler/gateway_handler.go` | 删 `handleToolsList` 两处 `GlobalTools` 追加；删 `routeAndCall`/`handleExecute` 全局短路块；两处 virtual 派发点注入 `virtual.WithCallerUserID(ctx, logCtx.UserID)` |
+| 前端 `vision-detail-page.tsx` + `i18n/{zh,en}.json` | 详情页新增只读 `upload_image` 卡片（标题/简介/「系统内置·不可修改」徽标） |
 
 ### 14.11 验证
 
@@ -696,7 +739,7 @@ input.URL = params.ImageURL
 4. 一次性 slot：对同一 key 二次 PUT → 409。
 5. 模型跳步：直接拿本地路径 / 未上传的 `file_url` 调 `analyze_image` → 返回带操作指引的错误（且不发计费请求到上游）。
 6. 清理：`pending` 行到期（PUT TTL 过后）被回收；已 `uploaded` 行按 `UploadRetentionHours` 回收。
-7. smart 模式：`initialize` 的 `instructions` 出现；`mcp.execute vision.upload_image` 与直调均可通。
+7. smart 模式：`initialize` 的 `instructions` 出现；`mcp.execute vision_<id>.vision.upload_image` 与直调（`vision_<id>__vision.upload_image`）均可通。
 
 ---
 
@@ -864,7 +907,7 @@ V1.0 文案把 `image_url` 标为「preferred」、base64 标为「大图不推�
 ### 16.4 与既有约束的关系
 
 - **功能不变**：base64 与 URL 两路都保留，只是把「无脑 URL」改成「按尺寸择优」。
-- `VisionInlineMaxBytes` 只影响 base64 路径的软引导 / 报错；URL 路径（含 §14.7 自家 URL 的 `Stat` 确认）不受影响。
+- `VisionInlineMaxBytes` 只影响 base64 入参路径的软引导 / 报错；URL 路径不受影响。V1.3 自家 URL 反向取字节走 `ImageInput{Bytes}`，但字节流向是 new-mcp→上游、不进调用方 LLM 上下文，故 `VisionInlineMaxBytes` 同样不适用（只有 `VisionUploadMaxBytes` 硬上限生效）。
 - base64 硬上限仍是 `VisionUploadMaxBytes`；超限两路一致拒绝。
 - §6 的 `vision_handler` 分派（`image` / `image_url` 二选一）不变，§16.3 只在 base64 分支加一个软阈值检查。
 
