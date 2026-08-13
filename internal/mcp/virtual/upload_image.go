@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,13 +29,16 @@ const UploadImageToolName = "vision.upload_image"
 // It is intentionally a constant (not a per-config field) so the workflow
 // guidance stays consistent across every vision service.
 const uploadImageDesc = "Stage a LOCAL image file for vision analysis WITHOUT embedding base64. " +
-	"Pass local_path; you get back a ready curl command (upload_command) that uploads the file " +
-	"straight to storage with NO API key in it, plus a file_url. Workflow: " +
-	"1) call this with local_path; 2) run upload_command via your Bash/shell tool; " +
-	"3) call vision.analyze_image with image_url=file_url. For SMALL images you may instead " +
-	"inline base64 directly to analyze_image; use this tool for larger images."
+	"Pass local_path; you get back ready curl commands (upload_command) for BOTH Windows and " +
+	"macOS/Linux that upload the file straight to storage with NO API key in them, plus a file_url. " +
+	"Workflow: 1) call this with local_path; 2) run the upload_command matching YOUR system via your " +
+	"Bash/shell tool — on Windows PowerShell use the curl.exe variant (bare `curl` is an alias for " +
+	"Invoke-WebRequest there and will reject -T/-X); 3) call vision.analyze_image with image_url=file_url. " +
+	"For SMALL images you may instead inline base64 directly to analyze_image; use this tool for larger images."
 
-const uploadLocalPathDesc = "Absolute path of the image on your machine. The server cannot read your disk; it is used only to template the returned curl command. The file must exist locally."
+const uploadLocalPathDesc = "Absolute path of the image on your machine, in your system's native form " +
+	"(Windows: C:\\Users\\me\\photo.jpg; macOS/Linux: /Users/me/photo.jpg). The server cannot read your " +
+	"disk; the path is used to detect your OS and to template the returned curl command. The file must exist locally."
 
 // UploadImageTool returns a FRESH tool definition map for the built-in
 // upload_image tool. Each call returns a new map because CollectToolsForGroups
@@ -139,22 +143,92 @@ func handleUploadImage(ctx context.Context, userID int64, args json.RawMessage) 
 		return nil, fmt.Errorf("sign file url: %w", err)
 	}
 
-	cmd := fmt.Sprintf("curl -X PUT -T %q %q", p.LocalPath, putURL)
-	nextStep := "Run upload_command via your Bash/shell tool (no API key needed), then call vision.analyze_image with image_url=<file_url>. Do NOT pass image bytes or base64 to any tool."
+	// Build OS-tailored curl commands. The server cannot read the caller's disk,
+	// but the local_path it passes betrays its OS (Windows paths have a drive
+	// letter / backslash). We emit the command for the inferred OS first and
+	// ALWAYS include the other OS as a labeled fallback, so the model never has
+	// to retry on a shell it wasn't built for.
+	//
+	// The single cross-platform pain point is Windows PowerShell aliasing `curl`
+	// to Invoke-WebRequest (which rejects -T/-X). curl.exe sidesteps the alias
+	// and ships on every modern Windows install; bare `curl` is real curl on
+	// macOS, Linux, Git Bash and even cmd.exe. Single quotes are used for both
+	// commands so spaces in the path survive (Windows forbids ' in filenames and
+	// unix paths with an embedded ' are astronomically rare, so no escape needed).
+	winCmd, unixCmd := buildUploadCommands(p.LocalPath, putURL)
+	primary, alt, primaryLabel, altLabel := pickByOS(p.LocalPath, winCmd, unixCmd)
+
+	nextStep := "Run the upload_command for YOUR system via your Bash/shell tool (no API key needed), " +
+		"then call vision.analyze_image with image_url=<file_url>. On Windows PowerShell use the " +
+		"curl.exe variant. Do NOT pass image bytes or base64 to any tool."
 
 	// Wrap as a standard MCP tools/call result: {content: [{type:"text", text:...}]}.
-	// The text body restates the command + file_url + next_step so a model reading
-	// the result sees the ready-to-run instruction (the most effective guidance
-	// channel, per §14.8).
+	// The text body restates BOTH commands + file_url + next_step so a model
+	// reading the result sees a ready-to-run command for its own OS (the most
+	// effective guidance channel, per §14.8) without a retry.
 	result := map[string]interface{}{
 		"content": []map[string]interface{}{
 			{"type": "text", "text": fmt.Sprintf(
-				"Upload slot created. Run this command now, then call vision.analyze_image with image_url.\n\n"+
-					"upload_command: %s\nfile_url: %s\nexpires_in: %ds\nkey: %s\n\n%s",
-				cmd, fileURL, int(putTTL.Seconds()), key, nextStep)},
+				"Upload slot created. Run the command for YOUR system, then call vision.analyze_image with image_url.\n\n"+
+					"upload_command (%s): %s\n"+
+					"upload_command (%s): %s   # use this instead if the line above is not for your system\n"+
+					"file_url: %s\nexpires_in: %ds\nkey: %s\n\n%s",
+				primaryLabel, primary, altLabel, alt, fileURL, int(putTTL.Seconds()), key, nextStep)},
 		},
 	}
 	return json.Marshal(result)
+}
+
+// looksLikeWindowsPath reports whether local_path is a Windows path (drive-letter
+// prefix or any backslash). The server cannot ask the caller's OS, but the path
+// the model passes reveals it with near-total reliability: Windows absolute paths
+// look like C:\Users\... and unix paths never carry a drive letter or (in
+// practice) a backslash. A relative path with no signal is treated as unix — on
+// Windows the unix `curl` form still works in Git Bash and cmd.exe, and the
+// Windows (curl.exe) variant is always emitted alongside as the fallback.
+func looksLikeWindowsPath(p string) bool {
+	if strings.Contains(p, `\`) {
+		return true
+	}
+	if len(p) >= 2 && p[1] == ':' {
+		c := p[0]
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') {
+			return true
+		}
+	}
+	return false
+}
+
+// quoteArg wraps a shell argument in single quotes so spaces and shell
+// metacharacters (&, ?, =, $, ...) survive. Single quotes are literal in
+// PowerShell, bash and zsh. Windows filenames cannot contain a single quote, so
+// no escaping is needed there; unix paths with an embedded ' are vanishingly
+// rare and left unsupported rather than picking one of the divergent escape
+// conventions (PowerShell doubles it, bash needs '\''). The path's URL arg is
+// HMAC/presign output and never contains a quote either.
+func quoteArg(s string) string {
+	return "'" + s + "'"
+}
+
+// buildUploadCommands returns the curl upload command in Windows and unix form.
+// They differ only in the binary name: curl.exe on Windows (PowerShell aliases
+// bare `curl` to Invoke-WebRequest, which rejects -T/-X), curl everywhere else.
+// Both PUT the file as the request body to the same presigned URL.
+func buildUploadCommands(localPath, putURL string) (windowsCmd, unixCmd string) {
+	windowsCmd = fmt.Sprintf("curl.exe -X PUT -T %s %s", quoteArg(localPath), quoteArg(putURL))
+	unixCmd = fmt.Sprintf("curl -X PUT -T %s %s", quoteArg(localPath), quoteArg(putURL))
+	return windowsCmd, unixCmd
+}
+
+// pickByOS returns the command matching the inferred OS first (primary) and the
+// other second (alt), with short labels. The model runs primary; alt is the
+// labeled fallback if its shell isn't the inferred one (e.g. a Git Bash user on
+// Windows passing a /c/... path, or vice versa).
+func pickByOS(localPath, windowsCmd, unixCmd string) (primary, alt, primaryLabel, altLabel string) {
+	if looksLikeWindowsPath(localPath) {
+		return windowsCmd, unixCmd, "Windows/PowerShell", "macOS/Linux"
+	}
+	return unixCmd, windowsCmd, "macOS/Linux", "Windows/PowerShell"
 }
 
 func presignedPutTTL() time.Duration {
