@@ -317,7 +317,7 @@ func (s *VisionService) buildToolsCache(vc *model.VisionConfig) []map[string]int
 	// V1.1: the choice is size-based (§16). Small images may inline base64; for
 	// larger ones the model should upload first (vision.upload_image → curl →
 	// image_url) so the bytes stay out of its context.
-	const imageURLDesc = "Public https URL of the image. Use for LARGER images: obtain file_url via the vision.upload_image tool (returns OS-matched curl commands + file_url, no API key in the curl), run the command for your system (on Windows PowerShell use the curl.exe variant), then pass file_url here. The upstream model fetches it directly, so image bytes never enter the LLM context. For small images you may inline base64 via the image parameter instead."
+	const imageURLDesc = "Public https URL of the image. Use for LARGER images: obtain file_url via the vision.upload_image tool (returns an OS-matched curl command + file_url, no API key in the curl), run it (on Windows PowerShell it uses curl.exe), then pass file_url here. The upstream model fetches it directly, so image bytes never enter the LLM context. For small images you may inline base64 via the image parameter instead."
 	const imageB64Desc = "Base64-encoded image. Use for SMALL images only (at most ~VisionInlineMaxBytes, default 10KB). Larger images bloat the LLM context (~400 token/KB, generated as output) — for those, use vision.upload_image → image_url instead."
 
 	return []map[string]interface{}{

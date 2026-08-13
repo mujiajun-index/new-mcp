@@ -29,11 +29,11 @@ const UploadImageToolName = "vision.upload_image"
 // It is intentionally a constant (not a per-config field) so the workflow
 // guidance stays consistent across every vision service.
 const uploadImageDesc = "Stage a LOCAL image file for vision analysis WITHOUT embedding base64. " +
-	"Pass local_path; you get back ready curl commands (upload_command) for BOTH Windows and " +
-	"macOS/Linux that upload the file straight to storage with NO API key in them, plus a file_url. " +
-	"Workflow: 1) call this with local_path; 2) run the upload_command matching YOUR system via your " +
-	"Bash/shell tool — on Windows PowerShell use the curl.exe variant (bare `curl` is an alias for " +
-	"Invoke-WebRequest there and will reject -T/-X); 3) call vision.analyze_image with image_url=file_url. " +
+	"Pass local_path; you get back a ready curl command (upload_command) matched to YOUR OS " +
+	"(detected from the path) that uploads the file straight to storage with NO API key in it, " +
+	"plus a file_url. Workflow: 1) call this with local_path; 2) run upload_command via your " +
+	"Bash/shell tool (on Windows PowerShell it already uses curl.exe, since bare `curl` is an " +
+	"alias for Invoke-WebRequest there); 3) call vision.analyze_image with image_url=file_url. " +
 	"For SMALL images you may instead inline base64 directly to analyze_image; use this tool for larger images."
 
 const uploadLocalPathDesc = "Absolute path of the image on your machine, in your system's native form " +
@@ -143,37 +143,26 @@ func handleUploadImage(ctx context.Context, userID int64, args json.RawMessage) 
 		return nil, fmt.Errorf("sign file url: %w", err)
 	}
 
-	// Build OS-tailored curl commands. The server cannot read the caller's disk,
-	// but the local_path it passes betrays its OS (Windows paths have a drive
-	// letter / backslash). We emit the command for the inferred OS first and
-	// ALWAYS include the other OS as a labeled fallback, so the model never has
-	// to retry on a shell it wasn't built for.
-	//
-	// The single cross-platform pain point is Windows PowerShell aliasing `curl`
-	// to Invoke-WebRequest (which rejects -T/-X). curl.exe sidesteps the alias
-	// and ships on every modern Windows install; bare `curl` is real curl on
-	// macOS, Linux, Git Bash and even cmd.exe. Single quotes are used for both
-	// commands so spaces in the path survive (Windows forbids ' in filenames and
-	// unix paths with an embedded ' are astronomically rare, so no escape needed).
-	winCmd, unixCmd := buildUploadCommands(p.LocalPath, putURL)
-	primary, alt, primaryLabel, altLabel := pickByOS(p.LocalPath, winCmd, unixCmd)
+	// Return the ONE curl command matched to the caller's OS, inferred from
+	// local_path (drive letter / backslash → Windows → curl.exe; otherwise →
+	// curl). Detection is reliable for the absolute paths agents pass; a
+	// relative path with no signal defaults to the unix `curl` form (also valid
+	// in Git Bash and cmd.exe). We deliberately do NOT also emit the other-OS
+	// variant: the two differ only in the binary name, so a second line would
+	// just duplicate the long presigned URL, and the model self-corrects
+	// curl↔curl.exe on the rare wrong-detection case (the same one-shot retry it
+	// did before this tool existed).
+	cmd := uploadCommand(p.LocalPath, putURL)
 
-	nextStep := "Run the upload_command for YOUR system via your Bash/shell tool (no API key needed), " +
-		"then call vision.analyze_image with image_url=<file_url>. On Windows PowerShell use the " +
-		"curl.exe variant. Do NOT pass image bytes or base64 to any tool."
-
-	// Wrap as a standard MCP tools/call result: {content: [{type:"text", text:...}]}.
-	// The text body restates BOTH commands + file_url + next_step so a model
-	// reading the result sees a ready-to-run command for its own OS (the most
-	// effective guidance channel, per §14.8) without a retry.
+	// Standard MCP tools/call result: {content:[{type:"text",text:...}]}. The
+	// text is the most effective guidance channel (§14.8): a ready-to-run
+	// command + file_url, nothing fixed or duplicated.
 	result := map[string]interface{}{
 		"content": []map[string]interface{}{
 			{"type": "text", "text": fmt.Sprintf(
-				"Upload slot created. Run the command for YOUR system, then call vision.analyze_image with image_url.\n\n"+
-					"upload_command (%s): %s\n"+
-					"upload_command (%s): %s   # use this instead if the line above is not for your system\n"+
-					"file_url: %s\nexpires_in: %ds\nkey: %s\n\n%s",
-				primaryLabel, primary, altLabel, alt, fileURL, int(putTTL.Seconds()), key, nextStep)},
+				"Upload slot ready. Run upload_command (no API key needed), then call vision.analyze_image with image_url=file_url.\n\n"+
+					"upload_command: %s\nfile_url: %s\nexpires_in: %ds",
+				cmd, fileURL, int(putTTL.Seconds()))},
 		},
 	}
 	return json.Marshal(result)
@@ -220,15 +209,18 @@ func buildUploadCommands(localPath, putURL string) (windowsCmd, unixCmd string) 
 	return windowsCmd, unixCmd
 }
 
-// pickByOS returns the command matching the inferred OS first (primary) and the
-// other second (alt), with short labels. The model runs primary; alt is the
-// labeled fallback if its shell isn't the inferred one (e.g. a Git Bash user on
-// Windows passing a /c/... path, or vice versa).
-func pickByOS(localPath, windowsCmd, unixCmd string) (primary, alt, primaryLabel, altLabel string) {
+// uploadCommand returns the single curl upload command matched to the caller's
+// OS, inferred from local_path: a Windows path (drive letter / backslash) →
+// curl.exe (PowerShell aliases bare `curl` to Invoke-WebRequest); anything else
+// → curl (real curl on macOS, Linux, Git Bash, cmd.exe). Exactly one command is
+// returned — detection picks it — rather than both OS forms, which differ only
+// in the binary name and would needlessly duplicate the long presigned URL.
+func uploadCommand(localPath, putURL string) string {
+	win, unix := buildUploadCommands(localPath, putURL)
 	if looksLikeWindowsPath(localPath) {
-		return windowsCmd, unixCmd, "Windows/PowerShell", "macOS/Linux"
+		return win
 	}
-	return unixCmd, windowsCmd, "macOS/Linux", "Windows/PowerShell"
+	return unix
 }
 
 func presignedPutTTL() time.Duration {

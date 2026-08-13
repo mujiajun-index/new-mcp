@@ -67,9 +67,8 @@ new-mcp 是远程 HTTP 网关，读不到客户端本地盘，故把智谱的「
        同一路径另一鉴权：/api/v1/vision/mcp-upload(APIKey+RateLimit)，共享同一 handler
 
 直传(V1.1): 模型调 upload_image(local_path) --> 网关生成 uuid key + 预签名 PUT URL + 签名 GET URL
-         --> 返回 {upload_command(Windows): "curl.exe -X PUT -T <path> '<put_url>'"(无 key)
-                  + upload_command(macOS/Linux): "curl -X PUT ...", file_url, next_step}  # 见 §14.2.1 跨系统命令生成
-         --> 模型按所属系统选命令、用 Bash 执行：s3 后端直传桶(字节绕过网关) / local 后端命中 PUT /api/v1/vision/files/*key(字节经网关但无 key)
+         --> 返回 {upload_command: "curl(.exe) -X PUT -T <path> '<put_url>'"(按 OS 推断二进制名,无 key) + file_url}  # 见 §14.2.1 跨系统命令生成
+         --> 模型用 Bash 跑 upload_command：s3 后端直传桶(字节绕过网关) / local 后端命中 PUT /api/v1/vision/files/*key(字节经网关但无 key)
          --> 模型调 analyze_image(image_url=file_url) --> vision_handler 判 OwnsURL 自家 URL
          --> KeyFromURL 剥 key → Stat 大小校验 → Get 读字节 → SniffMediaType → ImageInput{Bytes} 发上游
          --> 上游直接收 base64（无需回访 ServerAddress，本地部署也能跑）
@@ -347,14 +346,11 @@ curl -X POST http://localhost:3000/mcp/group/<slug> -H "X-API-Key: sk-..." -d '{
   "method":"tools/call",
   "params":{"name":"vision.upload_image","arguments":{"local_path":"./photo.jpg"}}
 }'
-# => 返回文本块含两条命令（按 OS 推断排前，另一条作兜底，见 §14.2.1）：
-#    upload_command (macOS/Linux): curl -X PUT -T './photo.jpg' 'https://.../files/a1/a1b2...?expires=...&token=...'
-#    upload_command (Windows/PowerShell): curl.exe -X PUT -T './photo.jpg' 'https://.../...'
-#    + file_url / expires_in / next_step
+# => 返回文本块：单条 upload_command（按 OS 从 local_path 推断 curl 或 curl.exe）+ file_url + expires_in，见 §14.2.1
 
-# 2) 模型按所属系统选一条、用 Bash 跑（注意：无任何 API Key 头）
-curl -X PUT -T './photo.jpg' 'https://.../files/a1/a1b2...?expires=...&token=...'   # macOS/Linux/Git Bash/cmd
-curl.exe -X PUT -T './photo.jpg' 'https://.../files/a1/a1b2...?expires=...&token=...'  # Windows PowerShell
+# 2) 模型用 Bash 跑 upload_command（注意：无任何 API Key 头）
+curl -X PUT -T './photo.jpg' 'https://.../files/a1/a1b2...?expires=...&token=...'             # 路径无盘符/反斜杠 → 推断 unix → curl
+curl.exe -X PUT -T 'C:\photos\photo.jpg' 'https://.../files/a1/a1b2...?expires=...&token=...' # 路径含盘符/反斜杠 → 推断 Windows → curl.exe
 # s3 后端时该 URL 指向桶，字节直传桶、不经网关
 
 # 3) 用 file_url 调 analyze_image（同 §7.3 第 4 步）
@@ -547,23 +543,19 @@ V1.1 新增的**预签名 PUT 直传**路径：模型调 `upload_image` 拿到�
 
 > `local_path` 仅用于拼 curl 占位，**服务端读不到客户端盘**；文件得由模型在本地用 Bash 上传。
 
-**返回值**（核心是 `upload_command`（Windows + macOS/Linux 两条）+ `file_url` + `next_step`）：
+**返回值**（核心是 `upload_command`（按 OS 推断、单条）+ `file_url`）：
 
 实际返回是 MCP `tools/call` 的 `content[].text` 文本块（节选）：
 
 ```text
-Upload slot created. Run the command for YOUR system, then call vision.analyze_image with image_url.
+Upload slot ready. Run upload_command (no API key needed), then call vision.analyze_image with image_url=file_url.
 
-upload_command (Windows/PowerShell): curl.exe -X PUT -T 'C:\abs\path\photo.jpg' 'https://host/api/v1/vision/files/a1/a1b2...?expires=...&token=...'
-upload_command (macOS/Linux): curl -X PUT -T 'C:\abs\path\photo.jpg' 'https://.../files/a1/a1b2...?expires=...&token=...'   # use this instead if the line above is not for your system
+upload_command: curl.exe -X PUT -T 'C:\abs\path\photo.jpg' 'https://host/api/v1/vision/files/a1/a1b2...?expires=...&token=...'
 file_url: https://host/api/v1/vision/files/a1/a1b2...?expires=...&token=...
-expires_in: 600
-key: a1/a1b2c3d4-...
-
-Run the upload_command for YOUR system ... On Windows PowerShell use the curl.exe variant. Do NOT pass image bytes or base64 to any tool.
+expires_in: 600s
 ```
 
-s3 后端的命令里 URL 指向桶（`https://bucket.s3.../...?X-Amz-Signature=...`），同样无 key。
+unix 路径（如 `/Users/me/x.png`）场景下 `upload_command` 里是 `curl`（无 `.exe`）。s3 后端的命令里 URL 指向桶（`https://bucket.s3.../...?X-Amz-Signature=...`），同样无 key。
 
 ### 14.2.1 跨系统命令生成（Windows PowerShell / macOS / Linux）
 
@@ -572,7 +564,7 @@ s3 后端的命令里 URL 指向桶（`https://bucket.s3.../...?X-Amz-Signature=
 1. **从 `local_path` 推断 OS**（`looksLikeWindowsPath`）：含反斜杠或盘符前缀（`C:\` / `C:/`）→ Windows；否则 → unix。Windows 绝对路径一目了然，unix 路径实践上不含反斜杠 / 盘符，故可靠。
 2. **二进制名分流**：Windows → `curl.exe`（绕开别名，cmd / Git Bash 同样可用；Win10 1803+ 自带）；macOS / Linux / Git Bash → `curl`（真 curl）。
 3. **单引号包参**（`quoteArg`）：空格与 `&`/`=`/`?` 等 shell 元字符在 PowerShell / bash / zsh 里都是字面量。Windows 文件名禁止单引号、HMAC/presign URL 也不含引号，故无需转义；不用 Go `%q`（它会把 `\` 双转义成 `\\`，在 PowerShell/cmd 里路径反而错）。
-4. **两条命令永远都给**：推断出的系统命令排前（`primary`），另一系统命令作标注兜底（`alt`）。即便推断错（如 Windows 上传 Git Bash 风格 `/c/...` 路径），正确命令也在同一条消息里，模型无需瞎试重试。
+4. **只返回检测到的那一条**（`uploadCommand`）：路径判定为 Windows → 给 `curl.exe`，否则 → 给 `curl`，**单条**，不再附带另一系统的命令或换名提示。两型仅二进制名不同、长 presigned URL 完全一致，多给一条是纯噪音；检测对绝对路径几乎总对，极少数推断错（相对路径、Git Bash 风格 `/c/...`）时 agent 自行 curl↔curl.exe 一词替换即可——与本工具出现前同样的单次重试。
 
 「路径推断」零侵入——现有所有 agent 不改调用即生效；故**不新增 `platform` 参数**（如需强制覆盖，后续可加可选参数，回落到路径推断）。
 
