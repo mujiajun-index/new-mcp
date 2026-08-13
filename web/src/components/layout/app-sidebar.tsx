@@ -29,7 +29,6 @@ const mainNav: NavItem[] = [
   { label: 'nav.groups', icon: FolderTree, href: '/groups' },
   { label: 'nav.connections', icon: Cloud, href: '/connections' },
   { label: 'nav.vision', icon: Eye, href: '/vision' },
-  { label: 'nav.uploads', icon: Images, href: '/vision/uploads' },
   { label: 'nav.cameras', icon: Camera, href: '/cameras' },
   { label: 'nav.apiKeys', icon: Key, href: '/api-keys' },
   { label: 'nav.logs', icon: Activity, href: '/logs' },

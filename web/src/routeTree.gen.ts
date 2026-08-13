@@ -55,9 +55,6 @@ const AuthenticatedConnectionsIndexLazyRouteImport = createFileRoute(
 const AuthenticatedCamerasIndexLazyRouteImport = createFileRoute(
   '/_authenticated/cameras/',
 )()
-const AuthenticatedVisionUploadsLazyRouteImport = createFileRoute(
-  '/_authenticated/vision/uploads',
-)()
 const AuthenticatedVisionCreateLazyRouteImport = createFileRoute(
   '/_authenticated/vision/create',
 )()
@@ -256,14 +253,6 @@ const AuthenticatedCamerasIndexLazyRoute =
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any).lazy(() =>
     import('./routes/_authenticated/cameras/index.lazy').then((d) => d.Route),
-  )
-const AuthenticatedVisionUploadsLazyRoute =
-  AuthenticatedVisionUploadsLazyRouteImport.update({
-    id: '/vision/uploads',
-    path: '/vision/uploads',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any).lazy(() =>
-    import('./routes/_authenticated/vision/uploads.lazy').then((d) => d.Route),
   )
 const AuthenticatedVisionCreateLazyRoute =
   AuthenticatedVisionCreateLazyRouteImport.update({
@@ -472,7 +461,6 @@ export interface FileRoutesByFullPath {
   '/services/create': typeof AuthenticatedServicesCreateLazyRoute
   '/vision/$id': typeof AuthenticatedVisionIdLazyRoute
   '/vision/create': typeof AuthenticatedVisionCreateLazyRoute
-  '/vision/uploads': typeof AuthenticatedVisionUploadsLazyRoute
   '/cameras/': typeof AuthenticatedCamerasIndexLazyRoute
   '/connections/': typeof AuthenticatedConnectionsIndexLazyRoute
   '/groups/': typeof AuthenticatedGroupsIndexLazyRoute
@@ -514,7 +502,6 @@ export interface FileRoutesByTo {
   '/services/create': typeof AuthenticatedServicesCreateLazyRoute
   '/vision/$id': typeof AuthenticatedVisionIdLazyRoute
   '/vision/create': typeof AuthenticatedVisionCreateLazyRoute
-  '/vision/uploads': typeof AuthenticatedVisionUploadsLazyRoute
   '/cameras': typeof AuthenticatedCamerasIndexLazyRoute
   '/connections': typeof AuthenticatedConnectionsIndexLazyRoute
   '/groups': typeof AuthenticatedGroupsIndexLazyRoute
@@ -559,7 +546,6 @@ export interface FileRoutesById {
   '/_authenticated/services/create': typeof AuthenticatedServicesCreateLazyRoute
   '/_authenticated/vision/$id': typeof AuthenticatedVisionIdLazyRoute
   '/_authenticated/vision/create': typeof AuthenticatedVisionCreateLazyRoute
-  '/_authenticated/vision/uploads': typeof AuthenticatedVisionUploadsLazyRoute
   '/_authenticated/cameras/': typeof AuthenticatedCamerasIndexLazyRoute
   '/_authenticated/connections/': typeof AuthenticatedConnectionsIndexLazyRoute
   '/_authenticated/groups/': typeof AuthenticatedGroupsIndexLazyRoute
@@ -603,7 +589,6 @@ export interface FileRouteTypes {
     | '/services/create'
     | '/vision/$id'
     | '/vision/create'
-    | '/vision/uploads'
     | '/cameras/'
     | '/connections/'
     | '/groups/'
@@ -645,7 +630,6 @@ export interface FileRouteTypes {
     | '/services/create'
     | '/vision/$id'
     | '/vision/create'
-    | '/vision/uploads'
     | '/cameras'
     | '/connections'
     | '/groups'
@@ -689,7 +673,6 @@ export interface FileRouteTypes {
     | '/_authenticated/services/create'
     | '/_authenticated/vision/$id'
     | '/_authenticated/vision/create'
-    | '/_authenticated/vision/uploads'
     | '/_authenticated/cameras/'
     | '/_authenticated/connections/'
     | '/_authenticated/groups/'
@@ -851,13 +834,6 @@ declare module '@tanstack/react-router' {
       path: '/cameras'
       fullPath: '/cameras/'
       preLoaderRoute: typeof AuthenticatedCamerasIndexLazyRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/vision/uploads': {
-      id: '/_authenticated/vision/uploads'
-      path: '/vision/uploads'
-      fullPath: '/vision/uploads'
-      preLoaderRoute: typeof AuthenticatedVisionUploadsLazyRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/vision/create': {
@@ -1065,7 +1041,6 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedServicesCreateLazyRoute: typeof AuthenticatedServicesCreateLazyRoute
   AuthenticatedVisionIdLazyRoute: typeof AuthenticatedVisionIdLazyRoute
   AuthenticatedVisionCreateLazyRoute: typeof AuthenticatedVisionCreateLazyRoute
-  AuthenticatedVisionUploadsLazyRoute: typeof AuthenticatedVisionUploadsLazyRoute
   AuthenticatedCamerasIndexLazyRoute: typeof AuthenticatedCamerasIndexLazyRoute
   AuthenticatedConnectionsIndexLazyRoute: typeof AuthenticatedConnectionsIndexLazyRoute
   AuthenticatedGroupsIndexLazyRoute: typeof AuthenticatedGroupsIndexLazyRoute
@@ -1093,7 +1068,6 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedServicesCreateLazyRoute: AuthenticatedServicesCreateLazyRoute,
   AuthenticatedVisionIdLazyRoute: AuthenticatedVisionIdLazyRoute,
   AuthenticatedVisionCreateLazyRoute: AuthenticatedVisionCreateLazyRoute,
-  AuthenticatedVisionUploadsLazyRoute: AuthenticatedVisionUploadsLazyRoute,
   AuthenticatedCamerasIndexLazyRoute: AuthenticatedCamerasIndexLazyRoute,
   AuthenticatedConnectionsIndexLazyRoute:
     AuthenticatedConnectionsIndexLazyRoute,

@@ -70,7 +70,6 @@
     "pricing": "Pricing",
     "adminBilling": "Billing",
     "adminRedemption": "Redemption Codes",
-    "uploads": "Image Bin",
     "adminUploads": "Image Bin"
   },
   "auth": {
@@ -1216,11 +1215,7 @@
     "logPayloadEnabledDesc": "Persist request/response payloads in billing logs"
   },
   "uploads": {
-    "title": "Image Bin",
-    "subtitle": "Review and manage uploaded vision images (auto-cleaned on a retention schedule).",
-    "retentionHint": "Uploaded images are short-lived: they are deleted automatically once they reach the retention age. Save locally if you need them long-term.",
     "empty": "No uploaded images",
-    "emptyHint": "Images uploaded via the vision tools appear here.",
     "preview": "Preview",
     "type": "Type",
     "size": "Size",
@@ -1229,9 +1224,10 @@
     "expires": "Expires",
     "user": "User",
     "copyUrl": "Copy URL",
+    "prevImage": "Previous",
+    "nextImage": "Next",
     "deleteSuccess": "Deleted",
-    "deleteConfirm": "Delete this image? This cannot be undone.",
-    "adminTitle": "Image Bin (all users)",
+    "adminTitle": "Image Bin",
     "adminSubtitle": "Review and manage every user's uploaded vision images.",
     "adminDeleteConfirm": "Delete this image? This cannot be undone.",
     "filterByUser": "Filter by user ID...",

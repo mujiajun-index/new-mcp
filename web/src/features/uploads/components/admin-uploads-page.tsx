@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { adminGetUploads, adminDeleteUpload, type UploadListItem } from '../api'
 import { formatBytes, formatRelative, formatDateTime } from '../utils'
-import { BackendBadge, Thumb, CopyUrlButton } from './shared'
+import { BackendBadge, Thumb, CopyUrlButton, ImagePreviewDialog } from './shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MobileListCard } from '@/components/ui/mobile-list-card'
@@ -24,6 +24,7 @@ export function AdminUploadsPage() {
   const [page, setPage] = useState(1)
   const [userInput, setUserInput] = useState('')
   const [userId, setUserId] = useState<number | undefined>(undefined)
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null)
   const pageSize = 15
   const locale = i18n.language?.startsWith('zh') ? 'zh-CN' : 'en-US'
 
@@ -115,12 +116,12 @@ export function AdminUploadsPage() {
           </div>
         ) : isMobile ? (
           <div className="divide-y">
-            {items.map((item) => (
+            {items.map((item, idx) => (
               <MobileListCard
                 key={item.id}
                 title={
                   <div className="flex items-center gap-2.5">
-                    <Thumb src={item.url} alt={item.key} />
+                    <Thumb src={item.url} alt={item.key} onClick={() => setPreviewIndex(idx)} />
                     <span className="font-mono text-xs text-muted-foreground">{item.mime || '-'}</span>
                   </div>
                 }
@@ -165,10 +166,10 @@ export function AdminUploadsPage() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((item) => (
+                {items.map((item, idx) => (
                   <tr key={item.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
                     <td className="px-4 py-3">
-                      <Thumb src={item.url} alt={item.key} />
+                      <Thumb src={item.url} alt={item.key} onClick={() => setPreviewIndex(idx)} />
                     </td>
                     <td className="px-4 py-3">
                       <span className="font-mono text-xs">#{item.user_id}</span>
@@ -243,6 +244,16 @@ export function AdminUploadsPage() {
           </div>
         </div>
       )}
+
+      <ImagePreviewDialog
+        items={items}
+        index={previewIndex ?? 0}
+        open={previewIndex !== null}
+        onIndexChange={setPreviewIndex}
+        onOpenChange={(o) => {
+          if (!o) setPreviewIndex(null)
+        }}
+      />
     </div>
   )
 }

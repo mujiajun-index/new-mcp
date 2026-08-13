@@ -27,18 +27,6 @@ export interface UploadListResponse {
   }
 }
 
-// --- Current user's own uploads (JWT) ---
-
-export async function getUploads(params: { page?: number; page_size?: number } = {}): Promise<UploadListResponse> {
-  const res = await api.get('/vision/uploads', { params })
-  return res.data
-}
-
-export async function deleteUpload(id: number) {
-  const res = await api.delete(`/vision/uploads/${id}`)
-  return res.data
-}
-
 // --- Admin: all users' uploads ---
 
 export async function adminGetUploads(

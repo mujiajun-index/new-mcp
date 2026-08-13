@@ -125,10 +125,6 @@ func SetApiRouter(engine *gin.Engine) {
 		// sets on one route) but shares the same handler.
 		auth.POST("/vision/upload", controller.UploadVisionImage)
 
-		// V1.1: upload management (web UI / JWT) — list/delete own uploads.
-		auth.GET("/vision/uploads", controller.ListUploads)
-		auth.DELETE("/vision/uploads/:id", controller.DeleteUpload)
-
 		// Cameras
 		auth.GET("/cameras", controller.ListCameras)
 		auth.POST("/cameras", controller.CreateCamera)

@@ -70,7 +70,6 @@
     "pricing": "服务定价",
     "adminBilling": "计费设置",
     "adminRedemption": "兑换码",
-    "uploads": "图片管理",
     "adminUploads": "图片管理"
   },
   "auth": {
@@ -1216,11 +1215,7 @@
     "logPayloadEnabledDesc": "在计费日志中保存请求/响应内容"
   },
   "uploads": {
-    "title": "图片管理",
-    "subtitle": "查看和管理已上传的视觉图片（按保留期自动清理）",
-    "retentionHint": "上传的图片为短期资源，到达保留时长后会自动删除；如需长期使用请保存到本地。",
     "empty": "暂无已上传的图片",
-    "emptyHint": "通过视觉工具上传的图片会显示在这里",
     "preview": "预览",
     "type": "类型",
     "size": "大小",
@@ -1229,9 +1224,10 @@
     "expires": "过期",
     "user": "用户",
     "copyUrl": "复制链接",
+    "prevImage": "上一张",
+    "nextImage": "下一张",
     "deleteSuccess": "已删除",
-    "deleteConfirm": "确定删除这张图片？删除后不可恢复。",
-    "adminTitle": "图片管理（全部用户）",
+    "adminTitle": "图片管理",
     "adminSubtitle": "查看和管理所有用户上传的视觉图片",
     "adminDeleteConfirm": "确定删除这张图片？该操作不可恢复。",
     "filterByUser": "按用户 ID 筛选...",
