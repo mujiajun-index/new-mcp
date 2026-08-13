@@ -385,10 +385,12 @@ export function VisionDetailPage() {
             id="system_prompt"
             aria-label={t('vision.systemPrompt')}
             rows={4}
+            placeholder={t('vision.placeholderPrompt')}
             value={form.system_prompt}
             onChange={(e) => setForm({ ...form, system_prompt: e.target.value })}
             className="flex w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-y"
           />
+          <p className="text-xs text-muted-foreground">{t('vision.systemPromptHint')}</p>
         </div>
 
         <div className="space-y-2 max-w-xs">

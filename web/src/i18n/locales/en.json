@@ -620,6 +620,7 @@
     "fetchModels": "Fetch Models",
     "endpointPreview": "Preview",
     "systemPrompt": "System Prompt",
+    "systemPromptHint": "Not recommended unless you have specific needs. Leave blank to use each tool's built-in default system prompt.",
     "saveConfig": "Save Config",
     "registeredTools": "Registered Tools",
     "registeredToolsHint": "Once enabled, the following MCP tools are auto-registered. analyze_image and describe_scene are customizable; upload_image is built-in (fixed name and description, not editable).",

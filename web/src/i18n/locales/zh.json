@@ -620,6 +620,7 @@
     "fetchModels": "获取模型",
     "endpointPreview": "预览",
     "systemPrompt": "系统提示词",
+    "systemPromptHint": "无特殊要求不建议修改。留空将使用各工具内置的默认系统提示词。",
     "saveConfig": "保存配置",
     "registeredTools": "注册工具",
     "registeredToolsHint": "启用后会自动注册以下 MCP 工具：analyze_image 与 describe_scene 可自定义名称和描述，upload_image 为内置工具（名称和描述固定，不可修改）",

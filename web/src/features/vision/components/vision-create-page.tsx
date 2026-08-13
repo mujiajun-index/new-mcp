@@ -45,7 +45,6 @@ export function VisionCreatePage() {
     endpoint_url: '',
     api_key: '',
     model_name: '',
-    system_prompt: '',
   })
   const [modelList, setModelList] = useState<ModelInfo[]>([])
   const [modelListLoading, setModelListLoading] = useState(false)
@@ -65,7 +64,6 @@ export function VisionCreatePage() {
         model_name: form.model_name,
         endpoint_url: form.endpoint_url,
         api_key: form.api_key,
-        system_prompt: form.system_prompt || undefined,
       }),
     onSuccess: () => {
       toast.success(t('vision.create.success'))
@@ -249,19 +247,6 @@ export function VisionCreatePage() {
               {t('vision.fetchModels')}
             </Button>
           </div>
-        </div>
-
-        {/* System Prompt */}
-        <div className="space-y-2">
-          <Label htmlFor="system_prompt">{t('vision.systemPrompt')}</Label>
-          <textarea
-            id="system_prompt"
-            rows={4}
-            placeholder={t('vision.placeholderPrompt')}
-            value={form.system_prompt}
-            onChange={(e) => setForm({ ...form, system_prompt: e.target.value })}
-            className="flex w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-y"
-          />
         </div>
 
       </div>
