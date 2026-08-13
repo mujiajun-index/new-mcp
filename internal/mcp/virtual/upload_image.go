@@ -121,23 +121,19 @@ func handleUploadImage(ctx context.Context, userID int64, args json.RawMessage) 
 		Backend:    UploadStore.Backend(),
 		Status:     model.UploadStatusPending,
 	}
-	if err := img.Insert(); err != nil {
+	if err := img.InsertWithGeneratedShortID(); err != nil {
 		return nil, fmt.Errorf("create upload slot: %w", err)
 	}
 
 	putTTL := presignedPutTTL()
-	getTTL := signedGetTTL()
 
-	putURL, err := UploadStore.PutURL(ctx, key, putTTL)
-	if err != nil {
-		_ = model.DeleteUploadedImageByID(img.ID)
-		return nil, fmt.Errorf("sign upload url: %w", err)
-	}
-	fileURL, err := UploadStore.PublicURL(ctx, key, getTTL)
-	if err != nil {
-		_ = model.DeleteUploadedImageByID(img.ID)
-		return nil, fmt.Errorf("sign file url: %w", err)
-	}
+	// Short capability URLs: /u/<sid>?s=<method-bound MAC>. The PUT (upload_command)
+	// and GET (file_url) URLs share the row's short_id and differ only in the
+	// method-bound signature, so the model's curl carries no API key and a GET
+	// token can't be replayed as a PUT. These are infallible (no presign round-trip,
+	// no backend dependency), so the pending slot needs no delete-on-failure cleanup.
+	putURL := storage.ShortURL("PUT", img.ShortID)
+	fileURL := storage.ShortURL("GET", img.ShortID)
 
 	// Return the ONE curl command matched to the caller's OS, inferred from
 	// local_path (drive letter / backslash → Windows → curl.exe; otherwise →
@@ -156,7 +152,7 @@ func handleUploadImage(ctx context.Context, userID int64, args json.RawMessage) 
 	result := map[string]interface{}{
 		"content": []map[string]interface{}{
 			{"type": "text", "text": fmt.Sprintf(
-				"Upload slot ready. Run upload_command (no API key needed), then call vision.analyze_image with image_url=file_url.\n\n"+
+				"Upload slot ready. Run upload_command, then call vision.analyze_image with image_url=file_url.\n\n"+
 					"upload_command: %s\nfile_url: %s\nexpires_in: %ds",
 				cmd, fileURL, int(putTTL.Seconds()))},
 		},
@@ -189,7 +185,7 @@ func looksLikeWindowsPath(p string) bool {
 // PowerShell, bash and zsh. Windows filenames cannot contain a single quote, so
 // no escaping is needed there; unix paths with an embedded ' are vanishingly
 // rare and left unsupported rather than picking one of the divergent escape
-// conventions (PowerShell doubles it, bash needs '\''). The path's URL arg is
+// conventions (PowerShell doubles it, bash needs '\”). The path's URL arg is
 // HMAC/presign output and never contains a quote either.
 func quoteArg(s string) string {
 	return "'" + s + "'"
@@ -224,11 +220,4 @@ func presignedPutTTL() time.Duration {
 		return time.Duration(s) * time.Second
 	}
 	return 10 * time.Minute
-}
-
-func signedGetTTL() time.Duration {
-	if s := model.GetOptionInt("SignedURLTTLSeconds"); s > 0 {
-		return time.Duration(s) * time.Second
-	}
-	return time.Hour
 }

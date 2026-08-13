@@ -5,18 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"strings"
-	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 // s3Storage stores blobs in any S3-compatible bucket (AWS S3, MinIO, Cloudflare
-// R2, B2, Alibaba OSS, Tencent COS, …) via minio-go. Unlike localStorage, the
-// public URL it hands out is a bucket presigned GET — the upstream vision
-// provider fetches straight from the object store and never touches new-mcp.
+// R2, B2, Alibaba OSS, Tencent COS, …) via minio-go. Files are served through Get
+// (streamed via the /u/<sid> endpoint), same as the local backend.
 type s3Storage struct {
 	client     *minio.Client
 	bucket     string
@@ -133,36 +130,6 @@ func (s *s3Storage) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-// PublicURL returns a short-lived presigned GET URL on the bucket. The upstream
-// vision provider fetches this directly from S3 — new-mcp is not in the data
-// path for S3 uploads (unlike local, where the URL points back at new-mcp).
-func (s *s3Storage) PublicURL(ctx context.Context, key string, ttl time.Duration) (string, error) {
-	obj, err := s.objectName(key)
-	if err != nil {
-		return "", err
-	}
-	u, err := s.client.PresignedGetObject(ctx, s.bucket, obj, ttl, url.Values{})
-	if err != nil {
-		return "", fmt.Errorf("s3 presign %q: %w", obj, err)
-	}
-	return u.String(), nil
-}
-
-// PutURL returns a bucket presigned PUT — the agent's curl uploads straight to
-// the object store and the bytes never touch new-mcp (unlike local). presigned
-// PUT cannot bind size/content-type, so those are enforced at Stat/analyze time.
-func (s *s3Storage) PutURL(ctx context.Context, key string, ttl time.Duration) (string, error) {
-	obj, err := s.objectName(key)
-	if err != nil {
-		return "", err
-	}
-	u, err := s.client.PresignedPutObject(ctx, s.bucket, obj, ttl)
-	if err != nil {
-		return "", fmt.Errorf("s3 presign PUT %q: %w", obj, err)
-	}
-	return u.String(), nil
-}
-
 func (s *s3Storage) Stat(ctx context.Context, key string) (ObjectInfo, error) {
 	obj, err := s.objectName(key)
 	if err != nil {
@@ -173,44 +140,6 @@ func (s *s3Storage) Stat(ctx context.Context, key string) (ObjectInfo, error) {
 		return ObjectInfo{}, normS3Err(err)
 	}
 	return ObjectInfo{Size: oi.Size, MediaType: oi.ContentType}, nil
-}
-
-// OwnsURL reports whether rawurl points at this bucket's endpoint host. The
-// presigned GET/PUT URLs this backend issues carry the configured endpoint host
-// (path- or virtual-host-style), so a host match means "we issued it".
-func (s *s3Storage) OwnsURL(rawurl string) bool {
-	u, err := url.Parse(rawurl)
-	if err != nil || u.Host == "" {
-		return false
-	}
-	return u.Host == s.client.EndpointURL().Host
-}
-
-// KeyFromURL recovers the storage key from a presigned GET/PUT URL this backend
-// issued. The object name is "<pathPrefix>/<key>" and travels in the URL path
-// (path- or virtual-host-style endpoints both put it there), so locating
-// "/<pathPrefix>/" and taking the remainder yields the key. analyze_image uses
-// it to read the object back and forward it as base64 to the upstream — same
-// reason as local (ServerAddress reachability / Gemini file_uri bypass). ok=false
-// if the marker is absent or the remainder is not a valid key.
-func (s *s3Storage) KeyFromURL(rawurl string) (string, bool) {
-	u, err := url.Parse(rawurl)
-	if err != nil {
-		return "", false
-	}
-	// pathPrefix is non-empty (newS3 defaults it to "vision"), so the marker is
-	// well-formed and appears exactly once between bucket and key.
-	marker := "/" + s.pathPrefix + "/"
-	idx := strings.Index(u.Path, marker)
-	if idx < 0 {
-		return "", false
-	}
-	key := u.Path[idx+len(marker):]
-	clean := strings.Trim(key, "/")
-	if clean == "" || strings.Contains(clean, "..") || strings.Contains(clean, "//") {
-		return "", false
-	}
-	return clean, true
 }
 
 // normS3Err maps S3 "no such object" responses onto the storage sentinel so the

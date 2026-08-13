@@ -119,6 +119,62 @@ func migrateDB() error {
 			return err
 		}
 	}
+
+	// V1.4: uploaded_images.short_id 回填 + 唯一索引。short_id 是视觉图片的短 URL
+	// 句柄(/u/<sid>)。struct tag 里刻意不写 uniqueIndex: AutoMigrate 会先于回填去
+	// 建唯一索引,而存量行此时都还是默认 '',多行 '' 会让 CREATE UNIQUE INDEX 失败、
+	// 启动崩溃。正确顺序由下面两个函数保证: 先 AutoMigrate 只加列(无索引) → 回填
+	// 空值 → 再建唯一索引。两者各自幂等,可每次启动安全重跑。
+	if err := backfillShortIDs(); err != nil {
+		return err
+	}
+	if err := ensureShortIDIndex(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// backfillShortIDs populates uploaded_images.short_id for legacy rows (empty from
+// the column default) so the unique index can be created afterward. Idempotent:
+// it only updates rows whose short_id is still empty, so it is safe to re-run on
+// every startup.
+func backfillShortIDs() error {
+	var rows []UploadedImage
+	if err := DB.Select("id").Where("short_id = '' OR short_id IS NULL").Find(&rows).Error; err != nil {
+		return err
+	}
+	for _, r := range rows {
+		for i := 0; i < 4; i++ {
+			sid, err := NewShortID()
+			if err != nil {
+				return err
+			}
+			res := DB.Model(&UploadedImage{}).Where("id = ? AND short_id = ''", r.ID).Update("short_id", sid)
+			if err := res.Error; err != nil {
+				return err
+			}
+			if res.RowsAffected > 0 {
+				break // wrote this row; move on
+			}
+			// RowsAffected==0: concurrent backfill or a ~2^-71 collision — regenerate.
+		}
+	}
+	return nil
+}
+
+// ensureShortIDIndex creates the unique index on uploaded_images.short_id. It is
+// declared in code (not the struct tag) because AutoMigrate would otherwise try
+// to build it before backfill populates legacy rows — a unique index on a column
+// where every legacy row is empty fails at startup. CREATE UNIQUE INDEX is
+// standard SQL (SQLite/MySQL/Postgres); the HasIndex guard makes it idempotent.
+func ensureShortIDIndex() error {
+	const idx = "idx_uploaded_images_short_id"
+	if DB.Migrator().HasIndex(&UploadedImage{}, idx) {
+		return nil
+	}
+	if err := DB.Exec("CREATE UNIQUE INDEX " + idx + " ON uploaded_images (short_id)").Error; err != nil {
+		return fmt.Errorf("create short_id unique index: %w", err)
+	}
 	return nil
 }
 

@@ -7,18 +7,17 @@
 // and handed to the vision tool as a short-lived URL that the upstream model
 // fetches itself.
 //
-// Two backends ship behind one interface so the upload/analyze code never
+// Two backends ship behind one interface so the upload/serve/analyze code never
 // branches on where bytes live: localStorage (disk, default, zero deps) and
-// s3Storage (S3-compatible via minio-go). The local-vs-S3 difference is fully
-// hidden inside PublicURL — local returns an HMAC-signed URL pointing back at
-// new-mcp's own file endpoint; S3 returns a bucket presigned GET URL.
+// s3Storage (S3-compatible via minio-go). Bytes are always read back through Get
+// (served at /u/<sid> or reverse-fetched for analyze_image); the local-vs-S3
+// difference is fully hidden inside Put/Get/Delete.
 package storage
 
 import (
 	"context"
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/mujkjk/newmcp/model"
 )
@@ -30,44 +29,18 @@ type Storage interface {
 	Put(ctx context.Context, key string, r io.Reader, mimeType string) error
 
 	// Get opens the object for reading. The caller must close the ReadCloser.
-	// Used by the local self-serve file endpoint; S3 serves via presign and
-	// never goes through Get.
+	// Used by the GET /u/:sid file endpoint and the own-URL reverse-fetch; both
+	// local and S3 serve through Get.
 	Get(ctx context.Context, key string) (io.ReadCloser, error)
 
 	// Delete removes the object. It is idempotent: a missing key is not an error.
 	Delete(ctx context.Context, key string) error
-
-	// PublicURL returns a URL valid for ttl that lets a third party (the
-	// upstream vision provider) fetch the object without authenticating to
-	// new-mcp. Local builds an HMAC-signed URL; S3 returns a presigned GET.
-	PublicURL(ctx context.Context, key string, ttl time.Duration) (string, error)
-
-	// PutURL returns a short-lived URL the caller PUTs raw bytes to. The URL is
-	// the only credential — no API key travels in the upload command. Local
-	// returns a purpose-bound HMAC URL to the PUT file endpoint; S3 returns a
-	// bucket presigned PUT (bytes bypass new-mcp entirely). Size/content-type
-	// are NOT enforceable on a presigned PUT, so callers enforce them server-side.
-	PutURL(ctx context.Context, key string, ttl time.Duration) (string, error)
 
 	// Stat returns object metadata without reading the body. Used by analyze_image
 	// to size-check an own-storage object (against VisionUploadMaxBytes) before
 	// reverse-fetching its bytes to forward to the upstream. Returns
 	// ErrObjectNotFound if the object is missing.
 	Stat(ctx context.Context, key string) (ObjectInfo, error)
-
-	// OwnsURL reports whether rawurl points into this backend (a URL this server
-	// issued), so analyze_image reverse-fetches own-storage bytes (and forwards
-	// them as base64) while leaving arbitrary http(s) URLs as pure passthrough
-	// (no SSRF: own bytes are read locally; external URLs are never fetched).
-	OwnsURL(rawurl string) bool
-
-	// KeyFromURL recovers the storage key from a URL this backend issued (one for
-	// which OwnsURL is true). analyze_image uses it to read own-storage bytes back
-	// out and forward them as base64 to the upstream provider — so the provider
-	// never has to reach ServerAddress (works behind localhost) and Gemini's flaky
-	// native file_uri fetch is bypassed. ok=false means the key is not recoverable
-	// from rawurl; the caller then falls back to passing the URL through.
-	KeyFromURL(rawurl string) (key string, ok bool)
 
 	// Backend returns a short identifier ("local" / "s3") for metadata/logging.
 	Backend() string

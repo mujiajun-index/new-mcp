@@ -58,6 +58,7 @@ export function Thumb({
         src={src}
         alt={alt}
         loading="lazy"
+        referrerPolicy="no-referrer"
         onError={() => setBroken(true)}
         className="h-full w-full object-cover"
       />
@@ -108,6 +109,7 @@ export function ImagePreviewDialog({
             key={current.id}
             src={current.url}
             alt={current.key}
+            referrerPolicy="no-referrer"
             className="max-h-full max-w-full animate-fade-in object-contain"
           />
         </div>

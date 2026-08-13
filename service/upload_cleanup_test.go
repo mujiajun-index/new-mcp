@@ -70,7 +70,7 @@ func TestCleanupSweepReapsExpired(t *testing.T) {
 	runCleanupSweep(ctx)
 
 	// Expired row + blob gone.
-	if _, err := model.GetUploadedImageByKey(oldKey); err == nil {
+	if _, err := model.GetUploadedImageByID(oldRow.ID); err == nil {
 		t.Fatalf("expired row should have been deleted")
 	}
 	if rc, err := UploadStore.Get(ctx, oldKey); err != storage.ErrObjectNotFound {
@@ -81,7 +81,7 @@ func TestCleanupSweepReapsExpired(t *testing.T) {
 	}
 
 	// Recent row + blob retained.
-	if _, err := model.GetUploadedImageByKey(newKey); err != nil {
+	if _, err := model.GetUploadedImageByID(newRow.ID); err != nil {
 		t.Fatalf("recent row should remain, got err=%v", err)
 	}
 	rc, err := UploadStore.Get(ctx, newKey)

@@ -130,21 +130,21 @@ camera: 本地 JPEG 字节 --> ImageInput{Bytes, "image/jpeg"} --> 不变
 ```go
 type Storage interface {
     Put(ctx, key string, r io.Reader, mimeType string) error
-    Get(ctx, key string) (io.ReadCloser, error)        // local 自 serve 用；s3 供 GetObject
-    Delete(ctx, key string) error                       // 幂等，清理任务用
-    PublicURL(ctx, key string, ttl time.Duration) (string, error) // local=自签URL, s3=PresignedGetObject
-    Backend() string                                     // "local"/"s3"
+    Get(ctx, key string) (io.ReadCloser, error) // /u/<sid> 端点 + 反向取图；local 直读盘、s3 供 GetObject
+    Delete(ctx, key string) error                // 幂等，清理任务用
+    Stat(ctx, key string) (ObjectInfo, error)    // 反向取图前按大小校验 VisionUploadMaxBytes
+    Backend() string                             // "local"/"s3"
 }
 ```
 
-local 与 s3 的差异**全部藏在 `PublicURL` 后面**：local 写盘 + 返回指回 new-mcp 的 HMAC URL；s3 写桶 + 返回桶 presign URL。上传 / 分析代码不分支。
+local 与 s3 的差异**全部藏在 `Put`/`Get`/`Delete` 后面**：短 URL 句柄 `/u/<sid>` 对两后端完全统一，字节都经 `Get` 流式（由取文件端点或反向取图触发）。上传 / 分析代码不分支。
 
-> V1.1 在此接口上叠加 `PutURL` / `Stat` / `OwnsURL` 三个方法（预签名 PUT 直传路径用，既有方法不变），见 §14.3。
+> V1.4 起接口收敛为 `Put/Get/Delete/Stat/Backend`：V1.1–V1.3 的 `PublicURL`/`PutURL`/`OwnsURL`/`KeyFromURL` 全部移除（老 URL 格式不再保留）。短 URL 句柄与签名见 §4.4 V1.4。
 
 ### 4.2 Key 策略（内容寻址，天然去重）
 
 - `ContentKey(sha256hex)` = `<sha[:2]>/<sha>`，如 `ab/abcdef...`。两级 shard 避免单目录 / 单桶前缀无限膨胀。
-- 上传时已算 sha256，key 免费；相同字节 → 相同 key → `GetUploadedImageByKey` 命中则跳过 `Put`、仅 `TouchRefresh` 续期。
+- 上传时已算 sha256，key 免费；相同字节 → 相同 key → `GetUploadedImageByUserAndKey` 命中则跳过 `Put`、仅 `TouchRefresh` 续期。
 - 并发同字节上传的兜底：loser 在 `Insert` 唯一键冲突时回收冗余 blob，复用 winner 的行。
 
 > **V1.1 修订（每用户独立去重，§15.1）**：把「相同字节 → 一行」改为**每用户一行**——`storage_key` 取消全局唯一、改 `(user_id, storage_key)` 复合唯一；同一用户重传同字节仍 `TouchRefresh` 自己的行，不同用户各有一行、**共享同一个 blob**（内容寻址，磁盘 / 桶仍只存一份）。删行按 `CountByKey` 引用计数，归零才删 blob。multipart 去重命中查询由全局 `GetUploadedImageByKey` 改为 `GetUploadedImageByUserAndKey`。
@@ -170,10 +170,25 @@ local 与 s3 的差异**全部藏在 `PublicURL` 后面**：local 写盘 + 返�
 - HMAC 密钥用 `common.SessionSecret`，与 JWT 共用密钥生命周期（`SESSION_SECRET` 轮换同时失效签名 URL 与 JWT）。未设时回退弱默认 `"default-secret-change-me"` 并启动告警。
 - TTL 默认 3600s；防篡改靠 HMAC，防重放接受 TTL 内（同 S3 presign 模型）。
 
+> **V1.4 修订（短 URL 句柄，本节为主）**：视觉图片 URL 改用 DB 短句柄，把上面 ~170 字符的长 URL 压到 **~52 字符**，并把 local/s3 统一为同一种句柄。新格式：
+>
+> ```
+> {ServerAddress}/u/{shortID}?s={base64url(HMAC-SHA256(SessionSecret, method+"|"+shortID)[:12])}
+> ```
+>
+> - `shortID`：12 字符 base62（`crypto/rand`，~71 bit），存于新列 `uploaded_images.short_id`（唯一索引，回填在 `migrateDB`）。两条插入路径（multipart `service.Upload`、`upload_image` 的 pending 行）经 `InsertWithGeneratedShortID` 生成。
+> - `s`：method 绑定的截断 HMAC（12 字节 = 96bit → 16 字符 base64url，`RawURLEncoding` 无 `=`）。GET/PUT 签名空间隔离，GET token 不能当 PUT 用（替代旧 `SignURLFor("PUT",…)` 的 purpose 切分）。截断到 96bit 舒适高于 RFC2104 / NIST SP 800-107 下限（80/64bit），主防线是不可猜的 short_id，HMAC 兜底"id 泄漏"场景。
+> - **URL 里不带 `expires`**：DB 行（`created_at` + retention / pending-TTL）是唯一过期权威。GET 寿命 = `UploadRetentionHours`；PUT 寿命 = `PresignedPutTTLSeconds`。故 `SignedURLTTLSeconds` 不再约束视觉 URL（仅保留作展示）。
+> - 端点挂**根路由** `/u/:sid`（不在 `/api/v1` 下，以求短）：`GET` → `GetVisionFileByShortID`、`PUT` → `PutVisionFileByShortID`，均在公开组（`?s=` 即鉴权）。
+> - 解析：服务端按 sid 查 `GetUploadedImageByShortID` → 取 `storage_key`+`backend` → 统一经 `Storage.Get` 流式输出（local 直读盘；**s3 也经网关流式，不再 302 到 presigned**——与反向取图路径一致，长 presigned URL 永不暴露给模型）。
+> - 反向取图：`analyze_image` 对自家 `/u/` URL 经 `storage.OwnsShortURL`/`ShortIDFromURL` → 查行 → `fetchOwnImage(storage_key)`，沿用"自家 URL 反向取图不验签"约定（多一次索引查询，可忽略）。
+> - 安全：capability URL（W3C 认可）+ 截断 HMAC 双层；http/https 均支持（URL 形态不绑定 scheme）——生产建议 https（`?s=` 是凭证，http 下会明文进代理/访问日志），但不强制、不告警；建议给 `/u/` 加粗粒度 per-IP 限流作纵深防御（NIST 伪造模型假设失败验证次数有上限）。
+> - 老格式**已全量移除**（不再 accept-both）：老路由 `/api/v1/vision/files/*key`、老 controller、`SignURL/VerifyURL/SignURLFor/VerifyURLFor`、`GetUploadedImageByKey`、`Storage.PublicURL/PutURL/OwnsURL/KeyFromURL` 全部删除；`Storage` 接口收敛为 `Put/Get/Delete/Stat/Backend`。
+
 ### 4.5 S3 后端
 
 - minio-go v7 覆盖 AWS S3 / MinIO / Cloudflare R2 / B2 / Alibaba OSS / Tencent COS。
-- `PublicURL` 返回桶 `PresignedGetObject` URL——上游 provider 直连桶，new-mcp 不在数据路径上。
+- V1.4 起 S3 与 local 一致：经 `Storage.Get` 流式输出（由 `/u/<sid>` 端点或反向取图触发），不再返回 presigned GET、字节也不绕过网关。短 URL 句柄对两后端完全统一。
 - 启动期 `BucketExists` 探活，桶不存在即报错；`NoSuchKey`/`NoSuchObject` 映射到 `ErrObjectNotFound` 进入幂等删除路径。
 
 ---
@@ -548,14 +563,14 @@ V1.1 新增的**预签名 PUT 直传**路径：模型调 `upload_image` 拿到�
 实际返回是 MCP `tools/call` 的 `content[].text` 文本块（节选）：
 
 ```text
-Upload slot ready. Run upload_command (no API key needed), then call vision.analyze_image with image_url=file_url.
+Upload slot ready. Run upload_command, then call vision.analyze_image with image_url=file_url.
 
-upload_command: curl.exe -X PUT -T 'C:\abs\path\photo.jpg' 'https://host/api/v1/vision/files/a1/a1b2...?expires=...&token=...'
-file_url: https://host/api/v1/vision/files/a1/a1b2...?expires=...&token=...
+upload_command: curl.exe -X PUT -T 'C:\abs\path\photo.jpg' 'https://host/u/8QkP2mR9xY4a?s=Kp9bZx7mQ2nLr5tA'
+file_url: https://host/u/8QkP2mR9xY4a?s=Vc3Nq8wYj4Hk6sTp
 expires_in: 600s
 ```
 
-unix 路径（如 `/Users/me/x.png`）场景下 `upload_command` 里是 `curl`（无 `.exe`）。s3 后端的命令里 URL 指向桶（`https://bucket.s3.../...?X-Amz-Signature=...`），同样无 key。
+PUT 与 GET 共用同一个 `shortID`（`8QkP2mR9xY4a`），仅 `?s=` 签名不同（method 绑定：PUT-MAC ≠ GET-MAC，不可互换）。unix 路径（如 `/Users/me/x.png`）下 `upload_command` 里是 `curl`（无 `.exe`）。**URL 与后端无关**：local 与 s3 都返回同一种 `/u/<sid>?s=…` 句柄——s3 的 GET 由网关内部现签 presigned 再 302（长 presigned URL 不暴露给模型），PUT 经网关转发到桶（仍无 key）。path+query 恒 32 字符，加 host 约 52 字符（旧格式约 170）。详见 §4.4 V1.4。
 
 ### 14.2.1 跨系统命令生成（Windows PowerShell / macOS / Linux）
 

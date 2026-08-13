@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -72,47 +71,41 @@ func UploadVisionImage(c *gin.Context) {
 	common.Created(c, res)
 }
 
-// GetVisionFile serves a previously uploaded vision image by its content key.
-// It is mounted on the PUBLIC route group (no UserAuth/APIKeyAuth) because the
-// consumer is an upstream vision provider fetching the URL — it has no JWT or
-// sk- header. Access is gated solely by the HMAC signature binding key+expires,
-// plus an independent expiry check. The key travels in a catch-all path segment
-// (it is "ab/<sha>"), and bytes stream straight from Storage so the file is
-// never held fully in memory.
-func GetVisionFile(c *gin.Context) {
+// GetVisionFileByShortID serves an uploaded image by its short URL handle. Mounted
+// on the PUBLIC root route GET /u/:sid (no UserAuth/APIKeyAuth) because the
+// consumer is an upstream vision provider — it has no JWT or sk-. Access is gated
+// solely by the method-bound HMAC in ?s= (VerifyShort "GET"); the DB row is the
+// sole expiry authority (created_at + retention), so the URL carries no expires.
+func GetVisionFileByShortID(c *gin.Context) {
 	if service.UploadStore == nil {
 		common.Error(c, http.StatusServiceUnavailable, "upload storage not initialized")
 		return
 	}
-	key := strings.TrimPrefix(c.Param("key"), "/")
-	if key == "" {
-		common.Error(c, http.StatusBadRequest, "missing key")
-		return
-	}
-
-	expires, err := strconv.ParseInt(c.Query("expires"), 10, 64)
-	if err != nil || c.Query("token") == "" {
-		common.Error(c, http.StatusForbidden, "invalid signature")
-		return
-	}
-	if time.Now().Unix() > expires {
-		common.Error(c, http.StatusGone, "url expired")
-		return
-	}
-	if !storage.VerifyURL(key, expires, c.Query("token")) {
+	sid := c.Param("sid")
+	if tok := c.Query("s"); tok == "" || !storage.VerifyShort("GET", sid, tok) {
 		common.Error(c, http.StatusForbidden, "invalid signature")
 		return
 	}
 
-	// Confirm the key is a tracked upload (rejects random/typo keys even with a
-	// valid-looking signature, and catches rows already reaped by cleanup).
-	img, err := model.GetUploadedImageByKey(key)
+	img, err := model.GetUploadedImageByShortID(sid)
 	if err != nil {
 		common.Error(c, http.StatusNotFound, "file not found")
 		return
 	}
+	if img.Status != model.UploadStatusUploaded {
+		// Pending slot has no bytes yet; report as not found (no state leak).
+		common.Error(c, http.StatusNotFound, "file not found")
+		return
+	}
+	if time.Since(img.CreatedAt) > uploadRetentionDur() {
+		common.Error(c, http.StatusGone, "url expired")
+		return
+	}
 
-	rc, err := service.UploadStore.Get(c.Request.Context(), key)
+	// Stream the bytes straight from the backend (local disk or S3, both via
+	// Get). Short URLs are row-bound capability handles, so serving always goes
+	// through new-mcp — same as the own-URL reverse-fetch path.
+	rc, err := service.UploadStore.Get(c.Request.Context(), img.StorageKey)
 	if err != nil {
 		// Reaped on disk between the row lookup and here, or genuine I/O error.
 		common.Error(c, http.StatusNotFound, "file not found")
@@ -120,52 +113,40 @@ func GetVisionFile(c *gin.Context) {
 	}
 	defer rc.Close()
 
-	// private/no-store: signed URLs are per-issuer and short-lived; intermediaries
+	// private/no-store: short URLs are per-issuer and row-bound; intermediaries
 	// must not cache them. nosniff: respect the stored media type verbatim.
 	c.Header("Cache-Control", "private, no-store")
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.DataFromReader(http.StatusOK, img.Size, img.MediaType, rc, nil)
 }
 
-// PutVisionFile receives raw image bytes for a presigned-PUT direct upload (the
-// V1.1 shell/curl path). Mounted on the PUBLIC group alongside GetVisionFile:
-// auth is the purpose-bound HMAC signature (VerifyURLFor "PUT"), NOT an API key
-// — so the agent's curl carries no sk-. The key was minted at upload_image time
-// (UUID, not content-addressed) and a pending row already exists; this flips it
-// to uploaded. Used only by the local backend (S3 PUTs go straight to bucket).
-func PutVisionFile(c *gin.Context) {
+// PutVisionFileByShortID receives raw image bytes for a presigned-PUT short slot
+// (the upload_image curl path). Mounted on the PUBLIC root route PUT /u/:sid; auth
+// is the method-bound HMAC in ?s= (VerifyShort "PUT"), NOT an API key — so the
+// agent's curl carries no sk-. A GET token replayed here fails VerifyShort (method
+// binding). The slot must be pending and younger than the PUT TTL.
+func PutVisionFileByShortID(c *gin.Context) {
 	if service.UploadStore == nil {
 		common.Error(c, http.StatusServiceUnavailable, "upload storage not initialized")
 		return
 	}
-	key := strings.TrimPrefix(c.Param("key"), "/")
-	if key == "" {
-		common.Error(c, http.StatusBadRequest, "missing key")
-		return
-	}
-	expires, err := strconv.ParseInt(c.Query("expires"), 10, 64)
-	if err != nil || c.Query("token") == "" {
-		common.Error(c, http.StatusForbidden, "invalid signature")
-		return
-	}
-	if time.Now().Unix() > expires {
-		common.Error(c, http.StatusGone, "url expired")
-		return
-	}
-	if !storage.VerifyURLFor("PUT", key, expires, c.Query("token")) {
+	sid := c.Param("sid")
+	if tok := c.Query("s"); tok == "" || !storage.VerifyShort("PUT", sid, tok) {
 		common.Error(c, http.StatusForbidden, "invalid signature")
 		return
 	}
 
-	// The slot must exist and still be pending (one-shot). UUID keys are globally
-	// unique, so GetUploadedImageByKey finds the one pending slot.
-	img, err := model.GetUploadedImageByKey(key)
+	img, err := model.GetUploadedImageByShortID(sid)
 	if err != nil {
 		common.Error(c, http.StatusNotFound, "upload slot not found")
 		return
 	}
 	if img.Status == model.UploadStatusUploaded {
 		common.Error(c, http.StatusConflict, "upload slot already used")
+		return
+	}
+	if time.Since(img.CreatedAt) > presignedPutTTL() {
+		common.Error(c, http.StatusGone, "url expired")
 		return
 	}
 
@@ -186,15 +167,15 @@ func PutVisionFile(c *gin.Context) {
 		return
 	}
 
-	if err := service.UploadStore.Put(c.Request.Context(), key, bytes.NewReader(data), mediaType); err != nil {
+	if err := service.UploadStore.Put(c.Request.Context(), img.StorageKey, bytes.NewReader(data), mediaType); err != nil {
 		common.Error(c, http.StatusInternalServerError, "store failed")
 		return
 	}
-	if err := model.MarkUploaded(key, mediaType, int64(len(data))); err != nil {
+	if err := model.MarkUploaded(img.StorageKey, mediaType, int64(len(data))); err != nil {
 		common.Error(c, http.StatusInternalServerError, "record failed")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "uploaded", "key": key, "size": len(data), "mime": mediaType})
+	c.JSON(http.StatusOK, gin.H{"status": "uploaded", "key": img.StorageKey, "size": len(data), "mime": mediaType})
 }
 
 // actingUserID resolves the caller from either auth scheme (JWT user_id or
@@ -207,9 +188,9 @@ func actingUserID(c *gin.Context) int64 {
 	return uid
 }
 
-// uploadListItem is one row in the management list view. URL is re-signed on
-// each read (signed URLs are short-lived); ExpiresAt is an estimate
-// (created_at + retention) for display only.
+// uploadListItem is one row in the management list view. URL is a short
+// capability handle (/u/<sid>) that is stable for the row's lifetime; ExpiresAt
+// is an estimate (created_at + retention) for display only.
 type uploadListItem struct {
 	ID        int64     `json:"id"`
 	UserID    int64     `json:"user_id"`
@@ -223,13 +204,6 @@ type uploadListItem struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-func uploadSignedTTL() time.Duration {
-	if s := model.GetOptionInt("SignedURLTTLSeconds"); s > 0 {
-		return time.Duration(s) * time.Second
-	}
-	return time.Hour
-}
-
 func uploadRetentionDur() time.Duration {
 	if h := model.GetOptionInt("UploadRetentionHours"); h > 0 {
 		return time.Duration(h) * time.Hour
@@ -237,13 +211,22 @@ func uploadRetentionDur() time.Duration {
 	return 24 * time.Hour
 }
 
-func toUploadListItem(ctx context.Context, img model.UploadedImage) uploadListItem {
-	url, _ := service.UploadStore.PublicURL(ctx, img.StorageKey, uploadSignedTTL())
+// presignedPutTTL is the lifetime of a short PUT URL (the upload_image curl
+// path). Mirrors service.presignedPutTTL; PutVisionFileByShortID uses it to gate
+// pending slots server-side (the DB row is the expiry authority now).
+func presignedPutTTL() time.Duration {
+	if s := model.GetOptionInt("PresignedPutTTLSeconds"); s > 0 {
+		return time.Duration(s) * time.Second
+	}
+	return 10 * time.Minute
+}
+
+func toUploadListItem(img model.UploadedImage) uploadListItem {
 	return uploadListItem{
 		ID:        img.ID,
 		UserID:    img.UserID,
 		Key:       img.StorageKey,
-		URL:       url,
+		URL:       storage.ShortURL("GET", img.ShortID),
 		MediaType: img.MediaType,
 		Size:      img.Size,
 		Backend:   img.Backend,
@@ -274,7 +257,7 @@ func ListUploads(c *gin.Context) {
 	}
 	items := make([]uploadListItem, 0, len(imgs))
 	for _, img := range imgs {
-		items = append(items, toUploadListItem(c.Request.Context(), img))
+		items = append(items, toUploadListItem(img))
 	}
 	common.PageOf(c, items, page, pageSize, total)
 }
@@ -324,7 +307,7 @@ func AdminListUploads(c *gin.Context) {
 	}
 	items := make([]uploadListItem, 0, len(imgs))
 	for _, img := range imgs {
-		items = append(items, toUploadListItem(c.Request.Context(), img))
+		items = append(items, toUploadListItem(img))
 	}
 	common.PageOf(c, items, page, pageSize, total)
 }

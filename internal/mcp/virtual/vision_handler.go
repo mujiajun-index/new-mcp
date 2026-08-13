@@ -74,13 +74,21 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 		// only ever held the short file_url — bytes stay out of its context.
 		// External URLs (or own URLs whose key we can't recover) fall through to
 		// pure passthrough; those are never fetched.
-		if UploadStore != nil && UploadStore.OwnsURL(params.ImageURL) {
-			if key, ok := UploadStore.KeyFromURL(params.ImageURL); ok {
-				imgBytes, mediaType, ferr := fetchOwnImage(ctx, key)
-				if ferr != nil {
-					return nil, ferr
+		if storage.OwnsShortURL(params.ImageURL) {
+			// Short capability URL (/u/<sid>): resolve the handle to a row and read
+			// our own bytes — the same reverse-fetch the camera path uses. The MAC is
+			// not re-verified here (the model holds the exact URL we issued; the host
+			// check gates it). One extra indexed lookup vs a raw key.
+			if sid, ok := storage.ShortIDFromURL(params.ImageURL); ok {
+				if row, err := model.GetUploadedImageByShortID(sid); err == nil {
+					imgBytes, mediaType, ferr := fetchOwnImage(ctx, row.StorageKey)
+					if ferr != nil {
+						return nil, ferr
+					}
+					input.Bytes, input.MediaType = imgBytes, mediaType
+				} else {
+					input.URL = params.ImageURL
 				}
-				input.Bytes, input.MediaType = imgBytes, mediaType
 			} else {
 				input.URL = params.ImageURL
 			}

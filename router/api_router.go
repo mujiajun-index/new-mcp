@@ -36,16 +36,6 @@ func SetApiRouter(engine *gin.Engine) {
 	// on one route; shares the same controller handler.
 	api.POST("/vision/mcp-upload", middleware.APIKeyAuth(), middleware.RateLimit(), controller.UploadVisionImage)
 
-	// Vision file fetch — public (auth = the HMAC signature in the query). The
-	// upstream vision provider hits this to pull an uploaded image by the signed
-	// URL handed back from /vision/upload. Catch-all key holds "ab/<sha>".
-	api.GET("/vision/files/*key", controller.GetVisionFile)
-
-	// V1.1: presigned-PUT direct upload endpoint (local backend only). Same path
-	// as GET, different method; auth is the purpose-bound HMAC signature (no API
-	// key in the curl). S3 uploads go straight to the bucket and never hit this.
-	api.PUT("/vision/files/*key", controller.PutVisionFile)
-
 	// V1.1: upload management for MCP clients (API-key auth + rate limit).
 	api.GET("/vision/mcp-uploads", middleware.APIKeyAuth(), middleware.RateLimit(), controller.ListUploads)
 	api.DELETE("/vision/mcp-uploads/:id", middleware.APIKeyAuth(), middleware.RateLimit(), controller.DeleteUpload)
@@ -208,6 +198,12 @@ func SetApiRouter(engine *gin.Engine) {
 		admin.GET("/vision/uploads", controller.AdminListUploads)
 		admin.DELETE("/vision/uploads/:id", controller.AdminDeleteUpload)
 	}
+
+	// V1.4: short vision image URLs — /u/:sid at the ROOT (not under /api/v1, to
+	// stay short). Public; auth is the method-bound HMAC in ?s=, same model as the
+	// legacy /api/v1/vision/files/*key routes above (kept for one release).
+	engine.GET("/u/:sid", controller.GetVisionFileByShortID)
+	engine.PUT("/u/:sid", controller.PutVisionFileByShortID)
 
 	// Health check
 	engine.GET("/health", func(c *gin.Context) {

@@ -1,6 +1,10 @@
 package model
 
 import (
+	"crypto/rand"
+	"fmt"
+	"math/big"
+	"strings"
 	"time"
 )
 
@@ -32,6 +36,7 @@ type UploadedImage struct {
 	ID         int64     `json:"id" gorm:"primaryKey;autoIncrement"`
 	UserID     int64     `json:"user_id" gorm:"not null;uniqueIndex:idx_uploaded_images_user_storage,priority:1"`
 	StorageKey string    `json:"storage_key" gorm:"size:128;not null;uniqueIndex:idx_uploaded_images_user_storage,priority:2;index:idx_uploaded_images_storage_key_lookup"` // content-addressed "ab/<sha256>"
+	ShortID    string    `json:"short_id" gorm:"size:16;not null;default:''"` // short URL handle (/u/<sid>)
 	MediaType  string    `json:"media_type" gorm:"size:64;not null"`               // sniffed magic-byte mime, e.g. image/png
 	Size       int64     `json:"size" gorm:"not null"`                              // decoded byte length
 	Backend    string    `json:"backend" gorm:"size:16;not null"`                   // "local" | "s3" — which backend holds the blob
@@ -52,16 +57,70 @@ const (
 func (u *UploadedImage) Insert() error { return DB.Create(u).Error }
 func (u *UploadedImage) Update() error { return DB.Save(u).Error }
 
-// GetUploadedImageByKey looks up a blob by its content-addressed storage key.
-// V1.1 semantics: with per-user dedup multiple rows may share a key (one per
-// user), so this returns ANY one of them — fine for the public file endpoint,
-// which only needs to confirm the key exists and serve the (shared) blob. The
-// dedup hit check uses GetUploadedImageByUserAndKey instead.
-// Returns gorm.ErrRecordNotFound when absent.
-func GetUploadedImageByKey(key string) (*UploadedImage, error) {
+const (
+	shortIDAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	shortIDLength   = 12 // log2(62^12) ≈ 71.4 bits; birthday bound ~2×10^10 rows (table turns over in 24h)
+)
+
+// NewShortID returns a 12-char base62 id drawn from crypto/rand (~71 bits). It is
+// the URL handle for an upload: the {ServerAddress}/u/<sid> path resolves it back
+// to this row's storage_key + backend. It does NOT loop on collision — at 71 bits
+// a collision is effectively impossible, and the unique index (migrateDB) plus
+// InsertWithGeneratedShortID's retry cover it regardless.
+func NewShortID() (string, error) {
+	buf := make([]byte, shortIDLength)
+	max := big.NewInt(int64(len(shortIDAlphabet)))
+	for i := range buf {
+		n, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			return "", fmt.Errorf("generate short id: %w", err)
+		}
+		buf[i] = shortIDAlphabet[n.Int64()]
+	}
+	return string(buf), nil
+}
+
+// InsertWithGeneratedShortID sets a fresh short_id then inserts, retrying on a
+// short_id unique-constraint collision (astronomically rare). Other errors —
+// notably the (user_id, storage_key) unique violation the upload dedup path uses
+// as its signal — pass through unchanged so dedup recovery still works. Use this
+// wherever a row is created, so the URL can address it by sid.
+func (u *UploadedImage) InsertWithGeneratedShortID() error {
+	var lastErr error
+	for i := 0; i < 4; i++ {
+		sid, err := NewShortID()
+		if err != nil {
+			return err
+		}
+		u.ShortID = sid
+		if lastErr = u.Insert(); lastErr == nil {
+			return nil
+		}
+		if !isShortIDUniqueErr(lastErr) {
+			return lastErr
+		}
+	}
+	return lastErr
+}
+
+// isShortIDUniqueErr reports whether err is a short_id unique-constraint
+// violation. The only constraint involving short_id is its unique index, and the
+// (user_id, storage_key) dedup constraint's message never mentions it — so a
+// short_id mention in an INSERT error is necessarily its unique violation.
+// SQLite/MySQL/Postgres all surface the column/index name verbatim, making this
+// cross-DB string check both necessary and sufficient. (GORM's translated
+// gorm.ErrDuplicatedKey is not relied on — TranslateError is off by default.)
+func isShortIDUniqueErr(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "short_id")
+}
+
+// GetUploadedImageByShortID loads a row by its URL short id — the lookup the
+// public /u/:sid file endpoints and the own-URL reverse-fetch use to turn a short
+// handle back into a storage_key + backend. Returns gorm.ErrRecordNotFound when
+// absent (expired rows are hard-deleted by cleanup, so absence covers expiry).
+func GetUploadedImageByShortID(sid string) (*UploadedImage, error) {
 	var img UploadedImage
-	err := DB.Where("storage_key = ?", key).First(&img).Error
-	if err != nil {
+	if err := DB.Where("short_id = ?", sid).First(&img).Error; err != nil {
 		return nil, err
 	}
 	return &img, nil

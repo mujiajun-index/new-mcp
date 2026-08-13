@@ -1,8 +1,8 @@
 import { api } from '@/lib/api'
 
-// Mirrors controller.uploadListItem. The signed `url` is re-issued on every
-// read (signed GET URLs are short-lived), so copy it promptly. `expires_at` is
-// an estimate (created_at + retention) for display only.
+// Mirrors controller.uploadListItem. The `url` is a short capability handle
+// (/u/<sid>) stable for the row's lifetime. `expires_at` is an estimate
+// (created_at + retention) for display only.
 export interface UploadListItem {
   id: number
   user_id: number

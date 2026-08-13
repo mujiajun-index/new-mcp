@@ -82,12 +82,8 @@ func (s *UploadService) Upload(ctx context.Context, userID int64, r io.Reader, m
 	// row sharing one blob (handled below via CountByKey).
 	if existing, err := model.GetUploadedImageByUserAndKey(userID, key); err == nil && existing != nil {
 		_ = model.TouchRefresh(existing.ID, now) // extend retention from this re-upload
-		url, err := UploadStore.PublicURL(ctx, key, ttl)
-		if err != nil {
-			return nil, err
-		}
 		return &UploadResult{
-			URL:       url,
+			URL:       storage.ShortURL("GET", existing.ShortID),
 			ExpiresAt: now.Add(ttl),
 			MediaType: existing.MediaType,
 			Size:      existing.Size,
@@ -113,17 +109,13 @@ func (s *UploadService) Upload(ctx context.Context, userID int64, r io.Reader, m
 		Backend:    UploadStore.Backend(),
 		Status:     model.UploadStatusUploaded,
 	}
-	if err := img.Insert(); err != nil {
+	if err := img.InsertWithGeneratedShortID(); err != nil {
 		// Concurrent same-user+key insert: both missed the dedup lookup, the
 		// winner's row now owns the (idempotent) blob. Recover as a dedup hit.
 		// Do NOT delete the blob — it is shared/refcounted and the winner points at it.
 		if existing, e2 := model.GetUploadedImageByUserAndKey(userID, key); e2 == nil && existing != nil {
-			url, e3 := UploadStore.PublicURL(ctx, key, ttl)
-			if e3 != nil {
-				return nil, e3
-			}
 			return &UploadResult{
-				URL:       url,
+				URL:       storage.ShortURL("GET", existing.ShortID),
 				ExpiresAt: now.Add(ttl),
 				MediaType: existing.MediaType,
 				Size:      existing.Size,
@@ -135,12 +127,8 @@ func (s *UploadService) Upload(ctx context.Context, userID int64, r io.Reader, m
 		return nil, fmt.Errorf("record upload metadata: %w", err)
 	}
 
-	url, err := UploadStore.PublicURL(ctx, key, ttl)
-	if err != nil {
-		return nil, err
-	}
 	return &UploadResult{
-		URL:       url,
+		URL:       storage.ShortURL("GET", img.ShortID),
 		ExpiresAt: now.Add(ttl),
 		MediaType: mediaType,
 		Size:      int64(len(data)),
