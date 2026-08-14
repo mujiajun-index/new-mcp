@@ -196,6 +196,7 @@ func SetApiRouter(engine *gin.Engine) {
 
 		// Admin: vision upload management (list/delete any user's uploads)
 		admin.GET("/vision/uploads", controller.AdminListUploads)
+		admin.GET("/vision/uploads/:id/preview", controller.AdminPreviewUpload) // dry-run transform preview
 		admin.DELETE("/vision/uploads/:id", controller.AdminDeleteUpload)
 		admin.DELETE("/vision/uploads", controller.AdminBatchDeleteUploads) // batch delete (collection-level)
 	}

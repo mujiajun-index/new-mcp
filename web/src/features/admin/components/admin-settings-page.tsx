@@ -816,6 +816,52 @@ export function AdminSettingsPage() {
                   />
                 </div>
               </div>
+
+              {/* Image read-path transforms (§13.2 gateway resize): applied to the
+                  in-memory bytes before sending upstream; the on-disk original and
+                  the GET path are never modified. Both default off. */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-medium">{t('settings.visionResizeEnabled')}</p>
+                    <p className="text-xs text-muted-foreground">{t('settings.visionResizeDesc')}</p>
+                  </div>
+                  <Switch
+                    checked={localValues.VisionResizeEnabled === 'true'}
+                    onCheckedChange={() => toggleBool('VisionResizeEnabled')}
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">{t('settings.visionResizeMaxEdge')}</label>
+                    <Input
+                      type="number"
+                      value={localValues.VisionResizeMaxEdge ?? ''}
+                      onChange={(e) => updateLocal('VisionResizeMaxEdge', e.target.value)}
+                      onBlur={() => saveField('VisionResizeMaxEdge')}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">{t('settings.visionJPEGQuality')}</label>
+                    <Input
+                      type="number"
+                      value={localValues.VisionJPEGQuality ?? ''}
+                      onChange={(e) => updateLocal('VisionJPEGQuality', e.target.value)}
+                      onBlur={() => saveField('VisionJPEGQuality')}
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-medium">{t('settings.visionCompressEnabled')}</p>
+                    <p className="text-xs text-muted-foreground">{t('settings.visionCompressDesc')}</p>
+                  </div>
+                  <Switch
+                    checked={localValues.VisionCompressEnabled === 'true'}
+                    onCheckedChange={() => toggleBool('VisionCompressEnabled')}
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </TabsContent>

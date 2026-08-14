@@ -54,3 +54,37 @@ export async function adminBatchDeleteUploads(ids: number[]): Promise<BatchDelet
   const res = await api.delete('/admin/vision/uploads', { data: { ids } })
   return res.data
 }
+
+// --- Admin: transform preview (what actually gets sent upstream) ---
+
+export interface UploadPreviewImageInfo {
+  width: number
+  height: number
+  size: number
+  mime: string
+}
+
+export interface UploadPreviewSettings {
+  resize_enabled: boolean
+  resize_max_edge: number
+  compress_enabled: boolean
+  jpeg_quality: number
+}
+
+// Mirrors controller.uploadPreviewResponse. `unchanged` is true when the optimized
+// bytes equal the original (settings off / image already small / GIF / fail-open);
+// then `data_url` is empty and the caller renders the row's own signed URL.
+export interface UploadPreviewResponse {
+  settings: UploadPreviewSettings
+  original: UploadPreviewImageInfo
+  optimized: UploadPreviewImageInfo
+  unchanged: boolean
+  data_url: string
+}
+
+// Dry-run: apply the CURRENT read-path transform settings to one stored image and
+// return before/after stats + the optimized image as a data URL. Never writes back.
+export async function adminPreviewUpload(id: number): Promise<UploadPreviewResponse> {
+  const res = await api.get(`/admin/vision/uploads/${id}/preview`)
+  return res.data
+}

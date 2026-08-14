@@ -90,6 +90,13 @@ var defaultOptions = map[string]string{
 	"PresignedPutTTLSeconds": "600",   // 预签名 PUT URL 有效期(秒),直传路径;须 < SignedURLTTL
 	"MaxUploadsPerUser":      "0",     // 每用户活跃上传数上限(护栏);0=不限
 	"VisionInlineMaxBytes":   "10240", // base64 内联软阈值(字节);超过引导走上传;0=关闭(退回 V1.0)
+	// --- 图像读取时变换(resize / 重压缩;§13.2 网关侧 resize)---
+	// 仅作用于 Bytes 路径,在 base64 编码前、client.Analyze 前;磁盘原图与 GET 不受影响。默认全关,
+	// 管理员显式开启;出错 fail-open 回退原图(绝不阻塞识别)。
+	"VisionResizeEnabled":   "false", // 大图缩放总开关;开启后仅当长边 > VisionResizeMaxEdge 才等比缩
+	"VisionResizeMaxEdge":   "1568",  // 长边像素阈值,与 OpenAI/Claude 上游内部长边上限对齐
+	"VisionCompressEnabled": "false", // 高保真重编码总开关(非真无损;JPEG/WebP 按 JPEGQuality 重编码,PNG/GIF 不动)
+	"VisionJPEGQuality":     "85",    // JPEG/WebP→JPEG 重编码质量 1-100
 }
 
 var sensitiveKeys = map[string]bool{

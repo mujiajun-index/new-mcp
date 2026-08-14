@@ -152,6 +152,13 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 
 	// input is either a passthrough URL (provider fetches) or decoded bytes
 	// (client base64-encodes per provider). Either way it's a single ImageInput.
+	// Apply optional read-path transforms (resize / re-encode, §13.2) right before
+	// the upstream call. This single point covers both byte sources (own-URL
+	// reverse-fetch and inline base64); URL-passthrough inputs are no-ops
+	// (Transform checks IsURL). The on-disk original and GET path stay untouched.
+	// Both toggles default off; when off this is near-zero overhead.
+	input = vision.Transform(input, loadTransformOpts())
+
 	result, err := client.Analyze(ctx, systemPrompt, userPrompt, input)
 	if err != nil {
 		return nil, err
@@ -260,6 +267,19 @@ func stripBase64Whitespace(s string) string {
 // so both feed Analyze the same clean form.
 func EncodeFrameToBase64(frame []byte) string {
 	return base64.StdEncoding.EncodeToString(frame)
+}
+
+// loadTransformOpts reads the read-path image-transform toggles live at request
+// time (the same pattern used for VisionInlineMaxBytes above) and clamps them to
+// safe ranges. Kept here in package virtual so package vision stays free of any
+// model/option import; both the vision and camera handlers share this loader.
+func loadTransformOpts() vision.TransformOpts {
+	return vision.NewTransformOpts(
+		model.GetOptionBool("VisionResizeEnabled"),
+		model.GetOptionInt("VisionResizeMaxEdge"),
+		model.GetOptionBool("VisionCompressEnabled"),
+		model.GetOptionInt("VisionJPEGQuality"),
+	)
 }
 
 // fetchOwnImage reads an own-storage object by key, enforces the hard size cap

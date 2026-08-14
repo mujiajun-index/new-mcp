@@ -3,6 +3,7 @@ package controller
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -418,4 +419,115 @@ func AdminBatchDeleteUploads(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, batchDelete(c.Request.Context(), req.IDs, 0))
+}
+
+// --- Admin: transform preview (what actually gets sent upstream) ---
+
+// previewSettings echoes the resolved transform config that produced this preview
+// (already clamped via vision.NewTransformOpts), so the UI can show which
+// toggles/limits applied.
+type previewSettings struct {
+	ResizeEnabled   bool `json:"resize_enabled"`
+	ResizeMaxEdge   int  `json:"resize_max_edge"`
+	CompressEnabled bool `json:"compress_enabled"`
+	JPEGQuality     int  `json:"jpeg_quality"`
+}
+
+// previewImageInfo is one side (before or after) of the comparison.
+type previewImageInfo struct {
+	Width     int    `json:"width"`
+	Height    int    `json:"height"`
+	Size      int    `json:"size"`
+	MediaType string `json:"mime"`
+}
+
+// uploadPreviewResponse describes the effect of the current read-path transform
+// settings on one stored image. `unchanged` is true when the optimized bytes are
+// identical to the original (settings off, image already small, GIF, or fail-open);
+// in that case data_url is empty and the caller renders the row's own URL.
+type uploadPreviewResponse struct {
+	Settings  previewSettings  `json:"settings"`
+	Original  previewImageInfo `json:"original"`
+	Optimized previewImageInfo `json:"optimized"`
+	Unchanged bool             `json:"unchanged"`
+	DataURL   string           `json:"data_url"` // empty when unchanged
+}
+
+// AdminPreviewUpload runs the read-path transform (resize / re-encode) on one
+// stored image under the CURRENT settings and returns the result + before/after
+// stats. It is a DRY-RUN: it computes on a copy of the bytes in memory and never
+// writes back, so the on-disk original, the GET serve path, and sha256 dedup are
+// untouched (identical guarantee to the live Transform call). Admin-only.
+func AdminPreviewUpload(c *gin.Context) {
+	if service.UploadStore == nil {
+		common.Error(c, http.StatusServiceUnavailable, "upload storage not initialized")
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		common.Error(c, http.StatusBadRequest, "invalid id")
+		return
+	}
+	img, err := model.GetUploadedImageByID(id)
+	if err != nil {
+		common.Error(c, http.StatusNotFound, "upload not found")
+		return
+	}
+	if img.Status != model.UploadStatusUploaded {
+		// Pending slot has no bytes; report as not found (no state leak).
+		common.Error(c, http.StatusNotFound, "file not found")
+		return
+	}
+	rc, err := service.UploadStore.Get(c.Request.Context(), img.StorageKey)
+	if err != nil {
+		common.Error(c, http.StatusNotFound, "file not found")
+		return
+	}
+	origBytes, err := io.ReadAll(rc)
+	_ = rc.Close()
+	if err != nil {
+		common.Error(c, http.StatusInternalServerError, "read failed")
+		return
+	}
+
+	// Resolve the same opts the live Analyze path uses (clamped centrally).
+	opts := vision.NewTransformOpts(
+		model.GetOptionBool("VisionResizeEnabled"),
+		model.GetOptionInt("VisionResizeMaxEdge"),
+		model.GetOptionBool("VisionCompressEnabled"),
+		model.GetOptionInt("VisionJPEGQuality"),
+	)
+
+	origW, origH, err := vision.Dimensions(origBytes)
+	if err != nil {
+		// Cannot even read the header — nothing meaningful to preview.
+		common.Error(c, http.StatusUnprocessableEntity, "cannot decode image header")
+		return
+	}
+
+	opt := vision.Transform(vision.ImageInput{Bytes: origBytes, MediaType: img.MediaType}, opts)
+	optW, optH, _ := vision.Dimensions(opt.Bytes) // best-effort; opt is a freshly valid encode
+
+	resp := uploadPreviewResponse{
+		Settings: previewSettings{
+			ResizeEnabled:   opts.ResizeEnabled,
+			ResizeMaxEdge:   opts.ResizeMaxEdge,
+			CompressEnabled: opts.CompressEnabled,
+			JPEGQuality:     opts.JPEGQuality,
+		},
+		Original: previewImageInfo{
+			Width: origW, Height: origH, Size: len(origBytes), MediaType: img.MediaType,
+		},
+		Optimized: previewImageInfo{
+			Width: optW, Height: optH, Size: len(opt.Bytes), MediaType: opt.MediaType,
+		},
+	}
+	resp.Unchanged = bytes.Equal(origBytes, opt.Bytes)
+	if !resp.Unchanged {
+		// Embed the optimized (smaller) bytes as a data URL. When unchanged we leave
+		// it empty so the client renders the row's signed URL instead of needlessly
+		// base64-encoding the full original.
+		resp.DataURL = "data:" + opt.MediaType + ";base64," + base64.StdEncoding.EncodeToString(opt.Bytes)
+	}
+	c.JSON(http.StatusOK, resp)
 }

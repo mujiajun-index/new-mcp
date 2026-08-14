@@ -97,7 +97,12 @@ func handleAnalyze(ctx context.Context, cam *model.Camera, args json.RawMessage)
 		userPrompt = params.Prompt
 	}
 
-	result, err := client.Analyze(ctx, systemPrompt, userPrompt, vision.ImageInput{Bytes: frame, MediaType: "image/jpeg"})
+	// Apply the same optional read-path transforms (resize / re-encode) as the
+	// vision path, right before the upstream call. Camera frames are usually
+	// small JPEGs, so this is typically a no-op via the fast path; including it
+	// keeps both byte sources uniform. Toggles default off.
+	imgIn := vision.Transform(vision.ImageInput{Bytes: frame, MediaType: "image/jpeg"}, loadTransformOpts())
+	result, err := client.Analyze(ctx, systemPrompt, userPrompt, imgIn)
 	if err != nil {
 		return nil, err
 	}

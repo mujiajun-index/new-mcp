@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { adminGetUploads, adminDeleteUpload, adminBatchDeleteUploads, type UploadListItem } from '../api'
+import { adminGetUploads, adminDeleteUpload, adminBatchDeleteUploads, adminPreviewUpload, type UploadListItem } from '../api'
 import { formatBytes, formatRelative, formatDateTime } from '../utils'
-import { BackendBadge, Thumb, CopyUrlButton, ImagePreviewDialog } from './shared'
+import { BackendBadge, Thumb, CopyUrlButton, ImagePreviewDialog, OptimizedPreviewDialog } from './shared'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -15,7 +15,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { Image as ImageIcon, Trash2, Loader2, RefreshCw, Search } from 'lucide-react'
+import { Image as ImageIcon, Trash2, Loader2, RefreshCw, Search, Wand2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 export function AdminUploadsPage() {
@@ -26,6 +26,7 @@ export function AdminUploadsPage() {
   const [userInput, setUserInput] = useState('')
   const [userId, setUserId] = useState<number | undefined>(undefined)
   const [previewIndex, setPreviewIndex] = useState<number | null>(null)
+  const [optimPreviewItem, setOptimPreviewItem] = useState<UploadListItem | null>(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const pageSize = 15
   const locale = i18n.language?.startsWith('zh') ? 'zh-CN' : 'en-US'
@@ -54,6 +55,16 @@ export function AdminUploadsPage() {
       setSelected(new Set())
       queryClient.invalidateQueries({ queryKey: ['admin-uploads'] })
     },
+  })
+
+  // Per-row dry-run: compute the current read-path transform (resize/re-encode) on
+  // the stored image and show what upstream would receive. Fetched on demand when a
+  // row's "optimized preview" button is clicked; cached per id.
+  const { data: previewResult, isLoading: previewLoading, error: previewError } = useQuery({
+    queryKey: ['admin-upload-preview', optimPreviewItem?.id],
+    queryFn: () => adminPreviewUpload(optimPreviewItem!.id),
+    enabled: optimPreviewItem !== null,
+    staleTime: 0,
   })
 
   const items: UploadListItem[] = data?.data || []
@@ -197,6 +208,14 @@ export function AdminUploadsPage() {
                     <Button
                       variant="ghost"
                       size="sm"
+                      onClick={() => setOptimPreviewItem(item)}
+                      title={t('uploads.optimizedPreview')}
+                    >
+                      <Wand2 className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       className="text-destructive"
                       disabled={deleteMutation.isPending}
                       onClick={() => {
@@ -304,6 +323,14 @@ export function AdminUploadsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
+                          onClick={() => setOptimPreviewItem(item)}
+                          title={t('uploads.optimizedPreview')}
+                        >
+                          <Wand2 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           className="text-destructive hover:text-destructive"
                           disabled={deleteMutation.isPending}
                           onClick={() => {
@@ -349,6 +376,17 @@ export function AdminUploadsPage() {
         onIndexChange={setPreviewIndex}
         onOpenChange={(o) => {
           if (!o) setPreviewIndex(null)
+        }}
+      />
+
+      <OptimizedPreviewDialog
+        item={optimPreviewItem}
+        result={previewResult ?? null}
+        loading={previewLoading}
+        error={previewError}
+        open={optimPreviewItem !== null}
+        onOpenChange={(o) => {
+          if (!o) setOptimPreviewItem(null)
         }}
       />
     </div>

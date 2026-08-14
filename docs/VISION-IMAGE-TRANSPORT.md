@@ -519,7 +519,7 @@ go build ./... && ./newmcp  # 启动后 uploaded_images 表自动建成
 | **存量 vision 配置重新同步** | 旧 vision 配置的 `ToolsCache` 仍是旧 schema（无 `image_url`）；**需重新保存 / 启用**才 regenerate 暴露 `image_url`。新建配置直接生效 |
 | **前端管理 UI** | ✅ 已实现：用户图片管理页（`/vision/uploads`，缩略图 / 复制签名 URL / 删除）+ 管理员图片管理页（`/admin/uploads`，按 user_id 筛选）+ 管理后台「存储 / 视觉上传」设置 Tab（后端选择 / S3 凭据 / 上传调优参数）。vision 测试面板的上传按钮为可选增强，未做 |
 | **Gemini 原生 file_uri** | 对任意 https URL 可能不稳（V1 可靠 URL 路径为 OpenAI 兼容与 Anthropic） |
-| **网关侧 resize**（可选降本） | 未做；OpenAI / Claude 上游本就会做长边 ≤1568px 的 resize，非阻塞 |
+| **网关侧 resize**（可选降本） | ✅ **已实现（默认关）**：两个系统设置开关 `VisionResizeEnabled` / `VisionCompressEnabled`（+ `VisionResizeMaxEdge` 默认 1568、`VisionJPEGQuality` 默认 85）。在 `client.Analyze` 前对内存字节做 resize / 高保真重编码，磁盘原图与 GET/去重不动；URL 透传不触碰；任何解码/编码失败 **fail-open 回退原图**；「永不膨胀」守卫：重编码后若 ≥ 原图则回退原图。两开关正交：`resize` 只管尺寸，`compress` 管格式转换。compress **开**：所有格式（JPEG/WebP/PNG/GIF）→ JPEG@质量，透明区域白底合成防黑底，**GIF 仅取首帧（动画丢失）**；compress **关**（仅 resize）：PNG 仍保 PNG（保透明）、GIF 跳过（防丢动画）、其余重编码（WebP→JPEG）。另：管理员图片管理页操作列有「调优效果预览」按钮（`GET /admin/vision/uploads/:id/preview`，dry-run 跑当前设置并回原图/优化后对比）。详见 `internal/mcp/vision/transform.go` |
 | ~~**StoreAddress 反向回退**~~ | ✅ **V1.3 已实现**（原 plan 遗留钩子）：自家存储 URL（`OwnsURL` 命中）经 `KeyFromURL`→`Get` 反向取字节、以 `ImageInput{Bytes}` 发上游（无 SSRF，因是自家对象），兼作本地部署兜底与 Gemini 路径的可靠替代，见 §14.7 |
 
 ### 13.3 协议趋势（短期不依赖）

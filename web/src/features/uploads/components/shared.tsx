@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -9,9 +9,11 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Loader2,
+  ExternalLink,
 } from 'lucide-react'
-import type { UploadListItem } from '../api'
-import { copyText } from '../utils'
+import type { UploadListItem, UploadPreviewResponse } from '../api'
+import { copyText, formatBytes } from '../utils'
 import { toast } from 'sonner'
 
 export function BackendBadge({ backend }: { backend: string }) {
@@ -170,5 +172,179 @@ export function CopyUrlButton({
       {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
       {!iconOnly && (copied ? t('common.copied') : t('uploads.copyUrl'))}
     </Button>
+  )
+}
+
+// dataUrlToBlobUrl decodes a `data:<mime>;base64,...` URL into a blob: URL.
+// Browsers BLOCK top-level navigation to data: URLs (a target=_blank / link click
+// yields a blank tab), but blob: URLs are navigable — so converting lets the
+// "open in new tab" affordance actually render the optimized image. The caller is
+// responsible for URL.revokeObjectURL when done.
+function dataUrlToBlobUrl(dataUrl: string): string {
+  const comma = dataUrl.indexOf(',')
+  const meta = dataUrl.slice(5, comma) // "image/png;base64"
+  const mime = meta.split(';')[0] // "image/png"
+  const bin = atob(dataUrl.slice(comma + 1))
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  return URL.createObjectURL(new Blob([bytes], { type: mime }))
+}
+
+// PreviewImage is a clickable preview tile. Wrapping the <img> in a real
+// <a target="_blank"> makes BOTH left-click and right-click → "open in new tab"
+// work reliably: the browser's native "open image in new tab" is flaky for data:
+// URLs (which the optimized image is), and the old wrapping <div> ate the click
+// entirely. Opening at full size lets the admin compare original vs optimized in
+// detail in separate tabs.
+function PreviewImage({ src, alt, openLabel }: { src: string; alt?: string; openLabel: string }) {
+  return (
+    <a
+      href={src}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={openLabel}
+      className="group relative flex h-48 cursor-zoom-in items-center justify-center overflow-hidden rounded-md border bg-muted"
+    >
+      <img
+        src={src}
+        alt={alt}
+        referrerPolicy="no-referrer"
+        className="max-h-full max-w-full object-contain"
+      />
+      <span className="pointer-events-none absolute bottom-1 right-1 flex items-center gap-1 rounded bg-foreground/70 px-1.5 py-0.5 text-[10px] text-background opacity-0 transition group-hover:opacity-100">
+        <ExternalLink className="h-3 w-3" />
+        {openLabel}
+      </span>
+    </a>
+  )
+}
+
+// OptimizedPreviewDialog shows what actually gets sent upstream after the CURRENT
+// read-path transform settings (resize / re-encode) are applied to one stored
+// image. It is a read-only dry-run (the backend computes on a byte copy and never
+// writes back). The original is always shown alongside so the admin can eyeball
+// the difference; when the transform is a no-op (`unchanged`), the optimized side
+// renders the original URL and a note explains why nothing changed.
+export function OptimizedPreviewDialog({
+  item,
+  result,
+  loading,
+  error,
+  open,
+  onOpenChange,
+}: {
+  item: UploadListItem | null
+  result: UploadPreviewResponse | null
+  loading: boolean
+  error: unknown
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const { t } = useTranslation()
+  const orig = result?.original
+  const opt = result?.optimized
+  const settings = result?.settings
+  const unchanged = result?.unchanged ?? false
+  const resized = !!orig && !!opt && (orig.width !== opt.width || orig.height !== opt.height)
+  const formatChanged = !!orig && !!opt && orig.mime !== opt.mime
+  const saved =
+    orig && opt && orig.size > 0 ? Math.max(0, Math.round((1 - opt.size / orig.size) * 100)) : 0
+
+  // The optimized image arrives as a data: URL. Browsers BLOCK top-level navigation
+  // to data: URLs (opening one yields a blank tab), so decode it once into a blob:
+  // URL — which IS navigable — and use that for both display and "open in new tab".
+  // When there's no transform (unchanged), fall back to the original's signed URL,
+  // which opens fine on its own. The blob is revoked on change/unmount.
+  const optimizedSrc = useMemo(() => {
+    if (!result || unchanged || !result.data_url) return item?.url ?? ''
+    return dataUrlToBlobUrl(result.data_url)
+  }, [result, unchanged, item?.url])
+  useEffect(() => {
+    if (!optimizedSrc.startsWith('blob:')) return
+    return () => URL.revokeObjectURL(optimizedSrc)
+  }, [optimizedSrc])
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl gap-4">
+        <DialogTitle>{t('uploads.optimizedPreview')}</DialogTitle>
+
+        {settings && (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <Badge variant={settings.resize_enabled ? 'default' : 'outline'}>
+              {t('uploads.previewResize')}: {settings.resize_enabled ? `${settings.resize_max_edge}px` : '—'}
+            </Badge>
+            <Badge variant={settings.compress_enabled ? 'default' : 'outline'}>
+              {t('uploads.previewCompress')}: {settings.compress_enabled ? `q${settings.jpeg_quality}` : '—'}
+            </Badge>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+            {t('common.loading')}
+          </div>
+        ) : error ? (
+          <div className="py-10 text-center text-sm text-destructive">
+            {t('uploads.optimizedPreviewError')}
+          </div>
+        ) : result ? (
+          <div className="space-y-3">
+            {unchanged && (
+              <p className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                {t('uploads.optimizedUnchanged')}
+              </p>
+            )}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <figure className="space-y-2">
+                <PreviewImage src={item?.url ?? ''} alt={item?.key} openLabel={t('uploads.previewOpenFull')} />
+                <figcaption className="text-xs text-muted-foreground">
+                  <div className="font-medium text-foreground">{t('uploads.previewOriginal')}</div>
+                  {orig && (
+                    <div className="tabular-nums">
+                      {orig.width}×{orig.height} · {formatBytes(orig.size)} · {orig.mime}
+                    </div>
+                  )}
+                </figcaption>
+              </figure>
+
+              <figure className="space-y-2">
+                <PreviewImage
+                  src={optimizedSrc}
+                  alt={item?.key}
+                  openLabel={t('uploads.previewOpenFull')}
+                />
+                <figcaption className="space-y-0.5 text-xs text-muted-foreground">
+                  <div className="flex flex-wrap items-center gap-1.5 font-medium text-foreground">
+                    {t('uploads.previewOptimized')}
+                    {!unchanged && resized && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        {t('uploads.previewResized')}
+                      </Badge>
+                    )}
+                    {!unchanged && formatChanged && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        {t('uploads.previewFormatChanged')}
+                      </Badge>
+                    )}
+                  </div>
+                  {opt && (
+                    <div className="tabular-nums">
+                      {opt.width}×{opt.height} · {formatBytes(opt.size)} · {opt.mime}
+                    </div>
+                  )}
+                  {!unchanged && saved > 0 && (
+                    <div className="font-medium text-emerald-600 dark:text-emerald-400">
+                      {t('uploads.previewSaved', { pct: saved })}
+                    </div>
+                  )}
+                </figcaption>
+              </figure>
+            </div>
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
   )
 }
