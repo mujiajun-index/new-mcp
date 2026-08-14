@@ -104,6 +104,18 @@ func (s *localStorage) Delete(ctx context.Context, key string) error {
 		}
 		return err
 	}
+	// Best-effort prune of the now-empty shard directory (e.g. "ab/" for a key
+	// like "ab/abcd..."). os.Remove only succeeds when the dir is empty, so
+	// blobs sharing the shard keep their dir; a concurrent Put that needs it
+	// again re-creates it via MkdirAll. We prune only when filepath.Dir(full)
+	// is strictly below {root}/{prefix} — never the prefix dir or root. The
+	// guard also skips flat, shard-less keys (they do not occur in practice:
+	// both ContentKey and the UUID path are "<2>/<rest>"), which would otherwise
+	// collapse to the prefix dir.
+	shardDir := filepath.Dir(full)
+	if shardDir != filepath.Join(s.root, s.pathPrefix) {
+		_ = os.Remove(shardDir)
+	}
 	return nil
 }
 
