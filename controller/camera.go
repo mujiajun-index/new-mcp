@@ -92,3 +92,44 @@ func DisableCamera(c *gin.Context) {
 	}
 	common.Success(c, nil)
 }
+
+func GetCameraStreamKey(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	resp, err := cameraService.GetStreamKey(userID, id)
+	if err != nil {
+		common.Error(c, http.StatusNotFound, "摄像头不存在")
+		return
+	}
+	common.Success(c, resp)
+}
+
+func GenerateCameraStreamKey(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	var req dto.StreamKeyReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// 允许空 body,视为永久有效
+		req = dto.StreamKeyReq{ExpiresIn: 0}
+	}
+	if req.ExpiresIn < 0 {
+		common.Error(c, http.StatusBadRequest, "expires_in 不能为负数")
+		return
+	}
+	resp, err := cameraService.RegenerateStreamKey(userID, id, &req)
+	if err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, resp)
+}
+
+func RevokeCameraStreamKey(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err := cameraService.RevokeStreamKey(userID, id); err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, nil)
+}

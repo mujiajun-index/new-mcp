@@ -281,6 +281,10 @@ CREATE TABLE `cameras` (
     `auto_register`        TINYINT         DEFAULT 0 COMMENT '是否启用(注册为虚拟 MCP 服务): 0=未启用, 1=已启用',
     `registered_service_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '注册的 MCP 服务 ID',
 
+    -- 推流密钥(预签名短链接凭证 /camera-live/:id?k=...,明文存以便管理页回显,可轮换/过期/撤销)
+    `stream_key`           VARCHAR(32)     DEFAULT '' COMMENT '推流密钥(22位base62,空=未生成)',
+    `stream_key_expires_at` DATETIME       DEFAULT NULL COMMENT '密钥过期时间,NULL=永久有效',
+
     `status`               TINYINT         DEFAULT 1 COMMENT '1=启用, 2=禁用',
     `created_at`           DATETIME        DEFAULT CURRENT_TIMESTAMP,
     `updated_at`           DATETIME        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -294,7 +298,9 @@ CREATE TABLE `cameras` (
 
 > **启用机制**: 启用 Camera 后，系统自动创建一条 `mcp_services` 记录（`transport_type="virtual"`, `source="camera"`），包含 2 个工具：`capture`（返回最新帧的 base64 图像）和 `analyze`（截取画面并调用关联的 VisionConfig 进行 AI 识别）。
 >
-> **帧获取方式**: 浏览器通过 WebRTC `getUserMedia` 获取摄像头画面，canvas 定时截图后通过 WebSocket (`/api/v1/cameras/:id/stream`) 推送到后端，后端 `CameraStreamManager` 缓存最新帧供 MCP 工具调用。不使用 `source_type`/`source_url`/`fps`/`resolution_*` 等服务端拉流字段，完全由浏览器端推流驱动。
+> **帧获取方式**: 浏览器通过 WebRTC `getUserMedia` 获取摄像头画面，canvas 定时截图后通过 WebSocket (`/api/v1/cameras/:id/stream?k=<推流密钥>`) 推送到后端，后端 `CameraStreamManager` 缓存最新帧供 MCP 工具调用。不使用 `source_type`/`source_url`/`fps`/`resolution_*` 等服务端拉流字段，完全由浏览器端推流驱动。
+>
+> **推流鉴权**: WS 握手只接受 `?k=` 推流密钥（每摄像头独立的 22 位 base62 随机密钥，存 `stream_key` 列，`stream_key_expires_at` 为空表示永久）。密钥由管理端 `POST /api/v1/cameras/:id/stream-key` 生成/重生成（旧链接立即失效并断开当前推流），`DELETE` 撤销；推流页链接形如 `{ServerAddress}/camera-live/{id}?k={key}`。不再支持用户 JWT。
 
 ### 2.10 cloud_endpoints - 云端主动连接表
 

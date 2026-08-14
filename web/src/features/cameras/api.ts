@@ -8,6 +8,8 @@ export interface CameraListItem {
   auto_register: boolean
   registered_service_id: number | null
   streaming: boolean
+  has_stream_key: boolean
+  stream_key_expires_at: string
   status: number
   created_at: string
 }
@@ -26,9 +28,18 @@ export interface CameraDetail {
   analyze_desc: string
   extra_config: string
   streaming: boolean
+  has_stream_key: boolean
+  stream_key_expires_at: string
   status: number
   created_at: string
   updated_at: string
+}
+
+export interface CameraStreamKey {
+  stream_key: string
+  stream_url: string
+  expires_at: string // 空串=永久
+  has_key: boolean
 }
 
 export interface CreateCameraReq {
@@ -80,5 +91,20 @@ export async function enableCamera(id: number) {
 
 export async function disableCamera(id: number) {
   const res = await api.post(`/cameras/${id}/disable`)
+  return res.data
+}
+
+export async function getCameraStreamKey(id: number): Promise<CameraStreamKey> {
+  const res = await api.get(`/cameras/${id}/stream-key`)
+  return res.data.data
+}
+
+export async function generateCameraStreamKey(id: number, expiresIn: number): Promise<CameraStreamKey> {
+  const res = await api.post(`/cameras/${id}/stream-key`, { expires_in: expiresIn })
+  return res.data.data
+}
+
+export async function revokeCameraStreamKey(id: number) {
+  const res = await api.delete(`/cameras/${id}/stream-key`)
   return res.data
 }

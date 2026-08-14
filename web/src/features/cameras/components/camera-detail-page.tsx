@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { getCamera, updateCamera, deleteCamera, enableCamera, disableCamera } from '../api'
 import { getVisionConfigs } from '@/features/vision/api'
 import type { VisionConfigListItem } from '@/features/vision/api'
-import { CameraCapture } from './camera-capture'
+import { CameraStreamLinkDialog } from './camera-stream-link-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -30,7 +30,7 @@ import {
 import { toast } from 'sonner'
 import {
   ArrowLeft, Trash2, Pencil, X, Check, Loader2,
-  CirclePower, Camera, Wrench,
+  CirclePower, Camera, Wrench, Link2,
 } from 'lucide-react'
 
 export function CameraDetailPage() {
@@ -50,7 +50,7 @@ export function CameraDetailPage() {
     analyze_name: '',
     analyze_desc: '',
   })
-  const [streaming, setStreaming] = useState(false)
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['cameras', id],
@@ -78,7 +78,6 @@ export function CameraDetailPage() {
         analyze_name: camera.analyze_name || '',
         analyze_desc: camera.analyze_desc || '',
       })
-      setStreaming(camera.streaming)
     }
   }, [camera, editing])
 
@@ -145,6 +144,11 @@ export function CameraDetailPage() {
           {!editing && (
             <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
               <Pencil className="h-4 w-4 mr-1.5" />{t('cameras.detail.edit')}
+            </Button>
+          )}
+          {!editing && (
+            <Button variant="outline" size="sm" onClick={() => setLinkDialogOpen(true)}>
+              <Link2 className="h-4 w-4 mr-1.5" />{t('cameras.streamLink.entry')}
             </Button>
           )}
           <Button
@@ -347,17 +351,12 @@ export function CameraDetailPage() {
         </div>
       </div>
 
-      {/* Camera preview */}
-      <div className="rounded-xl border bg-card p-5 space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-muted-foreground">{t('cameras.detail.cameraPreview')}</h2>
-          <span className="inline-flex items-center gap-1.5 text-xs">
-            <span className={`h-2 w-2 rounded-full ${streaming ? 'bg-emerald-500' : 'bg-zinc-400'}`} />
-            {streaming ? t('cameras.streamStreaming') : t('cameras.streamIdle')}
-          </span>
-        </div>
-        <CameraCapture cameraId={cameraId} onStreamingChange={setStreaming} />
-      </div>
+      <CameraStreamLinkDialog
+        cameraId={cameraId}
+        cameraName={camera.name}
+        open={linkDialogOpen}
+        onOpenChange={setLinkDialogOpen}
+      />
     </div>
   )
 }

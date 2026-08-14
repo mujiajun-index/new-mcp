@@ -1,74 +1,24 @@
 import { useParams } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 import { Phone, PhoneOff, SwitchCamera, Loader2, Video, Copy } from 'lucide-react'
+import { copyText } from '@/lib/copy'
 import { useCameraStream } from './use-camera-stream'
 
 export function CameraStreamPage() {
   const { t } = useTranslation()
   const { id } = useParams({ strict: false }) as { id: string }
   const cameraId = Number(id)
-  const token =
-    typeof window !== 'undefined'
-      ? new URLSearchParams(window.location.search).get('token') || localStorage.getItem('newmcp-token') || ''
-      : ''
+  const streamKey =
+    typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('k') || '' : ''
 
-  const s = useCameraStream(cameraId, token || undefined)
+  const s = useCameraStream(cameraId, streamKey || undefined)
 
-  const handleCopyLink = async () => {
-    const url = window.location.href
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(url)
-      } else {
-        // 非安全上下文（如 HTTP 部署）回退到 execCommand，保证手机端也能复制
-        const ta = document.createElement('textarea')
-        ta.value = url
-        ta.style.position = 'fixed'
-        ta.style.opacity = '0'
-        document.body.appendChild(ta)
-        ta.focus()
-        ta.select()
-        const ok = document.execCommand('copy')
-        document.body.removeChild(ta)
-        if (!ok) throw new Error('execCommand failed')
-      }
-      toast.success(t('cameras.stream.copySuccess'))
-    } catch {
-      toast.error(t('cameras.stream.copyFailed'))
-    }
-  }
+  const handleCopyLink = () => copyText(window.location.href)
 
-  const handleAnswer = async () => {
-    // 推流前预检（WS 握手被拒时前端只能拿到通用失败，这里给出明确提示）：
-    // 1) 摄像头是否已禁用；2) 是否已有其他连接正在推流。
-    if (token) {
-      try {
-        const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '')
-        const res = await fetch(`${base}/api/v1/cameras/${cameraId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        if (res.ok) {
-          const json = await res.json()
-          if (json?.data) {
-            if (json.data.auto_register === false) {
-              toast.error(t('cameras.stream.streamDisabled'))
-              return
-            }
-            if (json.data.streaming === true) {
-              toast.error(t('cameras.stream.streamingInUse'))
-              return
-            }
-          }
-        }
-      } catch {
-        // 查询失败不阻塞，交给 WS 握手处理
-      }
-    }
-    s.open()
-  }
+  // 预检（密钥无效/过期/禁用/重复推流的精确提示）已在 useCameraStream.open 内完成
+  const handleAnswer = () => s.open()
 
-  const canAnswer = !!token && s.mediaSupported && !s.opening
+  const canAnswer = !!streamKey && s.mediaSupported && !s.opening
 
   return (
     <div className="flex min-h-[100dvh] w-full items-center justify-center bg-neutral-950 text-white">
@@ -91,7 +41,7 @@ export function CameraStreamPage() {
                 </div>
                 <p className="mt-4 text-lg font-medium">{t('cameras.stream.title')}</p>
                 <p className="mt-1 text-sm text-white/50">
-                  {!s.mediaSupported ? t('cameras.stream.httpsRequired') : token ? t('cameras.stream.clickConnect') : t('cameras.stream.missingToken')}
+                  {!s.mediaSupported ? t('cameras.stream.httpsRequired') : streamKey ? t('cameras.stream.clickConnect') : t('cameras.stream.missingKey')}
                 </p>
               </div>
 

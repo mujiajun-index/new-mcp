@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { getCameras, deleteCamera, enableCamera, disableCamera } from '../api'
+import { getCameras, deleteCamera, enableCamera, disableCamera, getCameraStreamKey } from '../api'
 import type { CameraListItem } from '../api'
 import { Button } from '@/components/ui/button'
 import {
@@ -26,19 +26,29 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { Plus, Trash2, Video, Eye, Loader2, CirclePower, Phone, MoreHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
 import { useState } from 'react'
+import { CameraStreamLinkDialog } from './camera-stream-link-dialog'
 
 export function CameraListPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [linkDialogId, setLinkDialogId] = useState<number | null>(null)
 
-  // Video page navigation: carry id + current session token, opens on any device (phone/tablet/desktop)
-  const streamToken = localStorage.getItem('newmcp-token') || ''
-  const streamBase = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '')
-  const openLive = (cameraId: number) => {
-    const href = `${streamBase}/camera-live/${cameraId}?token=${encodeURIComponent(streamToken)}`
-    window.open(href, '_blank', 'noopener,noreferrer')
+  // 推流页只认流密钥短链接（JWT 已移除）：实时查询密钥状态,已生成则直接打开推流页,
+  // 未生成则弹出链接管理对话框引导生成(不依赖列表缓存里的 has_stream_key,避免过期数据)
+  const openLive = async (camera: CameraListItem) => {
+    try {
+      const info = await getCameraStreamKey(camera.id)
+      if (info?.has_key && info.stream_url) {
+        window.open(info.stream_url, '_blank', 'noopener,noreferrer')
+        return
+      }
+    } catch {
+      toast.error(t('cameras.streamLink.loadFailed'))
+      return
+    }
+    setLinkDialogId(camera.id)
   }
 
   const { data, isLoading } = useQuery({
@@ -129,7 +139,7 @@ export function CameraListPage() {
                       size="sm"
                       className="gap-1"
                       disabled={!camera.auto_register}
-                      onClick={() => openLive(camera.id)}
+                      onClick={() => openLive(camera)}
                       title={camera.auto_register ? t('cameras.openVideoTabTitle') : t('cameras.enableFirstTitle')}
                     >
                       <Phone className="h-3.5 w-3.5" />{t('cameras.video')}
@@ -217,7 +227,7 @@ export function CameraListPage() {
                           size="sm"
                           className="gap-1"
                           disabled={!camera.auto_register}
-                          onClick={() => openLive(camera.id)}
+                          onClick={() => openLive(camera)}
                           title={camera.auto_register ? t('cameras.openVideoTabTitle') : t('cameras.enableFirstTitle')}
                         >
                           <Phone className="h-3.5 w-3.5" />{t('cameras.video')}
@@ -272,6 +282,22 @@ export function CameraListPage() {
           </div>
         )}
       </div>
+
+      {linkDialogId !== null && (
+        <CameraStreamLinkDialog
+          cameraId={linkDialogId}
+          cameraName={cameras.find((c) => c.id === linkDialogId)?.name ?? ''}
+          open
+          closeOnGenerate
+          onGenerated={(info) => {
+            // 首次生成成功后直接打开推流页,免去再点一次「视频」
+            if (info?.stream_url) {
+              window.open(info.stream_url, '_blank', 'noopener,noreferrer')
+            }
+          }}
+          onOpenChange={(o) => !o && setLinkDialogId(null)}
+        />
+      )}
     </div>
   )
 }

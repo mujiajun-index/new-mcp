@@ -49,6 +49,11 @@ api.interceptors.response.use(
     return response
   },
   (error) => {
+    // 失败也要清理去重表,否则泄漏的 key 会永久 abort 后续同 URL 的 GET
+    if (error.config) {
+      pendingRequests.delete(getRequestKey(error.config))
+    }
+
     const status = error.response?.status
     const message = error.response?.data?.message
 

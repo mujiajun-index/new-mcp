@@ -18,17 +18,32 @@ async function openStream(facingMode: FacingMode): Promise<MediaStream> {
   return navigator.mediaDevices.getUserMedia({ video: { facingMode } })
 }
 
-function resolveToken(tokenOverride?: string): string {
-  return tokenOverride ?? localStorage.getItem('newmcp-token') ?? ''
-}
-
-function buildWebSocketUrl(cameraId: number, tokenOverride?: string): string {
+function buildWebSocketUrl(cameraId: number, streamKey: string): string {
   const loc = window.location
   const protocol = loc.protocol === 'https:' ? 'wss:' : 'ws:'
   const base: string = import.meta.env.BASE_URL ?? '/'
   const apiBase = base.endsWith('/') ? base.slice(0, -1) : base
-  const token = resolveToken(tokenOverride)
-  return `${protocol}//${loc.host}${apiBase}/api/v1/cameras/${cameraId}/stream?token=${encodeURIComponent(token)}`
+  return `${protocol}//${loc.host}${apiBase}/api/v1/cameras/${cameraId}/stream?k=${encodeURIComponent(streamKey)}`
+}
+
+/**
+ * 推流预检：浏览器 WS API 不暴露握手失败的状态码/响应体，先用普通 GET（无 Upgrade 头）
+ * 请求推流端点，拿到服务器的 JSON 错误（密钥无效/已过期/已撤销/摄像头已禁用/正在推流中）。
+ * 返回 400（"not using the websocket protocol"）说明校验全部通过，可继续真实 WS 连接。
+ */
+async function preflightStream(cameraId: number, streamKey: string): Promise<{ ok: boolean; message?: string }> {
+  const loc = window.location
+  const base: string = import.meta.env.BASE_URL ?? '/'
+  const apiBase = base.endsWith('/') ? base.slice(0, -1) : base
+  try {
+    const res = await fetch(`${loc.origin}${apiBase}/api/v1/cameras/${cameraId}/stream?k=${encodeURIComponent(streamKey)}`)
+    if (res.status === 400) return { ok: true }
+    const json = await res.json().catch(() => null)
+    return { ok: false, message: json?.error }
+  } catch {
+    // 预检本身的网络错误不阻塞，交给后续 WS 连接报错
+    return { ok: true }
+  }
 }
 
 /**
@@ -36,9 +51,9 @@ function buildWebSocketUrl(cameraId: number, tokenOverride?: string): string {
  * 供「详情页预览」与「独立视频页」共用，UI 由各消费方自行渲染。
  *
  * @param cameraId 摄像头 ID
- * @param tokenOverride 视频页等无登录态场景从 URL 传入的会话 token；不传则回退 localStorage
+ * @param streamKey 推流密钥（管理页生成，随 /camera-live/:id?k= 链接分发）；WS 握手唯一凭证
  */
-export function useCameraStream(cameraId: number, tokenOverride?: string) {
+export function useCameraStream(cameraId: number, streamKey?: string) {
   const mediaSupported = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia
 
   const [active, setActive] = useState(false)
@@ -123,6 +138,18 @@ export function useCameraStream(cameraId: number, tokenOverride?: string) {
       return
     }
 
+    if (!streamKey) {
+      toast.error(i18n.t('cameras.capture.noStreamKey'))
+      return
+    }
+
+    // 预检拿到精确的服务端错误提示（无需登录态，手机端同样生效），通过后再申请摄像头
+    const probe = await preflightStream(cameraId, streamKey)
+    if (!probe.ok) {
+      toast.error(probe.message || i18n.t('cameras.capture.streamLoadFailed'))
+      return
+    }
+
     setOpening(true)
     try {
       const stream = await openStream(facingRef.current)
@@ -138,7 +165,7 @@ export function useCameraStream(cameraId: number, tokenOverride?: string) {
       }
 
       // Start WebSocket connection
-      const wsUrl = buildWebSocketUrl(cameraId, tokenOverride)
+      const wsUrl = buildWebSocketUrl(cameraId, streamKey)
       const ws = new WebSocket(wsUrl)
       ws.binaryType = 'arraybuffer'
       wsRef.current = ws
@@ -192,7 +219,7 @@ export function useCameraStream(cameraId: number, tokenOverride?: string) {
     } finally {
       setOpening(false)
     }
-  }, [cameraId, tokenOverride, detectMultipleCameras, cleanup])
+  }, [cameraId, streamKey, detectMultipleCameras, cleanup])
 
   // 切换前后摄像头：保持 WebSocket 与推流不中断，只替换视频源
   const switchCamera = useCallback(async () => {

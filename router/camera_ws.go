@@ -1,14 +1,13 @@
 package router
 
 import (
+	"crypto/subtle"
 	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/mujkjk/newmcp/common"
-	"github.com/mujkjk/newmcp/middleware"
 	"github.com/mujkjk/newmcp/model"
 )
 
@@ -17,24 +16,13 @@ var upgrader = websocket.Upgrader{
 }
 
 func HandleCameraStream(c *gin.Context) {
-	tokenStr := c.Query("token")
-	if tokenStr == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未提供认证信息"})
+	// auth via query stream key (?k=) — WebSocket can't send custom headers.
+	// 密钥即凭证:持有正确密钥 = 授权推流该摄像头,归属校验由密钥本身承担(IDOR 防御)。
+	key := c.Query("k")
+	if key == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未提供推流密钥"})
 		return
 	}
-
-	claims, err := middleware.ParseToken(tokenStr)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的认证令牌"})
-		return
-	}
-
-	user, err := model.GetUserByID(claims.UserID)
-	if err != nil || user.Status != common.StatusEnabled {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在或已禁用"})
-		return
-	}
-	_ = user
 
 	cameraID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -42,13 +30,22 @@ func HandleCameraStream(c *gin.Context) {
 		return
 	}
 
-	// Verify camera exists AND belongs to the authenticated user (prevent IDOR:
-	// without the user_id filter any valid token could stream any camera by id).
-	cam, err := model.GetCameraByID(claims.UserID, cameraID)
+	cam, err := model.GetCameraByIDAny(cameraID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "camera not found"})
 		return
 	}
+
+	// 常数时间比对,避免时序侧信道(密钥定长 22,与 VerifyShort 同款写法)
+	if subtle.ConstantTimeCompare([]byte(cam.StreamKey), []byte(key)) != 1 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的推流密钥"})
+		return
+	}
+	if !cam.StreamKeyValid() {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "推流密钥已过期或已撤销"})
+		return
+	}
+
 	// 拒绝已禁用的摄像头推流
 	if !cam.AutoRegister {
 		c.JSON(http.StatusForbidden, gin.H{"error": "摄像头已禁用，请先启用后再推流"})

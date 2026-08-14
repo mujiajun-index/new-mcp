@@ -123,6 +123,10 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.DELETE("/cameras/:id", controller.DeleteCamera)
 		auth.POST("/cameras/:id/enable", controller.EnableCamera)
 		auth.POST("/cameras/:id/disable", controller.DisableCamera)
+		// 推流密钥(短链接凭证)管理:查询/生成/重生成/撤销
+		auth.GET("/cameras/:id/stream-key", controller.GetCameraStreamKey)
+		auth.POST("/cameras/:id/stream-key", controller.GenerateCameraStreamKey)
+		auth.DELETE("/cameras/:id/stream-key", controller.RevokeCameraStreamKey)
 		// User logs
 		auth.GET("/logs", controller.GetLogs)
 		auth.GET("/logs/stats", controller.GetLogStats)

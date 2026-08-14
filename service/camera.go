@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/mujkjk/newmcp/common"
@@ -42,6 +43,8 @@ func (s *CameraService) List(userID int64) ([]dto.CameraListItem, error) {
 			AutoRegister:        c.AutoRegister,
 			RegisteredServiceID: c.RegisteredServiceID,
 			Streaming:           streaming,
+			HasStreamKey:        c.StreamKey != "",
+			StreamKeyExpiresAt:  streamKeyExpiresAt(&c),
 			Status:              c.Status,
 			CreatedAt:           c.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		}
@@ -282,8 +285,102 @@ func (s *CameraService) toDetail(cam *model.Camera) *dto.CameraDetail {
 		AnalyzeDesc:         cam.AnalyzeDesc,
 		ExtraConfig:         cam.ExtraConfig,
 		Streaming:           streaming,
+		HasStreamKey:        cam.StreamKey != "",
+		StreamKeyExpiresAt:  streamKeyExpiresAt(cam),
 		Status:              cam.Status,
 		CreatedAt:           cam.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:           cam.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	}
+}
+
+// streamKeyExpiresAt 返回推流密钥过期时间的展示值:未生成或永久为空串。
+func streamKeyExpiresAt(cam *model.Camera) string {
+	if cam.StreamKey == "" || cam.StreamKeyExpiresAt == nil {
+		return ""
+	}
+	return cam.StreamKeyExpiresAt.Format("2006-01-02T15:04:05Z")
+}
+
+// cameraLiveURL 用 ServerAddress option 拼完整推流页链接(仿 storage.ShortURL)。
+func cameraLiveURL(cam *model.Camera) string {
+	base := strings.TrimRight(model.GetOptionString("ServerAddress"), "/")
+	return fmt.Sprintf("%s/camera-live/%d?k=%s", base, cam.ID, cam.StreamKey)
+}
+
+func (s *CameraService) streamKeyInfo(cam *model.Camera) *dto.CameraStreamKey {
+	if cam.StreamKey == "" {
+		return &dto.CameraStreamKey{HasKey: false}
+	}
+	expires := ""
+	if cam.StreamKeyExpiresAt != nil {
+		expires = cam.StreamKeyExpiresAt.Format("2006-01-02T15:04:05Z")
+	}
+	return &dto.CameraStreamKey{
+		StreamKey: cam.StreamKey,
+		StreamURL: cameraLiveURL(cam),
+		ExpiresAt: expires,
+		HasKey:    true,
+	}
+}
+
+// GetStreamKey 查询当前推流密钥信息;未生成时返回 HasKey=false 的空壳(非错误,
+// 便于前端对话框区分"未生成"与"已生成"两种状态)。
+func (s *CameraService) GetStreamKey(userID, id int64) (*dto.CameraStreamKey, error) {
+	cam, err := model.GetCameraByID(userID, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.streamKeyInfo(cam), nil
+}
+
+// RegenerateStreamKey 生成/重新生成推流密钥,旧链接立即失效。
+// ExpiresIn 为 0 表示永久有效。若正在推流则主动断开旧连接
+// (密钥校验只发生在 WS 握手时,已升级的连接不会自行感知密钥变化)。
+func (s *CameraService) RegenerateStreamKey(userID, id int64, req *dto.StreamKeyReq) (*dto.CameraStreamKey, error) {
+	cam, err := model.GetCameraByID(userID, id)
+	if err != nil {
+		return nil, err
+	}
+
+	key, err := model.NewStreamKey()
+	if err != nil {
+		return nil, err
+	}
+	cam.StreamKey = key
+	if req.ExpiresIn > 0 {
+		exp := time.Now().Add(time.Duration(req.ExpiresIn) * time.Second)
+		cam.StreamKeyExpiresAt = &exp
+	} else {
+		cam.StreamKeyExpiresAt = nil
+	}
+
+	if err := cam.Update(); err != nil {
+		return nil, err
+	}
+
+	if CameraStreamMgr != nil {
+		CameraStreamMgr.Cleanup(id)
+	}
+
+	return s.streamKeyInfo(cam), nil
+}
+
+// RevokeStreamKey 撤销推流密钥(清空),并断开当前推流连接。
+func (s *CameraService) RevokeStreamKey(userID, id int64) error {
+	cam, err := model.GetCameraByID(userID, id)
+	if err != nil {
+		return err
+	}
+
+	cam.StreamKey = ""
+	cam.StreamKeyExpiresAt = nil
+	if err := cam.Update(); err != nil {
+		return err
+	}
+
+	if CameraStreamMgr != nil {
+		CameraStreamMgr.Cleanup(id)
+	}
+
+	return nil
 }
