@@ -144,13 +144,22 @@ export function ImagePreviewDialog({
   )
 }
 
-export function CopyUrlButton({ url, t }: { url: string; t: (k: string) => string }) {
+export function CopyUrlButton({
+  url,
+  t,
+  iconOnly = false,
+}: {
+  url: string
+  t: (k: string) => string
+  iconOnly?: boolean
+}) {
   const [copied, setCopied] = useState(false)
   return (
     <Button
       variant="ghost"
       size="sm"
       className="gap-1"
+      title={t('uploads.copyUrl')}
       onClick={async () => {
         await copyText(url)
         setCopied(true)
@@ -159,7 +168,7 @@ export function CopyUrlButton({ url, t }: { url: string; t: (k: string) => strin
       }}
     >
       {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-      {copied ? t('common.copied') : t('uploads.copyUrl')}
+      {!iconOnly && (copied ? t('common.copied') : t('uploads.copyUrl'))}
     </Button>
   )
 }

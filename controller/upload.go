@@ -194,6 +194,7 @@ func actingUserID(c *gin.Context) int64 {
 type uploadListItem struct {
 	ID        int64     `json:"id"`
 	UserID    int64     `json:"user_id"`
+	ShortID   string    `json:"short_id"` // /u/<sid> handle — exposed so the short-URL ↔ storage_key mapping is visible without a join
 	Key       string    `json:"key"`
 	URL       string    `json:"url"`
 	MediaType string    `json:"mime"`
@@ -225,6 +226,7 @@ func toUploadListItem(img model.UploadedImage) uploadListItem {
 	return uploadListItem{
 		ID:        img.ID,
 		UserID:    img.UserID,
+		ShortID:   img.ShortID,
 		Key:       img.StorageKey,
 		URL:       storage.ShortURL("GET", img.ShortID),
 		MediaType: img.MediaType,
@@ -348,4 +350,72 @@ func deleteUploadRow(ctx context.Context, id, ownerCheck int64) error {
 		_ = service.UploadStore.Delete(ctx, img.StorageKey)
 	}
 	return nil
+}
+
+// maxBatchDelete caps how many uploads one batch-delete may remove, keeping the
+// refcount/Delete fan-out bounded and the request body sane.
+const maxBatchDelete = 100
+
+type batchDeleteRequest struct {
+	IDs []int64 `json:"ids"`
+}
+
+// batchDeleteResult reports per-batch outcome. Non-owned or missing ids count as
+// failed — same no-existence-leak semantics as the single delete (deleteUploadRow
+// returns "not found" for both not-found and not-owned).
+type batchDeleteResult struct {
+	Success bool `json:"success"`
+	Deleted int  `json:"deleted"`
+	Failed  int  `json:"failed"`
+}
+
+// batchDelete loops deleteUploadRow over the ids, owner-checking each when
+// ownerCheck > 0 (the MCP path) and skipping it when 0 (the admin path). Reuses
+// the single-delete path verbatim, so blob refcounting and existence-hiding
+// behave identically.
+func batchDelete(ctx context.Context, ids []int64, ownerCheck int64) batchDeleteResult {
+	res := batchDeleteResult{Success: true}
+	for _, id := range ids {
+		if id <= 0 {
+			res.Failed++
+			continue
+		}
+		if err := deleteUploadRow(ctx, id, ownerCheck); err != nil {
+			res.Failed++
+		} else {
+			res.Deleted++
+		}
+	}
+	return res
+}
+
+func bindBatchDelete(c *gin.Context) (batchDeleteRequest, bool) {
+	var req batchDeleteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "invalid request body")
+		return batchDeleteRequest{}, false
+	}
+	if len(req.IDs) == 0 {
+		common.Error(c, http.StatusBadRequest, "no ids provided")
+		return batchDeleteRequest{}, false
+	}
+	if len(req.IDs) > maxBatchDelete {
+		common.Error(c, http.StatusBadRequest, fmt.Sprintf("too many ids (max %d)", maxBatchDelete))
+		return batchDeleteRequest{}, false
+	}
+	return req, true
+}
+
+// AdminBatchDeleteUploads removes uploads from any user (no owner check), for
+// bulk abuse cleanup / maintenance. Mounted on the admin collection route.
+func AdminBatchDeleteUploads(c *gin.Context) {
+	if service.UploadStore == nil {
+		common.Error(c, http.StatusServiceUnavailable, "upload storage not initialized")
+		return
+	}
+	req, ok := bindBatchDelete(c)
+	if !ok {
+		return
+	}
+	c.JSON(http.StatusOK, batchDelete(c.Request.Context(), req.IDs, 0))
 }

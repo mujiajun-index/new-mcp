@@ -6,6 +6,7 @@ import { api } from '@/lib/api'
 export interface UploadListItem {
   id: number
   user_id: number
+  short_id: string
   key: string
   url: string
   mime: string
@@ -38,5 +39,18 @@ export async function adminGetUploads(
 
 export async function adminDeleteUpload(id: number) {
   const res = await api.delete(`/admin/vision/uploads/${id}`)
+  return res.data
+}
+
+export interface BatchDeleteResponse {
+  success: boolean
+  deleted: number
+  failed: number
+}
+
+// Batch delete (collection-level DELETE with an ids body). Non-owned or missing
+// ids count as `failed` server-side (no existence leak).
+export async function adminBatchDeleteUploads(ids: number[]): Promise<BatchDeleteResponse> {
+  const res = await api.delete('/admin/vision/uploads', { data: { ids } })
   return res.data
 }

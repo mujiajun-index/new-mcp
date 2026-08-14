@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { adminGetUploads, adminDeleteUpload, type UploadListItem } from '../api'
+import { adminGetUploads, adminDeleteUpload, adminBatchDeleteUploads, type UploadListItem } from '../api'
 import { formatBytes, formatRelative, formatDateTime } from '../utils'
 import { BackendBadge, Thumb, CopyUrlButton, ImagePreviewDialog } from './shared'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { MobileListCard } from '@/components/ui/mobile-list-card'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -25,6 +26,7 @@ export function AdminUploadsPage() {
   const [userInput, setUserInput] = useState('')
   const [userId, setUserId] = useState<number | undefined>(undefined)
   const [previewIndex, setPreviewIndex] = useState<number | null>(null)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
   const pageSize = 15
   const locale = i18n.language?.startsWith('zh') ? 'zh-CN' : 'en-US'
 
@@ -41,10 +43,45 @@ export function AdminUploadsPage() {
     },
   })
 
+  const batchDeleteMutation = useMutation({
+    mutationFn: (ids: number[]) => adminBatchDeleteUploads(ids),
+    onSuccess: (data) => {
+      if (data.failed > 0) {
+        toast.warning(t('uploads.batchDeletePartial', { deleted: data.deleted, failed: data.failed }))
+      } else {
+        toast.success(t('uploads.batchDeleteSuccess', { count: data.deleted }))
+      }
+      setSelected(new Set())
+      queryClient.invalidateQueries({ queryKey: ['admin-uploads'] })
+    },
+  })
+
   const items: UploadListItem[] = data?.data || []
   const pagination = data?.pagination
   const totalPages = pagination?.total_pages ?? 1
   const total = pagination?.total ?? 0
+
+  // Reset selection when the view changes (page / user filter), so stale ids from
+  // a previous page don't linger.
+  useEffect(() => {
+    setSelected(new Set())
+  }, [page, userId])
+
+  const allSelected = items.length > 0 && items.every((i) => selected.has(i.id))
+  const toggleItem = (id: number, checked: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  const toggleAll = () =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (allSelected) items.forEach((i) => next.delete(i.id))
+      else items.forEach((i) => next.add(i.id))
+      return next
+    })
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -60,15 +97,33 @@ export function AdminUploadsPage() {
           <h1 className="text-2xl font-semibold tracking-tight">{t('uploads.adminTitle')}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{t('uploads.adminSubtitle')}</p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => queryClient.invalidateQueries({ queryKey: ['admin-uploads'] })}
-        >
-          <RefreshCw className={isFetching ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
-          {t('common.refresh')}
-        </Button>
+        <div className="flex items-center gap-2">
+          {selected.size > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              className="gap-1.5"
+              disabled={batchDeleteMutation.isPending}
+              onClick={() => {
+                if (confirm(t('uploads.batchDeleteConfirm', { count: selected.size }))) {
+                  batchDeleteMutation.mutate(Array.from(selected))
+                }
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+              {t('uploads.batchDelete')} ({selected.size})
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => queryClient.invalidateQueries({ queryKey: ['admin-uploads'] })}
+          >
+            <RefreshCw className={isFetching ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
+            {t('common.refresh')}
+          </Button>
+        </div>
       </div>
 
       {/* User filter */}
@@ -121,6 +176,11 @@ export function AdminUploadsPage() {
                 key={item.id}
                 title={
                   <div className="flex items-center gap-2.5">
+                    <Checkbox
+                      checked={selected.has(item.id)}
+                      onCheckedChange={(c) => toggleItem(item.id, c === true)}
+                      aria-label={t('common.select')}
+                    />
                     <Thumb src={item.url} alt={item.key} onClick={() => setPreviewIndex(idx)} />
                     <span className="font-mono text-xs text-muted-foreground">{item.mime || '-'}</span>
                   </div>
@@ -155,33 +215,70 @@ export function AdminUploadsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('uploads.preview')}</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('uploads.user')}</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('uploads.type')}</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('uploads.size')}</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('uploads.backend')}</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('uploads.created')}</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('uploads.expires')}</th>
-                  <th className="px-4 py-3 text-right font-medium text-muted-foreground">{t('common.actions')}</th>
+                  <th className="px-2 py-3">
+                    <div className="flex items-center">
+                      <Checkbox
+                        checked={allSelected}
+                        onCheckedChange={() => toggleAll()}
+                        aria-label={t('uploads.selectAll')}
+                      />
+                    </div>
+                  </th>
+                  <th className="px-2 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">{t('uploads.preview')}</th>
+                  <th className="px-3 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">{t('uploads.user')}</th>
+                  <th className="px-3 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">{t('uploads.type')}</th>
+                  <th className="px-3 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">{t('uploads.size')}</th>
+                  <th className="px-3 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">{t('uploads.backend')}</th>
+                  <th className="px-3 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">{t('uploads.storageKey')}</th>
+                  <th className="px-3 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">{t('uploads.created')}</th>
+                  <th className="px-3 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">{t('uploads.expires')}</th>
+                  <th className="px-3 py-3 text-right font-medium text-muted-foreground whitespace-nowrap">{t('common.actions')}</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((item, idx) => (
                   <tr key={item.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                    <td className="px-4 py-3">
-                      <Thumb src={item.url} alt={item.key} onClick={() => setPreviewIndex(idx)} />
+                    <td className="px-2 py-3">
+                      <div className="flex items-center">
+                        <Checkbox
+                          checked={selected.has(item.id)}
+                          onCheckedChange={(c) => toggleItem(item.id, c === true)}
+                          aria-label={t('common.select')}
+                        />
+                      </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-2 py-3">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex">
+                              <Thumb src={item.url} alt={item.key} onClick={() => setPreviewIndex(idx)} />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent className="font-mono text-xs">
+                            <div>{t('uploads.shortId')}: {item.short_id}</div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap">
                       <span className="font-mono text-xs">#{item.user_id}</span>
                     </td>
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-xs text-muted-foreground">{item.mime || '-'}</span>
+                    <td className="max-w-[120px] px-3 py-3">
+                      <span className="block truncate font-mono text-xs text-muted-foreground" title={item.mime || '-'}>
+                        {item.mime || '-'}
+                      </span>
                     </td>
-                    <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatBytes(item.size)}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3 tabular-nums text-muted-foreground whitespace-nowrap">{formatBytes(item.size)}</td>
+                    <td className="px-3 py-3">
                       <BackendBadge backend={item.backend} />
                     </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                    <td className="max-w-[200px] px-3 py-3">
+                      <span className="block truncate font-mono text-xs text-muted-foreground" title={item.key}>
+                        {item.key}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-xs text-muted-foreground whitespace-nowrap">
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -191,7 +288,7 @@ export function AdminUploadsPage() {
                         </Tooltip>
                       </TooltipProvider>
                     </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                    <td className="px-3 py-3 text-xs text-muted-foreground whitespace-nowrap">
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -201,9 +298,9 @@ export function AdminUploadsPage() {
                         </Tooltip>
                       </TooltipProvider>
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-3 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <CopyUrlButton url={item.url} t={t} />
+                        <CopyUrlButton url={item.url} t={t} iconOnly />
                         <Button
                           variant="ghost"
                           size="sm"
