@@ -13,6 +13,7 @@ import type { UpdateVisionConfigReq, ModelInfo } from '../api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -81,8 +82,6 @@ export function VisionDetailPage() {
   const [tools, setTools] = useState({
     analyze_image_name: '',
     analyze_image_desc: '',
-    describe_scene_name: '',
-    describe_scene_desc: '',
   })
 
   useEffect(() => {
@@ -101,8 +100,6 @@ export function VisionDetailPage() {
       setTools({
         analyze_image_name: config.analyze_image_name || 'analyze_image',
         analyze_image_desc: config.analyze_image_desc || '',
-        describe_scene_name: config.describe_scene_name || 'describe_scene',
-        describe_scene_desc: config.describe_scene_desc || '',
       })
     }
   }, [config])
@@ -472,12 +469,12 @@ export function VisionDetailPage() {
 
             <div className="space-y-2">
               <Label className="text-xs">{t('vision.toolDesc')}</Label>
-              <Input
+              <Textarea
                 value={tools.analyze_image_desc}
                 onChange={(e) =>
                   setTools({ ...tools, analyze_image_desc: e.target.value })
                 }
-                className="text-xs h-8"
+                className="text-xs min-h-[80px]"
                 placeholder={t('vision.toolDescPlaceholderAnalyze')}
               />
             </div>
@@ -505,63 +502,11 @@ export function VisionDetailPage() {
             </div>
           </div>
 
-          {/* describe_scene tool card */}
-          <div className="rounded-lg border p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center justify-center rounded-md bg-primary/10 p-1.5">
-                <Wrench className="h-3.5 w-3.5 text-primary" />
-              </span>
-              <span className="text-sm font-semibold">describe_scene</span>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs">{t('vision.toolName')}</Label>
-              <Input
-                value={tools.describe_scene_name}
-                onChange={(e) =>
-                  setTools({ ...tools, describe_scene_name: e.target.value })
-                }
-                className="text-xs h-8"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs">{t('vision.toolDesc')}</Label>
-              <Input
-                value={tools.describe_scene_desc}
-                onChange={(e) =>
-                  setTools({ ...tools, describe_scene_desc: e.target.value })
-                }
-                className="text-xs h-8"
-                placeholder={t('vision.toolDescPlaceholderScene')}
-              />
-            </div>
-
-            <div className="flex justify-end pt-1">
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5 text-xs h-7"
-                disabled={toolMutation.isPending}
-                onClick={() =>
-                  toolMutation.mutate({
-                    describe_scene_name: tools.describe_scene_name,
-                    describe_scene_desc: tools.describe_scene_desc,
-                  })
-                }
-              >
-                {toolMutation.isPending ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Save className="h-3 w-3" />
-                )}
-                {t('vision.save')}
-              </Button>
-            </div>
-          </div>
-
-          {/* upload_image tool card (built-in, read-only) */}
-          <div className="rounded-lg border border-dashed p-4 space-y-3 bg-muted/30 sm:col-span-2">
+          {/* upload_image tool card (built-in, read-only). The name/desc below
+              mirror the hardcoded constants in
+              internal/mcp/virtual/upload_image.go (UploadImageToolName /
+              uploadImageDesc) — keep them in sync. */}
+          <div className="rounded-lg border border-dashed p-4 space-y-3 bg-muted/30">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center justify-center rounded-md bg-primary/10 p-1.5">
@@ -576,9 +521,27 @@ export function VisionDetailPage() {
                 {t('vision.uploadImageBuiltinBadge')}
               </Badge>
             </div>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              {t('vision.uploadImageBuiltinDesc')}
-            </p>
+
+            <div className="space-y-2">
+              <Label className="text-xs">{t('vision.toolName')}</Label>
+              <Input
+                readOnly
+                value="vision.upload_image"
+                className="text-xs h-8 text-muted-foreground"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs">{t('vision.toolDesc')}</Label>
+              <p className="rounded-md border bg-background px-2.5 py-2 text-xs leading-relaxed text-muted-foreground">
+                Stage a LOCAL image file for vision analysis. Workflow: 1) call
+                this with local_path; 2) run the returned upload_command via
+                your Bash/shell tool; 3) call vision.analyze_image with the
+                returned image_url. For SMALL images you may instead inline
+                base64 directly to analyze_image; use this tool for larger
+                images.
+              </p>
+            </div>
           </div>
         </div>
       </div>

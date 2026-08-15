@@ -933,9 +933,7 @@ passive-ws (被动连接):
         "system_prompt": "You are a helpful vision assistant.",
         "max_tokens": 4096,
         "analyze_image_name": "vision.analyze_image",
-        "analyze_image_desc": "Analyze image content and identify the objects, text, and scenes it contains. Best for: extracting structured info, detecting items, or reading text. Returns: a detailed breakdown of recognized elements.",
-        "describe_scene_name": "vision.describe_scene",
-        "describe_scene_desc": "Describe the scene and overall content of an image in natural language. Best for: getting a high-level summary of what is happening. Returns: a natural-language description of the scene.",
+        "analyze_image_desc": "Analyze an image with a vision model. Covers all image understanding: identify objects, people and text, describe the scene and overall content, extract structured info, or answer any custom question. Pass the prompt parameter to steer the analysis, e.g. describe the scene, transcribe all text, or list defects. Returns: the analysis result as text.",
         "extra_config": "{}",
         "auto_register": true,
         "registered_service_id": 5,
@@ -996,7 +994,7 @@ passive-ws (被动连接):
 | 400 | 模型不存在 | model_name 错误 |
 
 ### POST /vision/:id/enable
-启用视觉配置。创建虚拟 McpService（`transport_type="virtual"`, `source="vision"`），注册到 VirtualToolRegistry，生成包含 2 个工具（analyze_image、describe_scene）的 tools_cache。
+启用视觉配置。创建虚拟 McpService（`transport_type="virtual"`, `source="vision"`），注册到 VirtualToolRegistry，生成包含 analyze_image 与内置 upload_image 的 tools_cache（describe_scene 已彻底下线，其能力由 analyze_image 的 prompt 参数覆盖；旧名调用返回 unknown vision tool 错误）。
 
 **Response:** `200 OK`
 ```json
@@ -1006,7 +1004,7 @@ passive-ws (被动连接):
     "data": {
         "service_id": 5,
         "service_name": "vision_1",
-        "tools": ["vision.analyze_image", "vision.describe_scene"]
+        "tools": ["vision.analyze_image"]
     }
 }
 ```

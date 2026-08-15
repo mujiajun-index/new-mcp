@@ -25,8 +25,6 @@ type UpdateVisionConfigReq struct {
 	AnalyzeTimeoutSeconds *int    `json:"analyze_timeout_seconds"`
 	AnalyzeImageName      *string `json:"analyze_image_name"`
 	AnalyzeImageDesc      *string `json:"analyze_image_desc"`
-	DescribeSceneName     *string `json:"describe_scene_name"`
-	DescribeSceneDesc     *string `json:"describe_scene_desc"`
 	Status                *int    `json:"status"`
 }
 
@@ -56,8 +54,6 @@ type VisionConfigDetail struct {
 	RegisteredServiceID   *int64 `json:"registered_service_id"`
 	AnalyzeImageName      string `json:"analyze_image_name"`
 	AnalyzeImageDesc      string `json:"analyze_image_desc"`
-	DescribeSceneName     string `json:"describe_scene_name"`
-	DescribeSceneDesc     string `json:"describe_scene_desc"`
 	ExtraConfig           string `json:"extra_config"`
 	Status                int    `json:"status"`
 	CreatedAt             string `json:"created_at"`

@@ -172,7 +172,7 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
  2. 测试连通性 → 发送 1x1 测试图片验证配置 ✅
  3. 启用视觉配置 → 自动创建虚拟 McpService + 注册 VirtualToolRegistry ✅
  4. 自定义工具名称/描述 → 同步更新 tools_cache ✅
- 5. AI Agent 通过 MCP 端点调用 vision.analyze_image / vision.describe_scene ✅
+ 5. AI Agent 通过 MCP 端点调用 vision.analyze_image ✅（describe_scene 已彻底下线，2026-08-15：单一通用工具 + prompt 参数，旧名调用返回错误）
  6. 禁用/删除 → 自动清理虚拟服务、分组关联、工具记录 ✅
 ```
 

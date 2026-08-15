@@ -26,8 +26,6 @@ export interface VisionConfigDetail {
   registered_service_id: number | null
   analyze_image_name: string
   analyze_image_desc: string
-  describe_scene_name: string
-  describe_scene_desc: string
   extra_config: string
   status: number
   created_at: string
@@ -58,8 +56,6 @@ export interface UpdateVisionConfigReq {
   analyze_timeout_seconds?: number
   analyze_image_name?: string
   analyze_image_desc?: string
-  describe_scene_name?: string
-  describe_scene_desc?: string
   status?: number
 }
 

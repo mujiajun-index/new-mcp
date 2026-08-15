@@ -133,7 +133,7 @@ Smart 模式暴露的 3 个元工具（参考 mcp-gateway）:
 | 视觉模型配置 | P0 | 配置模型提供商（OpenAI/Ollama/自定义）、API Key、端点 URL |
 | 模型测试 | P0 | 一键测试视觉模型是否可用 |
 | 自动注册 MCP | P0 | 配置完成后自动注册为虚拟 MCP 服务 |
-| 视觉工具 | P0 | `vision.analyze_image`, `vision.describe_scene` |
+| 视觉工具 | P0 | `vision.analyze_image`（单一通用工具，`prompt` 参数覆盖场景描述等所有诉求；describe_scene 已下线） |
 
 ### 2.7 外挂视觉系统（摄像头）
 | 功能 | 优先级 | 说明 |

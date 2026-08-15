@@ -6,6 +6,13 @@ import (
 	"gorm.io/gorm"
 )
 
+// Default tool identity for the vision service's single general-purpose tool.
+// The gorm default tags on VisionConfig must stay byte-identical to these.
+const (
+	DefaultAnalyzeImageName = "vision.analyze_image"
+	DefaultAnalyzeImageDesc = "Analyze an image with a vision model. Covers all image understanding: identify objects, people and text, describe the scene and overall content, extract structured info, or answer any custom question. Pass the prompt parameter to steer the analysis, e.g. describe the scene, transcribe all text, or list defects. Returns: the analysis result as text."
+)
+
 type VisionConfig struct {
 	ID           int64  `json:"id" gorm:"primaryKey;autoIncrement"`
 	UserID       int64  `json:"user_id" gorm:"not null;index"`
@@ -27,18 +34,21 @@ type VisionConfig struct {
 	// caller's existing ctx (or none for MCP tool calls). The create flow does not
 	// expose this field; users set it (incl. 0) on the detail page, whose DB.Save
 	// writes zero values as-is.
-	AnalyzeTimeoutSeconds int            `json:"analyze_timeout_seconds" gorm:"default:30"`
-	AutoRegister          bool           `json:"auto_register" gorm:"default:false"`
-	RegisteredServiceID   *int64         `json:"registered_service_id"`
-	AnalyzeImageName      string         `json:"analyze_image_name" gorm:"size:128;default:vision.analyze_image"`
-	AnalyzeImageDesc      string         `json:"analyze_image_desc" gorm:"type:varchar(512);default:Analyze image content and identify the objects, text, and scenes it contains. Best for: extracting structured info, detecting items, or reading text. Returns: a detailed breakdown of recognized elements."`
-	DescribeSceneName     string         `json:"describe_scene_name" gorm:"size:128;default:vision.describe_scene"`
-	DescribeSceneDesc     string         `json:"describe_scene_desc" gorm:"type:varchar(512);default:Describe the scene and overall content of an image in natural language. Best for: getting a high-level summary of what is happening. Returns: a natural-language description of the scene."`
-	ExtraConfig           string         `json:"extra_config" gorm:"type:varchar(4096);default:'{}'"`
-	Status                int            `json:"status" gorm:"default:1"`
-	CreatedAt             time.Time      `json:"created_at"`
-	UpdatedAt             time.Time      `json:"updated_at"`
-	DeletedAt             gorm.DeletedAt `json:"-" gorm:"index"`
+	AnalyzeTimeoutSeconds int    `json:"analyze_timeout_seconds" gorm:"default:30"`
+	AutoRegister          bool   `json:"auto_register" gorm:"default:false"`
+	RegisteredServiceID   *int64 `json:"registered_service_id"`
+	// Tool identity for the vision service's single general-purpose tool
+	// (analyze_image + optional custom prompt). describe_scene was removed —
+	// its job is analyze_image with a "describe the scene" prompt — following
+	// zai-mcp-server's single-general-tool design. The gorm default tag must
+	// stay byte-identical to DefaultAnalyzeImageDesc below.
+	AnalyzeImageName string         `json:"analyze_image_name" gorm:"size:128;default:vision.analyze_image"`
+	AnalyzeImageDesc string         `json:"analyze_image_desc" gorm:"type:varchar(512);default:Analyze an image with a vision model. Covers all image understanding: identify objects, people and text, describe the scene and overall content, extract structured info, or answer any custom question. Pass the prompt parameter to steer the analysis, e.g. describe the scene, transcribe all text, or list defects. Returns: the analysis result as text."`
+	ExtraConfig      string         `json:"extra_config" gorm:"type:varchar(4096);default:'{}'"`
+	Status           int            `json:"status" gorm:"default:1"`
+	CreatedAt        time.Time      `json:"created_at"`
+	UpdatedAt        time.Time      `json:"updated_at"`
+	DeletedAt        gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 func (VisionConfig) TableName() string { return "vision_configs" }
@@ -46,6 +56,14 @@ func (VisionConfig) TableName() string { return "vision_configs" }
 func ListVisionConfigsByUser(userID int64) ([]VisionConfig, error) {
 	var configs []VisionConfig
 	err := DB.Where("user_id = ?", userID).Order("created_at DESC").Find(&configs).Error
+	return configs, err
+}
+
+// ListAllVisionConfigs returns every config across users (soft-deleted rows
+// excluded by the DeletedAt scope), for the startup tools_cache sync.
+func ListAllVisionConfigs() ([]VisionConfig, error) {
+	var configs []VisionConfig
+	err := DB.Find(&configs).Error
 	return configs, err
 }
 

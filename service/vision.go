@@ -55,10 +55,8 @@ func (s *VisionService) Create(userID int64, req *dto.CreateVisionConfigReq) (*d
 		AnalyzeTimeoutSeconds: req.AnalyzeTimeoutSeconds,
 		AutoRegister:          false,
 		Status:                common.StatusEnabled,
-		AnalyzeImageName:      "vision.analyze_image",
-		AnalyzeImageDesc:      "Analyze image content and identify the objects, text, and scenes it contains. Best for: extracting structured info, detecting items, or reading text. Returns: a detailed breakdown of recognized elements.",
-		DescribeSceneName:     "vision.describe_scene",
-		DescribeSceneDesc:     "Describe the scene and overall content of an image in natural language. Best for: getting a high-level summary of what is happening. Returns: a natural-language description of the scene.",
+		AnalyzeImageName:      model.DefaultAnalyzeImageName,
+		AnalyzeImageDesc:      model.DefaultAnalyzeImageDesc,
 		ExtraConfig:           "{}",
 	}
 
@@ -119,12 +117,6 @@ func (s *VisionService) Update(userID, id int64, req *dto.UpdateVisionConfigReq)
 	}
 	if req.AnalyzeImageDesc != nil {
 		vc.AnalyzeImageDesc = *req.AnalyzeImageDesc
-	}
-	if req.DescribeSceneName != nil {
-		vc.DescribeSceneName = *req.DescribeSceneName
-	}
-	if req.DescribeSceneDesc != nil {
-		vc.DescribeSceneDesc = *req.DescribeSceneDesc
 	}
 	if req.Status != nil {
 		vc.Status = *req.Status
@@ -306,6 +298,27 @@ func (s *VisionService) syncVirtualService(vc *model.VisionConfig) {
 	_ = svc.Update()
 }
 
+// SyncAllRegisteredTools rebuilds the ToolsCache of every registered vision
+// virtual service from its current config. Called once at startup so tool-set
+// changes (e.g. the describe_scene removal) take effect for existing services
+// immediately, instead of waiting for the user's next edit to trigger
+// syncVirtualService. Dangling McpGroupTool rows for a removed tool are
+// harmless: CollectToolsForGroups filters by the tools present in the cache.
+func (s *VisionService) SyncAllRegisteredTools() int {
+	configs, err := model.ListAllVisionConfigs()
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for i := range configs {
+		if configs[i].RegisteredServiceID != nil {
+			s.syncVirtualService(&configs[i])
+			n++
+		}
+	}
+	return n
+}
+
 func (s *VisionService) buildToolsCache(vc *model.VisionConfig) []map[string]interface{} {
 	// Both tools accept either an inline base64 image or an image_url. The URL
 	// is preferred: the bytes stay out of the calling LLM's context (upload once
@@ -320,6 +333,11 @@ func (s *VisionService) buildToolsCache(vc *model.VisionConfig) []map[string]int
 	const imageURLDesc = "Public https URL of the image. Use for LARGER images: obtain it via the vision.upload_image tool (returns an OS-matched curl command + image_url, no API key in the curl), run it (on Windows PowerShell it uses curl.exe), then pass that image_url here. The upstream model fetches it directly, so image bytes never enter the LLM context. For small images you may inline base64 via the image parameter instead."
 	const imageB64Desc = "Base64-encoded image. Use for SMALL images only (at most ~VisionInlineMaxBytes, default 10KB). Larger images bloat the LLM context (~400 token/KB, generated as output) — for those, use vision.upload_image → image_url instead."
 
+	// The vision service exposes a single general-purpose analyze_image (the
+	// optional prompt param covers every describe_scene-style ask; zai-mcp-server
+	// uses the same single-general-tool design). describe_scene was removed
+	// entirely — its dispatch is gone too, so stale calls fail with an
+	// unknown-tool error and clients refetch the tool list.
 	return []map[string]interface{}{
 		{
 			"name":        vc.AnalyzeImageName,
@@ -330,17 +348,6 @@ func (s *VisionService) buildToolsCache(vc *model.VisionConfig) []map[string]int
 					"image_url": map[string]string{"type": "string", "description": imageURLDesc},
 					"image":     map[string]string{"type": "string", "description": imageB64Desc},
 					"prompt":    map[string]string{"type": "string", "description": "Custom analysis prompt (optional)"},
-				},
-			},
-		},
-		{
-			"name":        vc.DescribeSceneName,
-			"description": vc.DescribeSceneDesc,
-			"inputSchema": map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"image_url": map[string]string{"type": "string", "description": imageURLDesc},
-					"image":     map[string]string{"type": "string", "description": imageB64Desc},
 				},
 			},
 		},
@@ -368,8 +375,6 @@ func (s *VisionService) toDetail(vc *model.VisionConfig) *dto.VisionConfigDetail
 		RegisteredServiceID:   vc.RegisteredServiceID,
 		AnalyzeImageName:      vc.AnalyzeImageName,
 		AnalyzeImageDesc:      vc.AnalyzeImageDesc,
-		DescribeSceneName:     vc.DescribeSceneName,
-		DescribeSceneDesc:     vc.DescribeSceneDesc,
 		ExtraConfig:           vc.ExtraConfig,
 		Status:                vc.Status,
 		CreatedAt:             vc.CreatedAt.Format("2006-01-02T15:04:05Z"),

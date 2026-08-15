@@ -232,9 +232,9 @@ CREATE TABLE `vision_configs` (
 
     -- 工具自定义名称和描述
     `analyze_image_name`   VARCHAR(128)    DEFAULT 'vision.analyze_image' COMMENT '工具1名称: analyze_image',
-    `analyze_image_desc`   TEXT            DEFAULT 'Analyze image content and identify the objects, text, and scenes it contains. Best for: extracting structured info, detecting items, or reading text. Returns: a detailed breakdown of recognized elements.' COMMENT '工具1描述',
-    `describe_scene_name`  VARCHAR(128)    DEFAULT 'vision.describe_scene' COMMENT '工具2名称: describe_scene',
-    `describe_scene_desc`  TEXT            DEFAULT 'Describe the scene and overall content of an image in natural language. Best for: getting a high-level summary of what is happening. Returns: a natural-language description of the scene.' COMMENT '工具2描述',
+    `analyze_image_desc`   TEXT            DEFAULT 'Analyze an image with a vision model. Covers all image understanding: identify objects, people and text, describe the scene and overall content, extract structured info, or answer any custom question. Pass the prompt parameter to steer the analysis, e.g. describe the scene, transcribe all text, or list defects. Returns: the analysis result as text.' COMMENT '工具1描述',
+    -- describe_scene_name/describe_scene_desc 已随 describe_scene 工具下线从模型中移除;
+    -- 存量库中的孤儿列无害(AutoMigrate 只加不删),新库不再创建
 
     -- 扩展配置
     `extra_config`         TEXT            DEFAULT '{}' COMMENT '扩展配置 JSON',
@@ -254,7 +254,7 @@ CREATE TABLE `vision_configs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='视觉模型配置表';
 ```
 
-> **启用机制**: 启用 VisionConfig 后，系统自动创建一条 `mcp_services` 记录（`transport_type="virtual"`, `source="vision"`），包含 2 个工具：`analyze_image`（分析图片内容）和 `describe_scene`（描述场景）。工具名称和描述可在详情页自定义编辑。禁用后自动清理关联的 McpService、McpGroupService、McpGroupTool 记录。
+> **启用机制**: 启用 VisionConfig 后，系统自动创建一条 `mcp_services` 记录（`transport_type="virtual"`, `source="vision"`），包含 `analyze_image`（通用图片理解，名称和描述可在详情页自定义）与内置 `upload_image`（固定不可改）。`describe_scene` 已彻底下线（其能力由 `analyze_image` 的 `prompt` 参数覆盖，旧名调用返回错误）；启动时会重建全部已启用视觉服务的 tools_cache 使旧工具立即从 tools/list 消失。禁用后自动清理关联的 McpService、McpGroupService、McpGroupTool 记录。
 
 ### 2.9 cameras - 摄像头表
 
@@ -393,7 +393,7 @@ CREATE TABLE `mcp_call_logs` (
 ```
 
 > **计费与审计合一**:每次 `tools/call` / `mcp.execute` 写一条 log,计费结果同落。自有服务(`source=user`)写 `billing_status='skipped'`、`quota_consumed=0`;市场引用服务(`source=marketplace`)写实际计费结果 + `marketplace_item_id`。`quota_consumed` 是用户账单的权威明细。
-> **留存与隐私**:`request_payload`/`response_payload` 可能含敏感数据,由 `LogPayloadEnabled`(默认 true)控制是否落 payload,关闭时只存元数据 + 计费列。视觉图片类工具(`analyze_image`/`describe_scene`)请求参数中的 base64 图片在落库前会被脱敏(替换为大小占位 `[redacted:Nb]`)。系统对齐 reference/new-api,不提供"日志保留天数"设置与定时清理,日志持久保留,需手动清理。
+> **留存与隐私**:`request_payload`/`response_payload` 可能含敏感数据,由 `LogPayloadEnabled`(默认 true)控制是否落 payload,关闭时只存元数据 + 计费列。视觉图片类工具(`analyze_image`)请求参数中的 base64 图片在落库前会被脱敏(替换为大小占位 `[redacted:Nb]`)。系统对齐 reference/new-api,不提供"日志保留天数"设置与定时清理,日志持久保留,需手动清理。
 
 ### 2.12 marketplace_items - 平台市场服务表
 

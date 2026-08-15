@@ -29,6 +29,12 @@
 >
 > **提示词对齐微调（2026-08-15）**:
 > - `upload_image` 返回文本中的 `file_url` 字段改名 `image_url`，与 `analyze_image`/`describe_scene` 的入参**同名**；全部提示词（`upload_image` 工具 description、工具返回文本、`initialize` instructions、`image_url` 参数 description）中的 `image_url=file_url` 映射写法删除。返回值与目标参数同名，模型可**原样透传**，消除弱模型把字面量 `file_url` 当值传、或映射改错名的失败模式。
+>
+> **V1.4 变更（`describe_scene` 下线，2026-08-15）**:
+> - 视觉工具收敛为**单一通用 `analyze_image`**（可选 `prompt` 参数自定义提示词，场景描述等一切诉求用 prompt 表达），对齐智谱 `@z_ai/mcp-server` 的单一通用工具设计。根因：`describe_scene` 与 `analyze_image` 的 schema 几乎相同、仅默认提示词不同，模型面对两个近似工具时会同图双调用，白烧上游 token。
+> - `buildToolsCache` 不再注册 `describe_scene`；`VisionConfig` 删除 `describe_scene_name`/`describe_scene_desc` 字段（存量库中的孤儿列无害，AutoMigrate 只加不删）。**不留兼容**：`VisionHandler` 的 describe_scene dispatch 已删除，旧名调用返回 unknown vision tool 错误；`gateway_handler` 的 `visionImageTool` 脱敏匹配同步收窄为仅 `analyze_image`（失败调用的 payload 仍有 65535 截断兜底）。
+> - 启动时 `service.SyncAllRegisteredTools` 重建全部已注册视觉服务的 `tools_cache`，使 `describe_scene` 立即从 `tools/list`/分组/市场快照消失（无需等用户下次编辑触发 `syncVirtualService`）。分组工具白名单中悬空的 `describe_scene` 行无害（`CollectToolsForGroups` 按 tools_cache 中实际存在的工具过滤）。
+> - `analyze_image` 的**默认系统提示词**（VisionConfig.SystemPrompt 为空时的兜底）升级为 zai 风格长版——按调用方 prompt 自适应 + 固定四段输出结构（Main Response / Detailed Observations / Context & Analysis / Additional Notes），原文取自 `@z_ai/mcp-server` 的 `GENERAL_IMAGE_ANALYSIS_PROMPT`（`build/prompts/general-image.js`，Apache-2.0），常量 `defaultAnalyzeSystemPrompt`。用户自定义 SystemPrompt 不受影响。调用方未传 `prompt` 时的默认用户提示词同步改为轻量 overview（"What does this image show? ..."），原「识别每个物体/转录所有文本/结构化分解」措辞会强制走最重的分析分支、拖慢上游识别；需要深度分析时由调用方自行传 `prompt`。
 
 ---
 
@@ -36,7 +42,7 @@
 
 ### 1.1 旧链路的问题
 
-视觉工具（`analyze_image` / `describe_scene`）的 `image` 入参是一段纯 base64 字符串，整条链路是「base64 进 → 解码嗅探 → 重编码 → base64 内联转发上游」，全程无大小上限、无压缩、无 URL 化。
+视觉工具（`analyze_image`，V1.4 前还包括 `describe_scene`）的 `image` 入参是一段纯 base64 字符串，整条链路是「base64 进 → 解码嗅探 → 重编码 → base64 内联转发上游」，全程无大小上限、无压缩、无 URL 化。
 
 真正的痛点不是网关内存，而是 **base64 作为 MCP 工具参数文本进入了调用方 LLM 的上下文**：一张 1–2MB 的图 ≈ 50 万 token（对比：同一张图作为视觉输入仅 ~1–1.6k tokens）。调用方 LLM（Claude Code 等）得把整段 base64 当 **output token** 生成出来，撑爆上下文、成本爆炸，大图直接不可用。
 
@@ -548,8 +554,8 @@ V1.1 新增的**预签名 PUT 直传**路径：模型调 `upload_image` 拿到�
 
 ### 14.2 `upload_image` per-config 内置工具（V1.2）
 
-- **per-config 内置工具**：V1.2 起不再是全局单例，而是每个视觉服务（`vision_<id>`）的**第三个工具**（与 `analyze_image`/`describe_scene` 并列），由 `service/vision.go::buildToolsCache` 末尾追加 `virtual.UploadImageTool()`。暴露名 = `vision_<id>__vision.upload_image`（direct/group 模式，`CollectToolsForGroups` 加 `__` 前缀）；smart 模式 `tool_id` = `vision_<id>.vision.upload_image`。`ParseNamespacedName` 按 `__` 优先、其次 `.` 切分，无需特判。
-- **名称与描述固定**：`vision.upload_image` 与其描述是**硬编码常量**（`virtual.UploadImageToolName` / `uploadImageDesc`），**不进 `VisionConfig` 字段、不可编辑**——区别于 `analyze_image`/`describe_scene`（二者名/描述存库、可在详情页改）。`UploadImageTool()` 每次返回**全新 map**，因为 `CollectToolsForGroups` 会就地改写 `t["name"]` 加前缀，共享实例会被污染。
+- **per-config 内置工具**：V1.2 起不再是全局单例，而是每个视觉服务（`vision_<id>`）的内置工具（V1.4 `describe_scene` 下线后与 `analyze_image` 并列），由 `service/vision.go::buildToolsCache` 末尾追加 `virtual.UploadImageTool()`。暴露名 = `vision_<id>__vision.upload_image`（direct/group 模式，`CollectToolsForGroups` 加 `__` 前缀）；smart 模式 `tool_id` = `vision_<id>.vision.upload_image`。`ParseNamespacedName` 按 `__` 优先、其次 `.` 切分，无需特判。
+- **名称与描述固定**：`vision.upload_image` 与其描述是**硬编码常量**（`virtual.UploadImageToolName` / `uploadImageDesc`），**不进 `VisionConfig` 字段、不可编辑**——区别于 `analyze_image`（名/描述存库、可在详情页改）。`UploadImageTool()` 每次返回**全新 map**，因为 `CollectToolsForGroups` 会就地改写 `t["name"]` 加前缀，共享实例会被污染。
 - **派发**：经 per-user `VirtualToolRegistry` → `VisionHandler`（与 analyze_image 同一条路）。`VisionHandler` 加载 `vc` 后、解析 `image`/`image_url` 之前短路：`strings.HasSuffix(toolName,"upload_image")` → `handleUploadImage`。`upload_image` 入参是 `local_path`，与图片分析入参完全不同，故必须在分析参数校验之前短路。
 - **调用方 userID**：`upload_image` 需调用方 userID（上传归属 + `MaxUploadsPerUser` 配额，与 multipart `UploadVisionImage`、旧全局工具语义一致，按**调用方**计）。`VirtualToolHandler` 签名无 userID（改它会波及 camera），故用 context 传递：`gateway_handler` 在 `routeAndCall` / `handleExecute` 两处 virtual 派发点调 `virtual.WithCallerUserID(ctx, logCtx.UserID)`；`VisionHandler` upload 分支 `CallerUserID(ctx)` 读取，`0` 时回退 `vc.UserID`。
 

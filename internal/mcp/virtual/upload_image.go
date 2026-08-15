@@ -20,7 +20,7 @@ var UploadStore storage.Storage
 
 // UploadImageToolName is the built-in (non-editable) vision tool that stages a
 // local image for vision analysis via a presigned-PUT curl command. Unlike
-// analyze_image/describe_scene it is NOT a per-VisionConfig field: it is a
+// analyze_image it is NOT a per-VisionConfig field: it is a
 // fixed tool appended to every vision service by buildToolsCache and dispatched
 // through the per-user VirtualToolRegistry like the other vision tools.
 const UploadImageToolName = "vision.upload_image"

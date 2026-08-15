@@ -871,11 +871,11 @@ func billingRequestID(rpcID interface{}, toolName string, args json.RawMessage) 
 }
 
 // visionImageTool reports whether the tool embeds a base64 image in its request
-// arguments (vision analyze_image / describe_scene). The image payload is far
-// too large to persist in call logs and is stripped by redactRequestPayload.
-// Matches the same suffix rule used in internal/mcp/virtual/vision_handler.go.
+// arguments (vision analyze_image). The image payload is far too large to
+// persist in call logs and is stripped by redactRequestPayload. Matches the
+// same suffix rule used in internal/mcp/virtual/vision_handler.go.
 func visionImageTool(name string) bool {
-	return strings.HasSuffix(name, "analyze_image") || strings.HasSuffix(name, "describe_scene")
+	return strings.HasSuffix(name, "analyze_image")
 }
 
 // redactRequestPayload returns the request arguments to persist in the call log.

@@ -40,6 +40,14 @@ func InitGateway() {
 
 	loadVirtualServices()
 
+	// Rebuild every registered vision service's tools_cache from its current
+	// config so tool-set changes (e.g. the describe_scene removal) reach
+	// existing services without waiting for a user edit; syncVirtualService
+	// only rewrites the cache row. Registered handlers stay as loaded above.
+	if n := (&service.VisionService{}).SyncAllRegisteredTools(); n > 0 {
+		log.Printf("[virtual] refreshed tools_cache for %d vision services", n)
+	}
+
 	CloudManager = cloud.NewManager(SessionPool, toolRouter, GatewayHandler)
 	service.CloudManager = CloudManager
 	service.SessionPool = SessionPool
