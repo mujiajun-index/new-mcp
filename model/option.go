@@ -204,6 +204,30 @@ func CurrencyToQuota(amount float64) int64 {
 	return int64(math.Round(amount * float64(GetQuotaPerUnit())))
 }
 
+// QuotaToCurrency 把整数 quota 按当前 QuotaPerUnit 换算为展示货币金额(浮点)。
+func QuotaToCurrency(quota int64) float64 {
+	return float64(quota) / float64(GetQuotaPerUnit())
+}
+
+// FormatQuotaCurrency 把整数 quota 换算为带币种符号的展示货币文本(如 ¥1、¥0.05),
+// 写日志文案时用它替代裸 quota 数字,用户全程只见金额不见额度。
+// 精度对齐前端 web/src/lib/billing.ts 的 formatQuotaCurrency:
+// 金额 >=1 保留最多 2 位小数,<1 保留最多 4 位(避免小额舍成 0),再去掉尾部多余的 0。
+func FormatQuotaCurrency(quota int64) string {
+	amount := QuotaToCurrency(quota)
+	digits := 2
+	if amount < 1 && amount > -1 {
+		digits = 4
+	}
+	s := strconv.FormatFloat(amount, 'f', digits, 64)
+	s = strings.TrimRight(s, "0")
+	s = strings.TrimRight(s, ".")
+	if s == "" || s == "-" {
+		s = "0"
+	}
+	return CurrencySymbol(GetOptionString("DisplayCurrency")) + s
+}
+
 // CurrencySymbol 把展示币种代码映射为符号(对齐前端 web/src/lib/billing.ts 的 currencySymbol)。
 // 未知币种回退到 ¥(CNY)。
 func CurrencySymbol(currency string) string {

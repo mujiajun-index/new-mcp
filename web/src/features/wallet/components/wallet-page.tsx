@@ -70,7 +70,8 @@ export function WalletPage() {
   const transferMutation = useMutation({
     mutationFn: () => transferAffQuota({ quota: transferQuota }),
     onSuccess: (res) => {
-      toast.success(t('wallet.transferSuccess', { quota: res?.data?.quota ?? 0 }))
+      // 返回的 quota 是新钱包余额(原始额度),toast 换算成金额展示。
+      toast.success(t('wallet.transferSuccess', { quota: formatQuotaCurrency(res?.data?.quota ?? 0, config.quotaPerUnit, config.displayCurrency) }))
       setTransferInput('')
       queryClient.invalidateQueries({ queryKey: ['wallet-overview'] })
       queryClient.invalidateQueries({ queryKey: ['invite-overview'] })

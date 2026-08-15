@@ -124,7 +124,7 @@ func (s *RedemptionService) Redeem(userID int64, username, code, clientIP string
 	}
 	// 日志只记充值金额(货币面值,带币种符号),不暴露额度概念;quota 字段置 0,日志页不渲染裸额度数值。
 	model.RecordTopupLog(userID, username,
-		fmt.Sprintf("兑换码充值 +%s%.2f", model.CurrencySymbol(model.GetOptionString("DisplayCurrency")), r.Amount),
+		fmt.Sprintf("兑换码充值 +%s", model.FormatQuotaCurrency(model.CurrencyToQuota(r.Amount))),
 		0, clientIP, map[string]any{
 			"redemption_id": r.ID,
 			"name":          r.Name,

@@ -38,6 +38,7 @@ export function AdminUsersPage() {
   // 货币符号 + 调额快捷金额(按 quotaPerUnit 换算成单位额度)
   const currencySymbol = displayCurrency === 'USD' ? '$' : displayCurrency === 'EUR' ? '€' : '¥'
   const presetAmounts = [1, 5, 10, 50, 100, 500]
+  const fmtMoney = (q: number) => formatQuotaCurrency(q, quotaPerUnit, displayCurrency)
 
   const [showCreate, setShowCreate] = useState(false)
   const [editingUser, setEditingUser] = useState<any>(null)
@@ -113,7 +114,7 @@ export function AdminUsersPage() {
   const adjustQuotaMutation = useMutation({
     mutationFn: (data: { id: number; body: any }) => adjustUserQuota(data.id, data.body),
     onSuccess: (res) => {
-      toast.success(t('admin.users.adjustSuccess', { quota: res?.data?.new_quota ?? 0 }))
+      toast.success(t('admin.users.adjustSuccess', { quota: fmtMoney(res?.data?.new_quota ?? 0) }))
       setQuotaUser(null)
       setQuotaForm({ mode: 'add', value: '', remark: '' })
       setQuotaPreset('')
@@ -210,7 +211,6 @@ export function AdminUsersPage() {
     const used = u.used_quota ?? 0
     const total = used + remain
     const pct = total > 0 ? (remain / total) * 100 : 0
-    const fmtMoney = (q: number) => formatQuotaCurrency(q, quotaPerUnit, displayCurrency)
     if (total === 0) {
       return <Badge variant="secondary">{t('admin.users.noQuota')}</Badge>
     }
@@ -576,7 +576,7 @@ export function AdminUsersPage() {
           <DialogHeader>
             <DialogTitle>{t('admin.users.adjustQuotaTitle')}</DialogTitle>
             <DialogDescription>
-              {quotaUser?.username} — {t('admin.users.currentQuota')}: {quotaUser?.quota ?? 0} · {t('admin.users.currentUsed')}: {quotaUser?.used_quota ?? 0}
+              {quotaUser?.username} — {t('admin.users.currentQuota')}: {fmtMoney(quotaUser?.quota ?? 0)} · {t('admin.users.currentUsed')}: {fmtMoney(quotaUser?.used_quota ?? 0)}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">

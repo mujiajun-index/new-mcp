@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/lib/api'
+import { useSystemConfigStore } from '@/stores/system-config-store'
+import { formatQuotaCurrency } from '@/lib/billing'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -27,6 +29,9 @@ async function changePassword(data: { old_password: string; new_password: string
 export function SettingsPage() {
   const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
+  const { config } = useSystemConfigStore()
+  // 用户只看金额不看额度:quota/used_quota 统一按 quotaPerUnit 换算成展示货币。
+  const fmtMoney = (q: number) => formatQuotaCurrency(q, config.quotaPerUnit, config.displayCurrency)
 
   const { data: profileData, isLoading } = useQuery({
     queryKey: ['profile'],
@@ -116,11 +121,11 @@ export function SettingsPage() {
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="rounded-lg bg-muted/50 p-3">
                 <p className="text-xs text-muted-foreground">{t('settings.quotaRemaining')}</p>
-                <p className="mt-1 text-xl font-semibold tabular-nums">{profile?.quota ?? 0}</p>
+                <p className="mt-1 text-xl font-semibold tabular-nums">{fmtMoney(profile?.quota ?? 0)}</p>
               </div>
               <div className="rounded-lg bg-muted/50 p-3">
                 <p className="text-xs text-muted-foreground">{t('settings.quotaUsed')}</p>
-                <p className="mt-1 text-xl font-semibold tabular-nums">{profile?.used_quota ?? 0}</p>
+                <p className="mt-1 text-xl font-semibold tabular-nums">{fmtMoney(profile?.used_quota ?? 0)}</p>
               </div>
               <div className="rounded-lg bg-muted/50 p-3">
                 <p className="text-xs text-muted-foreground">{t('settings.totalCalls')}</p>

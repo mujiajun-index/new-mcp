@@ -10,7 +10,7 @@ import (
 )
 
 // ErrTransferTooSmall 邀请奖励转账低于最小额度(对齐 new-api「转移额度最小为 X」)。
-var ErrTransferTooSmall = errors.New("transfer amount too small")
+var ErrTransferTooSmall = errors.New("转入金额过小")
 
 type InviteService struct{}
 
@@ -49,7 +49,7 @@ func (s *InviteService) Overview(userID int64) (*dto.InviteOverview, error) {
 func (s *InviteService) Transfer(userID int64, req *dto.TransferAffQuotaReq, ip string) (*dto.TransferAffQuotaResp, error) {
 	minTransfer := model.GetQuotaPerUnit()
 	if req.Quota < minTransfer {
-		return nil, fmt.Errorf("%w: 最小为 %d", ErrTransferTooSmall, minTransfer)
+		return nil, fmt.Errorf("%w: 最小转入金额为 %s", ErrTransferTooSmall, model.FormatQuotaCurrency(minTransfer))
 	}
 	if err := model.TransferAffQuota(userID, req.Quota); err != nil {
 		return nil, err
@@ -59,7 +59,7 @@ func (s *InviteService) Transfer(userID int64, req *dto.TransferAffQuotaReq, ip 
 	if err := model.DB.Select("username", "quota", "aff_quota").First(&u, userID).Error; err != nil {
 		return nil, err
 	}
-	model.RecordSystemLog(userID, u.Username, fmt.Sprintf("邀请额度转入钱包 %d", req.Quota), req.Quota, ip, map[string]any{"type": "aff_transfer"})
+	model.RecordSystemLog(userID, u.Username, fmt.Sprintf("邀请额度转入钱包 %s", model.FormatQuotaCurrency(req.Quota)), req.Quota, ip, map[string]any{"type": "aff_transfer"})
 	return &dto.TransferAffQuotaResp{
 		Quota:    u.Quota,
 		AffQuota: u.AffQuota,

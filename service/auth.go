@@ -80,10 +80,10 @@ func (s *AuthService) Register(registerIP string, req *dto.RegisterReq) (*dto.Au
 	// 邀请奖励(对齐 new-api finishInsert;无支付合规门禁——配置>0 即发放)。
 	s.grantInviteRewards(user, inviterID, registerIP)
 
-	// 系统日志:记录注册(若有注册赠送额度,一并体现在文案与额度变动量)。
+	// 系统日志:记录注册(若有注册赠送额度,文案直接换算为金额,不暴露裸额度数字)。
 	registerContent := "用户注册"
 	if newUserQuota > 0 {
-		registerContent = fmt.Sprintf("用户注册(赠送 %d 额度)", newUserQuota)
+		registerContent = fmt.Sprintf("用户注册(赠送 %s)", model.FormatQuotaCurrency(newUserQuota))
 	}
 	model.RecordSystemLog(user.ID, user.Username, registerContent, newUserQuota, registerIP, map[string]any{
 		"email":       req.Email,
@@ -113,7 +113,7 @@ func (s *AuthService) grantInviteRewards(user *model.User, inviterID int64, regi
 	if quotaForInvitee := model.GetOptionInt64("QuotaForInvitee"); quotaForInvitee > 0 {
 		_ = model.IncreaseUserQuota(user.ID, quotaForInvitee)
 		model.RecordSystemLog(user.ID, user.Username,
-			fmt.Sprintf("使用邀请码赠送 %d 额度", quotaForInvitee),
+			fmt.Sprintf("使用邀请码赠送 %s", model.FormatQuotaCurrency(quotaForInvitee)),
 			quotaForInvitee, registerIP, map[string]any{"type": "invitee_reward"})
 	}
 	if inviterID != 0 {
@@ -127,7 +127,7 @@ func (s *AuthService) grantInviteRewards(user *model.User, inviterID int64, regi
 				inviterUsername = inviter.Username
 			}
 			model.RecordSystemLog(inviterID, inviterUsername,
-				fmt.Sprintf("邀请用户赠送 %d 额度(待提取)", quotaForInviter),
+				fmt.Sprintf("邀请用户赠送 %s(待提取)", model.FormatQuotaCurrency(quotaForInviter)),
 				quotaForInviter, registerIP, map[string]any{"type": "inviter_reward", "invitee_id": user.ID})
 		}
 	}

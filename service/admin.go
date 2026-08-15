@@ -286,7 +286,8 @@ func (s *AdminService) AdjustUserQuota(actor model.Operator, targetID int64, req
 		modeText = "设置"
 	}
 	model.RecordManageLog(targetID, user.Username,
-		fmt.Sprintf("管理员调整额度(%s %d),%d → %d", modeText, value, oldQuota, newQuota),
+		fmt.Sprintf("管理员调整额度(%s %s),%s → %s",
+			modeText, model.FormatQuotaCurrency(value), model.FormatQuotaCurrency(oldQuota), model.FormatQuotaCurrency(newQuota)),
 		newQuota-oldQuota, actor,
 		map[string]any{"mode": req.Mode, "value": value, "remark": req.Remark, "before": oldQuota, "after": newQuota})
 	return newQuota, nil
