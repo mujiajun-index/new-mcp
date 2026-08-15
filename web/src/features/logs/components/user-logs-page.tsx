@@ -297,22 +297,22 @@ export function UserLogsPage() {
               ))}
             </div>
           ) : (
-            <Table className="table-fixed" style={{ minWidth: `${isAdmin ? 1480 : showBilling ? 1240 : 1120}px` }}>
+            <Table className="table-fixed" style={{ minWidth: `${isAdmin ? 1370 : showBilling ? 1140 : 1050}px` }}>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[64px] whitespace-nowrap">ID</TableHead>
                   <TableHead className="w-[72px] whitespace-nowrap">{t('logs.type')}</TableHead>
                   <TableHead className="w-[110px] whitespace-nowrap">{t('logs.username')}</TableHead>
-                  {isAdmin && <TableHead className="w-[130px] whitespace-nowrap">{t('logs.apiKeyName')}</TableHead>}
-                  <TableHead className="w-[160px] whitespace-nowrap">{t('logs.toolName')}</TableHead>
+                  {isAdmin && <TableHead className="w-[110px] whitespace-nowrap">{t('logs.apiKeyName')}</TableHead>}
+                  <TableHead className="w-[210px] whitespace-nowrap">{t('logs.toolName')}</TableHead>
                   <TableHead className="w-[100px] whitespace-nowrap">{t('logs.groupName')}</TableHead>
                   {isAdmin && <TableHead className="w-[120px] whitespace-nowrap">{t('logs.serviceName')}</TableHead>}
-                  <TableHead className="w-[76px] whitespace-nowrap">{t('logs.status')}</TableHead>
-                  {showBilling && <TableHead className="w-[124px] whitespace-nowrap">{t('logs.billing')}</TableHead>}
-                  <TableHead className="w-[76px] whitespace-nowrap">{t('logs.duration')}</TableHead>
-                  <TableHead className="w-[200px] whitespace-nowrap">{t('logs.errorMessage')}</TableHead>
-                  <TableHead className="w-[120px] whitespace-nowrap">IP</TableHead>
-                  <TableHead className="w-[150px] whitespace-nowrap">{t('logs.time')}</TableHead>
+                  <TableHead className="w-[68px] whitespace-nowrap">{t('logs.status')}</TableHead>
+                  {showBilling && <TableHead className="w-[88px] whitespace-nowrap">{t('logs.billing')}</TableHead>}
+                  <TableHead className="w-[72px] whitespace-nowrap">{t('logs.duration')}</TableHead>
+                  <TableHead className="w-[150px] whitespace-nowrap">{t('logs.errorMessage')}</TableHead>
+                  <TableHead className="w-[112px] whitespace-nowrap">IP</TableHead>
+                  <TableHead className="w-[104px] whitespace-nowrap">{t('logs.time')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
