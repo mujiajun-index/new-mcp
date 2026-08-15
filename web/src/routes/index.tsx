@@ -14,7 +14,7 @@ import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
   AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
-import { Server, GitBranch, Cloud, Shield, ArrowRight, Zap, Moon, Sun, Monitor, Languages, LogOut, User, Check, Copy, Link2 } from 'lucide-react'
+import { Server, GitBranch, Cloud, Shield, ArrowRight, Zap, Moon, Sun, Monitor, Languages, LogOut, User, Check, Copy, Link2, KeyRound } from 'lucide-react'
 
 export const Route = createFileRoute('/')({
   component: LandingPage,
@@ -295,6 +295,7 @@ function EndpointsSection({ baseUrl }: { baseUrl: string }) {
   const [copied, setCopied] = useState<string | null>(null)
 
   const base = baseUrl.replace(/\/$/, '')
+  const authHeaders = ['X-API-Key: <api-key>', 'Authorization: Bearer <api-key>']
   const endpoints = [
     {
       path: '/mcp',
@@ -386,8 +387,8 @@ function EndpointsSection({ baseUrl }: { baseUrl: string }) {
                       </div>
                       <span className={cn('text-sm font-semibold', ep.textColor)}>{ep.mode}</span>
                     </div>
-                    <span className="rounded-full bg-muted px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                      POST
+                    <span className="rounded-full bg-muted px-2.5 py-0.5 text-[10px] font-medium tracking-wider text-muted-foreground">
+                      Streamable HTTP
                     </span>
                   </div>
 
@@ -414,6 +415,53 @@ function EndpointsSection({ baseUrl }: { baseUrl: string }) {
               </div>
             )
           })}
+        </div>
+
+        {/* Auth headers hint */}
+        <div className="group relative mt-6 overflow-hidden rounded-2xl border bg-card/80 p-6 backdrop-blur transition-all duration-300 hover:border-ring/20 hover:shadow-lg hover:shadow-ring/5">
+          <div className="relative z-10">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/20">
+                  <KeyRound className="h-4 w-4" />
+                </div>
+                <span className="text-sm font-semibold text-amber-600 dark:text-amber-400">{t('landing.authTitle')}</span>
+              </div>
+              <Link to="/api-keys">
+                <Button variant="outline" size="sm" className="gap-1.5 rounded-full px-4">
+                  {t('landing.getApiKey')}
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Button>
+              </Link>
+            </div>
+
+            <p className="mb-4 text-sm text-muted-foreground">{t('landing.authDesc')}</p>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {authHeaders.map((header) => {
+                const isCopied = copied === header
+                return (
+                  <div key={header} className="flex items-center gap-2">
+                    <div className="flex-1 overflow-hidden rounded-lg border bg-muted/50 px-3 py-2">
+                      <code className="block truncate text-sm font-mono text-foreground">{header}</code>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn(
+                        'h-9 w-9 shrink-0 cursor-pointer transition-colors',
+                        isCopied && 'text-emerald-600 dark:text-emerald-400',
+                      )}
+                      onClick={() => handleCopy(header)}
+                      title={isCopied ? t('common.copied') : t('common.copy')}
+                    >
+                      {isCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         </div>
       </div>
     </section>
