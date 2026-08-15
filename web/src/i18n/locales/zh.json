@@ -47,7 +47,8 @@
     "details": "详情",
     "description": "描述",
     "createdAt": "创建时间",
-    "refresh": "刷新"
+    "refresh": "刷新",
+    "paramRequired": "必填"
   },
   "nav": {
     "home": "主页",

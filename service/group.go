@@ -268,6 +268,10 @@ func (s *GroupService) getAggregatedTools(groupID int64) ([]dto.GroupToolItem, e
 				enabled = f.Enabled
 				nameOverride = f.NameOverride
 			}
+			var inputSchema interface{}
+			if len(t.InputSchema) > 0 {
+				inputSchema = t.InputSchema
+			}
 			result = append(result, dto.GroupToolItem{
 				ServiceID:    gs.ServiceID,
 				Name:         svc.Name + "__" + t.Name,
@@ -276,6 +280,7 @@ func (s *GroupService) getAggregatedTools(groupID int64) ([]dto.GroupToolItem, e
 				Description:  t.Description,
 				Enabled:      enabled,
 				NameOverride: nameOverride,
+				InputSchema:  inputSchema,
 			})
 		}
 	}

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { ToolParams } from '@/components/tool-params'
 import { toast } from 'sonner'
 import {
   ArrowLeft, Trash2, Zap, RefreshCw, Server,
@@ -501,15 +502,7 @@ export function ServiceDetailPage() {
                 {tool.description && (
                   <p className="mt-0.5 text-xs text-muted-foreground">{tool.description}</p>
                 )}
-                {tool.inputSchema?.properties != null && (
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {Object.keys(tool.inputSchema.properties as Record<string, unknown>).map((param) => (
-                      <span key={param} className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
-                        {param}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                <ToolParams schema={tool.inputSchema} />
               </div>
             ))}
           </div>

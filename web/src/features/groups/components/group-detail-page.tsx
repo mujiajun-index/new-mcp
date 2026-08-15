@@ -3,6 +3,7 @@ import { useNavigate, useParams } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { getGroup, deleteGroup, removeGroupService, getGroupTools, getGroupEndpoint, updateGroup, batchUpdateGroupTools, checkGroupName } from '../api'
 import { getServices } from '@/features/services/api'
+import { ToolParams } from '@/components/tool-params'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
@@ -12,6 +13,17 @@ import type { BatchToolUpdate, GroupListItem } from '@/types'
 
 // 分组标识：字母开头，仅含字母与数字（禁止中文/特殊字符）
 const IDENTIFIER_RE = /^[a-zA-Z][a-zA-Z0-9]*$/
+
+type GroupTool = {
+  service_id: number
+  name: string
+  original_name: string
+  service_name: string
+  description: string
+  enabled: boolean
+  name_override: string
+  inputSchema: Record<string, unknown>
+}
 
 export function GroupDetailPage() {
   const { t } = useTranslation()
@@ -105,16 +117,7 @@ export function GroupDetailPage() {
   })
 
   const group = groupData?.data
-  const tools: Array<{
-    service_id: number
-    name: string
-    original_name: string
-    service_name: string
-    description: string
-    enabled: boolean
-    name_override: string
-    inputSchema: Record<string, unknown>
-  }> = toolsData?.data || []
+  const tools: GroupTool[] = toolsData?.data || []
   const endpoint = endpointData?.data
   const allServices = servicesData?.data || []
   const existingIds = new Set((group?.services || []).map((s: { id: number }) => s.id))
@@ -123,14 +126,7 @@ export function GroupDetailPage() {
 
   // Group tools by service
   const toolsByService = useMemo(() => {
-    const map = new Map<string, Array<{
-      service_id: number
-      name: string
-      original_name: string
-      service_name: string
-      description: string
-      enabled: boolean
-    }>>()
+    const map = new Map<string, GroupTool[]>()
     for (const t of tools) {
       const list = map.get(t.service_name) || []
       list.push(t)
@@ -197,14 +193,7 @@ export function GroupDetailPage() {
   const filteredToolsByService = useMemo(() => {
     if (!searchQuery.trim()) return toolsByService
     const q = searchQuery.toLowerCase()
-    const filtered = new Map<string, Array<{
-      service_id: number
-      name: string
-      original_name: string
-      service_name: string
-      description: string
-      enabled: boolean
-    }>>()
+    const filtered = new Map<string, GroupTool[]>()
     for (const [svcName, svcTools] of toolsByService) {
       const matching = svcTools.filter(t =>
         t.original_name.toLowerCase().includes(q) ||
@@ -521,6 +510,7 @@ export function GroupDetailPage() {
                                 {t.description && (
                                   <p className="text-xs text-muted-foreground truncate">{t.description}</p>
                                 )}
+                                <ToolParams schema={t.inputSchema} />
                               </div>
                             </div>
                           )
@@ -570,6 +560,7 @@ export function GroupDetailPage() {
                       {t('groups.toolFrom', { name: tool.service_name, original: tool.original_name })}
                     </p>
                     {tool.description && <p className="mt-1 text-xs text-muted-foreground">{tool.description}</p>}
+                    <ToolParams schema={tool.inputSchema} />
                   </div>
                 </div>
               ))

@@ -321,17 +321,22 @@ func (s *VisionService) SyncAllRegisteredTools() int {
 
 func (s *VisionService) buildToolsCache(vc *model.VisionConfig) []map[string]interface{} {
 	// Both tools accept either an inline base64 image or an image_url. The URL
-	// is preferred: the bytes stay out of the calling LLM's context (upload once
-	// via /api/v1/vision/upload or /api/v1/vision/mcp-upload, pass the returned
-	// signed URL here) and the upstream model fetches it directly. Neither field
-	// is "required" in the schema because exactly one must be present; the
-	// handler enforces the either/or with a clear error.
+	// is preferred: the bytes stay out of the calling LLM's context and the
+	// upstream model fetches it directly. Neither field is "required" in the
+	// schema because exactly one must be present; the handler enforces the
+	// either/or with a clear error.
 	//
 	// V1.1: the choice is size-based (§16). Small images may inline base64; for
 	// larger ones the model should upload first (vision.upload_image → curl →
 	// image_url) so the bytes stay out of its context.
-	const imageURLDesc = "Public https URL of the image. Use for LARGER images: obtain it via the vision.upload_image tool (returns an OS-matched curl command + image_url, no API key in the curl), run it (on Windows PowerShell it uses curl.exe), then pass that image_url here. The upstream model fetches it directly, so image bytes never enter the LLM context. For small images you may inline base64 via the image parameter instead."
-	const imageB64Desc = "Base64-encoded image. Use for SMALL images only (at most ~VisionInlineMaxBytes, default 10KB). Larger images bloat the LLM context (~400 token/KB, generated as output) — for those, use vision.upload_image → image_url instead."
+	//
+	// Keep these SHORT and non-overlapping: the upload workflow (OS-matched curl
+	// command etc.) lives in vision.upload_image's own description and its
+	// response text — analyze_image's params only say which one to pick. And
+	// image_url is pure passthrough, so ANY public http(s) URL works, not just
+	// upload_image results (e.g. a web image the agent already has).
+	const imageURLDesc = "Image URL (http/https). Any publicly reachable URL works, or the image_url returned by vision.upload_image for local files. Preferred for larger images: the upstream model fetches it directly, keeping image bytes out of your context."
+	const imageB64Desc = "Inline base64 of the image. Small images only (~10KB default cap) — larger images bloat your context; use vision.upload_image and pass its image_url instead."
 
 	// The vision service exposes a single general-purpose analyze_image (the
 	// optional prompt param covers every describe_scene-style ask; zai-mcp-server
