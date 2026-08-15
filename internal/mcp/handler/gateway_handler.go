@@ -123,7 +123,7 @@ func (h *GatewayHandler) handleInitialize(req *JSONRPCRequest) *JSONRPCResponse 
 			},
 			// V1.1: declare the local-image workflow globally so smart-mode clients
 			// (whose tools/list returns only the meta-tools) still learn the path.
-			"instructions": "To analyze a LOCAL image: if it is small (roughly <= 10KB), inline it as base64 directly to vision.analyze_image; otherwise call vision.upload_image with local_path to get an upload_command matched to your OS (curl.exe on Windows PowerShell where bare `curl` is an alias for Invoke-WebRequest; curl elsewhere) + file_url, run it via your shell (no API key needed), then call vision.analyze_image with image_url=file_url. Never paste large image base64 into tool arguments.",
+			"instructions": "To analyze a LOCAL image: if it is small (roughly <= 10KB), inline it as base64 directly to vision.analyze_image; otherwise call vision.upload_image with local_path to get an upload_command matched to your OS (curl.exe on Windows PowerShell where bare `curl` is an alias for Invoke-WebRequest; curl elsewhere) + image_url, run it via your shell (no API key needed), then call vision.analyze_image with the image_url. Never paste large image base64 into tool arguments.",
 		},
 	}
 }

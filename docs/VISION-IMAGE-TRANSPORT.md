@@ -1,6 +1,6 @@
 # 视觉工具图片传参架构重构（base64 → URL 透传）
 
-> 版本: V1.3 | 状态: V1.0 已实现 · V1.1 已实现（后端 + 前端管理 UI）· V1.2 已实现（`upload_image` 移入视觉 MCP）· V1.3 已实现（自家 URL 反向取字节） | 更新日期: 2026-08-13
+> 版本: V1.3 | 状态: V1.0 已实现 · V1.1 已实现（后端 + 前端管理 UI）· V1.2 已实现（`upload_image` 移入视觉 MCP）· V1.3 已实现（自家 URL 反向取字节） | 更新日期: 2026-08-15
 > 关联文档: [ARCHITECTURE.md](./ARCHITECTURE.md) · [API.md](./API.md) · [DATABASE.md](./DATABASE.md) · [MCP-PROTOCOL.md](./MCP-PROTOCOL.md)
 >
 > **变更摘要**:
@@ -10,7 +10,7 @@
 > - 设计参照智谱 `@z_ai/mcp-server` 视觉 MCP，适配 new-mcp 的远程 HTTP 网关形态。
 >
 > **V1.1 变更（shell 命令行直传 + 图片管理 + 入参择优，已实现，详见 §14、§15、§16）**:
-> - 新增 `upload_image` 工具：传入 `local_path`，返回**预签名 PUT 的现成 curl 命令** + `file_url`；模型用 Bash 执行 curl 把图片直传存储，**curl 命令里不含任何 API Key**（预签名 URL 本身就是凭证）。
+> - 新增 `upload_image` 工具：传入 `local_path`，返回**预签名 PUT 的现成 curl 命令** + `image_url`；模型用 Bash 执行 curl 把图片直传存储，**curl 命令里不含任何 API Key**（预签名 URL 本身就是凭证）。
 > - 解决 V1.0 multipart 路径在「模型自己用 curl 上传」场景下的 key 暴露问题（`Authorization: Bearer sk-...` 会进模型上下文）。
 > - 两后端（local / s3）藏在同一 `Storage.PutURL` 抽象后，模型侧 curl 形态一致；新增 `PUT /api/v1/vision/files/*key` 直传端点、purpose 绑定的 HMAC 签名、`uploaded_images.status` 状态机。
 > - **新增图片管理**（§15）：用户 / 管理员列表 + 删除 API、`pending` 行快清、`MaxUploadsPerUser` 护栏；上传仍不计费（`billing/` 只管工具调用）。
@@ -24,8 +24,11 @@
 >
 > **V1.3 变更（自家存储 URL 反向取字节，详见 §14.7）**:
 > - `image_url` 若被 `OwnsURL` 判定为**自家存储 URL**（`ServerAddress` 同主机的签名 GET URL，或 S3 presigned GET URL），网关**改读自家对象字节并以 base64 直接发上游**（`ImageInput{Bytes}`，与 camera 路径一致），不再透传 URL。任意外部 http(s) URL 仍是纯透传（网关**永不**下载外部 URL，无 SSRF）。
-> - 动机：本地部署时上游 provider 拉不到 `ServerAddress`（localhost / 内网不可达），原「上游自己 GET」路径必败；Gemini 原生 `file_uri` 对任意 URL 也不稳。自家字节经 `OwnsURL` 校验是网关自己签发的，读它无 SSRF 面；调用方 LLM 仍只持有短 `file_url`，字节不进其上下文。
+> - 动机：本地部署时上游 provider 拉不到 `ServerAddress`（localhost / 内网不可达），原「上游自己 GET」路径必败；Gemini 原生 `file_uri` 对任意 URL 也不稳。自家字节经 `OwnsURL` 校验是网关自己签发的，读它无 SSRF 面；调用方 LLM 仍只持有短 `image_url`，字节不进其上下文。
 > - `Storage` 接口加 `KeyFromURL(rawurl) (key, ok)`（local 从 `/api/v1/vision/files/<key>` 路径剥 key；s3 从 presigned URL 路径定位 `/<pathPrefix>/` 取后缀）；`vision_handler` 的自家 URL 分支由「Stat 确认 + 透传」改为「`KeyFromURL` → `Stat` 大小校验 → `Get` → `SniffMediaType` → `ImageInput{Bytes}`」，原 `ownStorageKeyFromURL` 自由函数删除。`VisionInlineMaxBytes` 不适用（字节走 new-mcp→上游，不进调用方 LLM 上下文）；`VisionUploadMaxBytes` 仍是硬上限（Get 前按 `Stat` 拒大）。
+>
+> **提示词对齐微调（2026-08-15）**:
+> - `upload_image` 返回文本中的 `file_url` 字段改名 `image_url`，与 `analyze_image`/`describe_scene` 的入参**同名**；全部提示词（`upload_image` 工具 description、工具返回文本、`initialize` instructions、`image_url` 参数 description）中的 `image_url=file_url` 映射写法删除。返回值与目标参数同名，模型可**原样透传**，消除弱模型把字面量 `file_url` 当值传、或映射改错名的失败模式。
 
 ---
 
@@ -67,9 +70,9 @@ new-mcp 是远程 HTTP 网关，读不到客户端本地盘，故把智谱的「
        同一路径另一鉴权：/api/v1/vision/mcp-upload(APIKey+RateLimit)，共享同一 handler
 
 直传(V1.1): 模型调 upload_image(local_path) --> 网关生成 uuid key + 预签名 PUT URL + 签名 GET URL
-         --> 返回 {upload_command: "curl(.exe) -X PUT -T <path> '<put_url>'"(按 OS 推断二进制名,无 key) + file_url}  # 见 §14.2.1 跨系统命令生成
+         --> 返回 {upload_command: "curl(.exe) -X PUT -T <path> '<put_url>'"(按 OS 推断二进制名,无 key) + image_url}  # 见 §14.2.1 跨系统命令生成
          --> 模型用 Bash 跑 upload_command：s3 后端直传桶(字节绕过网关) / local 后端命中 PUT /api/v1/vision/files/*key(字节经网关但无 key)
-         --> 模型调 analyze_image(image_url=file_url) --> vision_handler 判 OwnsURL 自家 URL
+         --> 模型调 analyze_image(image_url=返回的 image_url) --> vision_handler 判 OwnsURL 自家 URL
          --> KeyFromURL 剥 key → Stat 大小校验 → Get 读字节 → SniffMediaType → ImageInput{Bytes} 发上游
          --> 上游直接收 base64（无需回访 ServerAddress，本地部署也能跑）
 
@@ -82,7 +85,7 @@ camera: 本地 JPEG 字节 --> ImageInput{Bytes, "image/jpeg"} --> 不变
 清理:  后台 ticker 按 created_at < now - UploadRetentionHours 删行 + Storage.Delete 对象
 ```
 
-核心不变量：**new-mcp 永不下载外部 `image_url`**。外部 URL 仅做 `http(s)` + 非空 host 校验后透传给上游，因此没有 SSRF 面。自家存储 URL（经 `OwnsURL` 判定为网关自己签发）则反向读取本地对象字节并以 base64 发上游——读的是自家对象，同样无 SSRF 面。无论哪条路径，图片字节在分析阶段都不进调用方 LLM 上下文（调用方只持有短 `file_url`）。
+核心不变量：**new-mcp 永不下载外部 `image_url`**。外部 URL 仅做 `http(s)` + 非空 host 校验后透传给上游，因此没有 SSRF 面。自家存储 URL（经 `OwnsURL` 判定为网关自己签发）则反向读取本地对象字节并以 base64 发上游——读的是自家对象，同样无 SSRF 面。无论哪条路径，图片字节在分析阶段都不进调用方 LLM 上下文（调用方只持有短 `image_url`）。
 
 ---
 
@@ -361,14 +364,14 @@ curl -X POST http://localhost:3000/mcp/group/<slug> -H "X-API-Key: sk-..." -d '{
   "method":"tools/call",
   "params":{"name":"vision.upload_image","arguments":{"local_path":"./photo.jpg"}}
 }'
-# => 返回文本块：单条 upload_command（按 OS 从 local_path 推断 curl 或 curl.exe）+ file_url + expires_in，见 §14.2.1
+# => 返回文本块：单条 upload_command（按 OS 从 local_path 推断 curl 或 curl.exe）+ image_url + expires_in，见 §14.2.1
 
 # 2) 模型用 Bash 跑 upload_command（注意：无任何 API Key 头）
 curl -X PUT -T './photo.jpg' 'https://.../files/a1/a1b2...?expires=...&token=...'             # 路径无盘符/反斜杠 → 推断 unix → curl
 curl.exe -X PUT -T 'C:\photos\photo.jpg' 'https://.../files/a1/a1b2...?expires=...&token=...' # 路径含盘符/反斜杠 → 推断 Windows → curl.exe
 # s3 后端时该 URL 指向桶，字节直传桶、不经网关
 
-# 3) 用 file_url 调 analyze_image（同 §7.3 第 4 步）
+# 3) 用返回的 image_url 调 analyze_image（同 §7.3 第 4 步）
 ```
 
 ---
@@ -500,7 +503,7 @@ go build ./... && ./newmcp  # 启动后 uploaded_images 表自动建成
 
 **V1.1（shell 直传 + 图片管理 + 入参择优，已实现，详见 §14、§15、§16）**：
 
-- `upload_image` per-config 内置工具（V1.2：随 `buildToolsCache` 注入每个视觉服务，固定名 `vision.upload_image`；入参 `local_path`，返回预签名 PUT curl + `file_url` + `next_step`）
+- `upload_image` per-config 内置工具（V1.2：随 `buildToolsCache` 注入每个视觉服务，固定名 `vision.upload_image`；入参 `local_path`，返回预签名 PUT curl + `image_url` + `expires_in`）
 - `Storage.PutURL` / `Stat` / `OwnsURL`（V1.1）/ `KeyFromURL`（V1.3）接口扩展（local = HMAC PUT URL，s3 = `PresignedPutObject`）
 - `PUT /api/v1/vision/files/*key` 直传端点 + purpose 绑定的 HMAC 签名（`SignURLFor`/`VerifyURLFor`）
 - `uploaded_images.status` 状态机（`pending` / `uploaded`，默认 `uploaded`）+ `PresignedPutTTLSeconds` 配置键
@@ -539,7 +542,7 @@ V1.0 的 multipart 上传（§7.1）要求调用方带 `sk-` API Key（`/api/v1/
 - 模型生成的 curl 必须含 `Authorization: Bearer sk-...` 或 `X-API-Key: sk-...` → **API Key 进入模型上下文、对话记录、调用日志**。
 - multipart 表单（boundary / 字段名）对模型也更难正确拼装。
 
-V1.1 新增的**预签名 PUT 直传**路径：模型调 `upload_image` 拿到一条**现成的、不含 key 的 curl 命令**，用 Bash 执行把图片直传存储，再用返回的 `file_url` 调 `analyze_image`。整条链路上模型手里只有一个用完即弃的签名 URL，**任何密钥都不暴露给模型**。
+V1.1 新增的**预签名 PUT 直传**路径：模型调 `upload_image` 拿到一条**现成的、不含 key 的 curl 命令**，用 Bash 执行把图片直传存储，再用返回的 `image_url` 调 `analyze_image`。整条链路上模型手里只有一个用完即弃的签名 URL，**任何密钥都不暴露给模型**。
 
 两条路径并存：multipart（§7.1）留给 Web UI / 服务端经手字节的场景；预签名 PUT（本节）留给 agent 自助上传。
 
@@ -558,15 +561,15 @@ V1.1 新增的**预签名 PUT 直传**路径：模型调 `upload_image` 拿到�
 
 > `local_path` 仅用于拼 curl 占位，**服务端读不到客户端盘**；文件得由模型在本地用 Bash 上传。
 
-**返回值**（核心是 `upload_command`（按 OS 推断、单条）+ `file_url`）：
+**返回值**（核心是 `upload_command`（按 OS 推断、单条）+ `image_url`）：
 
 实际返回是 MCP `tools/call` 的 `content[].text` 文本块（节选）：
 
 ```text
-Upload slot ready. Run upload_command, then call vision.analyze_image with image_url=file_url.
+Upload slot ready. Run upload_command, then call vision.analyze_image with the image_url below.
 
 upload_command: curl.exe -X PUT -T 'C:\abs\path\photo.jpg' 'https://host/u/8QkP2mR9xY4a?s=Kp9bZx7mQ2nLr5tA'
-file_url: https://host/u/8QkP2mR9xY4a?s=Vc3Nq8wYj4Hk6sTp
+image_url: https://host/u/8QkP2mR9xY4a?s=Vc3Nq8wYj4Hk6sTp
 expires_in: 600s
 ```
 
@@ -672,7 +675,7 @@ if UploadStore != nil && UploadStore.OwnsURL(params.ImageURL) {
 }
 ```
 
-`fetchOwnImage`（同文件）：`Stat` 先做 `VisionUploadMaxBytes` 大小校验（Get 前拒大，不流式读超大对象）→ `Get` → `io.ReadAll` → `vision.SniffMediaType`（空 mime 拒）；`storage.ErrObjectNotFound` 转成带操作指引的错误。注意 `VisionInlineMaxBytes` **不适用**——该软阈值约束的是 base64 进「调用方 LLM 上下文」；这里字节走 new-mcp→上游，调用方只持有短 `file_url`，字节不进其上下文。
+`fetchOwnImage`（同文件）：`Stat` 先做 `VisionUploadMaxBytes` 大小校验（Get 前拒大，不流式读超大对象）→ `Get` → `io.ReadAll` → `vision.SniffMediaType`（空 mime 拒）；`storage.ErrObjectNotFound` 转成带操作指引的错误。注意 `VisionInlineMaxBytes` **不适用**——该软阈值约束的是 base64 进「调用方 LLM 上下文」；这里字节走 new-mcp→上游，调用方只持有短 `image_url`，字节不进其上下文。
 
 **为什么反向取字节而非透传 URL**：本地部署时上游 provider（OpenAI / Claude / Gemini）拉不到 `ServerAddress`（localhost / 内网不可达），原「上游自己 GET」路径必败；Gemini 原生 `file_uri` 对任意 URL 也不稳。自家 URL 经 `OwnsURL` 校验是网关自己签发的，读本地对象无 SSRF 面。安全不变量仍成立：**new-mcp 永不下载外部 URL**。
 
@@ -683,9 +686,9 @@ if UploadStore != nil && UploadStore.OwnsURL(params.ImageURL) {
 模型不会自己猜流程，靠四个渠道叠加（coding agent 对工具返回的操作指引服从度极高）：
 
 1. **工具返回值**（最有效）：`upload_image` 返回里直接给 `upload_command`（现成 curl）+ `next_step`，模型读到就照做。
-2. **工具 description**：声明完整工作流（`upload_image` → Bash curl → `analyze_image(file_url)`），并明令「不要把 base64 塞参数」。
+2. **工具 description**：声明完整工作流（`upload_image` → Bash curl → `analyze_image(image_url)`），并明令「不要把 base64 塞参数」。
 3. **MCP `initialize` 的 `instructions`**：当前 `handleInitialize` 未返回该字段，V1.1 在 Result map 里加全局工作流说明（smart 模式 tools/list 只有 3 个 meta 工具，这里是其获知 `vision.upload_image` 的主渠道）。
-4. **错误兜底**：模型跳步（拿本地路径 / 无效 URL 调 analyze）时，返回带「1) `upload_image` → 2) Bash curl → 3) `analyze_image(file_url)`」的操作指引错误，促其自纠。
+4. **错误兜底**：模型跳步（拿本地路径 / 无效 URL 调 analyze）时，返回带「1) `upload_image` → 2) Bash curl → 3) `analyze_image(image_url)`」的操作指引错误，促其自纠。
 
 ### 14.9 两后端字节走向 + 时序
 
@@ -704,9 +707,9 @@ if UploadStore != nil && UploadStore.OwnsURL(params.ImageURL) {
 模型: tools/call vision.upload_image(local_path)
   └─ 网关: 校验调用方 API Key → 生成 uuid key → 建 uploaded_images 行(status=pending)
           → Storage.PutURL(key, PresignedPutTTL) + Storage.PublicURL(key, SignedURLTTL)
-模型 ← { upload_command, file_url, expires_in, next_step }
+模型 ← { upload_command, image_url, expires_in }
 模型: Bash 执行 upload_command            # 无 key；s3 直传桶 / local 命中 PUT 端点
-模型: tools/call vision.analyze_image(image_url=file_url)
+模型: tools/call vision.analyze_image(image_url=<返回的 image_url>)
   └─ 网关: OwnsURL 命中 → KeyFromURL 剥 key → Stat 大小校验 → Get 读字节 → 嗅探 mime
           → ImageInput{Bytes} 发上游 → 上游直收 base64（无需回访 ServerAddress）
 模型 ← 分析结果
@@ -756,11 +759,11 @@ if UploadStore != nil && UploadStore.OwnsURL(params.ImageURL) {
 
 实现后端到端（接入 §12.2 清单）：
 
-1. `upload_image(local_path)` → 拿 `upload_command` + `file_url` → Bash PUT → `analyze_image(file_url)` 端到端，**local 与 s3 两后端各跑一次**。
+1. `upload_image(local_path)` → 拿 `upload_command` + `image_url` → Bash PUT → `analyze_image(image_url)` 端到端，**local 与 s3 两后端各跑一次**。
 2. 篡改 PUT 签名 token → 403；`expires` 过期 → 410。
 3. 用一条 **GET** 签名 URL 冒充 **PUT** → 403（验证 §14.5 purpose 绑定）。
 4. 一次性 slot：对同一 key 二次 PUT → 409。
-5. 模型跳步：直接拿本地路径 / 未上传的 `file_url` 调 `analyze_image` → 返回带操作指引的错误（且不发计费请求到上游）。
+5. 模型跳步：直接拿本地路径 / 未上传的 `image_url` 调 `analyze_image` → 返回带操作指引的错误（且不发计费请求到上游）。
 6. 清理：`pending` 行到期（PUT TTL 过后）被回收；已 `uploaded` 行按 `UploadRetentionHours` 回收。
 7. smart 模式：`initialize` 的 `instructions` 出现；`mcp.execute vision_<id>.vision.upload_image` 与直调（`vision_<id>__vision.upload_image`）均可通。
 
@@ -907,7 +910,7 @@ V1.0 文案把 `image_url` 标为「preferred」、base64 标为「大图不推�
 ```
 分析前先用 Bash 查本地文件大小（stat -c%s <path> / ls -l <path> / wc -c <path>）：
 - ≤ VisionInlineMaxBytes（默认 10KB）→ 小图：base64 内联，调 analyze_image(image=<base64>)。
-- VisionInlineMaxBytes < size ≤ VisionUploadMaxBytes(10MB) → 大图：upload_image → Bash curl 直传 → analyze_image(image_url=<file_url>)。
+- VisionInlineMaxBytes < size ≤ VisionUploadMaxBytes(10MB) → 大图：upload_image → Bash curl 直传 → analyze_image(image_url)。
 - > VisionUploadMaxBytes → 超限，两路都拒，提示压缩或换图。
 ```
 
@@ -919,7 +922,7 @@ V1.0 文案把 `image_url` 标为「preferred」、base64 标为「大图不推�
 
 1. **工具 description**（`service/vision.go::buildToolsCache`）：
    - `image`（base64）：「**仅小图用**（≤ `VisionInlineMaxBytes` ≈ 10KB）。大图改用 `upload_image` → `image_url`，否则撑爆上下文。」
-   - `image_url`：「**大图用**。用 `upload_image` 获取（返回 curl + file_url）；小图直接 base64 内联即可。」
+   - `image_url`：「**大图用**。用 `upload_image` 获取（返回 curl + image_url）；小图直接 base64 内联即可。」
    - `upload_image`：「把本地**大图（> 内联阈值）**上传到存储换 URL；小图直接 base64 内联调 `analyze_image`。」
 2. **`initialize` instructions**（§14.8 渠道 3）：写明「先查文件大小，小图 base64、大图 upload」的分档流程。
 3. **服务端软上限（错误即指令）**：`vision_handler` 收到 base64 时，若 `VisionInlineMaxBytes > 0 && len(imgBytes) > VisionInlineMaxBytes`，返回引导而非静默接受：

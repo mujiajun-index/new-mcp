@@ -29,7 +29,7 @@ const UploadImageToolName = "vision.upload_image"
 // It is intentionally a constant (not a per-config field) so the workflow
 // guidance stays consistent across every vision service.
 const uploadImageDesc = "Stage a LOCAL image file for vision analysis. Workflow: 1) call this with local_path; " +
-	"2) run the returned upload_command via your Bash/shell tool; 3) call vision.analyze_image with image_url=file_url. " +
+	"2) run the returned upload_command via your Bash/shell tool; 3) call vision.analyze_image with the returned image_url. " +
 	"For SMALL images you may instead inline base64 directly to analyze_image; use this tool for larger images."
 
 const uploadLocalPathDesc = "Absolute path of the image on your machine, in your system's native form " +
@@ -80,10 +80,10 @@ func CallerUserID(ctx context.Context) int64 {
 }
 
 // handleUploadImage creates a presigned-PUT upload slot for a local image and
-// returns a ready-to-run curl command (no API key) plus the file_url to pass to
+// returns a ready-to-run curl command (no API key) plus the image_url to pass to
 // analyze_image. The bytes never enter the model context: the model runs the
 // curl via its shell tool, uploading straight to storage (the local PUT endpoint
-// or an S3 bucket), then calls analyze_image with file_url. See §14 of the
+// or an S3 bucket), then calls analyze_image with the image_url. See §14 of the
 // vision transport design doc.
 func handleUploadImage(ctx context.Context, userID int64, args json.RawMessage) (json.RawMessage, error) {
 	if UploadStore == nil {
@@ -128,12 +128,12 @@ func handleUploadImage(ctx context.Context, userID int64, args json.RawMessage) 
 	putTTL := presignedPutTTL()
 
 	// Short capability URLs: /u/<sid>?s=<method-bound MAC>. The PUT (upload_command)
-	// and GET (file_url) URLs share the row's short_id and differ only in the
+	// and GET (image_url) URLs share the row's short_id and differ only in the
 	// method-bound signature, so the model's curl carries no API key and a GET
 	// token can't be replayed as a PUT. These are infallible (no presign round-trip,
 	// no backend dependency), so the pending slot needs no delete-on-failure cleanup.
 	putURL := storage.ShortURL("PUT", img.ShortID)
-	fileURL := storage.ShortURL("GET", img.ShortID)
+	imageURL := storage.ShortURL("GET", img.ShortID)
 
 	// Return the ONE curl command matched to the caller's OS, inferred from
 	// local_path (drive letter / backslash → Windows → curl.exe; otherwise →
@@ -148,13 +148,16 @@ func handleUploadImage(ctx context.Context, userID int64, args json.RawMessage) 
 
 	// Standard MCP tools/call result: {content:[{type:"text",text:...}]}. The
 	// text is the most effective guidance channel (§14.8): a ready-to-run
-	// command + file_url, nothing fixed or duplicated.
+	// command + image_url, nothing fixed or duplicated. The returned field is
+	// deliberately named image_url — the exact name of analyze_image's
+	// parameter — so the model passes it through verbatim with no rename
+	// mapping to fumble.
 	result := map[string]interface{}{
 		"content": []map[string]interface{}{
 			{"type": "text", "text": fmt.Sprintf(
-				"Upload slot ready. Run upload_command, then call vision.analyze_image with image_url=file_url.\n\n"+
-					"upload_command: %s\nfile_url: %s\nexpires_in: %ds",
-				cmd, fileURL, int(putTTL.Seconds()))},
+				"Upload slot ready. Run upload_command, then call vision.analyze_image with the image_url below.\n\n"+
+					"upload_command: %s\nimage_url: %s\nexpires_in: %ds",
+				cmd, imageURL, int(putTTL.Seconds()))},
 		},
 	}
 	return json.Marshal(result)

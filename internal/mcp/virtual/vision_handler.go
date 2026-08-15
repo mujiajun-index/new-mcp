@@ -71,7 +71,7 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 		// or otherwise private), and Gemini's native file_uri fetch is flaky for
 		// arbitrary URLs. Reading our own bytes has no SSRF surface (OwnsURL
 		// already verified the URL is one we issued), and the calling LLM still
-		// only ever held the short file_url — bytes stay out of its context.
+		// only ever held the short image_url — bytes stay out of its context.
 		// External URLs (or own URLs whose key we can't recover) fall through to
 		// pure passthrough; those are never fetched.
 		if storage.OwnsShortURL(params.ImageURL) {
