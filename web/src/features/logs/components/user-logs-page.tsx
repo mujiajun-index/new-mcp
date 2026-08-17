@@ -304,7 +304,7 @@ export function UserLogsPage() {
                   <TableHead className="w-[72px] whitespace-nowrap">{t('logs.type')}</TableHead>
                   <TableHead className="w-[110px] whitespace-nowrap">{t('logs.username')}</TableHead>
                   {isAdmin && <TableHead className="w-[110px] whitespace-nowrap">{t('logs.apiKeyName')}</TableHead>}
-                  <TableHead className="w-[210px] whitespace-nowrap">{t('logs.toolName')}</TableHead>
+                  <TableHead className="w-[220px] whitespace-nowrap">{t('logs.toolName')}</TableHead>
                   <TableHead className="w-[100px] whitespace-nowrap">{t('logs.groupName')}</TableHead>
                   {isAdmin && <TableHead className="w-[120px] whitespace-nowrap">{t('logs.serviceName')}</TableHead>}
                   <TableHead className="w-[68px] whitespace-nowrap">{t('logs.status')}</TableHead>
@@ -511,7 +511,7 @@ function LogRow({ log, isAdmin, showBilling, fmtMoney, formatTime, formatDuratio
             <QuotaDelta value={quota} fmt={fmtMoney} />
           </div>
         </TableCell>
-        <TableCell className="text-xs text-muted-foreground font-mono whitespace-nowrap">{log.client_ip || '-'}</TableCell>
+        <TableCell className="text-xs text-muted-foreground font-mono truncate" title={log.client_ip}>{log.client_ip || '-'}</TableCell>
         <TableCell className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">{formatTime(log.created_at)}</TableCell>
       </TableRow>
     )
@@ -568,7 +568,7 @@ function LogRow({ log, isAdmin, showBilling, fmtMoney, formatTime, formatDuratio
           <span className="text-xs text-muted-foreground">-</span>
         )}
       </TableCell>
-      <TableCell className="text-xs text-muted-foreground font-mono whitespace-nowrap">{log.client_ip}</TableCell>
+      <TableCell className="text-xs text-muted-foreground font-mono truncate" title={log.client_ip}>{log.client_ip || '-'}</TableCell>
       <TableCell className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">{formatTime(log.created_at)}</TableCell>
     </TableRow>
   )
