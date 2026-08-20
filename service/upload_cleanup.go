@@ -10,10 +10,11 @@ import (
 
 // StartCleanupLoop reaps expired vision uploads on a ticker: for each row older
 // than the retention window it deletes the stored blob (UploadStore.Delete) and
-// the metadata row. It returns when ctx is cancelled. The sweep interval is
-// read from options once at start; the retention cutoff is recomputed every
-// sweep, so an admin changing UploadRetentionHours takes effect on the next
-// tick rather than only on rows inserted after the change.
+// the metadata row. It returns when ctx is cancelled. A first sweep runs
+// immediately at startup — a short-lived server may never reach the first tick.
+// The sweep interval is read from options once at start; the retention cutoff
+// is recomputed every sweep, so an admin changing UploadRetentionHours takes
+// effect on the next tick rather than only on rows inserted after the change.
 func StartCleanupLoop(ctx context.Context) {
 	if UploadStore == nil {
 		log.Printf("[upload-cleanup] storage not initialized; cleanup loop disabled")
@@ -24,6 +25,14 @@ func StartCleanupLoop(ctx context.Context) {
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+
+	// Sweep immediately at startup, not only on the first tick: a frequently
+	// restarted server (dev sessions, short-lived deploys) may never reach the
+	// first tick, so expired rows+blobs would linger indefinitely while reads
+	// already answer 410.
+	runCleanupSweep(ctx)
+	runPendingReapSweep(ctx)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -63,7 +72,9 @@ func runCleanupSweep(ctx context.Context) {
 			log.Printf("[upload-cleanup] delete row %d: %v", img.ID, err)
 			continue
 		}
-		if n, err := model.CountByKey(img.StorageKey); err == nil && n == 0 {
+		if n, err := model.CountByKey(img.StorageKey); err != nil {
+			log.Printf("[upload-cleanup] refcount %q: %v", img.StorageKey, err)
+		} else if n == 0 {
 			if err := UploadStore.Delete(ctx, img.StorageKey); err != nil {
 				log.Printf("[upload-cleanup] delete blob %q: %v", img.StorageKey, err)
 			}

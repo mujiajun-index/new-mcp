@@ -173,6 +173,11 @@ func PutVisionFileByShortID(c *gin.Context) {
 		return
 	}
 	if err := model.MarkUploaded(img.StorageKey, mediaType, int64(len(data))); err != nil {
+		// Roll back the just-written blob: the row stays pending (or is gone),
+		// and the fast-reap deletes rows without blobs — leaving the bytes
+		// orphaned forever. The key is a fresh UUID, never shared, so the
+		// delete can't race another row's blob.
+		_ = service.UploadStore.Delete(c.Request.Context(), img.StorageKey)
 		common.Error(c, http.StatusInternalServerError, "record failed")
 		return
 	}
