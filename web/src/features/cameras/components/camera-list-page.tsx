@@ -35,13 +35,23 @@ export function CameraListPage() {
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [linkDialogId, setLinkDialogId] = useState<number | null>(null)
 
+  // iOS Safari 只允许在用户手势的同步调用栈内 window.open，await 异步返回后会被静默拦截；
+  // 移动端改为当前页跳转，桌面端保留新标签页打开
+  const openStreamPage = (url: string) => {
+    if (isMobile) {
+      window.location.href = url
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer')
+    }
+  }
+
   // 推流页只认流密钥短链接（JWT 已移除）：实时查询密钥状态,已生成则直接打开推流页,
   // 未生成则弹出链接管理对话框引导生成(不依赖列表缓存里的 has_stream_key,避免过期数据)
   const openLive = async (camera: CameraListItem) => {
     try {
       const info = await getCameraStreamKey(camera.id)
       if (info?.has_key && info.stream_url) {
-        window.open(info.stream_url, '_blank', 'noopener,noreferrer')
+        openStreamPage(info.stream_url)
         return
       }
     } catch {
@@ -292,7 +302,7 @@ export function CameraListPage() {
           onGenerated={(info) => {
             // 首次生成成功后直接打开推流页,免去再点一次「视频」
             if (info?.stream_url) {
-              window.open(info.stream_url, '_blank', 'noopener,noreferrer')
+              openStreamPage(info.stream_url)
             }
           }}
           onOpenChange={(o) => !o && setLinkDialogId(null)}
