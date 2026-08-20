@@ -295,7 +295,7 @@ function EndpointsSection({ baseUrl }: { baseUrl: string }) {
   const [copied, setCopied] = useState<string | null>(null)
 
   const base = baseUrl.replace(/\/$/, '')
-  const authHeaders = ['X-API-Key: <api-key>', 'Authorization: Bearer <api-key>']
+  const authHeaders = ['X-API-Key: sk-••••', 'Authorization: Bearer sk-••••']
   const endpoints = [
     {
       path: '/mcp',
