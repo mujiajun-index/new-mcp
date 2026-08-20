@@ -88,11 +88,15 @@ func handleAnalyze(ctx context.Context, cam *model.Camera, args json.RawMessage)
 		AnalyzeTimeout: time.Duration(vc.AnalyzeTimeoutSeconds) * time.Second,
 	}
 
+	// Same prompt resolution as analyze_image: the bound VisionConfig's
+	// SystemPrompt, falling back to the shared analyze defaults when empty or
+	// when the caller passes no prompt — so a camera frame and an uploaded
+	// image get identical treatment from the same config.
 	systemPrompt := vc.SystemPrompt
 	if systemPrompt == "" {
-		systemPrompt = "You are a precise image analysis assistant. Examine the provided camera frame and identify the objects, people, text, and activity it contains. Be accurate, objective, and thorough."
+		systemPrompt = defaultAnalyzeSystemPrompt
 	}
-	userPrompt := "Analyze this camera frame in detail. Identify and describe every person and object, note any visible text or signage, and summarize the current activity and setting."
+	userPrompt := defaultAnalyzeUserPrompt
 	if params.Prompt != "" {
 		userPrompt = params.Prompt
 	}

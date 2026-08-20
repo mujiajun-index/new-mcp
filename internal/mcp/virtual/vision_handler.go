@@ -16,8 +16,9 @@ import (
 	"github.com/mujkjk/newmcp/model"
 )
 
-// defaultAnalyzeSystemPrompt is the analyze_image fallback when the
-// VisionConfig's SystemPrompt is empty. Long structured version taken from
+// defaultAnalyzeSystemPrompt is the shared analyze_image / camera.analyze
+// fallback when the VisionConfig's SystemPrompt is empty. Long structured
+// version taken from
 // zai-mcp-server's GENERAL_IMAGE_ANALYSIS_PROMPT (@z_ai/mcp-server 0.1.4,
 // Apache-2.0, build/prompts/general-image.js): the model adapts to the
 // caller's prompt instead of a fixed template, and answers with a fixed
@@ -64,6 +65,10 @@ If there are other observations that might be valuable but weren't directly requ
 </output_structure>
 
 Your goal is to be genuinely helpful by providing exactly the information and analysis the user needs, presented in a clear, organized, and insightful manner. Adapt your response to their specific situation rather than forcing their request into a predetermined format.`
+
+// defaultAnalyzeUserPrompt is the shared analyze_image / camera.analyze
+// fallback user prompt when the caller passes no prompt argument.
+const defaultAnalyzeUserPrompt = "What does this image show? Give an overview of the main subject and setting, and note anything notable."
 
 func VisionHandler(ctx context.Context, serviceID int64, config map[string]interface{}, toolName string, args json.RawMessage) (json.RawMessage, error) {
 	refID, _ := config["ref_id"].(float64)
@@ -183,7 +188,7 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 		if params.Prompt != "" {
 			userPrompt = params.Prompt
 		} else {
-			userPrompt = "What does this image show? Give an overview of the main subject and setting, and note anything notable."
+			userPrompt = defaultAnalyzeUserPrompt
 		}
 	default:
 		return nil, fmt.Errorf("unknown vision tool: %s", toolName)
