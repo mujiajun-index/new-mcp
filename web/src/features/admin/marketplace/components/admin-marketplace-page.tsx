@@ -18,6 +18,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { MobileListCard } from '@/components/ui/mobile-list-card'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { toast } from 'sonner'
 import {
   Plus, Copy, Trash2, CheckSquare, Square, Tag, AlertTriangle, Store, Eye,
@@ -28,6 +30,7 @@ export function AdminMarketplacePage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { config } = useSystemConfigStore()
+  const isMobile = useIsMobile()
 
   const [page, setPage] = useState(1)
   const pageSize = 20
@@ -107,12 +110,12 @@ export function AdminMarketplacePage() {
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{t('nav.adminMarketplace')}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{t('marketplace.pricing')}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" className="gap-2" onClick={() => setCloneOpen(true)}>
             <Copy className="h-4 w-4" />{t('marketplace.clone')}
           </Button>
@@ -131,7 +134,7 @@ export function AdminMarketplacePage() {
 
       {/* Batch bar */}
       {selected.size > 0 && (
-        <div className="flex items-center gap-3 rounded-xl border bg-card p-3">
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3">
           <span className="text-sm text-muted-foreground">{t('apiKeys.selected', { count: selected.size })}</span>
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setBatchOpen(true)}>
             <Tag className="h-3.5 w-3.5" />{t('marketplace.batchPricing')}
@@ -148,6 +151,64 @@ export function AdminMarketplacePage() {
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <Store className="mb-3 h-10 w-10 text-muted-foreground/30" />
             <p className="text-sm text-muted-foreground">{t('pricing.empty')}</p>
+          </div>
+        ) : isMobile ? (
+          <div className="divide-y">
+            {items.map((item) => {
+              const priced = isExplicitlyPriced(item.billing_type, item.price_per_call)
+              return (
+                <MobileListCard
+                  key={item.id}
+                  className={selected.has(item.id) ? 'bg-muted/40' : undefined}
+                  title={
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => toggleSelect(item.id)} className="shrink-0 text-muted-foreground hover:text-foreground">
+                        {selected.has(item.id) ? <CheckSquare className="h-4 w-4 text-primary" /> : <Square className="h-4 w-4" />}
+                      </button>
+                      <span className="truncate">{item.display_name || item.name}</span>
+                    </div>
+                  }
+                  badge={
+                    <Badge variant={item.billing_type === 'free' ? 'secondary' : 'outline'}>
+                      {item.billing_type === 'free' ? t('marketplace.billingFree') : t('marketplace.billingPerCall')}
+                    </Badge>
+                  }
+                  meta={[
+                    { label: t('pricing.colCategory'), value: item.category === 'instant' ? t('marketplace.ready') : t('marketplace.source') },
+                    {
+                      label: t('pricing.colPrice'),
+                      value: (
+                        <span className={priced ? 'text-primary' : 'text-amber-600'}>
+                          {priceLabel(item.billing_type, item.price_per_call, config.displayCurrency)}
+                        </span>
+                      ),
+                    },
+                  ]}
+                  actions={
+                    <>
+                      <div className="mr-auto flex items-center gap-2">
+                        <Switch
+                          checked={item.status === 1}
+                          onCheckedChange={(checked) => statusMutation.mutate({ id: item.id, status: checked ? 1 : 2 })}
+                          disabled={statusMutation.isPending && statusMutation.variables?.id === item.id}
+                        />
+                        <span className={`text-xs ${item.status === 1 ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+                          {item.status === 1 ? t('common.enabled') : t('common.disabled')}
+                        </span>
+                      </div>
+                      <Button variant="ghost" size="sm" title={t('common.details')}
+                        onClick={() => navigate({ to: '/admin/marketplace/$id', params: { id: String(item.id) } })}>
+                        <Eye className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-destructive" title={t('common.delete')}
+                        onClick={() => { if (confirm(t('services.deleteConfirm', { name: item.display_name || item.name }))) deleteMutation.mutate(item.id) }}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </>
+                  }
+                />
+              )
+            })}
           </div>
         ) : (
           <Table>
@@ -306,7 +367,7 @@ function CreateDialog({
           <DialogDescription>{t('marketplace.platformHostedDesc')}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>{t('services.serviceIdentifier')} <span className="text-destructive">*</span></Label>
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -320,7 +381,7 @@ function CreateDialog({
             <Label>{t('services.description')}</Label>
             <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>{t('pricing.colCategory')}</Label>
               <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: v })}>
@@ -343,7 +404,7 @@ function CreateDialog({
               </Select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4 border-t pt-4">
+          <div className="grid grid-cols-1 gap-4 border-t pt-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>{t('marketplace.billingType')}</Label>
               <Select value={form.billing_type} onValueChange={(v) => setForm({ ...form, billing_type: v, price_per_call: v === 'free' ? '0' : form.price_per_call })}>
@@ -435,7 +496,7 @@ function CloneDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>{t('services.serviceIdentifier')} <span className="text-destructive">*</span></Label>
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -449,7 +510,7 @@ function CloneDialog({
             <Label>{t('services.description')}</Label>
             <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
-          <div className="grid grid-cols-2 gap-4 border-t pt-4">
+          <div className="grid grid-cols-1 gap-4 border-t pt-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>{t('marketplace.billingType')}</Label>
               <Select value={form.billing_type} onValueChange={(v) => setForm({ ...form, billing_type: v, price_per_call: v === 'free' ? '0' : form.price_per_call })}>
@@ -522,7 +583,7 @@ function BatchDialog({
           <DialogDescription>{t('apiKeys.selected', { count: selectedItems.length })}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>{t('marketplace.billingType')}</Label>
               <Select value={billingType} onValueChange={(v) => { setBillingType(v); if (v === 'free') setPrice('0') }}>

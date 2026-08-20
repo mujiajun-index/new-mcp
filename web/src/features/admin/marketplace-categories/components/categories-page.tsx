@@ -14,6 +14,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { MobileListCard } from '@/components/ui/mobile-list-card'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, FolderTree, Tags } from 'lucide-react'
 
@@ -45,6 +47,7 @@ export function AdminCategoriesPage() {
 function GroupsTab() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
   const [createOpen, setCreateOpen] = useState(false)
   const [editing, setEditing] = useState<any | null>(null)
 
@@ -73,7 +76,33 @@ function GroupsTab() {
         <Button className="gap-2" onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4" />{t('common.create')}</Button>
       </div>
       <div className="rounded-xl border bg-card overflow-hidden">
-        <Table>
+        {isMobile ? (
+          <div className="divide-y">
+            {groups.map((g) => (
+              <MobileListCard
+                key={g.id}
+                title={<span className="truncate">{g.name}</span>}
+                badge={
+                  <Badge variant={g.status === 1 ? 'outline' : 'secondary'}
+                    className={g.status === 1 ? 'text-emerald-600 border-emerald-300' : ''}>
+                    {g.status === 1 ? t('common.enabled') : t('common.disabled')}
+                  </Badge>
+                }
+                meta={[{ label: t('categories.colSortOrder'), value: <span className="tabular-nums">{g.sort_order}</span> }]}
+                actions={
+                  <>
+                    <Button variant="ghost" size="sm" onClick={() => setEditing(g)}><Pencil className="h-3.5 w-3.5" /></Button>
+                    <Button variant="ghost" size="sm" className="text-destructive"
+                      onClick={() => { if (confirm(t('services.deleteConfirm', { name: g.name }))) deleteMutation.mutate(g.id) }}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </>
+                }
+              />
+            ))}
+          </div>
+        ) : (
+          <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
               <TableHead className="px-4">{t('categories.colName')}</TableHead>
@@ -103,7 +132,8 @@ function GroupsTab() {
               </TableRow>
             ))}
           </TableBody>
-        </Table>
+          </Table>
+        )}
       </div>
 
       <GroupDialog open={createOpen} onOpenChange={setCreateOpen}
@@ -158,7 +188,7 @@ function GroupDialog({ open, onOpenChange, onConfirm, pending, initial }: {
             <Label>{t('common.description')}</Label>
             <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>{t('categories.colSortOrder')}</Label>
               <Input type="number" value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: e.target.value })} />
@@ -189,6 +219,7 @@ function GroupDialog({ open, onOpenChange, onConfirm, pending, initial }: {
 function TagsTab() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
   const [createOpen, setCreateOpen] = useState(false)
   const [editing, setEditing] = useState<any | null>(null)
 
@@ -217,7 +248,36 @@ function TagsTab() {
         <Button className="gap-2" onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4" />{t('common.create')}</Button>
       </div>
       <div className="rounded-xl border bg-card overflow-hidden">
-        <Table>
+        {isMobile ? (
+          <div className="divide-y">
+            {tags.map((tag) => (
+              <MobileListCard
+                key={tag.id}
+                title={<span className="truncate">{tag.name}</span>}
+                badge={
+                  <Badge variant={tag.status === 1 ? 'outline' : 'secondary'}
+                    className={tag.status === 1 ? 'text-emerald-600 border-emerald-300' : ''}>
+                    {tag.status === 1 ? t('common.enabled') : t('common.disabled')}
+                  </Badge>
+                }
+                meta={[
+                  { label: t('common.description'), value: tag.description || '-' },
+                  { label: t('categories.colSortOrder'), value: <span className="tabular-nums">{tag.sort_order}</span> },
+                ]}
+                actions={
+                  <>
+                    <Button variant="ghost" size="sm" onClick={() => setEditing(tag)}><Pencil className="h-3.5 w-3.5" /></Button>
+                    <Button variant="ghost" size="sm" className="text-destructive"
+                      onClick={() => { if (confirm(t('services.deleteConfirm', { name: tag.name }))) deleteMutation.mutate(tag.id) }}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </>
+                }
+              />
+            ))}
+          </div>
+        ) : (
+          <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
               <TableHead className="px-4">{t('categories.colName')}</TableHead>
@@ -249,7 +309,8 @@ function TagsTab() {
               </TableRow>
             ))}
           </TableBody>
-        </Table>
+          </Table>
+        )}
       </div>
 
       <TagDialog open={createOpen} onOpenChange={setCreateOpen}
@@ -304,7 +365,7 @@ function TagDialog({ open, onOpenChange, onConfirm, pending, initial }: {
             <Label>{t('common.description')}</Label>
             <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>{t('categories.colSortOrder')}</Label>
               <Input type="number" value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: e.target.value })} />

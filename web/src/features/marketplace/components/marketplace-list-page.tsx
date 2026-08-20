@@ -78,10 +78,10 @@ export function MarketplaceListPage() {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input placeholder={t('marketplace.searchPlaceholder')} value={searchInput} onChange={(e) => setSearchInput(e.target.value)} className="pl-9" />
           </form>
-          <Button variant={groupsOpen ? 'default' : 'outline'} size="sm" className="gap-1.5 shrink-0" onClick={() => setGroupsOpen((v) => !v)}>
-            <FolderTree className="h-3.5 w-3.5" />{t('categories.groups')}
-          </Button>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant={groupsOpen ? 'default' : 'outline'} size="sm" className="gap-1.5" onClick={() => setGroupsOpen((v) => !v)}>
+              <FolderTree className="h-3.5 w-3.5" />{t('categories.groups')}
+            </Button>
             <Button variant={category === '' ? 'default' : 'outline'} size="sm" onClick={() => { setCategory(''); setPage(1) }}>{t('marketplace.filterAll')}</Button>
             <Button variant={category === 'instant' ? 'default' : 'outline'} size="sm" className="gap-1.5" onClick={() => { setCategory('instant'); setPage(1) }}>
               <Zap className="h-3.5 w-3.5" />{t('marketplace.filterReady')}
@@ -89,8 +89,24 @@ export function MarketplaceListPage() {
             <Button variant={category === 'source' ? 'default' : 'outline'} size="sm" className="gap-1.5" onClick={() => { setCategory('source'); setPage(1) }}>
               <Code2 className="h-3.5 w-3.5" />{t('marketplace.filterSource')}
             </Button>
+          </div>
         </div>
-        </div>
+
+        {/* 分组筛选:移动端/平板为横向滚动条,桌面端(≥lg)用左侧边栏 */}
+        {groupsOpen && (
+          <div className="flex gap-2 overflow-x-auto pb-1 lg:hidden">
+            <Button variant={groupId === '' ? 'default' : 'outline'} size="sm" className="shrink-0" onClick={() => { setGroupId(''); setPage(1) }}>
+              {t('marketplace.filterAll')}
+            </Button>
+            {groups.map((g) => (
+              <Button key={g.id} variant={groupId === g.id ? 'default' : 'outline'} size="sm" className="shrink-0 gap-1.5"
+                onClick={() => { setGroupId(g.id); setPage(1) }}>
+                {g.icon_url ? <img src={g.icon_url} alt="" className="h-3.5 w-3.5" /> : <FolderTree className="h-3.5 w-3.5" />}
+                {g.display_name || g.name}
+              </Button>
+            ))}
+          </div>
+        )}
 
         {/* Grid */}
         {isLoading ? (

@@ -50,7 +50,7 @@ export function MarketplaceDetailPage() {
         </div>
         <div className="flex-1">
           <h1 className="text-xl font-semibold">{item.display_name || item.name}</h1>
-          <div className="mt-1 flex items-center gap-3">
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className={`rounded px-2 py-0.5 text-xs font-medium ${
               item.category === 'instant' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600'
             }`}>
