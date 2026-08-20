@@ -209,9 +209,9 @@ function LandingPage() {
       <section className="relative flex min-h-svh flex-col items-center justify-center overflow-hidden px-6 pt-14">
         {/* Background decoration */}
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -top-40 left-1/2 -translate-x-1/2 h-[600px] w-[600px] rounded-full bg-ring/5 blur-3xl" />
-          <div className="absolute top-1/3 -left-20 h-[400px] w-[400px] rounded-full bg-sky-500/5 blur-3xl" />
-          <div className="absolute top-1/2 -right-20 h-[400px] w-[400px] rounded-full bg-violet-500/5 blur-3xl" />
+          <div className="absolute -top-40 left-1/2 -translate-x-1/2 h-[600px] w-[600px] rounded-full bg-ring/13 blur-3xl animate-drift-1" />
+          <div className="absolute top-1/3 -left-20 h-[400px] w-[400px] rounded-full bg-sky-500/13 blur-3xl animate-drift-2" />
+          <div className="absolute top-1/2 -right-20 h-[400px] w-[400px] rounded-full bg-violet-500/13 blur-3xl animate-drift-3" />
           {/* Grid pattern */}
           <div className="absolute inset-0 bg-[linear-gradient(rgba(0,0,0,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.02)_1px,transparent_1px)] bg-[size:64px_64px] dark:bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)]" />
         </div>
@@ -350,8 +350,8 @@ function EndpointsSection({ baseUrl }: { baseUrl: string }) {
     <section className="relative overflow-hidden border-t px-6 py-24">
       {/* Background decoration */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute top-1/2 left-1/4 -translate-y-1/2 h-[500px] w-[500px] rounded-full bg-ring/3 blur-3xl" />
-        <div className="absolute top-1/2 right-1/4 -translate-y-1/2 h-[500px] w-[500px] rounded-full bg-ring/3 blur-3xl" />
+        <div className="absolute top-1/2 left-1/4 -translate-y-1/2 h-[500px] w-[500px] rounded-full bg-ring/10 blur-3xl animate-drift-3" />
+        <div className="absolute top-1/2 right-1/4 -translate-y-1/2 h-[500px] w-[500px] rounded-full bg-ring/10 blur-3xl animate-drift-1" />
       </div>
 
       <div className="relative z-10 mx-auto max-w-4xl">
