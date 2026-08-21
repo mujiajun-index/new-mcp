@@ -18,6 +18,30 @@ async function openStream(facingMode: FacingMode): Promise<MediaStream> {
   return navigator.mediaDevices.getUserMedia({ video: { facingMode } })
 }
 
+/**
+ * 手持设备（手机/平板）判定：桌面 Chrome 会把请求的 facingMode 约束原样回显到
+ * getSettings()，笔记本红外摄像头还会让设备数虚增，这些信号在桌面端都不可信，
+ * 因此只有手持设备才信任 track 上报值。请求桌面站点的 iPad UA 形如 Macintosh，
+ * 需额外用多点触屏区分（Windows 触屏本 UA 含 Windows NT，不会误入该分支）。
+ */
+function isHandheldDevice(): boolean {
+  const ua = navigator.userAgent
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)
+}
+
+/**
+ * 识别流的真实朝向：手持设备以 track 上报的 facingMode 为准（未上报时用请求值兜底）；
+ * 桌面/笔记本（含触屏本、外接摄像头）一律按前置处理——摄像头朝向用户，镜像预览才符合直觉。
+ */
+function resolveFacingMode(stream: MediaStream, requested: FacingMode): FacingMode {
+  if (isHandheldDevice()) {
+    const reported = stream.getVideoTracks()[0]?.getSettings?.().facingMode
+    if (reported === 'user' || reported === 'environment') return reported
+    return requested
+  }
+  return 'user'
+}
+
 function buildWebSocketUrl(cameraId: number, streamKey: string): string {
   const loc = window.location
   const protocol = loc.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -155,6 +179,11 @@ export function useCameraStream(cameraId: number, streamKey?: string) {
       const stream = await openStream(facingRef.current)
 
       streamRef.current = stream
+
+      // 识别实际朝向（笔记本/桌面按前置），驱动镜像预览与朝向标签
+      const actual = resolveFacingMode(stream, facingRef.current)
+      facingRef.current = actual
+      setFacingMode(actual)
 
       setActive(true)
       detectMultipleCameras()

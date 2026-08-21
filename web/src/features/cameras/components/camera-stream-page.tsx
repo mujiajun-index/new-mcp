@@ -24,8 +24,13 @@ export function CameraStreamPage() {
     <div className="flex min-h-[100dvh] w-full items-center justify-center bg-neutral-950 text-white">
       <div className="relative h-[100dvh] w-full overflow-hidden bg-black
                       md:h-auto md:max-h-[92dvh] md:w-[420px] md:aspect-[3/4] md:rounded-3xl md:shadow-2xl">
-        {/* Local camera preview (fills the call window) */}
-        <video ref={s.videoRef} className="absolute inset-0 h-full w-full object-cover" playsInline muted />
+        {/* Local camera preview (fills the call window); front camera mirrored like a selfie view */}
+        <video
+          ref={s.videoRef}
+          className={`absolute inset-0 h-full w-full object-cover${s.facingMode === 'user' ? ' scale-x-[-1]' : ''}`}
+          playsInline
+          muted
+        />
         {/* Hidden canvas for frame capture */}
         <canvas ref={s.canvasRef} className="hidden" />
 
