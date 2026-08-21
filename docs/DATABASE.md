@@ -155,7 +155,7 @@ CREATE TABLE `mcp_groups` (
 
     -- 分组设置
     `visibility`        VARCHAR(16)     DEFAULT 'private' COMMENT '可见性: private, public',
-    `auto_discover`     TINYINT         DEFAULT 1 COMMENT '自动发现成员服务的工具',
+    `auto_discover`     TINYINT         COMMENT '自动发现成员服务的工具(应用层显式写入,无 DB 默认)',
 
     -- MCP 端点配置
     `endpoint_slug`     VARCHAR(128)    DEFAULT '' COMMENT 'URL 路径标识 (全局唯一)',
@@ -327,7 +327,7 @@ CREATE TABLE `cloud_endpoints` (
     `group_id`          BIGINT UNSIGNED DEFAULT NULL COMMENT '(已废弃) 绑定的 MCP 分组 ID，迁移为 api_key_id',
 
     -- 连接状态
-    `auto_connect`      TINYINT         DEFAULT 1 COMMENT '1=自动连接, 0=手动连接',
+    `auto_connect`      TINYINT         COMMENT '1=自动连接, 0=手动连接(应用层显式写入,无 DB 默认)',
     `connection_status`  VARCHAR(16)    DEFAULT 'disconnected' COMMENT 'connected, disconnected, error',
     `last_connected_at` DATETIME        DEFAULT NULL COMMENT '最后连接时间',
     `last_error`        TEXT            DEFAULT '' COMMENT '最近一次连接错误信息',

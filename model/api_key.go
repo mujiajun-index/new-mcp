@@ -20,7 +20,9 @@ type ApiKey struct {
 	Status         int            `json:"status" gorm:"default:1"`
 	Quota          int64          `json:"quota" gorm:"default:0"`
 	UsedQuota      int64          `json:"used_quota" gorm:"default:0"`
-	UnlimitedQuota bool           `json:"unlimited_quota" gorm:"default:true"`
+	// 无 default 标签:default:true 时 GORM 在 INSERT 省略零值 false,受限额度 Key
+	// 落库变回无限额度,额度校验与扣减(DecreaseApiKeyQuotaAtomic)全部失效。
+	UnlimitedQuota bool           `json:"unlimited_quota"`
 	AllowIPs       string         `json:"allow_ips" gorm:"size:512;default:''"`
 	ExpiresAt      *time.Time     `json:"expires_at"`
 	LastUsedAt     *time.Time     `json:"last_used_at"`

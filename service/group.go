@@ -50,6 +50,7 @@ func (s *GroupService) Create(userID int64, req *dto.CreateGroupReq) (*dto.Group
 		Description:  req.Description,
 		EndpointSlug: req.Name,
 		Visibility:   req.Visibility,
+		AutoDiscover: true, // 显式写入:模型列已去掉 default 标签,防 GORM 零值省略
 		EndpointAuth: req.EndpointAuth,
 		ExposeMode:   req.ExposeMode,
 		Status:       common.StatusEnabled,

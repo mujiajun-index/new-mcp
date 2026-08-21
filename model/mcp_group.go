@@ -14,7 +14,9 @@ type McpGroup struct {
 	Description      string         `json:"description" gorm:"type:text"`
 	IconURL          string         `json:"icon_url" gorm:"size:512"`
 	Visibility       string         `json:"visibility" gorm:"size:16;default:private;index"`
-	AutoDiscover     bool           `json:"auto_discover" gorm:"default:true"`
+	// 无 default 标签(GORM 对带 default 的 bool 零值 INSERT 时省略该列);创建时
+	// service 层显式置 true,与原 DB 默认语义一致。
+	AutoDiscover     bool           `json:"auto_discover"`
 	EndpointSlug     string         `json:"endpoint_slug" gorm:"size:128;uniqueIndex"`
 	EndpointAuth     string         `json:"endpoint_auth" gorm:"size:32;default:api_key"`
 	ExposeMode       string         `json:"expose_mode" gorm:"size:16;default:smart"`

@@ -29,7 +29,9 @@ type McpToolPrice struct {
 	ToolName         string    `json:"tool_name" gorm:"size:255;not null;uniqueIndex:idx_item_tool"`
 	BillingType      string    `json:"billing_type" gorm:"size:16;default:per_call"` // free / per_call
 	PricePerCall     float64   `json:"price_per_call" gorm:"type:decimal(10,4);default:0"`
-	Enabled          bool      `json:"enabled" gorm:"default:true"`
+	// 无 default 标签(GORM 对带 default 的 bool 零值 INSERT 时省略该列);
+	// 写入点(工具级定价管理)须显式赋值,避免首次停用工具定价静默失效。
+	Enabled          bool      `json:"enabled"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }

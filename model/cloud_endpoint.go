@@ -17,7 +17,9 @@ type CloudEndpoint struct {
 	TokenExpiresAt   *time.Time     `json:"token_expires_at"`
 	ApiKeyID         *int64         `json:"api_key_id" gorm:"index"`
 	GroupID          *int64         `json:"group_id" gorm:"index"`
-	AutoConnect      bool           `json:"auto_connect" gorm:"default:true"`
+	// 无 default 标签:default:true 时 GORM 在 INSERT 省略零值 false,「手动连接」
+	// 落库变回自动连接,重启后 CloudManager 会违背用户意愿自动拉起。
+	AutoConnect      bool           `json:"auto_connect"`
 	ExposeMode       string         `json:"expose_mode" gorm:"size:16;default:smart"`
 	ConnectionStatus string         `json:"connection_status" gorm:"size:16;default:disconnected;index"`
 	LastConnectedAt  *time.Time     `json:"last_connected_at"`

@@ -6,7 +6,9 @@ type McpGroupService struct {
 	ID         int64     `json:"id" gorm:"primaryKey;autoIncrement"`
 	GroupID    int64     `json:"group_id" gorm:"not null;uniqueIndex:idx_group_service"`
 	ServiceID  int64     `json:"service_id" gorm:"not null;uniqueIndex:idx_group_service;index"`
-	Enabled    bool      `json:"enabled" gorm:"default:true"`
+	// 无 default 标签(GORM 对带 default 的 bool 零值 INSERT 时省略该列);
+	// AddServicesToGroup 显式置 true,未来「禁用成员」写 false 也能落库。
+	Enabled    bool      `json:"enabled"`
 	SortOrder  int       `json:"sort_order" gorm:"default:0"`
 	CreatedAt  time.Time `json:"created_at"`
 }
@@ -36,7 +38,7 @@ func GetEnabledGroupServicesByGroupIDs(groupIDs []int64) ([]McpGroupService, err
 func AddServicesToGroup(groupID int64, serviceIDs []int64) error {
 	items := make([]McpGroupService, len(serviceIDs))
 	for i, sid := range serviceIDs {
-		items[i] = McpGroupService{GroupID: groupID, ServiceID: sid}
+		items[i] = McpGroupService{GroupID: groupID, ServiceID: sid, Enabled: true}
 	}
 	return DB.Create(&items).Error
 }
