@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -99,6 +100,16 @@ func (h *GatewayHandler) HandleRequest(ctx context.Context, req *JSONRPCRequest,
 		return h.handleToolsList(ctx, req, logCtx)
 	case "tools/call":
 		return h.handleToolsCall(ctx, req, logCtx)
+	case "resources/list":
+		return h.handleResourcesList(ctx, req, logCtx)
+	case "resources/read":
+		return h.handleResourcesRead(ctx, req, logCtx)
+	case "resources/templates/list":
+		return h.handleResourceTemplatesList(ctx, req, logCtx)
+	case "prompts/list":
+		return h.handlePromptsList(ctx, req, logCtx)
+	case "prompts/get":
+		return h.handlePromptsGet(ctx, req, logCtx)
 	default:
 		return &JSONRPCResponse{
 			JSONRPC: "2.0",
@@ -108,18 +119,46 @@ func (h *GatewayHandler) HandleRequest(ctx context.Context, req *JSONRPCRequest,
 	}
 }
 
+// MCP 版本协商:与官方 TS/Go SDK 行为一致——客户端 initialize 请求的版本在
+// 支持列表内则原样回显,否则回落到本网关支持的最新版本(客户端不支持时可自行断开)。
+// 集合与 go-sdk v1.6.1 的 supportedProtocolVersions 保持同步。
+var supportedProtocolVersions = []string{
+	"2025-11-25",
+	"2025-06-18",
+	"2025-03-26",
+	"2024-11-05",
+}
+
+const latestProtocolVersion = "2025-11-25"
+
+func negotiateProtocolVersion(requested string) string {
+	if slices.Contains(supportedProtocolVersions, requested) {
+		return requested
+	}
+	return latestProtocolVersion
+}
+
 func (h *GatewayHandler) handleInitialize(req *JSONRPCRequest) *JSONRPCResponse {
+	var params struct {
+		ProtocolVersion string `json:"protocolVersion"`
+	}
+	_ = json.Unmarshal(req.Params, &params)
+
 	return &JSONRPCResponse{
 		JSONRPC: "2.0",
 		ID:      req.ID,
 		Result: map[string]interface{}{
-			"protocolVersion": "2025-03-26",
+			"protocolVersion": negotiateProtocolVersion(params.ProtocolVersion),
+			// resources/prompts 未声明 subscribe/listChanged:网关的 HTTP 端点按请求
+			// 生命周期工作,无法向客户端推送变更通知,客户端应自行重新 list。
 			"capabilities": map[string]interface{}{
-				"tools": map[string]interface{}{},
+				"tools":     map[string]interface{}{},
+				"resources": map[string]interface{}{},
+				"prompts":   map[string]interface{}{},
 			},
 			"serverInfo": map[string]string{
 				"name":    "newmcp",
-				"version": "1.0.0",
+				"version": common.Version,
 			},
 			// V1.1: declare the local-image workflow globally so smart-mode clients
 			// (whose tools/list returns only the meta-tools) still learn the path.
@@ -658,19 +697,9 @@ func (h *GatewayHandler) routeOrConnect(ctx context.Context, namespacedTool stri
 
 	svcName, parsedToolName := bridge.ParseNamespacedName(namespacedTool)
 	if svcName != "" {
-		var svc model.McpService
-		if dbErr := model.DB.Where("name = ? AND user_id = ?", svcName, userID).First(&svc).Error; dbErr != nil {
-			return nil, "", fmt.Errorf("service not found: %s", svcName)
-		}
-		if !h.userOwnedServicesAllowed(svc.Source) {
-			return nil, "", fmt.Errorf("user-owned services are disabled")
-		}
-		if mErr := h.materializeMarketplaceConfig(&svc); mErr != nil {
-			return nil, "", mErr
-		}
-		session, connErr := h.pool.GetOrConnect(ctx, &svc)
-		if connErr != nil {
-			return nil, "", fmt.Errorf("failed to connect service %s: %v", svcName, connErr)
+		session, err := h.connectServiceByName(ctx, svcName, userID)
+		if err != nil {
+			return nil, "", err
 		}
 		return session, parsedToolName, nil
 	}

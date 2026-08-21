@@ -1,6 +1,6 @@
 # NewMCP 协议适配说明
 
-> 版本: V1.0 | 状态: 草案 | 更新日期: 2026-05-03
+> 版本: V1.1 | 状态: 草案 | 更新日期: 2026-08-21
 
 ## 1. 双模式网关架构
 
@@ -969,3 +969,66 @@ LIMIT 20;
 Smart 模式下的 `tools/list` 永远返回 3 个元工具。
 Direct 模式下的 `tools/list` 返回聚合后的完整工具列表。
 被动接入端点 `/mcp/passive/` 供外部 MCP Server 连入，NewMCP 作为 MCP Client 发现和调用工具。
+
+---
+
+## 10. Resources / Prompts 聚合透传
+
+> 参考 Cherry Studio `createMcpBridgeServer` 的桥接模式。网关在 tools 之外，
+> 同样聚合透传 MCP 协议的另外两类能力：
+
+| JSON-RPC 方法 | 说明 |
+|---------------|------|
+| `resources/list` | 聚合范围内全部上游服务的静态资源 |
+| `resources/templates/list` | 聚合上游的资源模板（RFC 6570 URI Template） |
+| `resources/read` | 按网关 URI 路由回源，透传读取结果 |
+| `prompts/list` | 聚合上游提示词模板 |
+| `prompts/get` | 按命名空间提示名路由回源，透传渲染结果 |
+
+### 10.1 命名空间（多服务聚合的关键）
+
+不同上游服务的 URI / 提示名可能冲突，聚合暴露时统一加命名空间：
+
+```
+资源 URI:   newmcp://{serviceName}/{上游原始URI}
+资源模板:   uriTemplate 同样加 newmcp://{serviceName}/ 前缀（模板变量原样保留）
+提示名:     {serviceName}__{promptName}   （与工具的 "__" 约定一致）
+```
+
+- `resources/read` 收到 `newmcp://weather/file:///alerts.csv` 时拆出服务名 `weather`，
+  把原始 URI `file:///alerts.csv` 转发给对应上游；返回的 `contents[].uri` 会回写为网关 URI，
+  保证客户端看到的所有 URI 形态一致。
+- 模板展开出的 URI（如 `newmcp://memo/memo://items/42`）同样按前缀路由，无需预注册。
+- 提示名经 `ParseNamespacedName` 拆解后转发 `prompts/get`，arguments 原样透传。
+
+### 10.2 范围与容错
+
+- 范围口径与 `tools/list` 一致：`/mcp`、`/smart/mcp` 聚合 API Key 绑定分组的全部服务
+  （去重）；`/mcp/group/{slug}` 限定该分组并校验访问权。vision/camera 虚拟服务不参与。
+- 聚合并发连上游（上限 8）；**单个服务连接/拉取失败只跳过该服务**，不影响整体响应；
+  范围解析失败（分组不存在/无权限）返回 JSON-RPC error。
+- 上游未声明 resources/prompts 能力时直接跳过（不发多余请求）；列表实时拉取不落库，
+  上游变更在下一次 list 即可见（网关不声明 `listChanged`，客户端自行重新 list）。
+- Smart 端点同样暴露资源/提示——资源枚举由客户端主动发起，不占用工具上下文。
+
+### 10.3 计费与日志
+
+`resources/read`、`prompts/get` 会真实触达上游，与 `tools/call` 一样记入
+`mcp_call_logs`（method = `resources/read` / `prompts/get`）；计费口径暂与
+tools/call 不同——市场服务不扣费（`billing_status` 落默认 `skipped`）。
+`resources/list`、`prompts/list` 等枚举方法不记日志（与 `tools/list` 一致）。
+
+### 10.4 版本协商（initialize）
+
+```json
+// 请求
+{"method": "initialize", "params": {"protocolVersion": "2025-06-18", ...}}
+
+// 响应:请求版本在支持列表内则原样回显;否则回落最新支持版本(客户端不支持时自行断开)
+{"result": {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}, "resources": {}, "prompts": {}}, ...}}
+```
+
+- 支持版本集合：`2025-11-25` / `2025-06-18` / `2025-03-26` / `2024-11-05`
+  （与 go-sdk v1.6.1 的 `supportedProtocolVersions` 保持同步），最新版本 `2025-11-25`。
+- 协商行为与官方 TS/Go SDK 及 Cherry Studio 一致。
+- `serverInfo.version` 取 `common.Version`（构建时由 VERSION 文件经 ldflags 注入）。

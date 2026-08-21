@@ -33,4 +33,13 @@ type TransportAdapter interface {
 	IsConnected() bool
 	GetType() TransportType
 	GetTools() []Tool
+
+	// Resources / Prompts 透传(网关聚合用)。返回值为 MCP 规范形态的 result JSON:
+	// ListResources/ListResourceTemplates/ListPrompts 返回 {"resources":[...]} 等,
+	// ReadResource/GetPrompt 返回完整 result;上游未声明对应能力时 List* 返回空列表。
+	ListResources(ctx context.Context) (json.RawMessage, error)
+	ListResourceTemplates(ctx context.Context) (json.RawMessage, error)
+	ReadResource(ctx context.Context, uri string) (json.RawMessage, error)
+	ListPrompts(ctx context.Context) (json.RawMessage, error)
+	GetPrompt(ctx context.Context, name string, arguments map[string]string) (json.RawMessage, error)
 }

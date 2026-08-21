@@ -147,6 +147,110 @@ func (a *SDKAdapter) GetTools() []Tool {
 	return a.tools
 }
 
+// --- Resources / Prompts 透传 ---
+
+// session 返回已握手的 ClientSession;未连接时报错。
+func (a *SDKAdapter) session() (*mcp.ClientSession, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.sess == nil {
+		return nil, fmt.Errorf("not connected")
+	}
+	return a.sess, nil
+}
+
+// upstreamCapability 返回上游 initialize 声明的 ServerCapabilities;未拿到时为 nil。
+func upstreamCapability(sess *mcp.ClientSession) *mcp.ServerCapabilities {
+	if ir := sess.InitializeResult(); ir != nil {
+		return ir.Capabilities
+	}
+	return nil
+}
+
+// ListResources 拉取上游 resources/list(迭代器自动翻页)。
+// 上游未声明 resources 能力时直接返回空列表,不发多余请求。
+func (a *SDKAdapter) ListResources(ctx context.Context) (json.RawMessage, error) {
+	sess, err := a.session()
+	if err != nil {
+		return nil, err
+	}
+	if caps := upstreamCapability(sess); caps == nil || caps.Resources == nil {
+		return json.RawMessage(`{"resources":[]}`), nil
+	}
+	resources := []*mcp.Resource{}
+	for r, err := range sess.Resources(ctx, nil) {
+		if err != nil {
+			return nil, fmt.Errorf("list resources: %w", err)
+		}
+		resources = append(resources, r)
+	}
+	return json.Marshal(map[string]interface{}{"resources": resources})
+}
+
+// ListResourceTemplates 拉取上游 resources/templates/list(迭代器自动翻页)。
+func (a *SDKAdapter) ListResourceTemplates(ctx context.Context) (json.RawMessage, error) {
+	sess, err := a.session()
+	if err != nil {
+		return nil, err
+	}
+	if caps := upstreamCapability(sess); caps == nil || caps.Resources == nil {
+		return json.RawMessage(`{"resourceTemplates":[]}`), nil
+	}
+	templates := []*mcp.ResourceTemplate{}
+	for t, err := range sess.ResourceTemplates(ctx, nil) {
+		if err != nil {
+			return nil, fmt.Errorf("list resource templates: %w", err)
+		}
+		templates = append(templates, t)
+	}
+	return json.Marshal(map[string]interface{}{"resourceTemplates": templates})
+}
+
+// ReadResource 转发 resources/read 到上游,返回完整 result(含 contents)。
+func (a *SDKAdapter) ReadResource(ctx context.Context, uri string) (json.RawMessage, error) {
+	sess, err := a.session()
+	if err != nil {
+		return nil, err
+	}
+	res, err := sess.ReadResource(ctx, &mcp.ReadResourceParams{URI: uri})
+	if err != nil {
+		return nil, fmt.Errorf("read resource %s: %w", uri, err)
+	}
+	return json.Marshal(res)
+}
+
+// ListPrompts 拉取上游 prompts/list(迭代器自动翻页)。
+func (a *SDKAdapter) ListPrompts(ctx context.Context) (json.RawMessage, error) {
+	sess, err := a.session()
+	if err != nil {
+		return nil, err
+	}
+	if caps := upstreamCapability(sess); caps == nil || caps.Prompts == nil {
+		return json.RawMessage(`{"prompts":[]}`), nil
+	}
+	prompts := []*mcp.Prompt{}
+	for p, err := range sess.Prompts(ctx, nil) {
+		if err != nil {
+			return nil, fmt.Errorf("list prompts: %w", err)
+		}
+		prompts = append(prompts, p)
+	}
+	return json.Marshal(map[string]interface{}{"prompts": prompts})
+}
+
+// GetPrompt 转发 prompts/get 到上游,返回完整 result(含 messages)。
+func (a *SDKAdapter) GetPrompt(ctx context.Context, name string, arguments map[string]string) (json.RawMessage, error) {
+	sess, err := a.session()
+	if err != nil {
+		return nil, err
+	}
+	res, err := sess.GetPrompt(ctx, &mcp.GetPromptParams{Name: name, Arguments: arguments})
+	if err != nil {
+		return nil, fmt.Errorf("get prompt %s: %w", name, err)
+	}
+	return json.Marshal(res)
+}
+
 // --- helpers ---
 
 // sdkToolToTool 把 SDK 的 *mcp.Tool 转成本地 Tool。
