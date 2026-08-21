@@ -1,9 +1,11 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -280,10 +282,78 @@ func envToSlice(env map[string]string) []string {
 // 用于在 Streamable HTTP / SSE 传输上注入鉴权信息（SDK 传输本身不暴露 header 入口）。
 func httpClientWithHeaders(headers map[string]string) *http.Client {
 	client := &http.Client{Timeout: 30 * time.Second}
+	// 空对象 arguments 兜底对所有上游生效(见 emptyObjectArgsRoundTripper),
+	// 自定义 header 再包在外层。
+	var rt http.RoundTripper = &emptyObjectArgsRoundTripper{base: http.DefaultTransport}
 	if len(headers) > 0 {
-		client.Transport = &headerRoundTripper{base: http.DefaultTransport, headers: headers}
+		rt = &headerRoundTripper{base: rt, headers: headers}
 	}
+	client.Transport = rt
 	return client
+}
+
+// emptyObjectArgsRoundTripper 兜底 TS SDK 系上游的严格校验:prompts/get 与
+// tools/call 的 arguments 按 MCP 规范是可选字段,但 typescript-sdk 1.x 的 prompts
+// 处理器把缺失的 arguments 当 undefined 交给 zod 校验而拒绝(如 exa 零参数提示
+// web_search_help,exa-labs/exa-mcp-server#358、typescript-sdk#1869);而 go-sdk 的
+// GetPromptParams.Arguments 带 omitempty,nil/空 map 都序列化不出该字段(v1.7.0 亦然)。
+// 在请求体层把缺失的 arguments 补成显式空对象 {}——TS 社区推荐的传输层规范化方案。
+type emptyObjectArgsRoundTripper struct {
+	base http.RoundTripper
+}
+
+func (t *emptyObjectArgsRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Body != nil && req.Method == http.MethodPost {
+		body, err := io.ReadAll(req.Body)
+		req.Body.Close()
+		if err != nil {
+			req.Body = io.NopCloser(bytes.NewReader(nil))
+			return t.base.RoundTrip(req)
+		}
+		if patched := withEmptyArgumentsIfMissing(body); patched != nil {
+			body = patched
+		}
+		req.Body = io.NopCloser(bytes.NewReader(body))
+		req.ContentLength = int64(len(body))
+	}
+	return t.base.RoundTrip(req)
+}
+
+// withEmptyArgumentsIfMissing 仅对 params.arguments 缺失的 prompts/get、tools/call
+// 请求体补 "arguments":{};其余情况返回 nil 表示不改。key 顺序变化对 JSON-RPC 无影响。
+func withEmptyArgumentsIfMissing(body []byte) []byte {
+	var env struct {
+		Method string          `json:"method"`
+		Params json.RawMessage `json:"params"`
+	}
+	if json.Unmarshal(body, &env) != nil || len(env.Params) == 0 {
+		return nil
+	}
+	if env.Method != "prompts/get" && env.Method != "tools/call" {
+		return nil
+	}
+	var envelope map[string]json.RawMessage
+	if json.Unmarshal(body, &envelope) != nil {
+		return nil
+	}
+	var params map[string]json.RawMessage
+	if json.Unmarshal(env.Params, &params) != nil {
+		return nil
+	}
+	if _, has := params["arguments"]; has {
+		return nil
+	}
+	params["arguments"] = json.RawMessage(`{}`)
+	patchedParams, err := json.Marshal(params)
+	if err != nil {
+		return nil
+	}
+	envelope["params"] = patchedParams
+	patched, err := json.Marshal(envelope)
+	if err != nil {
+		return nil
+	}
+	return patched
 }
 
 type headerRoundTripper struct {
