@@ -159,7 +159,7 @@
     "directMode": "Direct Mode",
     "directModeDesc": "Exposes all tools aggregated from your services",
     "smartMode": "Smart Mode",
-    "smartModeDesc": "Progressive discovery via 3 meta-tools"
+    "smartModeDesc": "Progressive discovery via 4 meta-tools"
   },
   "apiKeys": {
     "title": "API Keys",
@@ -271,7 +271,9 @@
     "billingStatusSkipped": "Free",
     "allBilling": "All",
     "clickToPreview": "Click to preview & copy",
-    "errorPreview": "Error Detail"
+    "errorPreview": "Error Detail",
+    "smartCall": "Smart",
+    "smartCallTip": "Called via Smart Mode ({{method}})"
   },
   "setup": {
     "title": "Initialize System",
@@ -452,7 +454,7 @@
     "directMode": "Direct Mode",
     "smartMode": "Smart Mode",
     "modeDirectDesc": "Expose all tools directly. Suitable for services with few tools.",
-    "modeSmartDesc": "Expose only 3 meta-tools (search/list/execute). Suitable for services with many tools.",
+    "modeSmartDesc": "Expose only 4 meta-tools (search/list/execute/read). Suitable for services with many tools.",
     "identifier": "Group Identifier",
     "identifierRequired": "Group Identifier *",
     "identifierTip": "Unique identifier, also used as the endpoint path.",
@@ -567,7 +569,7 @@
       "apiKeyRequired": "Bind API Key *",
       "createApiKeyFirst": "Please create an API Key first",
       "exposeMode": "Expose Mode",
-      "smartDesc": "3 meta-tools for intelligent search",
+      "smartDesc": "4 meta-tools for intelligent search",
       "directDesc": "Expose all tools",
       "create": "Create Connection",
       "createSuccess": "Connection created"

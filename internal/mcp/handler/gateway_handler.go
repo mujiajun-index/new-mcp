@@ -93,7 +93,7 @@ func NewGatewayHandler(pool *bridge.SessionPool, toolRouter *bridge.ToolRouter, 
 func (h *GatewayHandler) HandleRequest(ctx context.Context, req *JSONRPCRequest, logCtx *LogContext) *JSONRPCResponse {
 	switch req.Method {
 	case "initialize":
-		return h.handleInitialize(req)
+		return h.handleInitialize(req, logCtx)
 	case "notifications/initialized":
 		return nil
 	case "tools/list":
@@ -138,24 +138,31 @@ func negotiateProtocolVersion(requested string) string {
 	return latestProtocolVersion
 }
 
-func (h *GatewayHandler) handleInitialize(req *JSONRPCRequest) *JSONRPCResponse {
+func (h *GatewayHandler) handleInitialize(req *JSONRPCRequest, logCtx *LogContext) *JSONRPCResponse {
 	var params struct {
 		ProtocolVersion string `json:"protocolVersion"`
 	}
 	_ = json.Unmarshal(req.Params, &params)
+
+	// resources/prompts 能力仅直连模式声明:智能模式的契约是"只经元工具渐进发现"
+	// (mcp.search/mcp.describe/mcp.read),若声明能力,连接时自动枚举 resources/list
+	// 的客户端会绕过元工具把聚合结果全量拉进上下文,违背智能模式的初衷。
+	capabilities := map[string]interface{}{
+		"tools": map[string]interface{}{},
+	}
+	if h.nativeItemsAllowed(logCtx) {
+		// 未声明 subscribe/listChanged:网关的 HTTP 端点按请求生命周期工作,无法向
+		// 客户端推送变更通知,客户端应自行重新 list。
+		capabilities["resources"] = map[string]interface{}{}
+		capabilities["prompts"] = map[string]interface{}{}
+	}
 
 	return &JSONRPCResponse{
 		JSONRPC: "2.0",
 		ID:      req.ID,
 		Result: map[string]interface{}{
 			"protocolVersion": negotiateProtocolVersion(params.ProtocolVersion),
-			// resources/prompts 未声明 subscribe/listChanged:网关的 HTTP 端点按请求
-			// 生命周期工作,无法向客户端推送变更通知,客户端应自行重新 list。
-			"capabilities": map[string]interface{}{
-				"tools":     map[string]interface{}{},
-				"resources": map[string]interface{}{},
-				"prompts":   map[string]interface{}{},
-			},
+			"capabilities":    capabilities,
 			"serverInfo": map[string]string{
 				"name":    "newmcp",
 				"version": common.Version,
@@ -271,6 +278,19 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 		if result.GroupID != 0 {
 			groupID = result.GroupID
 			groupName = result.GroupName
+		}
+	case "mcp.read":
+		// 智能模式读资源/取提示:method 记 mcp.read(日志可区分智能模式调用),
+		// tool_name 记目标 URI/提示名;不参与计费(与原生 resources/read 口径一致)。
+		originalToolName = "mcp.read"
+		readResult := h.handleMetaRead(ctx, req.ID, logCtx, params.Arguments)
+		resp = readResult.Resp
+		if readResult.ToolName != "" {
+			params.Name = readResult.ToolName
+		}
+		if readResult.ServiceID != 0 {
+			serviceID = readResult.ServiceID
+			serviceName = readResult.ServiceName
 		}
 	default:
 		// Verify group access for group-scoped requests
@@ -454,6 +474,12 @@ func (h *GatewayHandler) handleSearch(ctx context.Context, reqID interface{}, lo
 				label = fmt.Sprintf("%s (%s)", r.Doc.Name, r.Doc.ServiceName)
 			}
 			fmt.Fprintf(&sb, "- **%s** (service, %d tools) %s [%s]\n", label, r.Doc.ToolCount, r.Doc.Description, r.Doc.GroupName)
+		} else if r.Doc.Type == "resource" {
+			fmt.Fprintf(&sb, "- **%s** (resource) %s [%s]\n", gatewayResourceURI(r.Doc.ServiceName, r.Doc.Name), r.Doc.Description, r.Doc.GroupName)
+		} else if r.Doc.Type == "template" {
+			fmt.Fprintf(&sb, "- **%s** (resource template) %s [%s]\n", gatewayResourceURI(r.Doc.ServiceName, r.Doc.Name), r.Doc.Description, r.Doc.GroupName)
+		} else if r.Doc.Type == "prompt" {
+			fmt.Fprintf(&sb, "- **%s__%s** (prompt) %s [%s]\n", r.Doc.ServiceName, r.Doc.Name, r.Doc.Description, r.Doc.GroupName)
 		} else {
 			fmt.Fprintf(&sb, "- **%s.%s** (tool) %s [%s]\n", r.Doc.ServiceName, r.Doc.Name, r.Doc.Description, r.Doc.GroupName)
 		}

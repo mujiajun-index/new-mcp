@@ -15,7 +15,7 @@ const (
 
 type SearchDoc struct {
 	ID          string
-	Type        string // "mcp" or "tool"
+	Type        string // "mcp", "tool", "resource", "template", "prompt"
 	Name        string
 	Description string
 	GroupName   string

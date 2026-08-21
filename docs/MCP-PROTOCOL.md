@@ -1,6 +1,6 @@
 # NewMCP 协议适配说明
 
-> 版本: V1.1 | 状态: 草案 | 更新日期: 2026-08-21
+> 版本: V1.2 | 状态: 草案 | 更新日期: 2026-08-21
 
 ## 1. 双模式网关架构
 
@@ -16,7 +16,7 @@ NewMCP 支持两种 MCP 工具暴露模式，**通过端点路由驱动**：
 | `WS /mcp/ws/group/{slug}` | 由分组的 `expose_mode` 决定 | 端点驱动 |
 
 > **Direct 主端点**: `/mcp` 暴露 API Key 绑定分组的全部工具（去重），适合 Claude Code、Cursor 等支持大量工具的 LLM 客户端。
-> **Smart 主端点**: `/smart/mcp` 仅暴露 3 个元工具，适合小智等上下文受限设备或工具量特别大的场景。
+> **Smart 主端点**: `/smart/mcp` 仅暴露 4 个元工具，适合小智等上下文受限设备或工具量特别大的场景。
 
 ### 1.1 Direct 模式（直接模式）
 
@@ -91,13 +91,20 @@ NewMCP 的 MCP 工具搜索通过 **API Key → 分组 → MCP 服务** 的关�
 
 | 工具名 | 说明 | 对应 mcp-gateway |
 |--------|------|------------------|
-| `mcp.search` | 搜索可用的 MCP 服务和工具 | `gateway.search` |
-| `mcp.describe` | 查看指定工具的完整 Schema | `gateway.describe` |
+| `mcp.search` | 搜索可用的 MCP 服务、工具、资源和提示 | `gateway.search` |
+| `mcp.describe` | 查看服务详情（工具 Schema / 资源 URI / 提示定义） | `gateway.describe` |
 | `mcp.execute` | 执行指定工具 | `gateway.invoke` |
+| `mcp.read` | 读资源 / 取提示（V1.2 新增，见 3.5） | OpenAI `read_mcp_resource` 同构 |
 | `mcp.execute_async` | 异步执行工具（可选） | `gateway.invoke_async` |
 | `mcp.job_status` | 查询异步任务状态（可选） | `gateway.invoke_status` |
 
-V1 核心实现前 3 个，后 2 个作为 V1.1 扩展。
+V1 核心实现前 3 个；`mcp.read` 为 V1.2 新增（使纯 tools/call 客户端也能用满
+Resources/Prompts 能力）；后 2 个作为 V1.1 扩展。
+
+V1.2 起 `mcp.search` 的 scope 支持 `mcp/tool/resource/prompt/all`（resource 含资源模板），
+`mcp.describe` 的服务视图在工具之外追加 Resources / Resource Templates / Prompts 小节
+（读 resources_cache/prompts_cache，不连上游；条目命名空间形态与 resources/list、
+prompts/list 一致，均可被分组勾选禁用过滤，禁用条目不出现在搜索与描述里）。
 
 ### 3.2 mcp.search - 搜索可用 MCP / 工具
 
@@ -250,6 +257,46 @@ func (e *Executor) Execute(ctx context.Context, toolID string, arguments json.Ra
     return result, err
 }
 ```
+
+### 3.5 mcp.read - 读资源 / 取提示（V1.2）
+
+**功能**: 让只走 tools/call 的智能模式客户端（OpenAI Agents SDK 风格托管集成、自研 Agent）
+也能读取资源与提示，补齐 MCP 三大能力的工具入口。target 与原生方法同一套字符串——
+资源为网关 URI `newmcp://{service}/{原始URI}`，提示为命名空间名 `{service}__{name}`，
+即 mcp.search / mcp.describe 输出里直接可用的形态。
+
+**参数:**
+```json
+{
+    "type": "resource",                      // "resource" | "prompt"
+    "target": "newmcp://weather/file:///alerts.csv",
+    "arguments": {"lang": "go"}              // 仅 prompt，透传给上游 prompts/get
+}
+```
+
+**返回**: tools/call 的 content 形态——资源 text 直传、图片 blob 转 image 内容项、
+其余 blob 以占位说明返回；提示按消息转 text 并带 `[role]` 前缀。
+
+**实现要点** (`internal/mcp/handler/resources_prompts.go` handleMetaRead):
+- 复用原生 `resources/read` / `prompts/get` 的上游核心（readUpstreamResource / getUpstreamPrompt），
+  API key 范围校验、分组禁用拒绝（读侧强制）、命名空间回写全部继承；
+- 计费口径与原生一致：记 mcp_call_logs、市场服务不扣费（billing_status=skipped）；
+- 日志 method 记 `mcp.read`，tool_name 记目标 URI/提示名——与 mcp.execute（method=mcp.execute）
+  一样可在调用日志中区分智能模式入口（前端日志页据此显示「智能」徽标）。
+
+**模式门控（V1.2）**: 智能模式下原生 resources/prompts 枚举收敛——`resources/list`、
+`resources/templates/list`、`prompts/list` 返回空列表，`initialize` 不声明 resources/prompts
+能力（防止连接时自动枚举的客户端绕过元工具全量拉取）；直连模式两者照常。
+`resources/read`、`prompts/get` 在智能模式仍可用：单 URI 定点读取无枚举开销，且与
+mcp.read 共用同一上游核心（鉴权/禁用/日志语义完全一致）。分组端点按分组 expose_mode 判定。
+
+**arguments 空对象兜底（V1.2，传输层）**: `prompts/get`、`tools/call` 的 `arguments` 按
+规范是可选字段，但 typescript-sdk 1.x 的 prompts 处理器会把缺失的 arguments 当 undefined
+交给 zod 校验而拒绝（exa 零参数提示 `web_search_help` 即此例：exa-labs/exa-mcp-server#358、
+typescript-sdk#1869）；go-sdk 的 `GetPromptParams.Arguments` 带 `omitempty`，nil/空 map 都
+序列化不出该字段（v1.7.0 亦然，升级无效）。网关在 streamable-http/sse 适配器的 HTTP
+RoundTripper 层把缺失的 `arguments` 补成显式 `{}`（TS 社区推荐的传输层规范化方案），
+已有 arguments 的请求不改写。stdio 传输未覆盖此兜底（exa 类问题均在 HTTP 上游）。
 
 ---
 

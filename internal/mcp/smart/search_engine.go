@@ -29,6 +29,78 @@ type toolMeta struct {
 	Description string `json:"description"`
 }
 
+// resourceMeta/templateMeta/promptMeta 是 resources_cache/prompts_cache 里条目的
+// 索引字段(缓存形态见 bridge.fetchResourcesCache/fetchPromptsCache)。
+type resourceMeta struct {
+	URI         string `json:"uri"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	MimeType    string `json:"mimeType"`
+}
+
+type templateMeta struct {
+	URITemplate string `json:"uriTemplate"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	MimeType    string `json:"mimeType"`
+}
+
+type promptArgumentMeta struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Required    bool   `json:"required"`
+}
+
+type promptMeta struct {
+	Name        string              `json:"name"`
+	Description string              `json:"description"`
+	Arguments   []promptArgumentMeta `json:"arguments"`
+}
+
+type resourcesCacheDoc struct {
+	Resources []resourceMeta `json:"resources"`
+	Templates []templateMeta `json:"templates"`
+}
+
+// 条目种类,与 model.McpGroupItem.ItemKind 对应(与 handler 包同名常量一致)。
+const (
+	kindResource = "resource"
+	kindTemplate = "template"
+	kindPrompt   = "prompt"
+)
+
+// gatewayURIScheme 网关资源 URI 前缀,与 handler 包的 gatewayURIScheme 保持一致
+// (smart 被 handler 依赖,不能反向 import;改前缀时两处同步)。
+const gatewayURIScheme = "newmcp"
+
+func gatewayResourceURI(serviceName, upstreamURI string) string {
+	return gatewayURIScheme + "://" + serviceName + "/" + upstreamURI
+}
+
+// disabledItemSet 加载分组条目级禁用集合(key "groupID:serviceID:kind:itemKey",
+// 与 handler.itemFilter 同构;无行=启用;加载失败返回空集合 fail-open)。
+func disabledItemSet(groupIDs []int64, kinds ...string) map[string]bool {
+	rows, err := model.GetGroupItemsByGroupIDsAndKinds(groupIDs, kinds)
+	if err != nil {
+		return nil
+	}
+	m := make(map[string]bool, len(rows))
+	for _, r := range rows {
+		if !r.Enabled {
+			m[itemDisableKey(r.GroupID, r.ServiceID, r.ItemKind, r.ItemKey)] = true
+		}
+	}
+	return m
+}
+
+func itemDisableKey(groupID, serviceID int64, kind, key string) string {
+	return fmt.Sprintf("%d:%d:%s:%s", groupID, serviceID, kind, key)
+}
+
+func itemDisabled(m map[string]bool, groupID, serviceID int64, kind, key string) bool {
+	return m[itemDisableKey(groupID, serviceID, kind, key)]
+}
+
 func (e *SearchEngine) Search(ctx context.Context, apiKeyID int64, query string, opts SearchOptions) ([]SearchResult, error) {
 	if opts.Limit <= 0 {
 		opts.Limit = 10
@@ -95,8 +167,42 @@ func (e *SearchEngine) buildSearchDocs(info *bridge.ApiKeyInfo, scopeGroup strin
 		return tools
 	}
 
-	emitMcp := scope == "" || scope == "mcp" || scope == "all"
-	emitTool := scope == "tool" || scope == "all"
+	// Parse each service's item caches at most once (a service may appear in several groups).
+	resCache := make(map[int64]resourcesCacheDoc, len(resolved))
+	parseResources := func(svcID int64, raw string) resourcesCacheDoc {
+		if rc, ok := resCache[svcID]; ok {
+			return rc
+		}
+		var rc resourcesCacheDoc
+		_ = json.Unmarshal([]byte(raw), &rc)
+		resCache[svcID] = rc
+		return rc
+	}
+	prmCache := make(map[int64][]promptMeta, len(resolved))
+	parsePrompts := func(svcID int64, raw string) []promptMeta {
+		if ps, ok := prmCache[svcID]; ok {
+			return ps
+		}
+		var ps []promptMeta
+		_ = json.Unmarshal([]byte(raw), &ps)
+		prmCache[svcID] = ps
+		return ps
+	}
+
+	emitMcp := scope == "" || scope == ScopeService || scope == ScopeAll
+	emitTool := scope == ScopeTool || scope == ScopeAll
+	emitResource := scope == ScopeResource || scope == ScopeAll
+	emitPrompt := scope == ScopePrompt || scope == ScopeAll
+
+	// 条目级禁用过滤与网关 list 同口径,避免勾选掉的条目从搜索侧绕过暴露。
+	var disabled map[string]bool
+	if emitResource || emitPrompt {
+		groupIDs := make([]int64, 0, len(groups))
+		for _, g := range groups {
+			groupIDs = append(groupIDs, g.ID)
+		}
+		disabled = disabledItemSet(groupIDs, kindResource, kindTemplate, kindPrompt)
+	}
 
 	var docs []SearchDoc
 	for _, gs := range resolved {
@@ -122,6 +228,53 @@ func (e *SearchEngine) buildSearchDocs(info *bridge.ApiKeyInfo, scopeGroup strin
 					Type:        "tool",
 					Name:        t.Name,
 					Description: t.Description,
+					GroupName:   gs.Group.Name,
+					ServiceName: svc.Name,
+				})
+			}
+		}
+
+		if emitResource {
+			rc := parseResources(svc.ID, svc.ResourcesCache)
+			for _, r := range rc.Resources {
+				// 无 URI 的条目既无法过滤也无法读取,不进搜索索引。
+				if r.URI == "" || itemDisabled(disabled, gs.Group.ID, svc.ID, kindResource, r.URI) {
+					continue
+				}
+				docs = append(docs, SearchDoc{
+					ID:          "res:" + svc.Name + "/" + r.URI,
+					Type:        "resource",
+					Name:        r.URI,
+					Description: r.Description,
+					GroupName:   gs.Group.Name,
+					ServiceName: svc.Name,
+				})
+			}
+			for _, tp := range rc.Templates {
+				if tp.URITemplate == "" || itemDisabled(disabled, gs.Group.ID, svc.ID, kindTemplate, tp.URITemplate) {
+					continue
+				}
+				docs = append(docs, SearchDoc{
+					ID:          "tpl:" + svc.Name + "/" + tp.URITemplate,
+					Type:        "template",
+					Name:        tp.URITemplate,
+					Description: tp.Description,
+					GroupName:   gs.Group.Name,
+					ServiceName: svc.Name,
+				})
+			}
+		}
+
+		if emitPrompt {
+			for _, p := range parsePrompts(svc.ID, svc.PromptsCache) {
+				if p.Name == "" || itemDisabled(disabled, gs.Group.ID, svc.ID, kindPrompt, p.Name) {
+					continue
+				}
+				docs = append(docs, SearchDoc{
+					ID:          "prompt:" + svc.Name + "." + p.Name,
+					Type:        "prompt",
+					Name:        p.Name,
+					Description: p.Description,
 					GroupName:   gs.Group.Name,
 					ServiceName: svc.Name,
 				})
@@ -167,6 +320,22 @@ func (e *SearchEngine) Describe(targets []string, apiKeyID int64) ([]map[string]
 		}
 	}
 
+	// 条目级禁用过滤:归属分组取该 API key 范围内首次包含此服务的分组,
+	// 与网关读侧 resolveGroupForService 的"取首分组"口径一致。
+	firstGroupBySvc := make(map[int64]int64, len(resolved))
+	groupIDSet := make(map[int64]bool, len(resolved))
+	var groupIDs []int64
+	for _, gs := range resolved {
+		if _, ok := firstGroupBySvc[gs.Service.ID]; !ok {
+			firstGroupBySvc[gs.Service.ID] = gs.Group.ID
+		}
+		if !groupIDSet[gs.Group.ID] {
+			groupIDSet[gs.Group.ID] = true
+			groupIDs = append(groupIDs, gs.Group.ID)
+		}
+	}
+	disabled := disabledItemSet(groupIDs, kindResource, kindTemplate, kindPrompt)
+
 	results := make([]map[string]interface{}, 0, len(targets))
 	for _, target := range targets {
 		if target == "" {
@@ -186,13 +355,19 @@ func (e *SearchEngine) Describe(targets []string, apiKeyID int64) ([]map[string]
 		if len(parts) == 1 {
 			var tools []interface{}
 			_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
+			owningGroup := firstGroupBySvc[svc.ID]
+			resources, templates := filterResourceItems(svc, owningGroup, disabled)
+			prompts := filterPromptItems(svc, owningGroup, disabled)
 			results = append(results, map[string]interface{}{
-				"type":         "service",
-				"name":         svc.Name,
-				"display_name": svc.DisplayName,
-				"description":  svc.Description,
-				"tools_count":  len(tools),
-				"tools":        tools,
+				"type":              "service",
+				"name":              svc.Name,
+				"display_name":      svc.DisplayName,
+				"description":       svc.Description,
+				"tools_count":       len(tools),
+				"tools":             tools,
+				"resources":         resources,
+				"resource_templates": templates,
+				"prompts":           prompts,
 			})
 		} else {
 			toolName := parts[1]
@@ -217,6 +392,54 @@ func (e *SearchEngine) Describe(targets []string, apiKeyID int64) ([]map[string]
 		}
 	}
 	return results, nil
+}
+
+// filterResourceItems/filterPromptItems 从缓存取出条目,套用条目级禁用过滤,并把
+// URI/名称换成网关命名空间形态(与 resources/list、prompts/list 暴露给客户端的一致,
+// mcp.read 直接以此形态回读)。
+func filterResourceItems(svc *model.McpService, groupID int64, disabled map[string]bool) (resources, templates []map[string]interface{}) {
+	var rc resourcesCacheDoc
+	_ = json.Unmarshal([]byte(svc.ResourcesCache), &rc)
+	for _, r := range rc.Resources {
+		if r.URI == "" || itemDisabled(disabled, groupID, svc.ID, kindResource, r.URI) {
+			continue
+		}
+		resources = append(resources, map[string]interface{}{
+			"uri":         gatewayResourceURI(svc.Name, r.URI),
+			"name":        r.Name,
+			"description": r.Description,
+			"mimeType":    r.MimeType,
+		})
+	}
+	for _, t := range rc.Templates {
+		if t.URITemplate == "" || itemDisabled(disabled, groupID, svc.ID, kindTemplate, t.URITemplate) {
+			continue
+		}
+		templates = append(templates, map[string]interface{}{
+			"uriTemplate": gatewayResourceURI(svc.Name, t.URITemplate),
+			"name":        t.Name,
+			"description": t.Description,
+			"mimeType":    t.MimeType,
+		})
+	}
+	return resources, templates
+}
+
+func filterPromptItems(svc *model.McpService, groupID int64, disabled map[string]bool) []map[string]interface{} {
+	var prompts []promptMeta
+	_ = json.Unmarshal([]byte(svc.PromptsCache), &prompts)
+	var out []map[string]interface{}
+	for _, p := range prompts {
+		if p.Name == "" || itemDisabled(disabled, groupID, svc.ID, kindPrompt, p.Name) {
+			continue
+		}
+		out = append(out, map[string]interface{}{
+			"name":        svc.Name + "__" + p.Name,
+			"description": p.Description,
+			"arguments":   p.Arguments,
+		})
+	}
+	return out
 }
 
 // FormatDescribeResult formats describe results into readable text for LLM consumption.
@@ -261,6 +484,75 @@ func FormatDescribeResult(results []map[string]interface{}, includeSchema bool) 
 							if schema, ok := tm["inputSchema"]; ok && schema != nil {
 								sb.WriteString("Parameters:\n")
 								sb.WriteString(formatSchemaParams(schema))
+							}
+						}
+					}
+				}
+			}
+
+			if resources, ok := r["resources"].([]map[string]interface{}); ok && len(resources) > 0 {
+				fmt.Fprintf(&sb, "\n## Resources (%d)\n", len(resources))
+				for _, item := range resources {
+					uri, _ := item["uri"].(string)
+					name, _ := item["name"].(string)
+					desc, _ := item["description"].(string)
+					mime, _ := item["mimeType"].(string)
+					label := uri
+					if name != "" && name != uri {
+						label = fmt.Sprintf("%s (`%s`)", name, uri)
+					}
+					if mime != "" {
+						label += fmt.Sprintf(" [%s]", mime)
+					}
+					fmt.Fprintf(&sb, "- %s\n", label)
+					if desc != "" {
+						fmt.Fprintf(&sb, "  %s\n", desc)
+					}
+				}
+			}
+
+			if templates, ok := r["resource_templates"].([]map[string]interface{}); ok && len(templates) > 0 {
+				fmt.Fprintf(&sb, "\n## Resource Templates (%d)\n", len(templates))
+				for _, item := range templates {
+					tpl, _ := item["uriTemplate"].(string)
+					name, _ := item["name"].(string)
+					desc, _ := item["description"].(string)
+					mime, _ := item["mimeType"].(string)
+					label := tpl
+					if name != "" {
+						label = fmt.Sprintf("%s (`%s`)", name, tpl)
+					}
+					if mime != "" {
+						label += fmt.Sprintf(" [%s]", mime)
+					}
+					fmt.Fprintf(&sb, "- %s\n", label)
+					if desc != "" {
+						fmt.Fprintf(&sb, "  %s\n", desc)
+					}
+				}
+			}
+
+			if prompts, ok := r["prompts"].([]map[string]interface{}); ok && len(prompts) > 0 {
+				fmt.Fprintf(&sb, "\n## Prompts (%d)\n", len(prompts))
+				for _, p := range prompts {
+					name, _ := p["name"].(string)
+					fmt.Fprintf(&sb, "\n### %s\n", name)
+					if desc, _ := p["description"].(string); desc != "" {
+						fmt.Fprintf(&sb, "%s\n", desc)
+					}
+					if includeSchema {
+						if args, ok := p["arguments"].([]promptArgumentMeta); ok && len(args) > 0 {
+							sb.WriteString("Arguments:\n")
+							for _, a := range args {
+								reqLabel := "optional"
+								if a.Required {
+									reqLabel = "required"
+								}
+								fmt.Fprintf(&sb, "- %s (%s)", a.Name, reqLabel)
+								if a.Description != "" {
+									fmt.Fprintf(&sb, ": %s", a.Description)
+								}
+								sb.WriteString("\n")
 							}
 						}
 					}

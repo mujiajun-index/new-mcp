@@ -22,6 +22,8 @@ import (
 //     模板禁用只隐藏 templates/list 条目;按模板展开出的 URI 读取不做前缀匹配拦截。
 //   - resources/read、prompts/get 会真实调用上游,计入调用日志(计费口径与 tools/call
 //     不同,市场服务暂不计费,日志 billing_status 落默认 skipped)。
+//   - 仅直连模式开放原生 list/能力声明;智能模式下资源/提示经元工具发现(见上
+//     nativeItemsAllowed),list 返回空、initialize 不声明 resources/prompts。
 const gatewayURIScheme = "newmcp"
 
 // 条目种类常量,与 model.McpGroupItem.ItemKind 对应。
@@ -208,7 +210,30 @@ func unmarshalEntryList(raw json.RawMessage, field string) []map[string]interfac
 	return items
 }
 
+// nativeItemsAllowed 原生 resources/prompts 方法对该端点是否开放:仅直连模式开放。
+// 智能模式(/smart/mcp 或 expose_mode=smart 的分组端点)的资源/提示一律经元工具
+// (mcp.search/mcp.describe/mcp.read)渐进发现——list 类方法返回空、initialize 不声明
+// 能力,避免连接时自动枚举的客户端绕过元工具全量拉取。resources/read、prompts/get
+// 保留可用:单 URI 定点读取无枚举开销,且与 mcp.read 共用同一上游核心。
+func (h *GatewayHandler) nativeItemsAllowed(logCtx *LogContext) bool {
+	if logCtx.GroupSlug == "" {
+		return logCtx.ExposeMode == "direct"
+	}
+	group, err := model.GetGroupBySlug(logCtx.GroupSlug)
+	if err != nil {
+		return false
+	}
+	return group.ExposeMode == "direct"
+}
+
 func (h *GatewayHandler) handleResourcesList(ctx context.Context, req *JSONRPCRequest, logCtx *LogContext) *JSONRPCResponse {
+	if !h.nativeItemsAllowed(logCtx) {
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result:  map[string]interface{}{"resources": []map[string]interface{}{}},
+		}
+	}
 	scope, err := h.servicesInScope(logCtx)
 	if err != nil {
 		return h.errorResponse(req.ID, -32602, err.Error())
@@ -247,6 +272,13 @@ func (h *GatewayHandler) handleResourcesList(ctx context.Context, req *JSONRPCRe
 }
 
 func (h *GatewayHandler) handleResourceTemplatesList(ctx context.Context, req *JSONRPCRequest, logCtx *LogContext) *JSONRPCResponse {
+	if !h.nativeItemsAllowed(logCtx) {
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result:  map[string]interface{}{"resourceTemplates": []map[string]interface{}{}},
+		}
+	}
 	scope, err := h.servicesInScope(logCtx)
 	if err != nil {
 		return h.errorResponse(req.ID, -32602, err.Error())
@@ -285,6 +317,13 @@ func (h *GatewayHandler) handleResourceTemplatesList(ctx context.Context, req *J
 }
 
 func (h *GatewayHandler) handlePromptsList(ctx context.Context, req *JSONRPCRequest, logCtx *LogContext) *JSONRPCResponse {
+	if !h.nativeItemsAllowed(logCtx) {
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result:  map[string]interface{}{"prompts": []map[string]interface{}{}},
+		}
+	}
 	scope, err := h.servicesInScope(logCtx)
 	if err != nil {
 		return h.errorResponse(req.ID, -32602, err.Error())
@@ -409,38 +448,36 @@ func (h *GatewayHandler) handlePromptsGet(ctx context.Context, req *JSONRPCReque
 		return resp
 	}
 
+	resp, serviceID, resolvedName := h.getUpstreamPrompt(ctx, req.ID, logCtx, serviceName, promptName, params.Arguments)
+	h.recordConsumeLog(logCtx, serviceID, resolvedName, "prompts/get", params.Name, resp, start)
+	return resp
+}
+
+// getUpstreamPrompt 提示读取核心(API key 范围校验/分组禁用拒绝/真实调用上游),
+// 供原生 prompts/get 与智能模式元工具 mcp.read 共用;日志由调用方各自记录。
+func (h *GatewayHandler) getUpstreamPrompt(ctx context.Context, reqID interface{}, logCtx *LogContext, serviceName, promptName string, arguments map[string]string) (*JSONRPCResponse, int64, string) {
 	if !h.isServiceInApiKeyScope(serviceName, logCtx) {
-		resp := h.errorResponse(req.ID, -32602, fmt.Sprintf("service '%s' is not accessible with this API key", serviceName))
-		h.recordConsumeLog(logCtx, 0, serviceName, "prompts/get", params.Name, resp, start)
-		return resp
+		return h.errorResponse(reqID, -32602, fmt.Sprintf("service '%s' is not accessible with this API key", serviceName)), 0, serviceName
 	}
 
 	session, err := h.connectServiceByName(ctx, serviceName, logCtx.UserID)
 	if err != nil {
-		resp := h.errorResponse(req.ID, -32602, err.Error())
-		h.recordConsumeLog(logCtx, 0, serviceName, "prompts/get", params.Name, resp, start)
-		return resp
+		return h.errorResponse(reqID, -32602, err.Error()), 0, serviceName
 	}
 
 	if h.itemDisabledInOwningGroup(logCtx, session.ServiceID, itemKindPrompt, promptName) {
-		resp := h.errorResponse(req.ID, -32602, "prompt is disabled in its group")
-		h.recordConsumeLog(logCtx, session.ServiceID, session.ServiceName, "prompts/get", params.Name, resp, start)
-		return resp
+		return h.errorResponse(reqID, -32602, "prompt is disabled in its group"), session.ServiceID, session.ServiceName
 	}
 
-	raw, err := session.Adapter.GetPrompt(ctx, promptName, params.Arguments)
-	var resp *JSONRPCResponse
+	raw, err := session.Adapter.GetPrompt(ctx, promptName, arguments)
 	if err != nil {
-		resp = h.errorResponse(req.ID, -32603, "Failed to get prompt: "+err.Error())
-	} else {
-		resp = &JSONRPCResponse{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-			Result:  json.RawMessage(raw),
-		}
+		return h.errorResponse(reqID, -32603, "Failed to get prompt: "+err.Error()), session.ServiceID, session.ServiceName
 	}
-	h.recordConsumeLog(logCtx, session.ServiceID, session.ServiceName, "prompts/get", params.Name, resp, start)
-	return resp
+	return &JSONRPCResponse{
+		JSONRPC: "2.0",
+		ID:      reqID,
+		Result:  json.RawMessage(raw),
+	}, session.ServiceID, session.ServiceName
 }
 
 // itemDisabledInOwningGroup 读侧强制:按该 API key 范围内首个包含此服务的分组,
@@ -490,4 +527,159 @@ func (h *GatewayHandler) recordConsumeLog(logCtx *LogContext, serviceID int64, s
 		UserAgent:      truncate(logCtx.UserAgent, 512),
 	}
 	go h.recordLog(callLog)
+}
+
+// handleMetaRead 智能模式元工具 mcp.read:经 tools/call 读资源或取提示。复用原生
+// resources/read、prompts/get 的上游核心(范围校验/禁用拒绝/命名空间回写),结果转换
+// 为 tools/call 的 content 形态。日志由 handleToolsCall 统一记录(method=mcp.read,
+// tool_name=target,与原生路径同列、可用工具名过滤);计费口径与原生一致(不扣费)。
+func (h *GatewayHandler) handleMetaRead(ctx context.Context, reqID interface{}, logCtx *LogContext, args json.RawMessage) *executeResult {
+	var params struct {
+		Type      string            `json:"type"`
+		Target    string            `json:"target"`
+		Arguments map[string]string `json:"arguments"`
+	}
+	_ = json.Unmarshal(args, &params)
+
+	if params.Target == "" || (params.Type != "resource" && params.Type != "prompt") {
+		return &executeResult{Resp: h.errorResponse(reqID, -32602, "Invalid params: type must be 'resource' or 'prompt', and target is required")}
+	}
+
+	result := &executeResult{ToolName: truncate(params.Target, 255)}
+	if params.Type == "resource" {
+		serviceName, upstreamURI, ok := parseGatewayResourceURI(params.Target)
+		if !ok {
+			result.Resp = h.errorResponse(reqID, -32602, "Invalid resource target, expected "+gatewayURIScheme+"://<service>/<upstream-uri>")
+			return result
+		}
+		resp, serviceID, resolvedName := h.readUpstreamResource(ctx, reqID, logCtx, serviceName, upstreamURI)
+		result.Resp = resp
+		if serviceID != 0 {
+			result.ServiceID = serviceID
+			result.ServiceName = resolvedName
+			if converted, ok := resourceResultToContent(resp); ok {
+				result.Resp = converted
+			}
+		}
+		return result
+	}
+
+	serviceName, promptName := bridge.ParseNamespacedName(params.Target)
+	if serviceName == "" {
+		result.Resp = h.errorResponse(reqID, -32602, "Invalid prompt target, expected '<service>__<prompt>'")
+		return result
+	}
+	resp, serviceID, resolvedName := h.getUpstreamPrompt(ctx, reqID, logCtx, serviceName, promptName, params.Arguments)
+	result.Resp = resp
+	if serviceID != 0 {
+		result.ServiceID = serviceID
+		result.ServiceName = resolvedName
+		if converted, ok := promptResultToContent(resp); ok {
+			result.Resp = converted
+		}
+	}
+	return result
+}
+
+// resourceResultToContent 把 resources/read 的 {contents:[...]} 结果转成 tools/call
+// 的 content 形态(mcp.read 的返回)。text 条目直传;图片 blob 转 image 内容项;其余
+// blob 无法被模型消费,以占位说明返回(保留 URI 便于换途径取原始数据)。失败返回 false,
+// 调用方保留原始响应。
+func resourceResultToContent(resp *JSONRPCResponse) (*JSONRPCResponse, bool) {
+	if resp.Error != nil || resp.Result == nil {
+		return nil, false
+	}
+	raw, err := json.Marshal(resp.Result) // Result 持 json.RawMessage,原样序列化
+	if err != nil {
+		return nil, false
+	}
+	var res struct {
+		Contents []struct {
+			URI      string `json:"uri"`
+			MimeType string `json:"mimeType"`
+			Text     string `json:"text"`
+			Blob     string `json:"blob"`
+		} `json:"contents"`
+	}
+	if err := json.Unmarshal(raw, &res); err != nil || len(res.Contents) == 0 {
+		return nil, false
+	}
+
+	content := make([]map[string]interface{}, 0, len(res.Contents))
+	for _, c := range res.Contents {
+		switch {
+		case c.Text != "":
+			content = append(content, map[string]interface{}{"type": "text", "text": c.Text})
+		case c.Blob != "" && strings.HasPrefix(c.MimeType, "image/"):
+			content = append(content, map[string]interface{}{"type": "image", "data": c.Blob, "mimeType": c.MimeType})
+		case c.Blob != "":
+			content = append(content, map[string]interface{}{"type": "text", "text": "[base64 " + c.MimeType + " resource: " + c.URI + "]"})
+		default:
+			content = append(content, map[string]interface{}{"type": "text", "text": "[empty resource: " + c.URI + "]"})
+		}
+	}
+	return &JSONRPCResponse{
+		JSONRPC: "2.0",
+		ID:      resp.ID,
+		Result:  map[string]interface{}{"content": content},
+	}, true
+}
+
+// promptResultToContent 把 prompts/get 的 {messages:[...]} 结果转成 tools/call 的
+// content 形态,每条 text 消息带角色前缀;image/audio 内容保真嵌入。失败返回 false,
+// 调用方保留原始响应。
+func promptResultToContent(resp *JSONRPCResponse) (*JSONRPCResponse, bool) {
+	if resp.Error != nil || resp.Result == nil {
+		return nil, false
+	}
+	raw, err := json.Marshal(resp.Result) // Result 持 json.RawMessage,原样序列化
+	if err != nil {
+		return nil, false
+	}
+	var res struct {
+		Description string `json:"description"`
+		Messages    []struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return nil, false
+	}
+
+	var content []map[string]interface{}
+	if res.Description != "" {
+		content = append(content, map[string]interface{}{"type": "text", "text": "Description: " + res.Description})
+	}
+	for _, m := range res.Messages {
+		var mc struct {
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			Data     string `json:"data"`
+			MimeType string `json:"mimeType"`
+		}
+		if err := json.Unmarshal(m.Content, &mc); err != nil {
+			continue
+		}
+		switch mc.Type {
+		case "text":
+			content = append(content, map[string]interface{}{"type": "text", "text": "[" + m.Role + "]\n" + mc.Text})
+		case "image":
+			content = append(content, map[string]interface{}{"type": "image", "data": mc.Data, "mimeType": mc.MimeType})
+		case "audio":
+			content = append(content, map[string]interface{}{"type": "audio", "data": mc.Data, "mimeType": mc.MimeType})
+		default:
+			if b, err := json.Marshal(m.Content); err == nil {
+				content = append(content, map[string]interface{}{"type": "text", "text": "[" + m.Role + "]\n" + string(b)})
+			}
+		}
+	}
+	if content == nil {
+		return nil, false
+	}
+	return &JSONRPCResponse{
+		JSONRPC: "2.0",
+		ID:      resp.ID,
+		Result:  map[string]interface{}{"content": content},
+	}, true
 }

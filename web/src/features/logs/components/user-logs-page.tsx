@@ -53,6 +53,22 @@ function logTypeMeta(type?: number): { key: string; cls: string } {
   return LOG_TYPE_META[type ?? 2] ?? CONSUME_META
 }
 
+// 智能模式调用标识:method 为元工具名(mcp.execute/mcp.read 等)说明该调用走智能模式入口,
+// 悬停可见具体元工具。直连调用 method=tools/call,原生资源/提示为 resources/read 等,均不显示。
+function SmartBadge({ log }: { log: any }) {
+  const { t } = useTranslation()
+  const method: string = log?.method ?? ''
+  if (!method.startsWith('mcp.')) return null
+  return (
+    <span
+      title={t('logs.smartCallTip', { method })}
+      className="shrink-0 rounded bg-fuchsia-500/10 px-1.5 py-0.5 text-[10px] font-medium text-fuchsia-600 dark:text-fuchsia-400"
+    >
+      {t('logs.smartCall')}
+    </span>
+  )
+}
+
 // 从 extra JSON 解析管理日志的操作者(管理员)展示文本,对齐 new-api 的 "username (ID: n)"。
 // 普通用户视图的 extra 已在后端剥离 operator,故仅管理员可见。
 function getOperatorDisplay(extra?: string): string | null {
@@ -434,9 +450,12 @@ function LogMobileCard({ log, isAdmin, showBilling, fmtMoney, formatTime, format
   return (
     <MobileListCard
       title={
-        <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-          {log.tool_name}
-        </code>
+        <span className="flex items-center gap-1.5">
+          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+            {log.tool_name}
+          </code>
+          <SmartBadge log={log} />
+        </span>
       }
       badge={
         <Badge variant={isSuccess ? 'success' : 'destructive'}>
@@ -530,7 +549,10 @@ function LogRow({ log, isAdmin, showBilling, fmtMoney, formatTime, formatDuratio
       <TableCell className="text-sm truncate" title={log.username}>{log.username || '-'}</TableCell>
       {isAdmin && <TableCell className="text-sm truncate" title={log.api_key_name}>{log.api_key_name || '-'}</TableCell>}
       <TableCell className="truncate" title={log.tool_name}>
-        <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{log.tool_name}</code>
+        <span className="flex items-center gap-1.5">
+          <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{log.tool_name}</code>
+          <SmartBadge log={log} />
+        </span>
       </TableCell>
       <TableCell className="text-sm truncate" title={log.group_name}>{log.group_name || '-'}</TableCell>
       {isAdmin && <TableCell className="text-sm truncate" title={log.service_name}>{log.service_name || '-'}</TableCell>}
