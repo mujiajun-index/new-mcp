@@ -18,6 +18,8 @@ type McpService struct {
 	AuthConfig        string     `json:"auth_config" gorm:"type:varchar(4096);default:'{}'"`
 	ToolsCache        string     `json:"tools_cache" gorm:"type:text"`
 	ToolsUpdatedAt    *time.Time `json:"tools_updated_at"`
+	ResourcesCache    string     `json:"resources_cache" gorm:"type:text"`
+	PromptsCache      string     `json:"prompts_cache" gorm:"type:text"`
 	HealthStatus      string     `json:"health_status" gorm:"size:16;default:unknown;index"`
 	LastHealthCheck   *time.Time `json:"last_health_check"`
 	ServerInfo        string     `json:"server_info" gorm:"type:varchar(4096);default:'{}'"`

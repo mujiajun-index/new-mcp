@@ -62,6 +62,8 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.POST("/services/:id/test", controller.TestService)
 		auth.POST("/services/:id/refresh-tools", controller.RefreshTools)
 		auth.GET("/services/:id/tools", controller.GetServiceTools)
+		auth.GET("/services/:id/resources", controller.GetServiceResources)
+		auth.GET("/services/:id/prompts", controller.GetServicePrompts)
 		auth.GET("/services/:id/health", controller.GetServiceHealth)
 
 		// MCP Groups
@@ -76,6 +78,10 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.GET("/groups/:id/tools", controller.GetGroupTools)
 		auth.PUT("/groups/:id/tools/:toolName", controller.UpdateGroupTool)
 		auth.PUT("/groups/:id/tools/batch", controller.BatchUpdateGroupTools)
+		auth.GET("/groups/:id/resources", controller.GetGroupResources)
+		auth.PUT("/groups/:id/resources/batch", controller.BatchUpdateGroupResources)
+		auth.GET("/groups/:id/prompts", controller.GetGroupPrompts)
+		auth.PUT("/groups/:id/prompts/batch", controller.BatchUpdateGroupPrompts)
 		auth.POST("/groups/:id/refresh", controller.RefreshGroup)
 		auth.GET("/groups/:id/endpoint", controller.GetGroupEndpoint)
 

@@ -94,7 +94,62 @@ func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (
 		})
 	}
 
+	// 资源/提示缓存异步预热:不阻塞连接路径(tools/call 热路径不为列表枚举多等两次上游往返),
+	// 失败静默(缓存留空,由"刷新"或下次重连补齐)。
+	go p.RefreshItemCaches(context.Background(), session)
+
 	return session, nil
+}
+
+// RefreshItemCaches 拉取上游 resources/templates/prompts 并回写 mcp_services 缓存列。
+// 服务详情/分组勾选 UI 读这些缓存;上游未声明能力时对应列表为空。
+func (p *SessionPool) RefreshItemCaches(ctx context.Context, session *McpSession) {
+	resourcesJSON := fetchResourcesCache(ctx, session.Adapter)
+	promptsJSON := fetchPromptsCache(ctx, session.Adapter)
+	model.DB.Model(&model.McpService{}).Where("id = ?", session.ServiceID).Updates(map[string]interface{}{
+		"resources_cache": resourcesJSON,
+		"prompts_cache":   promptsJSON,
+	})
+}
+
+// fetchResourcesCache 合并静态资源与模板为 {"resources":[...],"templates":[...]}。
+func fetchResourcesCache(ctx context.Context, adapter transport.TransportAdapter) string {
+	combined := map[string]json.RawMessage{
+		"resources": json.RawMessage(`[]`),
+		"templates": json.RawMessage(`[]`),
+	}
+	if raw, err := adapter.ListResources(ctx); err == nil {
+		var m map[string]json.RawMessage
+		if json.Unmarshal(raw, &m) == nil && m["resources"] != nil {
+			combined["resources"] = m["resources"]
+		}
+	}
+	if raw, err := adapter.ListResourceTemplates(ctx); err == nil {
+		var m map[string]json.RawMessage
+		if json.Unmarshal(raw, &m) == nil && m["resourceTemplates"] != nil {
+			combined["templates"] = m["resourceTemplates"]
+		}
+	}
+	b, err := json.Marshal(combined)
+	if err != nil {
+		return `{"resources":[],"templates":[]}`
+	}
+	return string(b)
+}
+
+// fetchPromptsCache 返回提示裸数组(与 tools_cache 的裸数组形态一致)。
+func fetchPromptsCache(ctx context.Context, adapter transport.TransportAdapter) string {
+	raw, err := adapter.ListPrompts(ctx)
+	if err != nil {
+		return "[]"
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(raw, &m) == nil && m["prompts"] != nil {
+		if b, err := json.Marshal(m["prompts"]); err == nil {
+			return string(b)
+		}
+	}
+	return "[]"
 }
 
 func (p *SessionPool) Get(serviceID int64) *McpSession {

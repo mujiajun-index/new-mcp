@@ -3,15 +3,17 @@ package model
 import "time"
 
 type McpGroupTool struct {
-	ID                 int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	GroupID            int64     `json:"group_id" gorm:"not null;uniqueIndex:idx_group_service_tool"`
-	ServiceID          int64     `json:"service_id" gorm:"not null;uniqueIndex:idx_group_service_tool;index"`
-	ToolName           string    `json:"tool_name" gorm:"size:255;not null;uniqueIndex:idx_group_service_tool"`
-	Enabled            bool      `json:"enabled" gorm:"default:true"`
-	NameOverride       string    `json:"name_override" gorm:"size:255"`
-	DescriptionOverride string   `json:"description_override" gorm:"type:text"`
-	Annotations        string    `json:"annotations" gorm:"type:varchar(4096);default:'{}'"`
-	CreatedAt          time.Time `json:"created_at"`
+	ID        int64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	GroupID   int64  `json:"group_id" gorm:"not null;uniqueIndex:idx_group_service_tool"`
+	ServiceID int64  `json:"service_id" gorm:"not null;uniqueIndex:idx_group_service_tool;index"`
+	ToolName  string `json:"tool_name" gorm:"size:255;not null;uniqueIndex:idx_group_service_tool"`
+	// 无 default 标签:带 default:true 时 GORM 在 INSERT 省略零值 false,落库变回 true,
+	// 首次禁用工具会静默失效(经 sqlite 实测确认);这里显式写入每个值。
+	Enabled             bool      `json:"enabled"`
+	NameOverride        string    `json:"name_override" gorm:"size:255"`
+	DescriptionOverride string    `json:"description_override" gorm:"type:text"`
+	Annotations         string    `json:"annotations" gorm:"type:varchar(4096);default:'{}'"`
+	CreatedAt           time.Time `json:"created_at"`
 }
 
 func (McpGroupTool) TableName() string { return "mcp_group_tools" }

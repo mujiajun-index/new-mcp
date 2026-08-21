@@ -435,7 +435,12 @@
     "serviceCreated": "Service created",
     "connectSuccessDetail": "Connected · {{count}} tools · {{ms}}ms",
     "connectFailedDetail": "Connection failed: {{error}}",
-    "refreshed": "Refreshed, found {{count}} tools"
+    "refreshed": "Refreshed, found {{count}} tools",
+    "resourcesList": "Resources ({{count}})",
+    "promptsList": "Prompts ({{count}})",
+    "noResources": "No resources",
+    "noPrompts": "No prompts",
+    "resourceTemplate": "Template"
   },
   "groups": {
     "subtitle": "Aggregate multiple services into a unified MCP endpoint",
@@ -496,6 +501,17 @@
     "saveChanges": "Save Changes ({{count}})",
     "noEnabledToolsHint": "No enabled tools. Click \"Manage Tools\" to select tools to enable.",
     "toolFrom": "From {{name}} · Original name: {{original}}",
+    "resourcesListTitle": "Aggregated Resources ({{enabled}}/{{count}})",
+    "promptsListTitle": "Aggregated Prompts ({{enabled}}/{{count}})",
+    "manageResources": "Manage Resources",
+    "managePrompts": "Manage Prompts",
+    "searchItemsPlaceholder": "Search items...",
+    "noEnabledItemsHint": "No enabled items. Click manage to select items to enable.",
+    "itemFrom": "From {{name}}",
+    "kindResource": "Resource",
+    "kindTemplate": "Template",
+    "resourceConfigUpdated": "Resource config updated",
+    "promptConfigUpdated": "Prompt config updated",
     "copiedToClipboard": "Copied to clipboard",
     "identifierExistsEdit": "Identifier already exists",
     "copySuccess": "Copied"

@@ -73,6 +73,7 @@ func migrateDB() error {
 		&McpGroup{},
 		&McpGroupService{},
 		&McpGroupTool{},
+		&McpGroupItem{},
 		&VisionConfig{},
 		&Camera{},
 		&CloudEndpoint{},

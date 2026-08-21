@@ -54,6 +54,16 @@ export async function getServiceTools(id: number) {
   return res.data
 }
 
+export async function getServiceResources(id: number) {
+  const res = await api.get(`/services/${id}/resources`)
+  return res.data
+}
+
+export async function getServicePrompts(id: number) {
+  const res = await api.get(`/services/${id}/prompts`)
+  return res.data
+}
+
 export async function getServiceHealth(id: number) {
   const res = await api.get(`/services/${id}/health`)
   return res.data

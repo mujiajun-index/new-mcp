@@ -214,6 +214,9 @@ func (s *McpServiceService) Update(userID, serviceID int64, req *dto.UpdateServi
 		if err := model.DeleteGroupToolsByServiceID(serviceID); err != nil {
 			return err
 		}
+		if err := model.DeleteGroupItemsByServiceID(serviceID); err != nil {
+			return err
+		}
 	}
 	// 配置（command/args/env/registry/url/headers）变更后，运行中的连接/子进程仍带旧配置。
 	// 踢掉旧 session 并按新配置异步重连（与 Create 一致）：让新 env 立即生效，同时刷新
@@ -243,6 +246,9 @@ func (s *McpServiceService) Delete(userID, serviceID int64) error {
 		return err
 	}
 	if err := model.DeleteGroupToolsByServiceID(serviceID); err != nil {
+		return err
+	}
+	if err := model.DeleteGroupItemsByServiceID(serviceID); err != nil {
 		return err
 	}
 	if err := svc.Delete(); err != nil {
@@ -280,6 +286,10 @@ func (s *McpServiceService) RefreshTools(userID, serviceID int64) (*dto.RefreshT
 	if session == nil {
 		return nil, nil
 	}
+
+	// 同步刷新资源/提示缓存:"刷新"按钮一并更新服务详情的资源/提示列表。
+	// 连接时的预热是异步的(不拖慢 tools/call 热路径),这里显式等它完成。
+	SessionPool.RefreshItemCaches(context.Background(), session)
 
 	// Re-read the service to get updated tools_cache
 	svc, _ = model.GetServiceByID(userID, serviceID)
@@ -382,6 +392,34 @@ func (s *McpServiceService) GetTools(userID, serviceID int64) ([]interface{}, er
 	var tools []interface{}
 	_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
 	return tools, nil
+}
+
+// GetResources 返回服务缓存的资源与资源模板({"resources":[],"templates":[]} 形态)。
+func (s *McpServiceService) GetResources(userID, serviceID int64) (map[string]interface{}, error) {
+	svc, err := model.GetServiceByID(userID, serviceID)
+	if err != nil {
+		return nil, err
+	}
+	var cache map[string]interface{}
+	_ = json.Unmarshal([]byte(svc.ResourcesCache), &cache)
+	if cache == nil {
+		cache = map[string]interface{}{"resources": []interface{}{}, "templates": []interface{}{}}
+	}
+	return cache, nil
+}
+
+// GetPrompts 返回服务缓存的提示列表。
+func (s *McpServiceService) GetPrompts(userID, serviceID int64) ([]interface{}, error) {
+	svc, err := model.GetServiceByID(userID, serviceID)
+	if err != nil {
+		return nil, err
+	}
+	var prompts []interface{}
+	_ = json.Unmarshal([]byte(svc.PromptsCache), &prompts)
+	if prompts == nil {
+		prompts = []interface{}{}
+	}
+	return prompts, nil
 }
 
 func (s *McpServiceService) GetHealth(userID, serviceID int64) (map[string]interface{}, error) {

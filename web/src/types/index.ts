@@ -213,6 +213,66 @@ export interface BatchToolUpdate {
   enabled: boolean
 }
 
+export interface GroupResourceItem {
+  service_id: number
+  service_name: string
+  kind: 'resource' | 'template'
+  uri: string
+  name?: string
+  description?: string
+  mime_type?: string
+  enabled: boolean
+}
+
+export interface GroupPromptArgument {
+  name: string
+  description?: string
+  required: boolean
+}
+
+export interface GroupPromptItem {
+  service_id: number
+  service_name: string
+  name: string
+  description?: string
+  arguments?: GroupPromptArgument[]
+  enabled: boolean
+}
+
+export interface BatchResourceUpdate {
+  service_id: number
+  kind: 'resource' | 'template'
+  uri: string
+  enabled: boolean
+}
+
+export interface BatchPromptUpdate {
+  service_id: number
+  name: string
+  enabled: boolean
+}
+
+export interface McpResource {
+  uri: string
+  name?: string
+  description?: string
+  mimeType?: string
+  size?: number
+}
+
+export interface McpResourceTemplate {
+  uriTemplate: string
+  name?: string
+  description?: string
+  mimeType?: string
+}
+
+export interface McpPrompt {
+  name: string
+  description?: string
+  arguments?: GroupPromptArgument[]
+}
+
 export interface CreateGroupReq {
   name: string
   display_name?: string

@@ -210,6 +210,170 @@ func (s *GroupService) RefreshAll(userID, groupID int64) error {
 	return nil
 }
 
+// --- 资源/提示聚合与条目级启停(与工具过滤同一套交互) ---
+
+// GetResources 聚合分组内各服务的资源与资源模板(读 services.resources_cache),标注条目级启停。
+func (s *GroupService) GetResources(userID, groupID int64) ([]dto.GroupResourceItem, error) {
+	if _, err := model.GetGroupByID(userID, groupID); err != nil {
+		return nil, err
+	}
+
+	disabled := groupItemDisabledSet(groupID)
+
+	groupServices, err := model.GetEnabledGroupServices(groupID)
+	if err != nil {
+		return nil, err
+	}
+	svcByID := servicesByMembership(groupServices)
+
+	var result []dto.GroupResourceItem
+	for _, gs := range groupServices {
+		svc := svcByID[gs.ServiceID]
+		if svc == nil {
+			continue
+		}
+		var cache struct {
+			Resources []struct {
+				URI         string `json:"uri"`
+				Name        string `json:"name"`
+				Description string `json:"description"`
+				MIMEType    string `json:"mimeType"`
+			} `json:"resources"`
+			Templates []struct {
+				URITemplate string `json:"uriTemplate"`
+				Name        string `json:"name"`
+				Description string `json:"description"`
+				MIMEType    string `json:"mimeType"`
+			} `json:"templates"`
+		}
+		_ = json.Unmarshal([]byte(svc.ResourcesCache), &cache)
+		for _, r := range cache.Resources {
+			result = append(result, dto.GroupResourceItem{
+				ServiceID:   gs.ServiceID,
+				ServiceName: svc.Name,
+				Kind:        "resource",
+				URI:         r.URI,
+				Name:        r.Name,
+				Description: r.Description,
+				MimeType:    r.MIMEType,
+				Enabled:     !disabled[groupItemKey(gs.ServiceID, "resource", r.URI)],
+			})
+		}
+		for _, t := range cache.Templates {
+			result = append(result, dto.GroupResourceItem{
+				ServiceID:   gs.ServiceID,
+				ServiceName: svc.Name,
+				Kind:        "template",
+				URI:         t.URITemplate,
+				Name:        t.Name,
+				Description: t.Description,
+				MimeType:    t.MIMEType,
+				Enabled:     !disabled[groupItemKey(gs.ServiceID, "template", t.URITemplate)],
+			})
+		}
+	}
+	return result, nil
+}
+
+// GetPrompts 聚合分组内各服务的提示(读 services.prompts_cache),标注条目级启停。
+func (s *GroupService) GetPrompts(userID, groupID int64) ([]dto.GroupPromptItem, error) {
+	if _, err := model.GetGroupByID(userID, groupID); err != nil {
+		return nil, err
+	}
+
+	disabled := groupItemDisabledSet(groupID)
+
+	groupServices, err := model.GetEnabledGroupServices(groupID)
+	if err != nil {
+		return nil, err
+	}
+	svcByID := servicesByMembership(groupServices)
+
+	var result []dto.GroupPromptItem
+	for _, gs := range groupServices {
+		svc := svcByID[gs.ServiceID]
+		if svc == nil {
+			continue
+		}
+		var prompts []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			Arguments   []dto.GroupPromptArgument `json:"arguments"`
+		}
+		_ = json.Unmarshal([]byte(svc.PromptsCache), &prompts)
+		for _, p := range prompts {
+			result = append(result, dto.GroupPromptItem{
+				ServiceID:   gs.ServiceID,
+				ServiceName: svc.Name,
+				Name:        p.Name,
+				Description: p.Description,
+				Arguments:   p.Arguments,
+				Enabled:     !disabled[groupItemKey(gs.ServiceID, "prompt", p.Name)],
+			})
+		}
+	}
+	return result, nil
+}
+
+func (s *GroupService) BatchUpdateResources(userID, groupID int64, items []dto.UpdateResourceItemReq) error {
+	if _, err := model.GetGroupByID(userID, groupID); err != nil {
+		return err
+	}
+	for _, it := range items {
+		if err := upsertGroupItem(groupID, it.ServiceID, it.Kind, it.URI, it.Enabled); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *GroupService) BatchUpdatePrompts(userID, groupID int64, items []dto.UpdatePromptItemReq) error {
+	if _, err := model.GetGroupByID(userID, groupID); err != nil {
+		return err
+	}
+	for _, it := range items {
+		if err := upsertGroupItem(groupID, it.ServiceID, "prompt", it.Name, it.Enabled); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func upsertGroupItem(groupID, serviceID int64, kind, key string, enabled bool) error {
+	existing, err := model.GetGroupItem(groupID, serviceID, kind, key)
+	if err != nil {
+		existing = &model.McpGroupItem{
+			GroupID:   groupID,
+			ServiceID: serviceID,
+			ItemKind:  kind,
+			ItemKey:   key,
+			Enabled:   enabled,
+		}
+	} else {
+		existing.Enabled = enabled
+	}
+	return existing.Upsert()
+}
+
+// groupItemDisabledSet 返回该分组内 Enabled=false 的条目集合("serviceID:kind:key")。
+func groupItemDisabledSet(groupID int64) map[string]bool {
+	rows, err := model.GetGroupItems(groupID)
+	if err != nil {
+		return nil
+	}
+	m := make(map[string]bool, len(rows))
+	for _, r := range rows {
+		if !r.Enabled {
+			m[groupItemKey(r.ServiceID, r.ItemKind, r.ItemKey)] = true
+		}
+	}
+	return m
+}
+
+func groupItemKey(serviceID int64, kind, key string) string {
+	return fmt.Sprintf("%d:%s:%s", serviceID, kind, key)
+}
+
 func (s *GroupService) GetEndpoint(userID, groupID int64) (*dto.EndpointInfo, error) {
 	group, err := model.GetGroupByID(userID, groupID)
 	if err != nil {

@@ -1011,14 +1011,31 @@ Direct 模式下的 `tools/list` 返回聚合后的完整工具列表。
   上游变更在下一次 list 即可见（网关不声明 `listChanged`，客户端自行重新 list）。
 - Smart 端点同样暴露资源/提示——资源枚举由客户端主动发起，不占用工具上下文。
 
-### 10.3 计费与日志
+### 10.3 分组内条目级启停（资源/提示勾选）
+
+与工具过滤同一交互：分组详情页可按条目勾选启停资源/提示，服务详情页展示资源/提示缓存列表。
+
+- 存储：`mcp_group_items`（group_id, service_id, item_kind, item_key, enabled），
+  **无行 = 启用**（与 mcp_group_tools 语义一致，无回填）。item_kind 为
+  `resource`（item_key=原始 URI）/ `template`（item_key=uriTemplate）/ `prompt`（item_key=提示名）。
+- 枚举来源：`mcp_services.resources_cache`（`{"resources":[],"templates":[]}`）与
+  `prompts_cache`（裸数组），连接时异步预热、`POST /services/:id/refresh-tools` 同步刷新。
+- 网关强制：list 聚合剔除禁用条目；`resources/read`、`prompts/get` **拒绝禁用条目**
+  （按 API key 范围内首个包含该服务的分组判定，与聚合去重取首分组一致）——否则
+  隐藏但仍可直读，勾选形同虚设。模板禁用只隐藏 templates/list 条目，按模板展开出的
+  URI 读取不做前缀匹配拦截（已知边界）。
+- API：`GET /groups/:id/resources`、`PUT /groups/:id/resources/batch`、
+  `GET /groups/:id/prompts`、`PUT /groups/:id/prompts/batch`、
+  `GET /services/:id/resources`、`GET /services/:id/prompts`。
+
+### 10.4 计费与日志
 
 `resources/read`、`prompts/get` 会真实触达上游，与 `tools/call` 一样记入
 `mcp_call_logs`（method = `resources/read` / `prompts/get`）；计费口径暂与
 tools/call 不同——市场服务不扣费（`billing_status` 落默认 `skipped`）。
 `resources/list`、`prompts/list` 等枚举方法不记日志（与 `tools/list` 一致）。
 
-### 10.4 版本协商（initialize）
+### 10.5 版本协商（initialize）
 
 ```json
 // 请求

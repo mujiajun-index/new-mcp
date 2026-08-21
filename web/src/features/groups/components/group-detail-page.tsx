@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
-import { getGroup, deleteGroup, removeGroupService, getGroupTools, getGroupEndpoint, updateGroup, batchUpdateGroupTools, checkGroupName } from '../api'
+import { getGroup, deleteGroup, removeGroupService, getGroupTools, getGroupEndpoint, updateGroup, batchUpdateGroupTools, checkGroupName, getGroupResources, batchUpdateGroupResources, getGroupPrompts, batchUpdateGroupPrompts } from '../api'
 import { getServices } from '@/features/services/api'
 import { ToolParams } from '@/components/tool-params'
 import { Button } from '@/components/ui/button'
@@ -9,7 +9,8 @@ import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
 import { ArrowLeft, Trash2, Copy, Plus, X, Globe, Radio, Settings2, ChevronDown, ChevronRight, Check, Pencil, Loader2 } from 'lucide-react'
 import { useState, useMemo, useCallback } from 'react'
-import type { BatchToolUpdate, GroupListItem } from '@/types'
+import type { BatchToolUpdate, GroupListItem, GroupResourceItem, GroupPromptItem } from '@/types'
+import { GroupItemFilterSection, type FilterableItem, type FilterableUpdate } from './group-item-filter-section'
 
 // 分组标识：字母开头，仅含字母与数字（禁止中文/特殊字符）
 const IDENTIFIER_RE = /^[a-zA-Z][a-zA-Z0-9]*$/
@@ -51,6 +52,16 @@ export function GroupDetailPage() {
     queryFn: () => getGroupTools(groupId),
   })
 
+  const { data: resourcesData } = useQuery({
+    queryKey: ['group-resources', id],
+    queryFn: () => getGroupResources(groupId),
+  })
+
+  const { data: promptsData } = useQuery({
+    queryKey: ['group-prompts', id],
+    queryFn: () => getGroupPrompts(groupId),
+  })
+
   const { data: endpointData } = useQuery({
     queryKey: ['group-endpoint', id],
     queryFn: () => getGroupEndpoint(groupId),
@@ -82,6 +93,8 @@ export function GroupDetailPage() {
       toast.success(t('groups.serviceRemoved'))
       queryClient.invalidateQueries({ queryKey: ['group', id] })
       queryClient.invalidateQueries({ queryKey: ['group-tools', id] })
+      queryClient.invalidateQueries({ queryKey: ['group-resources', id] })
+      queryClient.invalidateQueries({ queryKey: ['group-prompts', id] })
     },
   })
 
@@ -116,6 +129,24 @@ export function GroupDetailPage() {
     },
   })
 
+  const batchUpdateResourcesMutation = useMutation({
+    mutationFn: (updates: FilterableUpdate[]) =>
+      batchUpdateGroupResources(groupId, updates.map((u) => ({ service_id: u.service_id, kind: u.kind as 'resource' | 'template', uri: u.key, enabled: u.enabled }))),
+    onSuccess: () => {
+      toast.success(t('groups.resourceConfigUpdated'))
+      queryClient.invalidateQueries({ queryKey: ['group-resources', id] })
+    },
+  })
+
+  const batchUpdatePromptsMutation = useMutation({
+    mutationFn: (updates: FilterableUpdate[]) =>
+      batchUpdateGroupPrompts(groupId, updates.map((u) => ({ service_id: u.service_id, name: u.key, enabled: u.enabled }))),
+    onSuccess: () => {
+      toast.success(t('groups.promptConfigUpdated'))
+      queryClient.invalidateQueries({ queryKey: ['group-prompts', id] })
+    },
+  })
+
   const group = groupData?.data
   const tools: GroupTool[] = toolsData?.data || []
   const endpoint = endpointData?.data
@@ -123,6 +154,26 @@ export function GroupDetailPage() {
   const existingIds = new Set((group?.services || []).map((s: { id: number }) => s.id))
   // 添加服务时隐藏已禁用的服务（status !== 1），禁用服务不应再被加入分组
   const availableServices = allServices.filter((s: { id: number; status: number }) => !existingIds.has(s.id) && s.status === 1)
+
+  // 资源/提示条目映射为通用勾选组件的输入
+  const resourceItems: FilterableItem[] = ((resourcesData?.data || []) as GroupResourceItem[]).map((r) => ({
+    service_id: r.service_id,
+    service_name: r.service_name,
+    kind: r.kind,
+    key: r.uri,
+    description: r.description || r.name || undefined,
+    meta: [r.kind === 'template' ? t('groups.kindTemplate') : t('groups.kindResource'), r.mime_type].filter((m): m is string => !!m),
+    enabled: r.enabled,
+  }))
+  const promptItems: FilterableItem[] = ((promptsData?.data || []) as GroupPromptItem[]).map((p) => ({
+    service_id: p.service_id,
+    service_name: p.service_name,
+    kind: 'prompt',
+    key: p.name,
+    description: p.description || undefined,
+    meta: (p.arguments || []).map((a) => a.name),
+    enabled: p.enabled,
+  }))
 
   // Group tools by service
   const toolsByService = useMemo(() => {
@@ -568,6 +619,26 @@ export function GroupDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Aggregated resources (per-item enable) */}
+      <GroupItemFilterSection
+        title={t('groups.resourcesListTitle', { enabled: resourceItems.filter((i) => i.enabled).length, count: resourceItems.length })}
+        manageLabel={t('groups.manageResources')}
+        searchPlaceholder={t('groups.searchItemsPlaceholder')}
+        items={resourceItems}
+        saving={batchUpdateResourcesMutation.isPending}
+        onBatchSave={(updates) => batchUpdateResourcesMutation.mutate(updates)}
+      />
+
+      {/* Aggregated prompts (per-item enable) */}
+      <GroupItemFilterSection
+        title={t('groups.promptsListTitle', { enabled: promptItems.filter((i) => i.enabled).length, count: promptItems.length })}
+        manageLabel={t('groups.managePrompts')}
+        searchPlaceholder={t('groups.searchItemsPlaceholder')}
+        items={promptItems}
+        saving={batchUpdatePromptsMutation.isPending}
+        onBatchSave={(updates) => batchUpdatePromptsMutation.mutate(updates)}
+      />
     </div>
   )
 }

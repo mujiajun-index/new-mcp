@@ -39,6 +39,55 @@ type BatchUpdateToolsReq struct {
 	Tools []BatchToolUpdate `json:"tools" binding:"required,min=1"`
 }
 
+// --- 资源/提示条目(分组内勾选启停,与工具过滤同一交互) ---
+
+type GroupResourceItem struct {
+	ServiceID   int64  `json:"service_id"`
+	ServiceName string `json:"service_name"`
+	Kind        string `json:"kind"`             // resource=静态资源 / template=资源模板
+	URI         string `json:"uri"`               // template 时为 uriTemplate
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	MimeType    string `json:"mime_type,omitempty"`
+	Enabled     bool   `json:"enabled"`
+}
+
+type GroupPromptItem struct {
+	ServiceID   int64                   `json:"service_id"`
+	ServiceName string                  `json:"service_name"`
+	Name        string                  `json:"name"`
+	Description string                  `json:"description,omitempty"`
+	Arguments   []GroupPromptArgument   `json:"arguments,omitempty"`
+	Enabled     bool                    `json:"enabled"`
+}
+
+type GroupPromptArgument struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Required    bool   `json:"required"`
+}
+
+type UpdateResourceItemReq struct {
+	ServiceID int64  `json:"service_id" binding:"required"`
+	Kind      string `json:"kind" binding:"required,oneof=resource template"`
+	URI       string `json:"uri" binding:"required"`
+	Enabled   bool   `json:"enabled"`
+}
+
+type BatchUpdateResourcesReq struct {
+	Items []UpdateResourceItemReq `json:"items" binding:"required,min=1"`
+}
+
+type UpdatePromptItemReq struct {
+	ServiceID int64  `json:"service_id" binding:"required"`
+	Name      string `json:"name" binding:"required"`
+	Enabled   bool   `json:"enabled"`
+}
+
+type BatchUpdatePromptsReq struct {
+	Items []UpdatePromptItemReq `json:"items" binding:"required,min=1"`
+}
+
 type GroupListItem struct {
 	ID          int64  `json:"id"`
 	Name        string `json:"name"`

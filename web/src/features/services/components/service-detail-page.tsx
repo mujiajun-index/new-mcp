@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
-import { getService, updateService, deleteService, testService, refreshTools } from '../api'
+import { getService, updateService, deleteService, testService, refreshTools, getServiceResources, getServicePrompts } from '../api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,7 +13,7 @@ import {
   ArrowLeft, Trash2, Zap, RefreshCw, Server,
   Pencil, X, Check, Loader2,
 } from 'lucide-react'
-import type { McpTool, AuthType, UpdateServiceReq } from '@/types'
+import type { McpTool, McpResource, McpResourceTemplate, McpPrompt, AuthType, UpdateServiceReq } from '@/types'
 
 // parseEnv / envToString: 与注册页一致，环境变量用「每行 KEY=value」文本表示，
 // 而非 JSON。编辑 stdio 服务时仅环境变量可编辑，命令/参数只读。
@@ -82,6 +82,16 @@ export function ServiceDetailPage() {
     queryFn: () => getService(serviceId),
   })
 
+  const { data: resourcesData } = useQuery({
+    queryKey: ['service-resources', id],
+    queryFn: () => getServiceResources(serviceId),
+  })
+
+  const { data: promptsData } = useQuery({
+    queryKey: ['service-prompts', id],
+    queryFn: () => getServicePrompts(serviceId),
+  })
+
   const deleteMutation = useMutation({
     mutationFn: () => deleteService(serviceId),
     onSuccess: () => {
@@ -106,6 +116,9 @@ export function ServiceDetailPage() {
     onSuccess: (res) => {
       toast.success(t('services.refreshed', { count: res.data?.tools_count || 0 }))
       queryClient.invalidateQueries({ queryKey: ['service', id] })
+      // 刷新会同步更新资源/提示缓存
+      queryClient.invalidateQueries({ queryKey: ['service-resources', id] })
+      queryClient.invalidateQueries({ queryKey: ['service-prompts', id] })
     },
   })
 
@@ -246,6 +259,9 @@ export function ServiceDetailPage() {
   }
 
   const tools: McpTool[] = service.tools_cache || []
+  const resources: McpResource[] = resourcesData?.data?.resources || []
+  const templates: McpResourceTemplate[] = resourcesData?.data?.templates || []
+  const prompts: McpPrompt[] = promptsData?.data || []
   const isVirtual = service.transport_type === 'virtual'
   const isStdio = service.transport_type === 'stdio'
   const stdioConfig = ((service.config as Record<string, unknown>) || {})
@@ -503,6 +519,65 @@ export function ServiceDetailPage() {
                   <p className="mt-0.5 text-xs text-muted-foreground">{tool.description}</p>
                 )}
                 <ToolParams schema={tool.inputSchema} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Resources */}
+      <div className="rounded-xl border bg-card p-5">
+        <h2 className="mb-3 text-sm font-semibold">{t('services.resourcesList', { count: resources.length + templates.length })}</h2>
+        {resources.length === 0 && templates.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-6">{t('services.noResources')}</p>
+        ) : (
+          <div className="space-y-2">
+            {resources.map((r) => (
+              <div key={r.uri} className="rounded-lg border p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-medium font-mono break-all">{r.name || r.uri}</p>
+                  {r.mimeType && (
+                    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{r.mimeType}</span>
+                  )}
+                </div>
+                {r.name && <p className="mt-0.5 text-xs font-mono text-muted-foreground break-all">{r.uri}</p>}
+                {r.description && <p className="mt-0.5 text-xs text-muted-foreground">{r.description}</p>}
+              </div>
+            ))}
+            {templates.map((tpl) => (
+              <div key={tpl.uriTemplate} className="rounded-lg border border-dashed p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-medium font-mono break-all">{tpl.name || tpl.uriTemplate}</p>
+                  <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">{t('services.resourceTemplate')}</span>
+                </div>
+                {tpl.name && <p className="mt-0.5 text-xs font-mono text-muted-foreground break-all">{tpl.uriTemplate}</p>}
+                {tpl.description && <p className="mt-0.5 text-xs text-muted-foreground">{tpl.description}</p>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Prompts */}
+      <div className="rounded-xl border bg-card p-5">
+        <h2 className="mb-3 text-sm font-semibold">{t('services.promptsList', { count: prompts.length })}</h2>
+        {prompts.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-6">{t('services.noPrompts')}</p>
+        ) : (
+          <div className="space-y-2">
+            {prompts.map((p) => (
+              <div key={p.name} className="rounded-lg border p-3">
+                <p className="text-sm font-medium font-mono">{p.name}</p>
+                {p.description && <p className="mt-0.5 text-xs text-muted-foreground">{p.description}</p>}
+                {p.arguments && p.arguments.length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {p.arguments.map((a) => (
+                      <span key={a.name} className={`rounded px-1.5 py-0.5 text-[10px] ${a.required ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                        {a.name}{a.required ? '*' : ''}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>

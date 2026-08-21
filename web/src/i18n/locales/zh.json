@@ -435,7 +435,12 @@
     "serviceCreated": "服务创建成功",
     "connectSuccessDetail": "连接成功 · {{count}} 个工具 · {{ms}}ms",
     "connectFailedDetail": "连接失败: {{error}}",
-    "refreshed": "已刷新，发现 {{count}} 个工具"
+    "refreshed": "已刷新，发现 {{count}} 个工具",
+    "resourcesList": "资源列表 ({{count}})",
+    "promptsList": "提示列表 ({{count}})",
+    "noResources": "暂无资源",
+    "noPrompts": "暂无提示",
+    "resourceTemplate": "模板"
   },
   "groups": {
     "subtitle": "将多个服务聚合为统一的 MCP 端点",
@@ -496,6 +501,17 @@
     "saveChanges": "保存更改 ({{count}})",
     "noEnabledToolsHint": "暂无启用的工具，点击\"管理工具\"选择要启用的工具",
     "toolFrom": "来自 {{name}} · 原名: {{original}}",
+    "resourcesListTitle": "聚合资源 ({{enabled}}/{{count}})",
+    "promptsListTitle": "聚合提示 ({{enabled}}/{{count}})",
+    "manageResources": "管理资源",
+    "managePrompts": "管理提示",
+    "searchItemsPlaceholder": "搜索条目...",
+    "noEnabledItemsHint": "暂无启用条目，点击\"管理\"选择要启用的条目",
+    "itemFrom": "来自 {{name}}",
+    "kindResource": "资源",
+    "kindTemplate": "模板",
+    "resourceConfigUpdated": "资源配置已更新",
+    "promptConfigUpdated": "提示配置已更新",
     "copiedToClipboard": "已复制到剪贴板",
     "identifierExistsEdit": "标识已存在",
     "copySuccess": "已复制"

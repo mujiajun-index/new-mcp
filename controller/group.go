@@ -134,6 +134,58 @@ func GetGroupTools(c *gin.Context) {
 	common.Success(c, tools)
 }
 
+func GetGroupResources(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	items, err := groupService.GetResources(userID, id)
+	if err != nil {
+		common.Error(c, http.StatusNotFound, "分组不存在")
+		return
+	}
+	common.Success(c, items)
+}
+
+func BatchUpdateGroupResources(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	var req dto.BatchUpdateResourcesReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误")
+		return
+	}
+	if err := groupService.BatchUpdateResources(userID, id, req.Items); err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, nil)
+}
+
+func GetGroupPrompts(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	items, err := groupService.GetPrompts(userID, id)
+	if err != nil {
+		common.Error(c, http.StatusNotFound, "分组不存在")
+		return
+	}
+	common.Success(c, items)
+}
+
+func BatchUpdateGroupPrompts(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	var req dto.BatchUpdatePromptsReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误")
+		return
+	}
+	if err := groupService.BatchUpdatePrompts(userID, id, req.Items); err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, nil)
+}
+
 func UpdateGroupTool(c *gin.Context) {
 	userID := c.GetInt64("user_id")
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)

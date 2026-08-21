@@ -161,6 +161,28 @@ func GetServiceTools(c *gin.Context) {
 	common.Success(c, tools)
 }
 
+func GetServiceResources(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	resources, err := mcpServiceService.GetResources(userID, id)
+	if err != nil {
+		common.Error(c, http.StatusNotFound, "服务不存在")
+		return
+	}
+	common.Success(c, resources)
+}
+
+func GetServicePrompts(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	prompts, err := mcpServiceService.GetPrompts(userID, id)
+	if err != nil {
+		common.Error(c, http.StatusNotFound, "服务不存在")
+		return
+	}
+	common.Success(c, prompts)
+}
+
 func GetServiceHealth(c *gin.Context) {
 	userID := c.GetInt64("user_id")
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
