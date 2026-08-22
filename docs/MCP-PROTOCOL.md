@@ -390,22 +390,29 @@ func (h *GatewayHandler) handleSmartToolsCall(ctx context.Context, groupID int64
 }
 
 // getMetaTools 返回 Smart 模式的固定元工具列表
+// 描述文案遵循三段式最佳实践(做什么/何时用/返回什么)+相似工具互相指路,
+// 完整文案见 internal/mcp/smart/meta_tools.go,此处为节选。
 func (h *GatewayHandler) getMetaTools() []Tool {
     return []Tool{
         {
             Name:        "mcp.search",
-            Description: "Search available MCP services and tools by keyword, group name, or service name. Best for: discovering which MCP server or tool can fulfill a task before calling it. Returns: a list of matching services and/or tools.",
+            Description: "Search the catalog of available MCP services, tools, resources, and prompts by keyword. ... Returns matching items with their exact IDs: tools as `service.toolName` (call via mcp.execute), resources as `newmcp://service/...` URIs and prompts as `service__promptName` (fetch via mcp.read). Use this FIRST when you don't yet know which service or tool fits a task ...",
             InputSchema: searchToolSchema,
         },
         {
             Name:        "mcp.describe",
-            Description: "List the tools of a given MCP service, or fetch the full parameter schema of a specific tool. Best for: inspecting what a service offers or learning a tool's exact arguments before calling it. Returns: tool lists and/or full input schemas.",
+            Description: "Inspect what a specific MCP service or tool offers, by exact name. Given a service name, returns its full inventory: tools with parameter schemas, resource URIs, and prompts with their arguments. Given `service.toolName`, returns that one tool's description and complete input schema. ...",
             InputSchema: describeToolSchema,
         },
         {
             Name:        "mcp.execute",
-            Description: "Execute a specified MCP tool. Best for: actually calling a tool by id with the right arguments. Returns: the tool's execution result.",
+            Description: "Execute an MCP tool by ID with a JSON arguments object, returning the tool's execution result. The tool_id and the exact arguments it accepts come from mcp.search / mcp.describe — if unsure what arguments a tool takes, run mcp.describe on it first instead of guessing. ...",
             InputSchema: executeToolSchema,
+        },
+        {
+            Name:        "mcp.read",
+            Description: "Read an MCP resource by URI, or render an MCP prompt with arguments. Targets use the exact gateway forms returned by mcp.search / mcp.describe: resources as `newmcp://<service>/<upstream-uri>`, prompts as `<service>__<promptName>` ...",
+            InputSchema: readToolSchema,
         },
     }
 }

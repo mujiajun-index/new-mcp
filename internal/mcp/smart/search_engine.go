@@ -52,8 +52,8 @@ type promptArgumentMeta struct {
 }
 
 type promptMeta struct {
-	Name        string              `json:"name"`
-	Description string              `json:"description"`
+	Name        string               `json:"name"`
+	Description string               `json:"description"`
 	Arguments   []promptArgumentMeta `json:"arguments"`
 }
 
@@ -359,15 +359,15 @@ func (e *SearchEngine) Describe(targets []string, apiKeyID int64) ([]map[string]
 			resources, templates := filterResourceItems(svc, owningGroup, disabled)
 			prompts := filterPromptItems(svc, owningGroup, disabled)
 			results = append(results, map[string]interface{}{
-				"type":              "service",
-				"name":              svc.Name,
-				"display_name":      svc.DisplayName,
-				"description":       svc.Description,
-				"tools_count":       len(tools),
-				"tools":             tools,
-				"resources":         resources,
+				"type":               "service",
+				"name":               svc.Name,
+				"display_name":       svc.DisplayName,
+				"description":        svc.Description,
+				"tools_count":        len(tools),
+				"tools":              tools,
+				"resources":          resources,
 				"resource_templates": templates,
-				"prompts":           prompts,
+				"prompts":            prompts,
 			})
 		} else {
 			toolName := parts[1]
@@ -446,7 +446,7 @@ func filterPromptItems(svc *model.McpService, groupID int64, disabled map[string
 // When includeSchema is false, only names and descriptions are shown (no parameter details).
 func FormatDescribeResult(results []map[string]interface{}, includeSchema bool) string {
 	if len(results) == 0 {
-		return "No matching services or tools found."
+		return "No matching services or tools found. Targets must be exact service names or \"service.toolName\" entries as returned by mcp.search — call mcp.search to find valid names."
 	}
 
 	var sb strings.Builder

@@ -169,9 +169,25 @@ func (h *GatewayHandler) handleInitialize(req *JSONRPCRequest, logCtx *LogContex
 			},
 			// V1.1: declare the local-image workflow globally so smart-mode clients
 			// (whose tools/list returns only the meta-tools) still learn the path.
-			"instructions": "To analyze a LOCAL image: if it is small (roughly <= 10KB), inline it as base64 directly to vision.analyze_image; otherwise call vision.upload_image with local_path to get an upload_command matched to your OS (curl.exe on Windows PowerShell where bare `curl` is an alias for Invoke-WebRequest; curl elsewhere) + image_url, run it via your shell (no API key needed), then call vision.analyze_image with the image_url. Never paste large image base64 into tool arguments.",
+			// 智能模式再前置一段发现工作流:instructions 是 Tier-2 通道(部分客户端
+			// 注入 system prompt、部分忽略),工具描述(Tier-1)已各自携带链路信息,
+			// 这里只兜底教全局顺序。
+			"instructions": smartModeInstructions(h.nativeItemsAllowed(logCtx)),
 		},
 	}
+}
+
+// smartInstructionsText 教智能模式的渐进发现工作流(search→describe→execute/read),
+// 只在智能模式返回,避免直连模式下指向不存在的元工具。
+const smartInstructionsText = "This gateway aggregates many MCP services behind 4 discovery tools. Workflow: mcp.search with task keywords to find services/tools/resources/prompts; mcp.describe on a service name or \"service.toolName\" to inspect parameters; mcp.execute with tool_id \"service.toolName\" to call a tool; mcp.read with a newmcp://<service>/<uri> or <service>__<promptName> to fetch a resource or render a prompt. Describe a tool before executing it rather than guessing arguments."
+
+const visionInstructionsText = "To analyze a LOCAL image: if it is small (roughly <= 10KB), inline it as base64 directly to vision.analyze_image; otherwise call vision.upload_image with local_path to get an upload_command matched to your OS (curl.exe on Windows PowerShell where bare `curl` is an alias for Invoke-WebRequest; curl elsewhere) + image_url, run it via your shell (no API key needed), then call vision.analyze_image with the image_url. Never paste large image base64 into tool arguments."
+
+func smartModeInstructions(nativeAllowed bool) string {
+	if nativeAllowed {
+		return visionInstructionsText
+	}
+	return smartInstructionsText + "\n\n" + visionInstructionsText
 }
 
 func (h *GatewayHandler) handleToolsList(ctx context.Context, req *JSONRPCRequest, logCtx *LogContext) *JSONRPCResponse {
@@ -466,22 +482,28 @@ func (h *GatewayHandler) handleSearch(ctx context.Context, reqID interface{}, lo
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Found %d results:\n", len(results))
-	for _, r := range results {
-		if r.Doc.Type == "mcp" {
-			label := r.Doc.Name
-			if r.Doc.Name != r.Doc.ServiceName {
-				label = fmt.Sprintf("%s (%s)", r.Doc.Name, r.Doc.ServiceName)
+	if len(results) == 0 {
+		// 空结果不给线索会让模型放弃或反复瞎猜;按 AWS MCP tool design 的建议,
+		// 在失败点直接告诉它下一步怎么改(AWS: "helpful errors can steer the next attempt")。
+		sb.WriteString("No results. Try broader, plainer keywords (matched against names and descriptions), set scope to \"all\", or remove the group filter. Call mcp.describe if you already know a service or tool name.")
+	} else {
+		fmt.Fprintf(&sb, "Found %d results:\n", len(results))
+		for _, r := range results {
+			if r.Doc.Type == "mcp" {
+				label := r.Doc.Name
+				if r.Doc.Name != r.Doc.ServiceName {
+					label = fmt.Sprintf("%s (%s)", r.Doc.Name, r.Doc.ServiceName)
+				}
+				fmt.Fprintf(&sb, "- **%s** (service, %d tools) %s [%s]\n", label, r.Doc.ToolCount, r.Doc.Description, r.Doc.GroupName)
+			} else if r.Doc.Type == "resource" {
+				fmt.Fprintf(&sb, "- **%s** (resource) %s [%s]\n", gatewayResourceURI(r.Doc.ServiceName, r.Doc.Name), r.Doc.Description, r.Doc.GroupName)
+			} else if r.Doc.Type == "template" {
+				fmt.Fprintf(&sb, "- **%s** (resource template) %s [%s]\n", gatewayResourceURI(r.Doc.ServiceName, r.Doc.Name), r.Doc.Description, r.Doc.GroupName)
+			} else if r.Doc.Type == "prompt" {
+				fmt.Fprintf(&sb, "- **%s__%s** (prompt) %s [%s]\n", r.Doc.ServiceName, r.Doc.Name, r.Doc.Description, r.Doc.GroupName)
+			} else {
+				fmt.Fprintf(&sb, "- **%s.%s** (tool) %s [%s]\n", r.Doc.ServiceName, r.Doc.Name, r.Doc.Description, r.Doc.GroupName)
 			}
-			fmt.Fprintf(&sb, "- **%s** (service, %d tools) %s [%s]\n", label, r.Doc.ToolCount, r.Doc.Description, r.Doc.GroupName)
-		} else if r.Doc.Type == "resource" {
-			fmt.Fprintf(&sb, "- **%s** (resource) %s [%s]\n", gatewayResourceURI(r.Doc.ServiceName, r.Doc.Name), r.Doc.Description, r.Doc.GroupName)
-		} else if r.Doc.Type == "template" {
-			fmt.Fprintf(&sb, "- **%s** (resource template) %s [%s]\n", gatewayResourceURI(r.Doc.ServiceName, r.Doc.Name), r.Doc.Description, r.Doc.GroupName)
-		} else if r.Doc.Type == "prompt" {
-			fmt.Fprintf(&sb, "- **%s__%s** (prompt) %s [%s]\n", r.Doc.ServiceName, r.Doc.Name, r.Doc.Description, r.Doc.GroupName)
-		} else {
-			fmt.Fprintf(&sb, "- **%s.%s** (tool) %s [%s]\n", r.Doc.ServiceName, r.Doc.Name, r.Doc.Description, r.Doc.GroupName)
 		}
 	}
 	resultText := sb.String()
@@ -514,15 +536,32 @@ func (h *GatewayHandler) handleDescribe(ctx context.Context, reqID interface{}, 
 		return h.errorResponse(reqID, -32603, "Describe failed: "+err.Error())
 	}
 
+	text := smart.FormatDescribeResult(results, includeSchema)
+	// Describe 对未知 target 静默跳过;部分命中时不点名缺哪个(缓存里没有对应关系),
+	// 但至少提示"有 target 未找到"并把模型指回 mcp.search,避免它把残缺清单当全量。
+	if requested := countNonEmptyTargets(params.Targets); len(results) < requested {
+		text += "\n---\nNote: " + fmt.Sprintf("%d of %d targets were not found (services must be within your groups; tool names must be exact). Use mcp.search to find valid names.", requested-len(results), requested)
+	}
+
 	return &JSONRPCResponse{
 		JSONRPC: "2.0",
 		ID:      reqID,
 		Result: map[string]interface{}{
 			"content": []map[string]interface{}{
-				{"type": "text", "text": smart.FormatDescribeResult(results, includeSchema)},
+				{"type": "text", "text": text},
 			},
 		},
 	}
+}
+
+func countNonEmptyTargets(targets []string) int {
+	n := 0
+	for _, t := range targets {
+		if t != "" {
+			n++
+		}
+	}
+	return n
 }
 
 func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, logCtx *LogContext, args json.RawMessage, requestID string) *executeResult {
