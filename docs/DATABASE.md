@@ -231,7 +231,7 @@ CREATE TABLE `vision_configs` (
     `max_tokens`           INT             DEFAULT 4096 COMMENT '最大输出 tokens',
 
     -- 工具自定义名称和描述
-    `analyze_image_name`   VARCHAR(128)    DEFAULT 'vision.analyze_image' COMMENT '工具1名称: analyze_image',
+    `analyze_image_name`   VARCHAR(128)    DEFAULT 'analyze_image' COMMENT '工具1名称: analyze_image',
     `analyze_image_desc`   TEXT            DEFAULT 'Analyze an image with a vision model. Covers all image understanding: identify objects, people and text, describe the scene and overall content, extract structured info, or answer any custom question. Pass the prompt parameter to steer the analysis, e.g. describe the scene, transcribe all text, or list defects. Returns: the analysis result as text.' COMMENT '工具1描述',
     -- describe_scene_name/describe_scene_desc 已随 describe_scene 工具下线从模型中移除;
     -- 存量库中的孤儿列无害(AutoMigrate 只加不删),新库不再创建
@@ -269,9 +269,9 @@ CREATE TABLE `cameras` (
     `vision_config_id`     BIGINT UNSIGNED NOT NULL COMMENT '绑定的视觉配置 ID',
 
     -- 工具自定义名称和描述
-    `capture_name`         VARCHAR(128)    DEFAULT 'camera.capture' COMMENT '工具1名称: capture',
+    `capture_name`         VARCHAR(128)    DEFAULT 'capture' COMMENT '工具1名称: capture',
     `capture_desc`         TEXT            DEFAULT 'Capture a single still frame from the live camera feed and return it as an image. Best for: taking snapshots or capturing the current view. Returns: the captured frame as an image.' COMMENT '工具1描述',
-    `analyze_name`         VARCHAR(128)    DEFAULT 'camera.analyze' COMMENT '工具2名称: analyze',
+    `analyze_name`         VARCHAR(128)    DEFAULT 'analyze' COMMENT '工具2名称: analyze',
     `analyze_desc`         TEXT            DEFAULT 'Capture the current camera frame and run visual analysis on it. Best for: detecting objects, people, or events in the live feed. Returns: the analysis result for the current frame.' COMMENT '工具2描述',
 
     -- 扩展配置

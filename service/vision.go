@@ -327,16 +327,16 @@ func (s *VisionService) buildToolsCache(vc *model.VisionConfig) []map[string]int
 	// either/or with a clear error.
 	//
 	// V1.1: the choice is size-based (§16). Small images may inline base64; for
-	// larger ones the model should upload first (vision.upload_image → curl →
+	// larger ones the model should upload first (upload_image → curl →
 	// image_url) so the bytes stay out of its context.
 	//
 	// Keep these SHORT and non-overlapping: the upload workflow (OS-matched curl
-	// command etc.) lives in vision.upload_image's own description and its
+	// command etc.) lives in upload_image's own description and its
 	// response text — analyze_image's params only say which one to pick. And
 	// image_url is pure passthrough, so ANY public http(s) URL works, not just
 	// upload_image results (e.g. a web image the agent already has).
-	const imageURLDesc = "Image URL (http/https). Any publicly reachable URL works, or the image_url returned by vision.upload_image for local files. Preferred for larger images: the upstream model fetches it directly, keeping image bytes out of your context."
-	const imageB64Desc = "Inline base64 of the image. Small images only (~10KB default cap) — larger images bloat your context; use vision.upload_image and pass its image_url instead."
+	const imageURLDesc = "Image URL (http/https). Any publicly reachable URL works, or the image_url returned by upload_image for local files. Preferred for larger images: the upstream model fetches it directly, keeping image bytes out of your context."
+	const imageB64Desc = "Inline base64 of the image. Small images only (~10KB default cap) — larger images bloat your context; use upload_image and pass its image_url instead."
 
 	// The vision service exposes a single general-purpose analyze_image (the
 	// optional prompt param covers every describe_scene-style ask; zai-mcp-server

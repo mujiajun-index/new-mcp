@@ -23,13 +23,13 @@ var UploadStore storage.Storage
 // analyze_image it is NOT a per-VisionConfig field: it is a
 // fixed tool appended to every vision service by buildToolsCache and dispatched
 // through the per-user VirtualToolRegistry like the other vision tools.
-const UploadImageToolName = "vision.upload_image"
+const UploadImageToolName = "upload_image"
 
 // uploadImageDesc is the fixed description of the built-in upload_image tool.
 // It is intentionally a constant (not a per-config field) so the workflow
 // guidance stays consistent across every vision service.
 const uploadImageDesc = "Stage a LOCAL image file for vision analysis. Workflow: 1) call this with local_path; " +
-	"2) run the returned upload_command via your Bash/shell tool; 3) call vision.analyze_image with the returned image_url. " +
+	"2) run the returned upload_command via your Bash/shell tool; 3) call analyze_image with the returned image_url. " +
 	"For SMALL images you may instead inline base64 directly to analyze_image; use this tool for larger images."
 
 const uploadLocalPathDesc = "Absolute path of the image on your machine, in your system's native form " +
@@ -155,7 +155,7 @@ func handleUploadImage(ctx context.Context, userID int64, args json.RawMessage) 
 	result := map[string]interface{}{
 		"content": []map[string]interface{}{
 			{"type": "text", "text": fmt.Sprintf(
-				"Upload slot ready. Run upload_command, then call vision.analyze_image with the image_url below.\n\n"+
+				"Upload slot ready. Run upload_command, then call analyze_image with the image_url below.\n\n"+
 					"upload_command: %s\nimage_url: %s\nexpires_in: %ds",
 				cmd, imageURL, int(putTTL.Seconds()))},
 		},

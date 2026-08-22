@@ -181,7 +181,7 @@ func (h *GatewayHandler) handleInitialize(req *JSONRPCRequest, logCtx *LogContex
 // 只在智能模式返回,避免直连模式下指向不存在的元工具。
 const smartInstructionsText = "This gateway aggregates many MCP services behind 4 discovery tools. Workflow: mcp.search with task keywords to find services/tools/resources/prompts; mcp.describe on a service name or \"service.toolName\" to inspect parameters; mcp.execute with tool_id \"service.toolName\" to call a tool; mcp.read with a newmcp://<service>/<uri> or <service>__<promptName> to fetch a resource or render a prompt. Describe a tool before executing it rather than guessing arguments."
 
-const visionInstructionsText = "To analyze a LOCAL image: if it is small (roughly <= 10KB), inline it as base64 directly to vision.analyze_image; otherwise call vision.upload_image with local_path to get an upload_command matched to your OS (curl.exe on Windows PowerShell where bare `curl` is an alias for Invoke-WebRequest; curl elsewhere) + image_url, run it via your shell (no API key needed), then call vision.analyze_image with the image_url. Never paste large image base64 into tool arguments."
+const visionInstructionsText = "To analyze a LOCAL image: if it is small (roughly <= 10KB), inline it as base64 directly to analyze_image; otherwise call upload_image with local_path to get an upload_command matched to your OS (curl.exe on Windows PowerShell where bare `curl` is an alias for Invoke-WebRequest; curl elsewhere) + image_url, run it via your shell (no API key needed), then call analyze_image with the image_url. Never paste large image base64 into tool arguments."
 
 func smartModeInstructions(nativeAllowed bool) string {
 	if nativeAllowed {
@@ -201,7 +201,7 @@ func (h *GatewayHandler) handleToolsList(ctx context.Context, req *JSONRPCReques
 			// upload_image is no longer appended globally; it is a per-config
 			// built-in tool that travels with each vision service (see
 			// service.buildToolsCache), so CollectToolsForGroups emits it as
-			// vision_<id>__vision.upload_image alongside the other vision tools.
+			// vision_<id>__upload_image alongside the other vision tools.
 			return &JSONRPCResponse{
 				JSONRPC: "2.0",
 				ID:      req.ID,

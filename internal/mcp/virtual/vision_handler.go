@@ -16,7 +16,7 @@ import (
 	"github.com/mujkjk/newmcp/model"
 )
 
-// defaultAnalyzeSystemPrompt is the shared analyze_image / camera.analyze
+// defaultAnalyzeSystemPrompt is the shared analyze_image / camera analyze
 // fallback when the VisionConfig's SystemPrompt is empty. Long structured
 // version taken from
 // zai-mcp-server's GENERAL_IMAGE_ANALYSIS_PROMPT (@z_ai/mcp-server 0.1.4,
@@ -66,7 +66,7 @@ If there are other observations that might be valuable but weren't directly requ
 
 Your goal is to be genuinely helpful by providing exactly the information and analysis the user needs, presented in a clear, organized, and insightful manner. Adapt your response to their specific situation rather than forcing their request into a predetermined format.`
 
-// defaultAnalyzeUserPrompt is the shared analyze_image / camera.analyze
+// defaultAnalyzeUserPrompt is the shared analyze_image / camera analyze
 // fallback user prompt when the caller passes no prompt argument.
 const defaultAnalyzeUserPrompt = "What does this image show? Give an overview of the main subject and setting, and note anything notable."
 
@@ -86,7 +86,7 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 	// image/image_url param parsing below because its argument is local_path. The
 	// caller's userID (for upload ownership + quota) is injected into ctx by the
 	// gateway at the virtual dispatch sites; fall back to the config owner if absent.
-	if strings.HasSuffix(toolName, "upload_image") || toolName == UploadImageToolName {
+	if strings.HasSuffix(toolName, "upload_image") {
 		uid := CallerUserID(ctx)
 		if uid == 0 {
 			uid = vc.UserID
@@ -158,7 +158,7 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 		// token/KB, generated as output). Guide it to the upload path instead.
 		// VisionInlineMaxBytes=0 disables this (back to V1.0 behavior).
 		if inline := model.GetOptionInt64("VisionInlineMaxBytes"); inline > 0 && int64(len(imgBytes)) > inline {
-			return nil, fmt.Errorf("image is %d bytes, above the %d-byte inline threshold (VisionInlineMaxBytes); use vision.upload_image → curl → image_url instead (same result, far less context); set VisionInlineMaxBytes=0 to allow inlining", len(imgBytes), inline)
+			return nil, fmt.Errorf("image is %d bytes, above the %d-byte inline threshold (VisionInlineMaxBytes); use upload_image → curl → image_url instead (same result, far less context); set VisionInlineMaxBytes=0 to allow inlining", len(imgBytes), inline)
 		}
 		if max := model.GetOptionInt64("VisionUploadMaxBytes"); max > 0 && int64(len(imgBytes)) > max {
 			return nil, fmt.Errorf("image exceeds the %d-byte limit", max)
@@ -180,7 +180,7 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 	var systemPrompt, userPrompt string
 
 	switch {
-	case strings.HasSuffix(toolName, "analyze_image") || toolName == "vision.analyze_image":
+	case strings.HasSuffix(toolName, "analyze_image"):
 		systemPrompt = vc.SystemPrompt
 		if systemPrompt == "" {
 			systemPrompt = defaultAnalyzeSystemPrompt
@@ -335,7 +335,7 @@ func fetchOwnImage(ctx context.Context, key string) ([]byte, string, error) {
 	oi, err := UploadStore.Stat(ctx, key)
 	if err != nil {
 		if errors.Is(err, storage.ErrObjectNotFound) {
-			return nil, "", fmt.Errorf("image_url refers to an upload that was never received — run the upload_command from vision.upload_image first")
+			return nil, "", fmt.Errorf("image_url refers to an upload that was never received — run the upload_command from upload_image first")
 		}
 		return nil, "", fmt.Errorf("read uploaded image: %w", err)
 	}
@@ -348,7 +348,7 @@ func fetchOwnImage(ctx context.Context, key string) ([]byte, string, error) {
 	rc, err := UploadStore.Get(ctx, key)
 	if err != nil {
 		if errors.Is(err, storage.ErrObjectNotFound) {
-			return nil, "", fmt.Errorf("image_url refers to an upload that was never received — run the upload_command from vision.upload_image first")
+			return nil, "", fmt.Errorf("image_url refers to an upload that was never received — run the upload_command from upload_image first")
 		}
 		return nil, "", fmt.Errorf("open uploaded image: %w", err)
 	}

@@ -22,9 +22,9 @@ type Camera struct {
 	VisionConfigID     *int64         `json:"vision_config_id" gorm:"index"`
 	AutoRegister       bool           `json:"auto_register" gorm:"default:false"`
 	RegisteredServiceID *int64        `json:"registered_service_id"`
-	CaptureName        string         `json:"capture_name" gorm:"size:128;default:camera.capture"`
+	CaptureName        string         `json:"capture_name" gorm:"size:128;default:capture"`
 	CaptureDesc        string         `json:"capture_desc" gorm:"type:varchar(512);default:Capture a single still frame from the live camera feed and return it as an image. Best for: taking snapshots or capturing the current view. Returns: the captured frame as an image."`
-	AnalyzeName        string         `json:"analyze_name" gorm:"size:128;default:camera.analyze"`
+	AnalyzeName        string         `json:"analyze_name" gorm:"size:128;default:analyze"`
 	AnalyzeDesc        string         `json:"analyze_desc" gorm:"type:varchar(512);default:Capture the current camera frame and run visual analysis on it. Best for: detecting objects, people, or events in the live feed. Returns: the analysis result for the current frame."`
 	ExtraConfig        string         `json:"extra_config" gorm:"type:varchar(4096);default:'{}'"`
 	// 推流密钥:明文存(需管理界面随时回显完整链接),json:"-" 防止 model 意外序列化,

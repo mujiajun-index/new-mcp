@@ -8,7 +8,7 @@ import (
 )
 
 // VirtualToolHandler processes a virtual tool call.
-// toolName is the specific tool within the virtual service (e.g. "vision.analyze_image").
+// toolName is the specific tool within the virtual service (e.g. "analyze_image").
 type VirtualToolHandler func(ctx context.Context, serviceID int64, config map[string]interface{}, toolName string, args json.RawMessage) (json.RawMessage, error)
 
 type ServiceEntry struct {

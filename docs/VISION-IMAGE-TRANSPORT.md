@@ -17,7 +17,7 @@
 > - **`analyze_image` 入参择优**（§16）：小图（≤ `VisionInlineMaxBytes`，默认 10KB）直接 base64 内联、大图走 `upload_image`；按尺寸分档，避免小图也强制上传、大图撑爆上下文。
 >
 > **V1.2 变更（`upload_image` 由全局工具改为 per-config 内置工具，详见 §14.2）**:
-> - `upload_image` 不再作为全局虚拟工具（`global.go`）对所有人常驻追加；改为**每个视觉服务（`vision_<id>`）的第三个内置工具**，名称 `vision.upload_image` 与描述**固定不可改**（不进 `VisionConfig` 字段），随 `buildToolsCache` 注入、经 per-user `VirtualToolRegistry` 派发（暴露名 `vision_<id>__vision.upload_image`，与 `analyze_image` 同路径）。
+> - `upload_image` 不再作为全局虚拟工具（`global.go`）对所有人常驻追加；改为**每个视觉服务（`vision_<id>`）的第三个内置工具**，名称 `upload_image` 与描述**固定不可改**（不进 `VisionConfig` 字段），随 `buildToolsCache` 注入、经 per-user `VirtualToolRegistry` 派发（暴露名 `vision_<id>__upload_image`，与 `analyze_image` 同路径）。
 > - 删除 `internal/mcp/virtual/global.go`（`GlobalTools`/`IsGlobalTool`/`HandleGlobalTool`）及 `gateway_handler` 的两处全局短路；调用方 userID 经 context（`virtual.WithCallerUserID`/`CallerUserID`）在两处 virtual 派发点注入，`VisionHandler` 的 upload 分支读取（回退 `vc.UserID`）。
 > - 视觉配置详情页新增只读 `upload_image` 卡片（标题/简介/「系统内置·不可修改」徽标）。存量已启用配置需重新保存/启用以 regenerate `ToolsCache`（沿用 `image_url` 的既定约定）；新配置直接生效。
 > - `analyze_image`/`describe_scene` 的 `image_url` 入参**放开为 http 与 https 均可**（原先仅 https）。网关永不下载 `image_url`（纯透传上游），scheme 不构成 SSRF 面；放行 http 兼容 `ServerAddress` 为 http 的本地/非 TLS 部署（如默认 `http://localhost:3000`）。
@@ -335,7 +335,7 @@ curl "<url>"
 # 4) 用作 image_url 调 vision 工具（JSON-RPC tools/call，节选）
 curl -X POST http://localhost:3000/mcp/group/<slug> -H "X-API-Key: sk-..." -d '{
   "method":"tools/call",
-  "params":{"name":"vision.analyze_image","arguments":{"image_url":"<url>","prompt":"描述这张图"}}
+  "params":{"name":"analyze_image","arguments":{"image_url":"<url>","prompt":"描述这张图"}}
 }'
 ```
 
@@ -368,7 +368,7 @@ curl -X POST http://localhost:3000/mcp/group/<slug> -H "X-API-Key: sk-..." -d '{
 # 1) 调 upload_image 拿现成 curl（JSON-RPC tools/call，节选）
 curl -X POST http://localhost:3000/mcp/group/<slug> -H "X-API-Key: sk-..." -d '{
   "method":"tools/call",
-  "params":{"name":"vision.upload_image","arguments":{"local_path":"./photo.jpg"}}
+  "params":{"name":"upload_image","arguments":{"local_path":"./photo.jpg"}}
 }'
 # => 返回文本块：单条 upload_command（按 OS 从 local_path 推断 curl 或 curl.exe）+ image_url + expires_in，见 §14.2.1
 
@@ -485,9 +485,9 @@ curl.exe -X PUT -T 'C:\photos\photo.jpg' 'https://.../files/a1/a1b2...?expires=.
 go build ./... && ./newmcp  # 启动后 uploaded_images 表自动建成
 
 # 1) local 路径：JWT 上传 → 拿 url → curl 取回原图
-# 2) MCP URL 路径：把 url 作为 image_url 调 vision.analyze_image → 看上游日志里是 URL 而非 base64
+# 2) MCP URL 路径：把 url 作为 image_url 调 analyze_image → 看上游日志里是 URL 而非 base64
 # 3) base64 回归：仍可用 image(base64) 调通；超 VisionUploadMaxBytes 被拒
-# 4) camera 回归：camera.analyze 正常
+# 4) camera 回归：analyze 正常
 # 5) MCP 调用方上传：sk- 鉴权 /vision/mcp-upload 通
 # 6) S3 路径：配 StorageBackend=s3 + 凭证，重复 2-3，对象入桶、URL 指向桶
 # 7) 清理：调小 UploadRetentionHours，等一个 tick，旧行 + 对象被删，近期保留
@@ -509,7 +509,7 @@ go build ./... && ./newmcp  # 启动后 uploaded_images 表自动建成
 
 **V1.1（shell 直传 + 图片管理 + 入参择优，已实现，详见 §14、§15、§16）**：
 
-- `upload_image` per-config 内置工具（V1.2：随 `buildToolsCache` 注入每个视觉服务，固定名 `vision.upload_image`；入参 `local_path`，返回预签名 PUT curl + `image_url` + `expires_in`）
+- `upload_image` per-config 内置工具（V1.2：随 `buildToolsCache` 注入每个视觉服务，固定名 `upload_image`；入参 `local_path`，返回预签名 PUT curl + `image_url` + `expires_in`）
 - `Storage.PutURL` / `Stat` / `OwnsURL`（V1.1）/ `KeyFromURL`（V1.3）接口扩展（local = HMAC PUT URL，s3 = `PresignedPutObject`）
 - `PUT /api/v1/vision/files/*key` 直传端点 + purpose 绑定的 HMAC 签名（`SignURLFor`/`VerifyURLFor`）
 - `uploaded_images.status` 状态机（`pending` / `uploaded`，默认 `uploaded`）+ `PresignedPutTTLSeconds` 配置键
@@ -554,8 +554,8 @@ V1.1 新增的**预签名 PUT 直传**路径：模型调 `upload_image` 拿到�
 
 ### 14.2 `upload_image` per-config 内置工具（V1.2）
 
-- **per-config 内置工具**：V1.2 起不再是全局单例，而是每个视觉服务（`vision_<id>`）的内置工具（V1.4 `describe_scene` 下线后与 `analyze_image` 并列），由 `service/vision.go::buildToolsCache` 末尾追加 `virtual.UploadImageTool()`。暴露名 = `vision_<id>__vision.upload_image`（direct/group 模式，`CollectToolsForGroups` 加 `__` 前缀）；smart 模式 `tool_id` = `vision_<id>.vision.upload_image`。`ParseNamespacedName` 按 `__` 优先、其次 `.` 切分，无需特判。
-- **名称与描述固定**：`vision.upload_image` 与其描述是**硬编码常量**（`virtual.UploadImageToolName` / `uploadImageDesc`），**不进 `VisionConfig` 字段、不可编辑**——区别于 `analyze_image`（名/描述存库、可在详情页改）。`UploadImageTool()` 每次返回**全新 map**，因为 `CollectToolsForGroups` 会就地改写 `t["name"]` 加前缀，共享实例会被污染。
+- **per-config 内置工具**：V1.2 起不再是全局单例，而是每个视觉服务（`vision_<id>`）的内置工具（V1.4 `describe_scene` 下线后与 `analyze_image` 并列），由 `service/vision.go::buildToolsCache` 末尾追加 `virtual.UploadImageTool()`。暴露名 = `vision_<id>__upload_image`（direct/group 模式，`CollectToolsForGroups` 加 `__` 前缀）；smart 模式 `tool_id` = `vision_<id>.upload_image`。`ParseNamespacedName` 按 `__` 优先、其次 `.` 切分，无需特判。
+- **名称与描述固定**：`upload_image` 与其描述是**硬编码常量**（`virtual.UploadImageToolName` / `uploadImageDesc`），**不进 `VisionConfig` 字段、不可编辑**——区别于 `analyze_image`（名/描述存库、可在详情页改）。`UploadImageTool()` 每次返回**全新 map**，因为 `CollectToolsForGroups` 会就地改写 `t["name"]` 加前缀，共享实例会被污染。
 - **派发**：经 per-user `VirtualToolRegistry` → `VisionHandler`（与 analyze_image 同一条路）。`VisionHandler` 加载 `vc` 后、解析 `image`/`image_url` 之前短路：`strings.HasSuffix(toolName,"upload_image")` → `handleUploadImage`。`upload_image` 入参是 `local_path`，与图片分析入参完全不同，故必须在分析参数校验之前短路。
 - **调用方 userID**：`upload_image` 需调用方 userID（上传归属 + `MaxUploadsPerUser` 配额，与 multipart `UploadVisionImage`、旧全局工具语义一致，按**调用方**计）。`VirtualToolHandler` 签名无 userID（改它会波及 camera），故用 context 传递：`gateway_handler` 在 `routeAndCall` / `handleExecute` 两处 virtual 派发点调 `virtual.WithCallerUserID(ctx, logCtx.UserID)`；`VisionHandler` upload 分支 `CallerUserID(ctx)` 读取，`0` 时回退 `vc.UserID`。
 
@@ -572,7 +572,7 @@ V1.1 新增的**预签名 PUT 直传**路径：模型调 `upload_image` 拿到�
 实际返回是 MCP `tools/call` 的 `content[].text` 文本块（节选）：
 
 ```text
-Upload slot ready. Run upload_command, then call vision.analyze_image with the image_url below.
+Upload slot ready. Run upload_command, then call analyze_image with the image_url below.
 
 upload_command: curl.exe -X PUT -T 'C:\abs\path\photo.jpg' 'https://host/u/8QkP2mR9xY4a?s=Kp9bZx7mQ2nLr5tA'
 image_url: https://host/u/8QkP2mR9xY4a?s=Vc3Nq8wYj4Hk6sTp
@@ -693,7 +693,7 @@ if UploadStore != nil && UploadStore.OwnsURL(params.ImageURL) {
 
 1. **工具返回值**（最有效）：`upload_image` 返回里直接给 `upload_command`（现成 curl）+ `next_step`，模型读到就照做。
 2. **工具 description**：声明完整工作流（`upload_image` → Bash curl → `analyze_image(image_url)`），并明令「不要把 base64 塞参数」。
-3. **MCP `initialize` 的 `instructions`**：当前 `handleInitialize` 未返回该字段，V1.1 在 Result map 里加全局工作流说明（smart 模式 tools/list 只有 3 个 meta 工具，这里是其获知 `vision.upload_image` 的主渠道）。
+3. **MCP `initialize` 的 `instructions`**：当前 `handleInitialize` 未返回该字段，V1.1 在 Result map 里加全局工作流说明（smart 模式 tools/list 只有 3 个 meta 工具，这里是其获知 `upload_image` 的主渠道）。
 4. **错误兜底**：模型跳步（拿本地路径 / 无效 URL 调 analyze）时，返回带「1) `upload_image` → 2) Bash curl → 3) `analyze_image(image_url)`」的操作指引错误，促其自纠。
 
 ### 14.9 两后端字节走向 + 时序
@@ -710,12 +710,12 @@ if UploadStore != nil && UploadStore.OwnsURL(params.ImageURL) {
 **时序**：
 
 ```
-模型: tools/call vision.upload_image(local_path)
+模型: tools/call upload_image(local_path)
   └─ 网关: 校验调用方 API Key → 生成 uuid key → 建 uploaded_images 行(status=pending)
           → Storage.PutURL(key, PresignedPutTTL) + Storage.PublicURL(key, SignedURLTTL)
 模型 ← { upload_command, image_url, expires_in }
 模型: Bash 执行 upload_command            # 无 key；s3 直传桶 / local 命中 PUT 端点
-模型: tools/call vision.analyze_image(image_url=<返回的 image_url>)
+模型: tools/call analyze_image(image_url=<返回的 image_url>)
   └─ 网关: OwnsURL 命中 → KeyFromURL 剥 key → Stat 大小校验 → Get 读字节 → 嗅探 mime
           → ImageInput{Bytes} 发上游 → 上游直收 base64（无需回访 ServerAddress）
 模型 ← 分析结果
@@ -771,7 +771,7 @@ if UploadStore != nil && UploadStore.OwnsURL(params.ImageURL) {
 4. 一次性 slot：对同一 key 二次 PUT → 409。
 5. 模型跳步：直接拿本地路径 / 未上传的 `image_url` 调 `analyze_image` → 返回带操作指引的错误（且不发计费请求到上游）。
 6. 清理：`pending` 行到期（PUT TTL 过后）被回收；已 `uploaded` 行按 `UploadRetentionHours` 回收。
-7. smart 模式：`initialize` 的 `instructions` 出现；`mcp.execute vision_<id>.vision.upload_image` 与直调（`vision_<id>__vision.upload_image`）均可通。
+7. smart 模式：`initialize` 的 `instructions` 出现；`mcp.execute vision_<id>.upload_image` 与直调（`vision_<id>__upload_image`）均可通。
 
 ---
 

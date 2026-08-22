@@ -68,9 +68,9 @@ func (s *CameraService) Create(userID int64, req *dto.CreateCameraReq) (*dto.Cam
 		VisionConfigID: &req.VisionConfigID,
 		AutoRegister:  false,
 		Status:        common.StatusEnabled,
-		CaptureName:   "camera.capture",
+		CaptureName:   "capture",
 		CaptureDesc:   "Capture a single still frame from the live camera feed and return it as an image. Best for: taking snapshots or capturing the current view. Returns: the captured frame as an image.",
-		AnalyzeName:   "camera.analyze",
+		AnalyzeName:   "analyze",
 		AnalyzeDesc:   "Capture the current camera frame and run visual analysis on it. Best for: detecting objects, people, or events in the live feed. Returns: the analysis result for the current frame.",
 		ExtraConfig:   "{}",
 	}

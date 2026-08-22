@@ -526,7 +526,7 @@ export function VisionDetailPage() {
               <Label className="text-xs">{t('vision.toolName')}</Label>
               <Input
                 readOnly
-                value="vision.upload_image"
+                value="upload_image"
                 className="text-xs h-8 text-muted-foreground"
               />
             </div>
@@ -536,7 +536,7 @@ export function VisionDetailPage() {
               <p className="rounded-md border bg-background px-2.5 py-2 text-xs leading-relaxed text-muted-foreground">
                 Stage a LOCAL image file for vision analysis. Workflow: 1) call
                 this with local_path; 2) run the returned upload_command via
-                your Bash/shell tool; 3) call vision.analyze_image with the
+                your Bash/shell tool; 3) call analyze_image with the
                 returned image_url. For SMALL images you may instead inline
                 base64 directly to analyze_image; use this tool for larger
                 images.

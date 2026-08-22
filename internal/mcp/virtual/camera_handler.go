@@ -26,9 +26,9 @@ func CameraHandler(ctx context.Context, serviceID int64, config map[string]inter
 	}
 
 	switch {
-	case strings.HasSuffix(toolName, "capture") || toolName == "camera.capture":
+	case strings.HasSuffix(toolName, "capture"):
 		return handleCapture(cam.ID)
-	case strings.HasSuffix(toolName, "analyze") || toolName == "camera.analyze":
+	case strings.HasSuffix(toolName, "analyze"):
 		return handleAnalyze(ctx, cam, args)
 	default:
 		return nil, fmt.Errorf("unknown camera tool: %s", toolName)

@@ -9,7 +9,7 @@ import (
 // Default tool identity for the vision service's single general-purpose tool.
 // The gorm default tags on VisionConfig must stay byte-identical to these.
 const (
-	DefaultAnalyzeImageName = "vision.analyze_image"
+	DefaultAnalyzeImageName = "analyze_image"
 	DefaultAnalyzeImageDesc = "Analyze an image with a vision model. Covers all image understanding: identify objects, people and text, describe the scene and overall content, extract structured info, or answer any custom question. Pass the prompt parameter to steer the analysis, e.g. describe the scene, transcribe all text, or list defects. Returns: the analysis result as text."
 )
 
@@ -42,7 +42,7 @@ type VisionConfig struct {
 	// its job is analyze_image with a "describe the scene" prompt — following
 	// zai-mcp-server's single-general-tool design. The gorm default tag must
 	// stay byte-identical to DefaultAnalyzeImageDesc below.
-	AnalyzeImageName string         `json:"analyze_image_name" gorm:"size:128;default:vision.analyze_image"`
+	AnalyzeImageName string         `json:"analyze_image_name" gorm:"size:128;default:analyze_image"`
 	AnalyzeImageDesc string         `json:"analyze_image_desc" gorm:"type:varchar(512);default:Analyze an image with a vision model. Covers all image understanding: identify objects, people and text, describe the scene and overall content, extract structured info, or answer any custom question. Pass the prompt parameter to steer the analysis, e.g. describe the scene, transcribe all text, or list defects. Returns: the analysis result as text."`
 	ExtraConfig      string         `json:"extra_config" gorm:"type:varchar(4096);default:'{}'"`
 	Status           int            `json:"status" gorm:"default:1"`
