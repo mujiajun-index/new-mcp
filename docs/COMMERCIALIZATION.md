@@ -604,11 +604,12 @@ PreConsume 发现 user.Quota <= 0 或 user.Quota - 预扣 < 0(或 apiKey 预算�
 |----------|------|------|
 | `tools/call`(Direct) | ✅ 扣费 | 命中 `source=marketplace` 服务按市场价扣;`source=user` 免费 |
 | `mcp.execute`(Smart) | ✅ 扣费 | 本质转发到上游工具,resolver 解析底层服务后同 `tools/call` 规则(命中 marketplace 才扣) |
+| `mcp.execute_batch`(Smart) | ✅ 扣费 | **逐项**计费:每项独立走插入点 A/B(预扣/确认/退款),幂等键 `request_id` 在哈希部分带批内序号(`tool_id#i`,防止批内相同两项漏扣);某项余额不足只阻塞该项,其余项照常执行 |
 | `initialize` | ❌ 免费 | 协议握手 |
 | `tools/list`(Direct/Smart) | ❌ 免费 | 工具发现 |
 | `mcp.search` / `mcp.describe`(Smart) | ❌ 免费 | 搜索/描述元工具(只读发现) |
 
-> **判定原则**:只有**实际执行上游工具**(`tools/call`、`mcp.execute`)才扣费;握手与发现类一律免费。Smart 模式下 `mcp.execute` 必须解析到目标服务的 `source`,命中 marketplace 才计费。
+> **判定原则**:只有**实际执行上游工具**(`tools/call`、`mcp.execute`、`mcp.execute_batch` 的每一项)才扣费;握手与发现类一律免费。Smart 模式下 `mcp.execute` / `mcp.execute_batch` 必须解析到目标服务的 `source`,命中 marketplace 才计费。
 > **虚拟工具**(vision/camera 等,`transport_type='virtual'`)属用户自有,**保持免费**;**永不可上架为市场服务**(D16/§11:手动添加/克隆上架均拒绝 `transport_type='virtual'`),仅自有配置、配置者自己使用。
 
 ---

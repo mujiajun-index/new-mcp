@@ -362,3 +362,30 @@ newmcp/
 
 充值/在线支付、订阅套餐、用量看板(图表)、工具级精确定价 UI、市场引用 tools_cache 自动同步、余额变更流水表。
 
+
+---
+
+## 9. Smart 模式批量执行 mcp.execute_batch(2026-08-22)
+
+> 设计动机:串行工具循环的客户端(小智等)执行 N 个独立调用时,时延为各项之和、
+> 轮次为 N;批量元工具把并发决策移到网关内。Anthropic Cookbook 官方亦推荐 batch
+> 元工具模式诱导模型并行调用。
+
+### 9.1 后端 ✅ 已完成(build + handler 单测通过)
+
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| 元工具定义 `smart/meta_tools.go` | ✅ | mcp.execute_batch(calls 数组,maxItems=10);mcp.execute 描述加互指;instructions 同步 |
+| 执行路径复用 | ✅ | 单项执行抽为 `executeOne`,单次/批量共用(作用域校验/虚拟工具/计费 A+B/超时完全一致) |
+| 并发控制 | ✅ | WaitGroup + 信号量,并发上限 5;批量上限 10(schema+服务端双兜底) |
+| 结果聚合 | ✅ | 首块汇总 + 每项 `[index] tool_id` 头块 + 上游 content 原样透传(image 等类型不变);上游 isError 计为该项失败;全失败才 isError:true;缺 content/不可解析退化为截断原文 |
+| 计费 | ✅ | 逐项预扣/确认/退款;幂等键哈希部分带批内序号(`tool_id#i`)防批内相同两项漏扣 |
+| 日志 | ✅ | 每项一条(method=mcp.execute_batch,service/tool/分组/计费列按项归属);请求数只递增一次;校验失败回落单条日志(-32602) |
+| 测试 | ✅ | `execute_batch_test.go`:聚合格式(全成/部分败/全败/上游 isError/无 content 兜底)+ 校验路径 |
+
+### 9.2 文档与测试设施 ✅
+
+MCP-PROTOCOL.md(§3.5 新小节,原 3.5 mcp.read 顺延 3.6)、API.md、README 中英、
+PRD、ARCHITECTURE、COMMERCIALIZATION(计费口径表)、DATABASE(逐项日志)、
+XIAOZHI-INTEGRATION(分发 switch)、TEST-GUIDE 同步;smart_gateway.py 测试实例
+补 mcp_execute_batch(asyncio.gather 并发)。

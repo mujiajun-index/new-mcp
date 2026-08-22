@@ -1371,7 +1371,7 @@ canvas.toBlob(blob => {
 | 模式 | tools/list 返回 | tools/call 行为 |
 |------|-----------------|-----------------|
 | direct | 所有聚合工具（带 `serviceName__toolName` 前缀） | 直接路由到上游服务 |
-| smart | 固定 3 个元工具: `mcp.search`, `mcp.describe`, `mcp.execute` | 先解析元工具，再路由 |
+| smart | 固定 5 个元工具: `mcp.search`, `mcp.describe`, `mcp.execute`, `mcp.execute_batch`, `mcp.read` | 先解析元工具，再路由 |
 
 ### Smart 模式元工具 Schema
 
@@ -1426,6 +1426,34 @@ canvas.toBlob(blob => {
 }
 ```
 
+**mcp.execute_batch:**
+```json
+{
+    "name": "mcp.execute_batch",
+    "description": "并发执行多个相互独立的工具调用（最多 10 项、网关内并发上限 5），逐项返回结果。适合批量查多城市天气、批量控制开关/设备（同一工具按不同设备重复调用）等互不依赖的调用;某项参数依赖另一项返回值、或同一目标需按序操作（先设置再读回）时请逐个用 mcp.execute。",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "calls": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 10,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "tool_id": {"type": "string", "description": "格式: 服务名.工具名"},
+                        "arguments": {"type": "object", "description": "工具参数"},
+                        "timeout_ms": {"type": "number", "default": 30000, "description": "单项超时毫秒"}
+                    },
+                    "required": ["tool_id"]
+                }
+            }
+        },
+        "required": ["calls"]
+    }
+}
+```
+
 ### POST /mcp
 主网关端点 (Streamable HTTP)。聚合 API Key 绑定的所有分组，**固定 Direct 模式**，去重后暴露全部工具（`serviceName__toolName` 前缀）。
 
@@ -1450,7 +1478,7 @@ X-API-Key: <key>
 **Response:** 返回 API Key 绑定分组的全部工具（去重后），工具名格式 `serviceName__toolName`。
 
 ### POST /smart/mcp
-Smart 网关端点 (Streamable HTTP)。聚合 API Key 绑定的所有分组，**固定 Smart 模式**，仅暴露 3 个元工具。
+Smart 网关端点 (Streamable HTTP)。聚合 API Key 绑定的所有分组，**固定 Smart 模式**，仅暴露 5 个元工具。
 
 **Headers:**
 ```
@@ -1470,7 +1498,7 @@ X-API-Key: <key>
 }
 ```
 
-**Response:** 固定返回 3 个元工具 (`mcp.search`, `mcp.describe`, `mcp.execute`)，搜索范围覆盖该 API Key 所有绑定分组。
+**Response:** 固定返回 5 个元工具 (`mcp.search`, `mcp.describe`, `mcp.execute`, `mcp.execute_batch`, `mcp.read`)，搜索范围覆盖该 API Key 所有绑定分组。
 
 ### POST /mcp/group/{slug}
 分组端点 (Streamable HTTP)。按分组的 `expose_mode` 决定模式（端点驱动）：`direct` 返回聚合工具，`smart` 返回元工具。
@@ -1511,7 +1539,7 @@ wss://api.newmcp.pro/mcp/passive/?token=<PASSIVE_JWT>
 |------|------|------|
 | POST | `/mcp`、`/smart/mcp`、`/mcp/group/:slug` | 调用 `source=user` 服务**免费**;调用 `source=marketplace` 服务按 3 级定价**按次计费**,余额不足拒绝本次调用(不禁用 Key) |
 
-**计费口径**:仅 `tools/call`(Direct)与 `mcp.execute`(Smart)扣费;`initialize`/`tools/list`/`mcp.search`/`mcp.describe` 免费。
+**计费口径**:仅 `tools/call`(Direct)与 `mcp.execute` / `mcp.execute_batch`(Smart,批量**逐项**计费:每项独立预扣/确认/退款,幂等键带批内序号)扣费;`initialize`/`tools/list`/`mcp.search`/`mcp.describe` 免费。
 
 **余额不足错误体**(MCP JSON-RPC,不禁用 Key,充值后立即可用):
 ```json

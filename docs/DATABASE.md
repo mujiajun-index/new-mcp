@@ -392,7 +392,7 @@ CREATE TABLE `mcp_call_logs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP 调用日志表(含计费明细)';
 ```
 
-> **计费与审计合一**:每次 `tools/call` / `mcp.execute` 写一条 log,计费结果同落。自有服务(`source=user`)写 `billing_status='skipped'`、`quota_consumed=0`;市场引用服务(`source=marketplace`)写实际计费结果 + `marketplace_item_id`。`quota_consumed` 是用户账单的权威明细。
+> **计费与审计合一**:每次 `tools/call` / `mcp.execute` 写一条 log,计费结果同落;`mcp.execute_batch` 按项写 N 条(method=`mcp.execute_batch`,service/tool/计费列逐项归属),请求数统计只按一次请求递增。自有服务(`source=user`)写 `billing_status='skipped'`、`quota_consumed=0`;市场引用服务(`source=marketplace`)写实际计费结果 + `marketplace_item_id`。`quota_consumed` 是用户账单的权威明细。
 > **留存与隐私**:`request_payload`/`response_payload` 可能含敏感数据,由 `LogPayloadEnabled`(默认 true)控制是否落 payload,关闭时只存元数据 + 计费列。视觉图片类工具(`analyze_image`)请求参数中的 base64 图片在落库前会被脱敏(替换为大小占位 `[redacted:Nb]`)。系统对齐 reference/new-api,不提供"日志保留天数"设置与定时清理,日志持久保留,需手动清理。
 
 ### 2.12 marketplace_items - 平台市场服务表

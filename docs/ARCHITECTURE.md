@@ -413,11 +413,12 @@ func (e *SearchEngine) Search(ctx context.Context, store Store, apiKeyID int64, 
 
 // 端点驱动模式选择:
 //   POST /mcp              → 固定 Direct 模式（聚合 API Key 所有分组，去重暴露全部工具）
-//   POST /smart/mcp        → 固定 Smart 模式（仅暴露 3 个元工具）
+//   POST /smart/mcp        → 固定 Smart 模式（仅暴露 5 个元工具）
 //   POST /mcp/group/{slug} → 按分组的 expose_mode 决定:
 //     Direct 模式: 聚合分组内所有工具，命名空间前缀 (serviceName__toolName，双下划线)
-//     Smart  模式: 只暴露 3 个固定元工具 (mcp.search, mcp.describe, mcp.execute)
-//                  mcp.execute 的 tool_id 使用 serviceName.toolName 格式（点号）
+//     Smart  模式: 只暴露固定元工具 (mcp.search, mcp.describe, mcp.execute,
+//                  mcp.execute_batch, mcp.read)
+//                  mcp.execute / mcp.execute_batch 的 tool_id 使用 serviceName.toolName 格式（点号）
 
 // 无 slug 时根据 logCtx.ExposeMode 决定模式
 func (h *GatewayHandler) handleToolsList(ctx context.Context, req *JSONRPCRequest, logCtx *LogContext) *JSONRPCResponse {

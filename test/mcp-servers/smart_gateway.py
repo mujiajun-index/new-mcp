@@ -2,7 +2,7 @@
 NewMCP Smart 模式网关 (最小测试实例)
 
 模拟 NewMCP 的 Smart 模式行为:
-- 暴露 3 个元工具: mcp.search, mcp.describe, mcp.execute
+- 暴露 4 个元工具: mcp.search, mcp.describe, mcp.execute, mcp.execute_batch
 - 聚合下游 MCP 服务的工具 (本地 + HTTP)
 - 通过 search → describe → execute 渐进发现
 
@@ -213,6 +213,40 @@ async def mcp_execute(tool_id: str, arguments: str = "{}") -> str:
         return await _execute_http(svc_name, tool_name, args)
     else:
         return f"错误: 不支持的传输类型 '{transport}'"
+
+
+@mcp.tool()
+async def mcp_execute_batch(calls: str) -> str:
+    """并发执行多个相互独立的 MCP 工具调用（最多 10 项），逐项返回结果。
+    适合批量控制开关/设备（同一工具按不同设备重复调用）、一次查多个城市天气等
+    互不依赖的调用。仅当某项参数需要等另一项返回值时（如先上传拿 URL 再识别），
+    或同一目标需按序操作（先设置再读回状态）时，请改用 mcp_execute 逐个执行。
+    参数:
+      calls: JSON 数组，每项 {"tool_id": "服务名.工具名", "arguments": {...}}，
+             如 '[{"tool_id":"weather.get_weather","arguments":{"city":"北京"}},
+                  {"tool_id":"weather.get_weather","arguments":{"city":"上海"}},
+                  {"tool_id":"calculator.add","arguments":{"a":1,"b":2}}]'
+    """
+    try:
+        batch = json.loads(calls) if isinstance(calls, str) else calls
+    except json.JSONDecodeError:
+        return "错误: calls 不是有效的 JSON"
+
+    if not isinstance(batch, list) or not batch:
+        return "错误: calls 应为非空数组"
+    if len(batch) > 10:
+        return f"错误: 批量上限 10 项，收到 {len(batch)} 项，请拆分"
+
+    import asyncio
+
+    async def run_one(i: int, call: dict) -> str:
+        tool_id = call.get("tool_id", "")
+        args = call.get("arguments", {})
+        result = await mcp_execute(tool_id=tool_id, arguments=json.dumps(args, ensure_ascii=False))
+        return f"[{i}] {tool_id} — {result}"
+
+    outputs = await asyncio.gather(*(run_one(i, c) for i, c in enumerate(batch)))
+    return "\n\n".join(outputs)
 
 
 # ── HTTP 执行 (Streamable HTTP MCP 上游) ──

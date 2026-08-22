@@ -134,9 +134,9 @@ wss://api.xiaozhi.me/mcp/?token=<JWT_TOKEN>
 | 模式 | 说明 | 适合场景 |
 |------|------|----------|
 | direct | 直接暴露所有工具（带命名空间前缀） | 工具少（<10），小智设备需要直接调用 |
-| smart | 仅暴露 3 个元工具: search/describe/execute | 工具多（10+），或小智设备上下文有限 |
+| smart | 仅暴露 5 个元工具: search/describe/execute/execute_batch/read | 工具多（10+），或小智设备上下文有限 |
 
-> 建议小智设备默认使用 smart 模式，因为设备上下文有限，不适合一次性加载大量工具 schema。通过 3 个元工具渐进发现和调用更合理。
+> 建议小智设备默认使用 smart 模式，因为设备上下文有限，不适合一次性加载大量工具 schema。通过元工具渐进发现和调用更合理；相互独立的调用可经 mcp.execute_batch 一次并发执行，省轮次。
 
 在创建分组时设置:
 ```json
@@ -336,7 +336,7 @@ func (c *XiaoZhiClient) handleToolsList(ctx context.Context) JSONRPCResponse {
 
     switch group.ExposeMode {
     case "smart":
-        // Smart 模式: 返回固定的 3 个元工具
+        // Smart 模式: 返回固定的 5 个元工具
         return JSONRPCResponse{
             JSONRPC: "2.0",
             Result: map[string]interface{}{
@@ -410,6 +410,8 @@ func (c *XiaoZhiClient) handleSmartTool(ctx context.Context, id interface{}, too
         result, err = c.smartHandler.Describe(ctx, c.groupID, args)
     case "mcp.execute":
         result, err = c.smartHandler.Execute(ctx, c.groupID, args)
+    case "mcp.execute_batch":
+        result, err = c.smartHandler.ExecuteBatch(ctx, c.groupID, args)
     default:
         return c.errorResponse(id, "unknown meta tool: "+toolName)
     }
@@ -516,7 +518,7 @@ POST /api/v1/services
 
 小智端点绑定的分组 `expose_mode` 决定向小智设备暴露工具的方式：
 
-- **smart** (推荐): 小智设备上下文有限，仅暴露 3 个元工具，通过搜索→查看→执行渐进发现
+- **smart** (推荐): 小智设备上下文有限，仅暴露 5 个元工具，通过搜索→查看→执行渐进发现
 - **direct**: 工具少时可考虑，所有工具直接暴露，调用更快但消耗更多上下文
 
 分组设置中的 `expose_mode` 字段控制此行为，可在前端随时切换。

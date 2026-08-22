@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mujkjk/newmcp/billing"
@@ -179,7 +180,7 @@ func (h *GatewayHandler) handleInitialize(req *JSONRPCRequest, logCtx *LogContex
 
 // smartInstructionsText 教智能模式的渐进发现工作流(search→describe→execute/read),
 // 只在智能模式返回,避免直连模式下指向不存在的元工具。
-const smartInstructionsText = "This gateway aggregates many MCP services behind 4 discovery tools. Workflow: mcp.search with task keywords to find services/tools/resources/prompts; mcp.describe on a service name or \"service.toolName\" to inspect parameters; mcp.execute with tool_id \"service.toolName\" to call a tool; mcp.read with a newmcp://<service>/<uri> or <service>__<promptName> to fetch a resource or render a prompt. Describe a tool before executing it rather than guessing arguments."
+const smartInstructionsText = "This gateway aggregates many MCP services behind 5 discovery tools. Workflow: mcp.search with task keywords to find services/tools/resources/prompts; mcp.describe on a service name or \"service.toolName\" to inspect parameters; mcp.execute with tool_id \"service.toolName\" to call a tool; mcp.execute_batch to run several independent calls concurrently in one request — e.g. batch-controlling several switches or devices at once (never batch calls where one needs another's result or hits the same target in order); mcp.read with a newmcp://<service>/<uri> or <service>__<promptName> to fetch a resource or render a prompt. Describe a tool before executing it rather than guessing arguments."
 
 const visionInstructionsText = "To analyze a LOCAL image: if it is small (roughly <= 10KB), inline it as base64 directly to analyze_image; otherwise call upload_image with local_path to get an upload_command matched to your OS (curl.exe on Windows PowerShell where bare `curl` is an alias for Invoke-WebRequest; curl elsewhere) + image_url, run it via your shell (no API key needed), then call analyze_image with the image_url. Never paste large image base64 into tool arguments."
 
@@ -258,6 +259,7 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 	var serviceID int64
 	var serviceName string
 	var billing *billingOutcome
+	var batchLogs []*model.McpCallLog
 	originalToolName := "" // records meta-tool name for smart mode
 	// request_id:计费幂等键 = JSON-RPC id + 工具与参数短哈希。纯 id 在不同客户端/会话复用同一 id 时
 	// 会把新逻辑请求误判为重试而漏扣;加入 tool/args 哈希后,仅真正的同请求重试(id/工具/参数全同)才命中跳过。
@@ -295,6 +297,13 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 			groupID = result.GroupID
 			groupName = result.GroupName
 		}
+	case "mcp.execute_batch":
+		// 批量执行:每项一条日志(method=mcp.execute_batch、计费按项结算),不走
+		// 下方单条汇总;请求参数校验失败时 Logs 为空,回落单条日志路径。
+		originalToolName = "mcp.execute_batch"
+		batch := h.handleExecuteBatch(ctx, req.ID, logCtx, params.Arguments, groupID, groupName)
+		resp = batch.Resp
+		batchLogs = batch.Logs
 	case "mcp.read":
 		// 智能模式读资源/取提示:method 记 mcp.read(日志可区分智能模式调用),
 		// tool_name 记目标 URI/提示名;不参与计费(与原生 resources/read 口径一致)。
@@ -328,6 +337,12 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 			billing = &billingOutcome{}
 			resp = h.routeAndCall(ctx, req.ID, logCtx, params.Name, params.Arguments, &serviceID, &serviceName, requestID, billing)
 		}
+	}
+
+	// 批量路径已逐项记日志(一次请求仍只递增一次请求数),不走下方单条汇总。
+	if batchLogs != nil {
+		go h.recordLogs(batchLogs, logCtx.UserID)
+		return resp
 	}
 
 	duration := time.Since(start)
@@ -545,52 +560,60 @@ func countNonEmptyTargets(targets []string) int {
 	return n
 }
 
-func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, logCtx *LogContext, args json.RawMessage, requestID string) *executeResult {
-	var params struct {
-		ToolID    string          `json:"tool_id"`
-		Arguments json.RawMessage `json:"arguments"`
-		TimeoutMs int             `json:"timeout_ms"`
-	}
-	_ = json.Unmarshal(args, &params)
+// callOutcome 单次工具调用的执行结果(不含 JSON-RPC 包装),单次 mcp.execute 与
+// 批量 mcp.execute_batch 共用同一条执行路径。
+type callOutcome struct {
+	Result      json.RawMessage // 成功时的上游 tools/call 结果(CallToolResult 原文);失败为 nil
+	Err         string          // 网关级失败原因;空=成功
+	ErrCode     int             // 网关级失败的 JSON-RPC 错误码(-32602/-32603)
+	ToolName    string
+	ServiceID   int64
+	ServiceName string
+	GroupID     int64
+	GroupName   string
+	Billing     *billingOutcome // 市场来源服务计费结果(供日志记录);nil=自有/免费
+}
 
-	if params.ToolID == "" {
-		return &executeResult{Resp: h.errorResponse(reqID, -32602, "tool_id is required")}
+// executeOne 执行一次工具调用:作用域校验 → 虚拟工具 → 路由 → 计费 A/B → 上游调用。
+// itemRequestID 为本次调用的计费幂等键。
+func (h *GatewayHandler) executeOne(ctx context.Context, logCtx *LogContext, toolID string, arguments json.RawMessage, timeoutMs int, itemRequestID string) *callOutcome {
+	if toolID == "" {
+		return &callOutcome{Err: "tool_id is required", ErrCode: -32602}
 	}
 
-	if params.TimeoutMs <= 0 {
-		params.TimeoutMs = 30000
+	if timeoutMs <= 0 {
+		timeoutMs = 30000
 	}
 
 	// Verify group scope: the service must be in one of the API key's allowed groups
-	svcName, _ := bridge.ParseNamespacedName(params.ToolID)
+	svcName, _ := bridge.ParseNamespacedName(toolID)
 	if svcName == "" {
-		svcName = params.ToolID // non-namespaced fallback
+		svcName = toolID // non-namespaced fallback
 	}
 	if !h.isServiceInApiKeyScope(svcName, logCtx) {
-		return &executeResult{Resp: h.errorResponse(reqID, -32602, fmt.Sprintf("service '%s' is not accessible with this API key", svcName))}
+		return &callOutcome{Err: fmt.Sprintf("service '%s' is not accessible with this API key", svcName), ErrCode: -32602}
 	}
 
 	// Check virtual tools first
 	if h.virtualRegistry != nil {
-		parsedSvc, parsedTool := bridge.ParseNamespacedName(params.ToolID)
+		parsedSvc, parsedTool := bridge.ParseNamespacedName(toolID)
 		if parsedSvc != "" {
 			if vSvcID, entry, ok := h.virtualRegistry.LookupByName(logCtx.UserID, parsedSvc); ok {
-				vResult, vErr := h.virtualRegistry.Handle(virtual.WithCallerUserID(ctx, logCtx.UserID), vSvcID, entry.Config, parsedTool, params.Arguments)
+				vResult, vErr := h.virtualRegistry.Handle(virtual.WithCallerUserID(ctx, logCtx.UserID), vSvcID, entry.Config, parsedTool, arguments)
+				gID, gName := h.resolveGroupForService(vSvcID, logCtx)
 				if vErr != nil {
-					return &executeResult{
-						Resp:        h.errorResponse(reqID, -32603, "Virtual tool failed: "+vErr.Error()),
+					return &callOutcome{
+						Err:         "Virtual tool failed: " + vErr.Error(),
+						ErrCode:     -32603,
 						ToolName:    parsedTool,
 						ServiceID:   vSvcID,
 						ServiceName: entry.Name,
+						GroupID:     gID,
+						GroupName:   gName,
 					}
 				}
-				gID, gName := h.resolveGroupForService(vSvcID, logCtx)
-				return &executeResult{
-					Resp: &JSONRPCResponse{
-						JSONRPC: "2.0",
-						ID:      reqID,
-						Result:  json.RawMessage(vResult),
-					},
+				return &callOutcome{
+					Result:      json.RawMessage(vResult),
 					ToolName:    parsedTool,
 					ServiceID:   vSvcID,
 					ServiceName: entry.Name,
@@ -601,9 +624,9 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 		}
 	}
 
-	session, toolName, err := h.routeOrConnect(ctx, params.ToolID, logCtx.UserID)
+	session, toolName, err := h.routeOrConnect(ctx, toolID, logCtx.UserID)
 	if err != nil {
-		return &executeResult{Resp: h.errorResponse(reqID, -32602, err.Error())}
+		return &callOutcome{Err: err.Error(), ErrCode: -32602}
 	}
 
 	gID, gName := h.resolveGroupForService(session.ServiceID, logCtx)
@@ -612,9 +635,10 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 	var billing *billingOutcome
 	if session.Source == "marketplace" {
 		billing = &billingOutcome{}
-		if !h.preConsumeBilling(ctx, logCtx, session, toolName, requestID, billing) {
-			return &executeResult{
-				Resp:        h.errorResponse(reqID, -32603, billing.BlockMsg),
+		if !h.preConsumeBilling(ctx, logCtx, session, toolName, itemRequestID, billing) {
+			return &callOutcome{
+				Err:         billing.BlockMsg,
+				ErrCode:     -32603,
 				ToolName:    toolName,
 				ServiceID:   session.ServiceID,
 				ServiceName: session.ServiceName,
@@ -625,15 +649,15 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 		}
 	}
 
-	if params.TimeoutMs > 0 {
+	if timeoutMs > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(params.TimeoutMs)*time.Millisecond)
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
 		defer cancel()
 	}
 
 	callParams := map[string]interface{}{
 		"name":      toolName,
-		"arguments": params.Arguments,
+		"arguments": arguments,
 	}
 
 	result, err := session.Adapter.Call(ctx, "tools/call", callParams)
@@ -643,24 +667,7 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 		h.finalizeBilling(billing, err == nil)
 	}
 
-	if err != nil {
-		return &executeResult{
-			Resp:        h.errorResponse(reqID, -32603, "Execution failed: "+err.Error()),
-			ToolName:    toolName,
-			ServiceID:   session.ServiceID,
-			ServiceName: session.ServiceName,
-			GroupID:     gID,
-			GroupName:   gName,
-			Billing:     billing,
-		}
-	}
-
-	return &executeResult{
-		Resp: &JSONRPCResponse{
-			JSONRPC: "2.0",
-			ID:      reqID,
-			Result:  json.RawMessage(result),
-		},
+	oc := &callOutcome{
 		ToolName:    toolName,
 		ServiceID:   session.ServiceID,
 		ServiceName: session.ServiceName,
@@ -668,6 +675,228 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 		GroupName:   gName,
 		Billing:     billing,
 	}
+	if err != nil {
+		oc.Err = "Execution failed: " + err.Error()
+		oc.ErrCode = -32603
+		return oc
+	}
+	oc.Result = json.RawMessage(result)
+	return oc
+}
+
+func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, logCtx *LogContext, args json.RawMessage, requestID string) *executeResult {
+	var params struct {
+		ToolID    string          `json:"tool_id"`
+		Arguments json.RawMessage `json:"arguments"`
+		TimeoutMs int             `json:"timeout_ms"`
+	}
+	_ = json.Unmarshal(args, &params)
+
+	oc := h.executeOne(ctx, logCtx, params.ToolID, params.Arguments, params.TimeoutMs, requestID)
+	if oc.Err != "" {
+		return &executeResult{
+			Resp:        h.errorResponse(reqID, oc.ErrCode, oc.Err),
+			ToolName:    oc.ToolName,
+			ServiceID:   oc.ServiceID,
+			ServiceName: oc.ServiceName,
+			GroupID:     oc.GroupID,
+			GroupName:   oc.GroupName,
+			Billing:     oc.Billing,
+		}
+	}
+	return &executeResult{
+		Resp: &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      reqID,
+			Result:  json.RawMessage(oc.Result),
+		},
+		ToolName:    oc.ToolName,
+		ServiceID:   oc.ServiceID,
+		ServiceName: oc.ServiceName,
+		GroupID:     oc.GroupID,
+		GroupName:   oc.GroupName,
+		Billing:     oc.Billing,
+	}
+}
+
+// executeBatchMaxCalls/executeBatchMaxParallel 批量执行的条目上限与网关内并发上限。
+// 上限同时写在 inputSchema(maxItems)里约束模型,此处是服务端兜底;并发用信号量钳制,
+// 避免一次批量把上游(尤其市场服务的限流)瞬时打满。
+const (
+	executeBatchMaxCalls    = 10
+	executeBatchMaxParallel = 5
+)
+
+type executeBatchCall struct {
+	ToolID    string          `json:"tool_id"`
+	Arguments json.RawMessage `json:"arguments"`
+	TimeoutMs int             `json:"timeout_ms"`
+}
+
+type executeBatchResult struct {
+	Resp *JSONRPCResponse
+	Logs []*model.McpCallLog // 逐项日志;校验失败时为 nil(回落单条日志路径)
+}
+
+// handleExecuteBatch 执行 mcp.execute_batch:各项并发(信号量限流)走与 mcp.execute
+// 完全相同的 executeOne 路径。结果聚合为一个 CallToolResult(逐项 [index] 头 +
+// 上游 content 原样透传,全失败才置 isError);日志逐项落一条(method=mcp.execute_batch,
+// 计费列按项结算),分组归属沿用单项路径的"项内解析优先、slug 分组兜底"口径。
+func (h *GatewayHandler) handleExecuteBatch(ctx context.Context, reqID interface{}, logCtx *LogContext, args json.RawMessage, slugGroupID int64, slugGroupName string) *executeBatchResult {
+	var params struct {
+		Calls []executeBatchCall `json:"calls"`
+	}
+	_ = json.Unmarshal(args, &params)
+
+	if len(params.Calls) == 0 {
+		return &executeBatchResult{Resp: h.errorResponse(reqID, -32602, "calls is required: an array of up to 10 {tool_id, arguments} entries")}
+	}
+	if len(params.Calls) > executeBatchMaxCalls {
+		return &executeBatchResult{Resp: h.errorResponse(reqID, -32602, fmt.Sprintf("too many calls: %d (max %d); split into multiple batches", len(params.Calls), executeBatchMaxCalls))}
+	}
+	for i, c := range params.Calls {
+		if c.ToolID == "" {
+			return &executeBatchResult{Resp: h.errorResponse(reqID, -32602, fmt.Sprintf("calls[%d].tool_id is required", i))}
+		}
+	}
+
+	// 计费幂等键带批内序号:批内两项 (tool_id, arguments) 完全相同时若共用键,
+	// 第二项的预扣会被幂等去重跳过而漏扣。
+	itemReqIDs := make([]string, len(params.Calls))
+	for i, c := range params.Calls {
+		itemReqIDs[i] = billingRequestID(reqID, fmt.Sprintf("%s#%d", c.ToolID, i), c.Arguments)
+	}
+
+	outcomes := make([]*callOutcome, len(params.Calls))
+	durations := make([]time.Duration, len(params.Calls))
+	sem := make(chan struct{}, executeBatchMaxParallel)
+	var wg sync.WaitGroup
+	for i := range params.Calls {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			start := time.Now()
+			outcomes[i] = h.executeOne(ctx, logCtx, params.Calls[i].ToolID, params.Calls[i].Arguments, params.Calls[i].TimeoutMs, itemReqIDs[i])
+			durations[i] = time.Since(start)
+		}(i)
+	}
+	wg.Wait()
+
+	content, failed := buildExecuteBatchContent(params.Calls, outcomes)
+	result := map[string]interface{}{"content": content}
+	if failed == len(outcomes) {
+		result["isError"] = true
+	}
+
+	logs := make([]*model.McpCallLog, 0, len(outcomes))
+	for i, oc := range outcomes {
+		gID, gName := slugGroupID, slugGroupName
+		if oc.GroupID != 0 {
+			gID, gName = oc.GroupID, oc.GroupName
+		}
+		status := "success"
+		var errMsg string
+		if oc.Err != "" {
+			status = "error"
+			errMsg = oc.Err
+		}
+		// 项级失败(作用域/路由)拿不到解析后的裸工具名时,用完整 tool_id 兜底,
+		// 比 logs 里再记一条 mcp.execute_batch 更可查。
+		toolName := oc.ToolName
+		if toolName == "" {
+			toolName = params.Calls[i].ToolID
+		}
+		l := &model.McpCallLog{
+			Type:           model.LogTypeConsume,
+			UserID:         logCtx.UserID,
+			Username:       logCtx.Username,
+			ApiKeyID:       logCtx.ApiKeyID,
+			ApiKeyName:     logCtx.ApiKeyName,
+			GroupID:        gID,
+			GroupName:      gName,
+			ServiceID:      oc.ServiceID,
+			ServiceName:    oc.ServiceName,
+			ToolName:       toolName,
+			Method:         "mcp.execute_batch",
+			RequestID:      truncate(itemReqIDs[i], 64),
+			RequestPayload: redactRequestPayload(toolName, params.Calls[i].Arguments),
+			ResponseStatus: status,
+			DurationMs:     int(durations[i].Milliseconds()),
+			ErrorMessage:   truncate(errMsg, 65535),
+			ClientIP:       logCtx.ClientIP,
+			UserAgent:      truncate(logCtx.UserAgent, 512),
+		}
+		applyBillingToLog(l, oc.Billing)
+		logs = append(logs, l)
+	}
+
+	return &executeBatchResult{
+		Resp: &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      reqID,
+			Result:  result,
+		},
+		Logs: logs,
+	}
+}
+
+// batchItemFallbackMaxChars 上游结果缺 content 块(如仅 structuredContent)或不可
+// 解析时,退化为原文文本块的截断上限,保证模型至少能看到内容。
+const batchItemFallbackMaxChars = 2048
+
+// buildExecuteBatchContent 把批量各项结果聚合为一个 CallToolResult 的 content 数组:
+// 首块汇总(N 项、几成败),其后每项一个 "[index] tool_id — ok|failed" 头块,成功项把
+// 上游 content 块原样透传(text/image 等保持原类型,字节不重编码),失败项原因写进头。
+// 失败=网关级错误或上游 isError=true(MCP 工具级错误语义)。返回 (content, 失败项数)。
+func buildExecuteBatchContent(calls []executeBatchCall, outcomes []*callOutcome) ([]interface{}, int) {
+	failed := 0
+	blocks := make([]interface{}, 0, 2*len(outcomes)+1)
+	for i, oc := range outcomes {
+		itemOK := oc.Err == ""
+		var itemBlocks []interface{}
+		if itemOK {
+			var cr struct {
+				Content []json.RawMessage `json:"content"`
+				IsError bool              `json:"isError"`
+			}
+			if err := json.Unmarshal(oc.Result, &cr); err == nil && len(cr.Content) > 0 {
+				for _, b := range cr.Content {
+					itemBlocks = append(itemBlocks, b)
+				}
+				if cr.IsError {
+					itemOK = false
+				}
+			} else {
+				itemBlocks = []interface{}{
+					map[string]interface{}{"type": "text", "text": truncate(string(oc.Result), batchItemFallbackMaxChars)},
+				}
+			}
+		}
+
+		var header string
+		switch {
+		case itemOK:
+			header = fmt.Sprintf("[%d] %s — ok", i, calls[i].ToolID)
+		case oc.Err != "":
+			header = fmt.Sprintf("[%d] %s — failed: %s", i, calls[i].ToolID, oc.Err)
+			failed++
+		default:
+			header = fmt.Sprintf("[%d] %s — failed: tool reported an error", i, calls[i].ToolID)
+			failed++
+		}
+		blocks = append(blocks, map[string]interface{}{"type": "text", "text": header})
+		blocks = append(blocks, itemBlocks...)
+	}
+
+	summary := fmt.Sprintf("Batch of %d calls: %d ok, %d failed.", len(outcomes), len(outcomes)-failed, failed)
+	if failed > 0 {
+		// 部分失败教下一步:失败项不影响其他项,修正后用 mcp.execute 单项重试
+		// (依赖其他项结果的场景本来就不该批量)。
+		summary += " Failed items did not complete; fix the cause and retry them individually with mcp.execute."
+	}
+	return append([]interface{}{map[string]interface{}{"type": "text", "text": summary}}, blocks...), failed
 }
 
 // resolveGroupForService finds the first group containing this service within the API key's scope.
@@ -919,6 +1148,17 @@ func (h *GatewayHandler) recordLog(log *model.McpCallLog) {
 	_ = log.Insert()
 	if log.UserID > 0 {
 		_ = model.IncreaseUserRequestCount(log.UserID)
+	}
+}
+
+// recordLogs 批量落多条日志(一次 mcp.execute_batch 请求逐项一行),但请求数只按
+// 一次请求递增,与单次调用的统计口径对齐。
+func (h *GatewayHandler) recordLogs(logs []*model.McpCallLog, userID int64) {
+	for _, l := range logs {
+		_ = l.Insert()
+	}
+	if userID > 0 {
+		_ = model.IncreaseUserRequestCount(userID)
 	}
 }
 

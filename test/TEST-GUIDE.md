@@ -38,7 +38,7 @@ cp mcp-config-direct.json .claude/settings.json  # 合并到 mcpServers 字段
 
 **配置文件**: `mcp-config-smart.json`
 
-agent 只看到 3 个元工具 (mcp_search, mcp_describe, mcp_execute)，需要通过搜索发现工具再调用。
+agent 只看到 4 个元工具 (mcp_search, mcp_describe, mcp_execute, mcp_execute_batch)，需要通过搜索发现工具再调用。
 
 **测试用例**:
 
@@ -129,7 +129,7 @@ connector 启动 `smart_gateway.py` 作为子进程，将小智云 WSS 的 JSON-
 
 **验证点**:
 - [ ] 连接器成功连接并保持长连接
-- [ ] 3 个元工具正确注册到小智云
+- [ ] 元工具正确注册到小智云(含 mcp_execute_batch)
 - [ ] 小智设备能通过搜索发现工具
 - [ ] 工具调用参数传递正确，结果正确返回
 - [ ] 断线自动重连正常工作

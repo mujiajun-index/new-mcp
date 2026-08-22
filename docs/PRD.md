@@ -91,7 +91,7 @@ NewMCP 是新一代统一大模型 MCP (Model Context Protocol) 服务管理平�
 |------|--------|------|
 | Streamable HTTP 端点 | P0 | 主传输协议，兼容最新 MCP 规范 |
 | WebSocket 端点 | P0 | 支持 WebSocket 传输，用于长链接场景 |
-| 双模式暴露 | P0 | Direct 模式（直接暴露所有工具）和 Smart 模式（仅暴露 3 个元工具），通过独立端点 `/mcp` 和 `/smart/mcp` 区分 |
+| 双模式暴露 | P0 | Direct 模式（直接暴露所有工具）和 Smart 模式（仅暴露固定元工具），通过独立端点 `/mcp` 和 `/smart/mcp` 区分 |
 | Smart 模式搜索引擎 | P0 | BM25 算法搜索 MCP 服务和工具，渐进发现 |
 | 工具路由 | P0 | `tools/call` 请求自动路由到正确的上游 MCP 服务 |
 | 命名空间隔离 | P0 | 工具名格式 `{ServiceName}__{toolName}` 避免冲突 |
@@ -102,16 +102,18 @@ NewMCP 是新一代统一大模型 MCP (Model Context Protocol) 服务管理平�
 
 | 特性 | Direct 模式 | Smart 模式 |
 |------|-------------|------------|
-| 暴露工具数 | 全部聚合工具 | 固定 3 个元工具 |
+| 暴露工具数 | 全部聚合工具 | 固定 5 个元工具 |
 | 工具命名 | `serviceName__toolName` | `serviceName.toolName` (搜索结果) |
 | 适合场景 | 工具少（<20） | 工具多（20+），小智等受限设备 |
-| Token 消耗 | 高（所有工具 schema） | 极低（仅 3 个元工具 schema） |
+| Token 消耗 | 高（所有工具 schema） | 极低（仅 5 个元工具 schema） |
 | 调用方式 | 一步直接调用 | 搜索→查看→执行 渐进调用 |
 
-Smart 模式暴露的 3 个元工具（参考 mcp-gateway）:
-- `mcp.search`: BM25 搜索可用的 MCP 服务和工具
-- `mcp.describe`: 查看指定工具的完整 Schema
+Smart 模式暴露的 5 个元工具（参考 mcp-gateway）:
+- `mcp.search`: BM25 搜索可用的 MCP 服务、工具、资源和提示
+- `mcp.describe`: 查看指定服务/工具的完整 Schema
 - `mcp.execute`: 执行指定工具
+- `mcp.execute_batch`: 并发执行最多 10 个相互独立的工具调用（逐项返回、逐项计费）
+- `mcp.read`: 读资源 / 取提示
 
 ### 2.5 云端主动连接
 | 功能 | 优先级 | 说明 |

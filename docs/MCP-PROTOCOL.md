@@ -9,14 +9,14 @@ NewMCP 支持两种 MCP 工具暴露模式，**通过端点路由驱动**：
 | 端点 | 模式 | 说明 |
 |------|------|------|
 | `POST /mcp` | 固定 Direct | 聚合 API Key 所有分组，去重后暴露全部工具（`serviceName__toolName`） |
-| `POST /smart/mcp` | 固定 Smart | 聚合 API Key 所有分组，仅暴露 3 个元工具，渐进发现 |
+| `POST /smart/mcp` | 固定 Smart | 聚合 API Key 所有分组，仅暴露 5 个元工具，渐进发现 |
 | `POST /mcp/group/{slug}` | 由分组的 `expose_mode` 决定 | 端点驱动，每个分组独立配置 |
 | `WS /mcp/ws` | 固定 Direct | 同 POST /mcp |
 | `WS /smart/mcp/ws` | 固定 Smart | 同 POST /smart/mcp |
 | `WS /mcp/ws/group/{slug}` | 由分组的 `expose_mode` 决定 | 端点驱动 |
 
 > **Direct 主端点**: `/mcp` 暴露 API Key 绑定分组的全部工具（去重），适合 Claude Code、Cursor 等支持大量工具的 LLM 客户端。
-> **Smart 主端点**: `/smart/mcp` 仅暴露 4 个元工具，适合小智等上下文受限设备或工具量特别大的场景。
+> **Smart 主端点**: `/smart/mcp` 仅暴露 5 个元工具，适合小智等上下文受限设备或工具量特别大的场景。
 
 ### 1.1 Direct 模式（直接模式）
 
@@ -94,12 +94,14 @@ NewMCP 的 MCP 工具搜索通过 **API Key → 分组 → MCP 服务** 的关�
 | `mcp.search` | 搜索可用的 MCP 服务、工具、资源和提示 | `gateway.search` |
 | `mcp.describe` | 查看服务详情（工具 Schema / 资源 URI / 提示定义） | `gateway.describe` |
 | `mcp.execute` | 执行指定工具 | `gateway.invoke` |
-| `mcp.read` | 读资源 / 取提示（V1.2 新增，见 3.5） | OpenAI `read_mcp_resource` 同构 |
+| `mcp.execute_batch` | 批量并发执行多个**相互独立**的工具（见 3.5） | — |
+| `mcp.read` | 读资源 / 取提示（V1.2 新增，见 3.6） | OpenAI `read_mcp_resource` 同构 |
 | `mcp.execute_async` | 异步执行工具（可选） | `gateway.invoke_async` |
 | `mcp.job_status` | 查询异步任务状态（可选） | `gateway.invoke_status` |
 
-V1 核心实现前 3 个；`mcp.read` 为 V1.2 新增（使纯 tools/call 客户端也能用满
-Resources/Prompts 能力）；后 2 个作为 V1.1 扩展。
+前 4 个 + `mcp.read` 为已实现（`mcp.read` 为 V1.2 新增，使纯 tools/call 客户端也能用满
+Resources/Prompts 能力；`mcp.execute_batch` 复用单项执行路径，逐项计费/日志）；
+`mcp.execute_async` / `mcp.job_status` 作为扩展未实现。
 
 V1.2 起 `mcp.search` 的 scope 支持 `mcp/tool/resource/prompt/all`（resource 含资源模板），
 `mcp.describe` 的服务视图在工具之外追加 Resources / Resource Templates / Prompts 小节
@@ -250,7 +252,63 @@ func (e *Executor) Execute(ctx context.Context, toolID string, arguments json.Ra
 }
 ```
 
-### 3.5 mcp.read - 读资源 / 取提示（V1.2）
+### 3.5 mcp.execute_batch - 批量并发执行
+
+**功能**: 一次调用并发执行最多 10 个**相互独立**的工具调用，逐项返回结果——按入参顺序，
+每项一个 `[index] tool_id — ok|failed` 头块，其后原样透传该项上游 content 块
+（text/image 等类型与字节不变）。每项走与 mcp.execute 完全相同的执行路径
+（分组作用域校验、虚拟工具分发、计费插入点 A/B、逐项超时），网关内并发度上限 5
+（信号量钳制，避免单次批量瞬时打满上游限流）。
+
+**适用与不适用**（工具描述里对模型作同样约束）:
+
+- ✅ 参数全部已知、互不依赖：一次查 3 个城市天气；识别图片 + 网络搜索并行；
+- ✅ 批量控制开关/设备：同一工具按不同设备重复调用（客厅灯、卧室灯、插座各一次，
+  每设备参数独立已知），这正是小智等 IoT 场景的典型批量需求；
+- ❌ 某项参数依赖另一项的返回值（先上传拿 URL、再识别）：该项参数在构造批量请求时
+  根本不存在，硬打包会得到空引用或幻觉参数；
+- ❌ **同一目标**需按序操作的组合（先设置设备再读回其状态、先创建后列表）：
+  结果取决于执行顺序，并发下不可预期；不同目标的独立写操作（多设备开关）不受此限。
+
+部分失败互不影响：失败项在结果里带原因（含上游 `isError: true` 的工具级错误，MCP
+语义下工具错误进 result 不进协议 error），汇总块提示"修正后用 mcp.execute 单项重试"；
+**全部**项失败才置 `isError: true`（部分失败是批量调用的正常结局）。上游结果缺
+content 块（如仅 structuredContent）或不可解析时，退化为截断 2048 字符的原文文本块。
+
+**参数:**
+```json
+{
+    "calls": [
+        {"tool_id": "weather.get_forecast", "arguments": {"city": "北京"}, "timeout_ms": 30000},
+        {"tool_id": "exa.web_search_exa", "arguments": {"query": "AI news"}}
+    ]
+}
+```
+
+**返回:**
+```json
+{
+    "content": [
+        {"type": "text", "text": "Batch of 2 calls: 2 ok, 0 failed."},
+        {"type": "text", "text": "[0] weather.get_forecast — ok"},
+        {"type": "text", "text": "北京: 晴，温度 22°C"},
+        {"type": "text", "text": "[1] exa.web_search_exa — ok"},
+        {"type": "text", "text": "[搜索结果...]"}
+    ]
+}
+```
+
+**实现要点** (`internal/mcp/handler/gateway_handler.go`):
+- 单项执行抽为 `executeOne`，单次 mcp.execute 与批量共用同一路径（含计费 A/B），
+  两者行为完全一致；
+- 计费幂等键 `request_id` 在工具名哈希部分带批内序号（`tool_id#i`）：批内两项
+  (tool_id, arguments) 完全相同时若共键，第二项预扣会被幂等去重漏扣；
+- 日志逐项一条（method=`mcp.execute_batch`，service/tool/分组/计费列按项归属；
+  项级作用域/路由失败拿不到裸工具名时 tool_name 记完整 tool_id），请求数统计只按
+  一次请求递增；
+- 校验失败（calls 缺失/超限/缺 tool_id）为协议级 -32602 错误，走单条日志路径。
+
+### 3.6 mcp.read - 读资源 / 取提示（V1.2）
 
 **功能**: 让只走 tools/call 的智能模式客户端（OpenAI Agents SDK 风格托管集成、自研 Agent）
 也能读取资源与提示，补齐 MCP 三大能力的工具入口。target 与原生方法同一套字符串——
@@ -376,6 +434,8 @@ func (h *GatewayHandler) handleSmartToolsCall(ctx context.Context, groupID int64
         return h.smartHandler.HandleDescribe(ctx, groupID, arguments)
     case "mcp.execute":
         return h.smartHandler.HandleExecute(ctx, groupID, arguments)
+    case "mcp.execute_batch":
+        return h.smartHandler.HandleExecuteBatch(ctx, groupID, arguments)
     default:
         return nil, fmt.Errorf("unknown meta tool: %s", toolName)
     }
@@ -400,6 +460,11 @@ func (h *GatewayHandler) getMetaTools() []Tool {
             Name:        "mcp.execute",
             Description: "Execute an MCP tool by ID with a JSON arguments object, returning the tool's execution result. The tool_id and the exact arguments it accepts come from mcp.search / mcp.describe — if unsure what arguments a tool takes, run mcp.describe on it first instead of guessing. ...",
             InputSchema: executeToolSchema,
+        },
+        {
+            Name:        "mcp.execute_batch",
+            Description: "Execute multiple independent MCP tools concurrently in one call, returning one result per item in input order, each under an \"[index] tool_id\" header. Use it when several calls are ready at once and none needs another's output — e.g. turning several devices on/off together (repeating the same tool with different arguments per device is fine). Do NOT use it when a call's arguments depend on an earlier call's result, or when calls must hit the SAME target in order: run those one at a time with mcp.execute instead. ...",
+            InputSchema: executeBatchToolSchema,
         },
         {
             Name:        "mcp.read",
@@ -1005,14 +1070,14 @@ LIMIT 20;
 | 路径 | 传输 | 模式 | 说明 |
 |------|------|------|------|
 | `/mcp` | Streamable HTTP | 固定 Direct | 主网关，暴露 API Key 绑定分组全部工具 |
-| `/smart/mcp` | Streamable HTTP | 固定 Smart | Smart 网关，仅暴露 3 个元工具 |
+| `/smart/mcp` | Streamable HTTP | 固定 Smart | Smart 网关，仅暴露 5 个元工具 |
 | `/mcp/group/{slug}` | Streamable HTTP | 按 group 配置 | 分组 MCP 端点 |
 | `/mcp/ws` | WebSocket | 固定 Direct | 主网关 WebSocket |
 | `/smart/mcp/ws` | WebSocket | 固定 Smart | Smart 网关 WebSocket |
 | `/mcp/ws/group/{slug}` | WebSocket | 按 group 配置 | 分组 WebSocket 端点 |
 | `/mcp/passive/` | WebSocket | 被动接入 | 外部 MCP 服务连入注册 (token 认证) |
 
-Smart 模式下的 `tools/list` 永远返回 3 个元工具。
+Smart 模式下的 `tools/list` 永远返回 5 个元工具。
 Direct 模式下的 `tools/list` 返回聚合后的完整工具列表。
 被动接入端点 `/mcp/passive/` 供外部 MCP Server 连入，NewMCP 作为 MCP Client 发现和调用工具。
 

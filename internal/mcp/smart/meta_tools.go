@@ -14,7 +14,7 @@ const (
 // 描述文案遵循的工具提示词最佳实践(Anthropic《Writing effective tools for AI
 // agents》/Tool Search Tool 文档、AWS MCP tool design 等):三段式(做什么/何时用/
 // 返回什么)、相似工具互相指路(when-NOT-to-use)、参数描述带示例、约束进 schema
-// 而非散文、只读元工具标 readOnlyHint。智能模式下这 4 个工具是仅有的常驻上下文
+// 而非散文、只读元工具标 readOnlyHint。智能模式下这 5 个工具是仅有的常驻上下文
 // 的工具定义,是 token 投放回报最高的位置。
 var MetaTools = []struct {
 	Name        string                 `json:"name"`
@@ -52,7 +52,7 @@ var MetaTools = []struct {
 	},
 	{
 		Name:        "mcp.execute",
-		Description: "Execute an MCP tool by ID with a JSON arguments object, returning the tool's execution result. The tool_id and the exact arguments it accepts come from mcp.search / mcp.describe — if unsure what arguments a tool takes, run mcp.describe on it first instead of guessing. To fetch a resource or render a prompt, use mcp.read instead.",
+		Description: "Execute an MCP tool by ID with a JSON arguments object, returning the tool's execution result. The tool_id and the exact arguments it accepts come from mcp.search / mcp.describe — if unsure what arguments a tool takes, run mcp.describe on it first instead of guessing. To run several independent tools at once, use mcp.execute_batch instead. To fetch a resource or render a prompt, use mcp.read instead.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -61,6 +61,25 @@ var MetaTools = []struct {
 				"timeout_ms": {"type": "number", "default": 30000, "description": "Execution timeout in milliseconds"}
 			},
 			"required": ["tool_id"]
+		}`),
+	},
+	{
+		Name:        "mcp.execute_batch",
+		Description: "Execute multiple independent MCP tools concurrently in one call, returning one result per item in input order, each under an \"[index] tool_id\" header. Use it when several calls are ready at once and none needs another's output — e.g. weather for three cities, image analysis alongside a web search, or turning several devices on/off together (lights, sockets, robots; repeating the same tool with different arguments per device is fine). Do NOT use it when a call's arguments depend on an earlier call's result (upload a file, then process the returned URL), or when calls must hit the SAME target in order (set a device, then read back its state; create, then list): run those one at a time with mcp.execute instead. A failed item does not affect the others; retry failed items individually with mcp.execute. For a single call, use mcp.execute.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"calls": {"type": "array", "minItems": 1, "maxItems": 10, "description": "Independent calls to run concurrently, e.g. [{\"tool_id\": \"home.set_switch\", \"arguments\": {\"device\": \"light.living_room\", \"on\": true}}, {\"tool_id\": \"home.set_switch\", \"arguments\": {\"device\": \"light.bedroom\", \"on\": true}}, {\"tool_id\": \"weather.get_forecast\", \"arguments\": {\"city\": \"Paris\"}}]", "items": {
+					"type": "object",
+					"properties": {
+						"tool_id": {"type": "string", "description": "Tool ID in the form service.toolName, e.g. \"weather.get_forecast\""},
+						"arguments": {"type": "object", "description": "Arguments object matching the tool's input schema from mcp.describe"},
+						"timeout_ms": {"type": "number", "default": 30000, "description": "Per-item execution timeout in milliseconds"}
+					},
+					"required": ["tool_id"]
+				}}
+			},
+			"required": ["calls"]
 		}`),
 	},
 	{

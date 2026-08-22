@@ -275,7 +275,7 @@ export const Route = createFileRoute('/_authenticated/admin')({
 - 分组信息 (可编辑)
 - **暴露模式切换**: Direct 模式 / Smart 模式 (Radio 或 Switch 组件)
   - Direct 模式说明: 直接暴露所有工具，适合工具少的场景
-  - Smart 模式说明: 仅暴露 3 个元工具（搜索/查看/执行），适合工具多或设备上下文受限的场景
+  - Smart 模式说明: 仅暴露 5 个元工具（搜索/查看/执行/批量执行/读资源提示），适合工具多或设备上下文受限的场景
 - 端点信息卡片: Streamable HTTP URL / WebSocket URL / 连接配置 JSON (一键复制)
 - 已添加服务列表 (可拖拽排序、启用/禁用、移除)
 - 聚合工具列表 (带命名空间前缀、可单独启用/禁用/重命名)

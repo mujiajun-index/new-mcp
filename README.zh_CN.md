@@ -110,14 +110,14 @@ NewMCP 通过统一网关暴露 MCP 工具，支持两种**工具暴露模式**�
 | 端点 | 传输 | 模式 | 说明 |
 |------|------|------|------|
 | `POST /mcp` | Streamable HTTP | 固定 Direct | 聚合 API Key 绑定的所有分组，去重后暴露全部工具（`serviceName__toolName`） |
-| `POST /smart/mcp` | Streamable HTTP | 固定 Smart | 聚合所有分组，仅暴露 3 个元工具，渐进发现 |
+| `POST /smart/mcp` | Streamable HTTP | 固定 Smart | 聚合所有分组，仅暴露 5 个元工具，渐进发现 |
 | `POST /mcp/group/{slug}` | Streamable HTTP | 由分组 `expose_mode` 决定 | 端点驱动，每个分组独立配置 |
 | `GET /mcp/ws` | WebSocket | 固定 Direct | 同 `POST /mcp` |
 | `GET /smart/mcp/ws` | WebSocket | 固定 Smart | 同 `POST /smart/mcp` |
 | `GET /mcp/ws/group/{slug}` | WebSocket | 由分组 `expose_mode` 决定 | 端点驱动 |
 
 - **Direct（直连）模式** — 直接暴露所有工具，适合支持大量工具的 LLM 客户端（Claude Code、Cursor 等）。
-- **Smart（智能）模式** — 仅暴露 3 个元工具（`mcp.search` / `mcp.describe` / `mcp.execute`），客户端通过 搜索 → 查看 → 执行 渐进发现和调用，适合上下文受限的设备（如小智）或工具量特别大的场景。
+- **Smart（智能）模式** — 仅暴露 5 个元工具（`mcp.search` / `mcp.describe` / `mcp.execute` / `mcp.execute_batch` / `mcp.read`），客户端通过 搜索 → 查看 → 执行 渐进发现和调用工具；相互独立的调用可用 `mcp.execute_batch` 一次并发执行。适合上下文受限的设备（如小智）或工具量特别大的场景。
 - 分组端点（`/mcp/group/{slug}`）的模式由每个分组的 `expose_mode` 设置（`direct` / `smart`）决定。
 
 ### 技术栈
