@@ -481,32 +481,13 @@ func (h *GatewayHandler) handleSearch(ctx context.Context, reqID interface{}, lo
 		return h.errorResponse(reqID, -32603, "Search failed: "+err.Error())
 	}
 
-	var sb strings.Builder
-	if len(results) == 0 {
-		// 空结果不给线索会让模型放弃或反复瞎猜;按 AWS MCP tool design 的建议,
-		// 在失败点直接告诉它下一步怎么改(AWS: "helpful errors can steer the next attempt")。
-		sb.WriteString("No results. Try broader, plainer keywords (matched against names and descriptions), set scope to \"all\", or remove the group filter. Call mcp.describe if you already know a service or tool name.")
-	} else {
-		fmt.Fprintf(&sb, "Found %d results:\n", len(results))
-		for _, r := range results {
-			if r.Doc.Type == "mcp" {
-				label := r.Doc.Name
-				if r.Doc.Name != r.Doc.ServiceName {
-					label = fmt.Sprintf("%s (%s)", r.Doc.Name, r.Doc.ServiceName)
-				}
-				fmt.Fprintf(&sb, "- **%s** (service, %d tools) %s [%s]\n", label, r.Doc.ToolCount, r.Doc.Description, r.Doc.GroupName)
-			} else if r.Doc.Type == "resource" {
-				fmt.Fprintf(&sb, "- **%s** (resource) %s [%s]\n", gatewayResourceURI(r.Doc.ServiceName, r.Doc.Name), r.Doc.Description, r.Doc.GroupName)
-			} else if r.Doc.Type == "template" {
-				fmt.Fprintf(&sb, "- **%s** (resource template) %s [%s]\n", gatewayResourceURI(r.Doc.ServiceName, r.Doc.Name), r.Doc.Description, r.Doc.GroupName)
-			} else if r.Doc.Type == "prompt" {
-				fmt.Fprintf(&sb, "- **%s__%s** (prompt) %s [%s]\n", r.Doc.ServiceName, r.Doc.Name, r.Doc.Description, r.Doc.GroupName)
-			} else {
-				fmt.Fprintf(&sb, "- **%s.%s** (tool) %s [%s]\n", r.Doc.ServiceName, r.Doc.Name, r.Doc.Description, r.Doc.GroupName)
-			}
-		}
+	// 引擎端把 limit 钳制到 ≤50,此处保持同一口径;结果数达到该上限时可能还有更多,
+	// 由 FormatSearchResult 在头部给出调整 limit/scope 的提示。
+	shown := params.Limit
+	if shown > 50 {
+		shown = 50
 	}
-	resultText := sb.String()
+	resultText := smart.FormatSearchResult(results, len(results) == shown)
 
 	return &JSONRPCResponse{
 		JSONRPC: "2.0",

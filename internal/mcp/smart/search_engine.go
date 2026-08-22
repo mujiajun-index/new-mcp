@@ -282,7 +282,18 @@ func (e *SearchEngine) buildSearchDocs(info *bridge.ApiKeyInfo, scopeGroup strin
 		}
 	}
 
-	return docs
+	// 同一服务挂多个分组时,ResolveEnabledServicesForGroups 按(分组,服务)对返回,
+	// 该服务的全部条目会重复入索引;按条目 ID 去重(保留首分组),避免搜索结果出现重复行。
+	seen := make(map[string]struct{}, len(docs))
+	unique := docs[:0]
+	for _, d := range docs {
+		if _, ok := seen[d.ID]; ok {
+			continue
+		}
+		seen[d.ID] = struct{}{}
+		unique = append(unique, d)
+	}
+	return unique
 }
 
 // Describe returns details about specific services or tools within the APIKey's group scope.
@@ -638,4 +649,124 @@ func formatSchemaParams(schema interface{}) string {
 		sb.WriteString("\n")
 	}
 	return sb.String()
+}
+
+// FormatSearchResult 把搜索结果格式化为按类型分节的紧凑文本(mcp.search 的 text
+// content)。每节标题一次性给出该类条目的下一步动作(describe/execute/read),行内
+// 只保留"ID — 摘要":描述折叠成单行并按 searchDescMaxRunes 截断,防止上游多行/
+// 超长描述破坏"一行一条"的列表(细节本就由 mcp.describe 提供)。capped 表示结果数
+// 达到 limit 上限,此时在头部提示可能还有更多。
+func FormatSearchResult(results []SearchResult, capped bool) string {
+	if len(results) == 0 {
+		// 空结果不给线索会让模型放弃或反复瞎猜;按 AWS MCP tool design 的建议,
+		// 在失败点直接告诉它下一步怎么改("helpful errors can steer the next attempt")。
+		return "No results. Try broader, plainer keywords (matched against names and descriptions), set scope to \"all\", or remove the group filter. Call mcp.describe if you already know a service or tool name."
+	}
+
+	var sb strings.Builder
+	if capped {
+		fmt.Fprintf(&sb, "Found %d items (limit reached, more may exist — raise limit or narrow scope):\n", len(results))
+	} else {
+		fmt.Fprintf(&sb, "Found %d items:\n", len(results))
+	}
+
+	type resultSection struct {
+		kind   string
+		header string
+	}
+	sections := []resultSection{
+		{"mcp", "Services — inspect with mcp.describe \"<name>\":"},
+		{"tool", "Tools — call with mcp.execute \"service.tool\":"},
+		{"resource", "Resources — fetch with mcp.read (type \"resource\"):"},
+		{"template", "Resource templates — fill in the {placeholders} to build a URI, then fetch with mcp.read (type \"resource\"):"},
+		{"prompt", "Prompts — render with mcp.read (type \"prompt\"):"},
+	}
+	// bodies[i] 与 sections[i] 一一对应;末位多留一个给未知类型条目的兜底节。
+	bodies := make([]strings.Builder, len(sections)+1)
+	fallbackIdx := len(sections)
+	sectionIdx := make(map[string]int, len(sections))
+	for i, s := range sections {
+		sectionIdx[s.kind] = i
+	}
+
+	for _, r := range results {
+		d := r.Doc
+		i, ok := sectionIdx[d.Type]
+		if !ok {
+			i = fallbackIdx
+		}
+		body := &bodies[i]
+
+		var id, meta string
+		switch d.Type {
+		case "mcp":
+			// 描述/执行路由按服务名走,名称放最前;display name 不同时以括号补充。
+			id = d.ServiceName
+			if id == "" {
+				id = d.Name
+			} else if d.Name != "" && d.Name != d.ServiceName {
+				id = d.ServiceName + " (" + d.Name + ")"
+			}
+			meta = fmt.Sprintf("%d tools", d.ToolCount)
+			if d.GroupName != "" {
+				meta += ", group: " + d.GroupName
+			}
+		case "tool":
+			id = d.ServiceName + "." + d.Name
+		case "resource", "template":
+			id = gatewayResourceURI(d.ServiceName, d.Name)
+		case "prompt":
+			id = d.ServiceName + "__" + d.Name
+		default:
+			id = d.ID
+		}
+
+		desc := singleLineDesc(d.Description, searchDescMaxRunes)
+		switch {
+		case desc != "" && meta != "":
+			fmt.Fprintf(body, "- %s — %s (%s)\n", id, desc, meta)
+		case desc != "":
+			fmt.Fprintf(body, "- %s — %s\n", id, desc)
+		case meta != "":
+			fmt.Fprintf(body, "- %s (%s)\n", id, meta)
+		default:
+			fmt.Fprintf(body, "- %s\n", id)
+		}
+	}
+
+	for i, s := range sections {
+		if bodies[i].Len() == 0 {
+			continue
+		}
+		sb.WriteString("\n")
+		sb.WriteString(s.header)
+		sb.WriteString("\n")
+		sb.WriteString(bodies[i].String())
+	}
+	if bodies[fallbackIdx].Len() > 0 {
+		sb.WriteString("\nItems — use mcp.describe to inspect:\n")
+		sb.WriteString(bodies[fallbackIdx].String())
+	}
+	return sb.String()
+}
+
+// searchDescMaxRunes 搜索结果里单条描述的截断上限:描述在搜索阶段只是筛选线索,
+// 细节由 mcp.describe 提供,避免单条超长描述(如整段 Query tips)撑爆列表。
+const searchDescMaxRunes = 160
+
+// singleLineDesc 把描述里的所有空白(含换行)折叠为单个空格,并按 rune 数截断加省略号,
+// 保证"一行一条"的列表格式不被上游多行描述破坏。
+func singleLineDesc(s string, max int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if s == "" {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	if max <= 1 {
+		return "…"
+	}
+	return strings.TrimRight(string(runes[:max-1]), " ,.;:、，。；：") + "…"
 }

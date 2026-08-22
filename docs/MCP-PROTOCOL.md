@@ -113,46 +113,38 @@ prompts/list 一致，均可被分组勾选禁用过滤，禁用条目不出现�
 **参数:**
 ```json
 {
-    "query": "搜索",              // 必填，搜索关键字
-    "scope": "mcp",              // 可选: "mcp"=搜服务, "tool"=搜工具, "all"=都搜 (默认 "mcp")
+    "query": "搜索",              // 可选，省略则浏览全部条目
+    "scope": "all",              // 可选: "mcp"/"tool"/"resource"/"prompt"/"all" (默认 "all"，resource 含资源模板)
     "group": "机器人控制",         // 可选，限定分组
     "limit": 10                  // 可选，最大 50，默认 10
 }
 ```
 
-**返回 (scope="mcp"):**
+**返回**（按类型分节，实现在 `smart.FormatSearchResult`）:
 ```json
 {
     "content": [{
         "type": "text",
-        "text": "找到 3 个匹配的 MCP 服务:\n\n" +
-            "1. **exa-search** (分组: 联网工具)\n" +
-            "   Exa 网络搜索引擎，支持关键词和语义搜索\n" +
-            "   工具数: 3\n\n" +
-            "2. **sea-bot** (分组: 机器人控制)\n" +
-            "   水下机器人控制 MCP\n" +
-            "   工具数: 5\n\n" +
-            "3. **web-fetch** (分组: 联网工具)\n" +
-            "   网页内容抓取\n" +
-            "   工具数: 2"
+        "text": "Found 4 items:\n\n" +
+            "Services — inspect with mcp.describe \"<name>\":\n" +
+            "- exa (Exa 搜索) — Exa 网络搜索引擎 (3 tools, group: 联网工具)\n\n" +
+            "Tools — call with mcp.execute \"service.tool\":\n" +
+            "- exa.web_search — Search the web for any topic and get clean, ready-to-use content. Best for: Finding current information, news, facts…\n\n" +
+            "Prompts — render with mcp.read (type \"prompt\"):\n" +
+            "- exa__summarize — 汇总搜索结果"
     }]
 }
 ```
 
-**返回 (scope="tool"):**
-```json
-{
-    "content": [{
-        "type": "text",
-        "text": "找到 5 个匹配的工具:\n\n" +
-            "1. **exa-search.web_search** (exa-search)\n" +
-            "   网页搜索，返回相关结果\n\n" +
-            "2. **exa-search.get_contents** (exa-search)\n" +
-            "   获取网页内容\n\n" +
-            "..."
-    }]
-}
-```
+格式要点:
+
+- 按类型分节（服务/工具/资源/资源模板/提示），节标题携带该类条目的下一步动作
+  （describe/execute/read），只输出非空节，节间空行分隔；
+- 每行一条 `ID — 摘要`；描述折叠为单行并按 160 字符截断（上游多行/超长描述不再
+  破坏列表格式，细节交给 mcp.describe）；
+- 服务行附带工具数与分组名；同一服务挂多个分组时按条目 ID 去重（保留首分组）；
+- 结果数达到 limit 上限时头部提示 "limit reached, more may exist"；0 结果时返回
+  放宽条件的建议文案。
 
 ### 3.3 mcp.describe - 查看工具详细 Schema
 
