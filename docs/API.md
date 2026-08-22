@@ -1430,10 +1430,18 @@ canvas.toBlob(blob => {
 ```json
 {
     "name": "mcp.execute_batch",
-    "description": "并发执行多个相互独立的工具调用（最多 10 项、网关内并发上限 5），逐项返回结果。适合批量查多城市天气、批量控制开关/设备（同一工具按不同设备重复调用）等互不依赖的调用;某项参数依赖另一项返回值、或同一目标需按序操作（先设置再读回）时请逐个用 mcp.execute。",
+    "description": "并发执行多个相互独立的工具调用（最多 10 项、网关内并发上限 5），逐项返回结果。同工具批量调用（如批量控制开关/设备）用 tool_id + arguments_list 短形态;混合不同工具用 calls;某项参数依赖另一项返回值、或同一目标需按序操作（先设置再读回）时请逐个用 mcp.execute。",
     "inputSchema": {
         "type": "object",
         "properties": {
+            "tool_id": {"type": "string", "description": "同工具扇出: 服务名.工具名,配合 arguments_list"},
+            "arguments_list": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 10,
+                "items": {"type": "object", "description": "每次调用的参数对象"},
+                "description": "与 tool_id 配对,同工具每调用一次给一个参数对象"
+            },
             "calls": {
                 "type": "array",
                 "minItems": 1,
@@ -1442,14 +1450,15 @@ canvas.toBlob(blob => {
                     "type": "object",
                     "properties": {
                         "tool_id": {"type": "string", "description": "格式: 服务名.工具名"},
-                        "arguments": {"type": "object", "description": "工具参数"},
-                        "timeout_ms": {"type": "number", "default": 30000, "description": "单项超时毫秒"}
+                        "arguments": {"type": "object", "description": "工具参数"}
                     },
                     "required": ["tool_id"]
-                }
-            }
+                },
+                "description": "混合不同工具时使用,与 tool_id/arguments_list 互斥"
+            },
+            "timeout_ms": {"type": "number", "default": 30000, "description": "整批统一超时毫秒"}
         },
-        "required": ["calls"]
+        "required": []
     }
 }
 ```

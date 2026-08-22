@@ -216,34 +216,46 @@ async def mcp_execute(tool_id: str, arguments: str = "{}") -> str:
 
 
 @mcp.tool()
-async def mcp_execute_batch(calls: str) -> str:
+async def mcp_execute_batch(calls: str = "", tool_id: str = "", arguments_list: str = "") -> str:
     """并发执行多个相互独立的 MCP 工具调用（最多 10 项），逐项返回结果。
-    适合批量控制开关/设备（同一工具按不同设备重复调用）、一次查多个城市天气等
-    互不依赖的调用。仅当某项参数需要等另一项返回值时（如先上传拿 URL 再识别），
+
+    两种入参形态二选一:
+    - 同工具扇出（推荐,批量控制开关/设备等场景,参数更短不易出错）:
+      tool_id + arguments_list，每项一个参数 JSON 字符串数组元素。
+      如 tool_id="weather.get_weather",
+         arguments_list='[{"city": "北京"}, {"city": "上海"}]'
+    - 混合不同工具: calls，每项 {"tool_id": "...", "arguments": {...}}。
+
+    仅当某项参数需要等另一项返回值时（如先上传拿 URL 再识别），
     或同一目标需按序操作（先设置再读回状态）时，请改用 mcp_execute 逐个执行。
-    参数:
-      calls: JSON 数组，每项 {"tool_id": "服务名.工具名", "arguments": {...}}，
-             如 '[{"tool_id":"weather.get_weather","arguments":{"city":"北京"}},
-                  {"tool_id":"weather.get_weather","arguments":{"city":"上海"}},
-                  {"tool_id":"calculator.add","arguments":{"a":1,"b":2}}]'
     """
-    try:
-        batch = json.loads(calls) if isinstance(calls, str) else calls
-    except json.JSONDecodeError:
-        return "错误: calls 不是有效的 JSON"
+    batch = []
+    if tool_id or arguments_list:
+        if not tool_id or not arguments_list:
+            return "错误: 扇出形态需要 tool_id 和 arguments_list 成对出现"
+        try:
+            args_list = json.loads(arguments_list) if isinstance(arguments_list, str) else arguments_list
+        except json.JSONDecodeError:
+            return "错误: arguments_list 不是有效的 JSON"
+        batch = [{"tool_id": tool_id, "arguments": a} for a in args_list]
+    elif calls:
+        try:
+            batch = json.loads(calls) if isinstance(calls, str) else calls
+        except json.JSONDecodeError:
+            return "错误: calls 不是有效的 JSON"
 
     if not isinstance(batch, list) or not batch:
-        return "错误: calls 应为非空数组"
+        return "错误: 需要提供 calls（混合工具）或 tool_id + arguments_list（同工具扇出）"
     if len(batch) > 10:
         return f"错误: 批量上限 10 项，收到 {len(batch)} 项，请拆分"
 
     import asyncio
 
     async def run_one(i: int, call: dict) -> str:
-        tool_id = call.get("tool_id", "")
+        call_tool_id = call.get("tool_id", "")
         args = call.get("arguments", {})
-        result = await mcp_execute(tool_id=tool_id, arguments=json.dumps(args, ensure_ascii=False))
-        return f"[{i}] {tool_id} — {result}"
+        result = await mcp_execute(tool_id=call_tool_id, arguments=json.dumps(args, ensure_ascii=False))
+        return f"[{i}] {call_tool_id} — {result}"
 
     outputs = await asyncio.gather(*(run_one(i, c) for i, c in enumerate(batch)))
     return "\n\n".join(outputs)

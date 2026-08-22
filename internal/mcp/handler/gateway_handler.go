@@ -730,7 +730,6 @@ const (
 type executeBatchCall struct {
 	ToolID    string          `json:"tool_id"`
 	Arguments json.RawMessage `json:"arguments"`
-	TimeoutMs int             `json:"timeout_ms"`
 }
 
 type executeBatchResult struct {
@@ -739,52 +738,81 @@ type executeBatchResult struct {
 }
 
 // handleExecuteBatch 执行 mcp.execute_batch:各项并发(信号量限流)走与 mcp.execute
-// 完全相同的 executeOne 路径。结果聚合为一个 CallToolResult(逐项 [index] 头 +
-// 上游 content 原样透传,全失败才置 isError);日志逐项落一条(method=mcp.execute_batch,
-// 计费列按项结算),分组归属沿用单项路径的"项内解析优先、slug 分组兜底"口径。
+// 完全相同的 executeOne 路径。两种入参形态在入口归一化为 calls 后走同一下游:
+//   - calls: [{tool_id, arguments}] —— 混合不同工具;
+//   - tool_id + arguments_list —— 同工具扇出(批量控制开关/设备等场景的短形态,
+//     少一层嵌套、无需逐项重复 tool_id,降低小参数量模型生成非法 JSON 的概率)。
+// timeout_ms 为整批统一超时(不再逐项设置,减少逐项 schema 噪音)。
+// 结果聚合为一个 CallToolResult(逐项 [index] 头 + 上游 content 原样透传,全失败才置
+// isError);日志逐项落一条(method=mcp.execute_batch,计费列按项结算),分组归属沿用
+// 单项路径的"项内解析优先、slug 分组兜底"口径。
 func (h *GatewayHandler) handleExecuteBatch(ctx context.Context, reqID interface{}, logCtx *LogContext, args json.RawMessage, slugGroupID int64, slugGroupName string) *executeBatchResult {
 	var params struct {
-		Calls []executeBatchCall `json:"calls"`
+		ToolID        string             `json:"tool_id"`
+		ArgumentsList []json.RawMessage  `json:"arguments_list"`
+		Calls         []executeBatchCall `json:"calls"`
+		TimeoutMs     int                `json:"timeout_ms"`
 	}
 	_ = json.Unmarshal(args, &params)
 
-	if len(params.Calls) == 0 {
-		return &executeBatchResult{Resp: h.errorResponse(reqID, -32602, "calls is required: an array of up to 10 {tool_id, arguments} entries")}
+	fanout := params.ToolID != "" || len(params.ArgumentsList) > 0
+	mixed := len(params.Calls) > 0
+
+	calls := params.Calls
+	switch {
+	case fanout && mixed:
+		return &executeBatchResult{Resp: h.errorResponse(reqID, -32602, "provide either calls (mixed tools) or tool_id + arguments_list (same tool), not both")}
+	case !fanout && !mixed:
+		return &executeBatchResult{Resp: h.errorResponse(reqID, -32602, "provide either calls (an array of {tool_id, arguments} entries, mixed tools) or tool_id + arguments_list (one arguments object per call, same tool)")}
+	case fanout:
+		if params.ToolID == "" {
+			return &executeBatchResult{Resp: h.errorResponse(reqID, -32602, "tool_id is required with arguments_list")}
+		}
+		if len(params.ArgumentsList) == 0 {
+			return &executeBatchResult{Resp: h.errorResponse(reqID, -32602, "arguments_list is required with tool_id")}
+		}
+		calls = make([]executeBatchCall, len(params.ArgumentsList))
+		for i, a := range params.ArgumentsList {
+			calls[i] = executeBatchCall{ToolID: params.ToolID, Arguments: a}
+		}
 	}
-	if len(params.Calls) > executeBatchMaxCalls {
-		return &executeBatchResult{Resp: h.errorResponse(reqID, -32602, fmt.Sprintf("too many calls: %d (max %d); split into multiple batches", len(params.Calls), executeBatchMaxCalls))}
+
+	if len(calls) > executeBatchMaxCalls {
+		return &executeBatchResult{Resp: h.errorResponse(reqID, -32602, fmt.Sprintf("too many calls: %d (max %d); split into multiple batches", len(calls), executeBatchMaxCalls))}
 	}
-	for i, c := range params.Calls {
+	for i, c := range calls {
 		if c.ToolID == "" {
 			return &executeBatchResult{Resp: h.errorResponse(reqID, -32602, fmt.Sprintf("calls[%d].tool_id is required", i))}
 		}
 	}
 
+	timeoutMs := params.TimeoutMs
+
 	// 计费幂等键带批内序号:批内两项 (tool_id, arguments) 完全相同时若共用键,
 	// 第二项的预扣会被幂等去重跳过而漏扣。
-	itemReqIDs := make([]string, len(params.Calls))
-	for i, c := range params.Calls {
+	itemReqIDs := make([]string, len(calls))
+	for i, c := range calls {
 		itemReqIDs[i] = billingRequestID(reqID, fmt.Sprintf("%s#%d", c.ToolID, i), c.Arguments)
 	}
 
-	outcomes := make([]*callOutcome, len(params.Calls))
-	durations := make([]time.Duration, len(params.Calls))
+	outcomes := make([]*callOutcome, len(calls))
+	durations := make([]time.Duration, len(calls))
 	sem := make(chan struct{}, executeBatchMaxParallel)
 	var wg sync.WaitGroup
-	for i := range params.Calls {
+	for i := range calls {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			start := time.Now()
-			outcomes[i] = h.executeOne(ctx, logCtx, params.Calls[i].ToolID, params.Calls[i].Arguments, params.Calls[i].TimeoutMs, itemReqIDs[i])
+			outcomes[i] = h.executeOne(ctx, logCtx, calls[i].ToolID, calls[i].Arguments, timeoutMs, itemReqIDs[i])
 			durations[i] = time.Since(start)
 		}(i)
 	}
 	wg.Wait()
 
-	content, failed := buildExecuteBatchContent(params.Calls, outcomes)
+	content, failed := buildExecuteBatchContent(calls, outcomes)
 	result := map[string]interface{}{"content": content}
 	if failed == len(outcomes) {
 		result["isError"] = true
@@ -806,7 +834,7 @@ func (h *GatewayHandler) handleExecuteBatch(ctx context.Context, reqID interface
 		// 比 logs 里再记一条 mcp.execute_batch 更可查。
 		toolName := oc.ToolName
 		if toolName == "" {
-			toolName = params.Calls[i].ToolID
+			toolName = calls[i].ToolID
 		}
 		l := &model.McpCallLog{
 			Type:           model.LogTypeConsume,
@@ -821,7 +849,7 @@ func (h *GatewayHandler) handleExecuteBatch(ctx context.Context, reqID interface
 			ToolName:       toolName,
 			Method:         "mcp.execute_batch",
 			RequestID:      truncate(itemReqIDs[i], 64),
-			RequestPayload: redactRequestPayload(toolName, params.Calls[i].Arguments),
+			RequestPayload: redactRequestPayload(toolName, calls[i].Arguments),
 			ResponseStatus: status,
 			DurationMs:     int(durations[i].Milliseconds()),
 			ErrorMessage:   truncate(errMsg, 65535),

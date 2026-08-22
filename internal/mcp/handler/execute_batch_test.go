@@ -172,10 +172,14 @@ func TestHandleExecuteBatchValidation(t *testing.T) {
 		args string
 		want string
 	}{
-		{"missing calls", `{}`, "calls is required"},
-		{"empty calls", `{"calls":[]}`, "calls is required"},
-		{"too many", `{"calls":[` + strings.Repeat(`{"tool_id":"a.b"},`, 10) + `{"tool_id":"c.d"}]}`, "too many calls"},
-		{"missing tool_id", `{"calls":[{"arguments":{}}]}`, "calls[0].tool_id is required"},
+		{"missing both forms", `{}`, "provide either"},
+		{"empty calls", `{"calls":[]}`, "provide either"},
+		{"too many calls", `{"calls":[` + strings.Repeat(`{"tool_id":"a.b"},`, 10) + `{"tool_id":"c.d"}]}`, "too many calls"},
+		{"missing tool_id in calls", `{"calls":[{"arguments":{}}]}`, "calls[0].tool_id is required"},
+		{"both forms", `{"calls":[{"tool_id":"a.b"}],"tool_id":"c.d","arguments_list":[{}]}`, "not both"},
+		{"fanout missing tool_id", `{"arguments_list":[{"a":1}]}`, "tool_id is required with arguments_list"},
+		{"fanout missing arguments_list", `{"tool_id":"a.b"}`, "arguments_list is required with tool_id"},
+		{"fanout too many", `{"tool_id":"a.b","arguments_list":[` + strings.Repeat(`{},`, 10) + `{}]}`, "too many calls"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

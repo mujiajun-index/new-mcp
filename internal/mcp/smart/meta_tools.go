@@ -65,21 +65,23 @@ var MetaTools = []struct {
 	},
 	{
 		Name:        "mcp.execute_batch",
-		Description: "Execute multiple independent MCP tools concurrently in one call, returning one result per item in input order, each under an \"[index] tool_id\" header. Use it when several calls are ready at once and none needs another's output — e.g. weather for three cities, image analysis alongside a web search, or turning several devices on/off together (lights, sockets, robots; repeating the same tool with different arguments per device is fine). Do NOT use it when a call's arguments depend on an earlier call's result (upload a file, then process the returned URL), or when calls must hit the SAME target in order (set a device, then read back its state; create, then list): run those one at a time with mcp.execute instead. A failed item does not affect the others; retry failed items individually with mcp.execute. For a single call, use mcp.execute.",
+		Description: "Execute multiple independent MCP tools concurrently in one call, returning one result per item in input order, each under an \"[index] tool_id\" header. When every call targets the SAME tool (e.g. turning several devices on/off, one per switch), pass tool_id plus arguments_list — one arguments object per call; this is the shortest and least error-prone form. When mixing different tools, pass calls: an array of {tool_id, arguments} entries. Do NOT batch when a call's arguments depend on an earlier call's result (upload a file, then process the returned URL), or when calls must hit the SAME target in order (set a device, then read back its state; create, then list): run those one at a time with mcp.execute instead. A failed item does not affect the others; retry failed items individually with mcp.execute. For a single call, use mcp.execute.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"calls": {"type": "array", "minItems": 1, "maxItems": 10, "description": "Independent calls to run concurrently, e.g. [{\"tool_id\": \"home.set_switch\", \"arguments\": {\"device\": \"light.living_room\", \"on\": true}}, {\"tool_id\": \"home.set_switch\", \"arguments\": {\"device\": \"light.bedroom\", \"on\": true}}, {\"tool_id\": \"weather.get_forecast\", \"arguments\": {\"city\": \"Paris\"}}]", "items": {
+				"tool_id": {"type": "string", "description": "Same-tool fan-out: one tool ID in the form service.toolName, executed once per entry of arguments_list. Use with arguments_list, not with calls"},
+				"arguments_list": {"type": "array", "minItems": 1, "maxItems": 10, "description": "Pair with tool_id when every call targets the same tool, e.g. [{\"device\": \"light.living_room\", \"on\": true}, {\"device\": \"light.bedroom\", \"on\": true}]", "items": {"type": "object", "description": "One arguments object per call, matching the tool's input schema from mcp.describe"}},
+				"calls": {"type": "array", "minItems": 1, "maxItems": 10, "description": "Mixed tools: one entry per call, e.g. [{\"tool_id\": \"weather.get_forecast\", \"arguments\": {\"city\": \"Paris\"}}, {\"tool_id\": \"exa.web_search_exa\", \"arguments\": {\"query\": \"AI news\"}}]", "items": {
 					"type": "object",
 					"properties": {
 						"tool_id": {"type": "string", "description": "Tool ID in the form service.toolName, e.g. \"weather.get_forecast\""},
-						"arguments": {"type": "object", "description": "Arguments object matching the tool's input schema from mcp.describe"},
-						"timeout_ms": {"type": "number", "default": 30000, "description": "Per-item execution timeout in milliseconds"}
+						"arguments": {"type": "object", "description": "Arguments object matching the tool's input schema from mcp.describe"}
 					},
 					"required": ["tool_id"]
-				}}
+				}},
+				"timeout_ms": {"type": "number", "default": 30000, "description": "Execution timeout in milliseconds, applied to every call in the batch"}
 			},
-			"required": ["calls"]
+			"required": []
 		}`),
 	},
 	{

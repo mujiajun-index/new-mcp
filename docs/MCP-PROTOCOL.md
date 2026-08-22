@@ -275,11 +275,27 @@ func (e *Executor) Execute(ctx context.Context, toolID string, arguments json.Ra
 **全部**项失败才置 `isError: true`（部分失败是批量调用的正常结局）。上游结果缺
 content 块（如仅 structuredContent）或不可解析时，退化为截断 2048 字符的原文文本块。
 
-**参数:**
+**参数**（两种形态二选一;`timeout_ms` 为整批统一超时）:
+
+同工具扇出——推荐用于批量设备控制等"一个工具调 N 次"的场景（少一层嵌套、无需
+逐项重复 tool_id,显著降低小参数量模型生成非法 JSON 的概率）:
+```json
+{
+    "tool_id": "home.set_switch",
+    "arguments_list": [
+        {"device": "light.living_room", "on": true},
+        {"device": "light.bedroom", "on": true},
+        {"device": "socket.desk", "on": false}
+    ],
+    "timeout_ms": 30000
+}
+```
+
+混合不同工具:
 ```json
 {
     "calls": [
-        {"tool_id": "weather.get_forecast", "arguments": {"city": "北京"}, "timeout_ms": 30000},
+        {"tool_id": "weather.get_forecast", "arguments": {"city": "北京"}},
         {"tool_id": "exa.web_search_exa", "arguments": {"query": "AI news"}}
     ]
 }
@@ -301,12 +317,15 @@ content 块（如仅 structuredContent）或不可解析时，退化为截断 20
 **实现要点** (`internal/mcp/handler/gateway_handler.go`):
 - 单项执行抽为 `executeOne`，单次 mcp.execute 与批量共用同一路径（含计费 A/B），
   两者行为完全一致；
+- 双入参形态（`calls` 混合工具 / `tool_id`+`arguments_list` 同工具扇出）在入口
+  归一化为同一 calls 切片，下游并发/计费/日志/聚合路径完全不变；两种形态同给、
+  全缺、超限均为协议级 -32602；
 - 计费幂等键 `request_id` 在工具名哈希部分带批内序号（`tool_id#i`）：批内两项
   (tool_id, arguments) 完全相同时若共键，第二项预扣会被幂等去重漏扣；
 - 日志逐项一条（method=`mcp.execute_batch`，service/tool/分组/计费列按项归属；
   项级作用域/路由失败拿不到裸工具名时 tool_name 记完整 tool_id），请求数统计只按
   一次请求递增；
-- 校验失败（calls 缺失/超限/缺 tool_id）为协议级 -32602 错误，走单条日志路径。
+- 校验失败（形态缺失/互斥冲突/超限/缺 tool_id）为协议级 -32602 错误，走单条日志路径。
 
 ### 3.6 mcp.read - 读资源 / 取提示（V1.2）
 

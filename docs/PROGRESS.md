@@ -375,7 +375,7 @@ newmcp/
 
 | 模块 | 状态 | 说明 |
 |------|------|------|
-| 元工具定义 `smart/meta_tools.go` | ✅ | mcp.execute_batch(calls 数组,maxItems=10);mcp.execute 描述加互指;instructions 同步 |
+| 元工具定义 `smart/meta_tools.go` | ✅ | mcp.execute_batch 双形态入参:`calls`(混合工具)/`tool_id`+`arguments_list`(同工具扇出短形态,面向 flash 级模型:少一层嵌套、不逐项重复 tool_id);`timeout_ms` 整批统一;maxItems=10;mcp.execute 描述加互指;instructions 同步 |
 | 执行路径复用 | ✅ | 单项执行抽为 `executeOne`,单次/批量共用(作用域校验/虚拟工具/计费 A+B/超时完全一致) |
 | 并发控制 | ✅ | WaitGroup + 信号量,并发上限 5;批量上限 10(schema+服务端双兜底) |
 | 结果聚合 | ✅ | 首块汇总 + 每项 `[index] tool_id` 头块 + 上游 content 原样透传(image 等类型不变);上游 isError 计为该项失败;全失败才 isError:true;缺 content/不可解析退化为截断原文 |
