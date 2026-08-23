@@ -1379,16 +1379,16 @@ canvas.toBlob(blob => {
 ```json
 {
     "name": "mcp.search",
-    "description": "搜索可用的 MCP 服务和工具。支持按关键字、分组名、服务名搜索。",
+    "description": "搜索可用的 MCP 服务、工具、资源和提示。关键词匹配名称、服务名与描述；目录以英文为主，非英文任务建议双语关键词（原词旁附英文翻译）。",
     "inputSchema": {
         "type": "object",
         "properties": {
-            "query": {"type": "string", "description": "搜索关键字"},
-            "scope": {"type": "string", "enum": ["mcp", "tool", "all"], "default": "mcp", "description": "搜索范围"},
+            "query": {"type": "string", "description": "搜索关键字，可选；省略则浏览全部条目"},
+            "scope": {"type": "string", "enum": ["mcp", "tool", "resource", "prompt", "all"], "default": "all", "description": "搜索范围（resource 含资源模板；不确定时保持 all）"},
             "group": {"type": "string", "description": "限定分组"},
-            "limit": {"type": "number", "default": 10, "maximum": 50}
+            "limit": {"type": "number", "default": 20, "maximum": 100}
         },
-        "required": ["query"]
+        "required": []
     }
 }
 ```
@@ -1397,7 +1397,7 @@ canvas.toBlob(blob => {
 ```json
 {
     "name": "mcp.describe",
-    "description": "查看指定 MCP 服务的工具列表，或指定工具的完整参数 Schema。",
+    "description": "查看指定 MCP 服务的完整清单（工具、资源、资源模板、提示），或指定工具的完整参数 Schema。",
     "inputSchema": {
         "type": "object",
         "properties": {

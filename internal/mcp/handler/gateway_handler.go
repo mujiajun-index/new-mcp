@@ -180,7 +180,7 @@ func (h *GatewayHandler) handleInitialize(req *JSONRPCRequest, logCtx *LogContex
 
 // smartInstructionsText 教智能模式的渐进发现工作流(search→describe→execute/read),
 // 只在智能模式返回,避免直连模式下指向不存在的元工具。
-const smartInstructionsText = "This gateway aggregates many MCP services behind 5 discovery tools. Workflow: mcp.search with task keywords to find services/tools/resources/prompts; mcp.describe on a service name or \"service.toolName\" to inspect parameters; mcp.execute with tool_id \"service.toolName\" to call a tool; mcp.execute_batch to run several independent calls concurrently in one request — e.g. batch-controlling several switches or devices at once (never batch calls where one needs another's result or hits the same target in order); mcp.read with a newmcp://<service>/<uri> or <service>__<promptName> to fetch a resource or render a prompt. Describe a tool before executing it rather than guessing arguments."
+const smartInstructionsText = "This gateway aggregates many MCP services behind 5 discovery tools. Workflow: mcp.search with task keywords in English plus the task language (English-dominant catalog — for non-English tasks query both) to find services/tools/resources/prompts; mcp.describe on a service name or \"service.toolName\" to inspect parameters; mcp.execute with tool_id \"service.toolName\" to call a tool; mcp.execute_batch to run several independent calls concurrently in one request — e.g. batch-controlling several switches or devices at once (never batch calls where one needs another's result or hits the same target in order); mcp.read with a newmcp://<service>/<uri> or <service>__<promptName> to fetch a resource or render a prompt. Describe a tool before executing it rather than guessing arguments."
 
 const visionInstructionsText = "To analyze a LOCAL image: if it is small (roughly <= 10KB), inline it as base64 directly to analyze_image; otherwise call upload_image with local_path to get an upload_command matched to your OS (curl.exe on Windows PowerShell where bare `curl` is an alias for Invoke-WebRequest; curl elsewhere) + image_url, run it via your shell (no API key needed), then call analyze_image with the image_url. Never paste large image base64 into tool arguments."
 
@@ -484,7 +484,7 @@ func (h *GatewayHandler) handleSearch(ctx context.Context, reqID interface{}, lo
 		params.Scope = "all"
 	}
 	if params.Limit <= 0 {
-		params.Limit = 10
+		params.Limit = 20
 	}
 
 	results, err := h.searchEngine.Search(ctx, logCtx.ApiKeyID, params.Query, smart.SearchOptions{
@@ -496,13 +496,13 @@ func (h *GatewayHandler) handleSearch(ctx context.Context, reqID interface{}, lo
 		return h.errorResponse(reqID, -32603, "Search failed: "+err.Error())
 	}
 
-	// 引擎端把 limit 钳制到 ≤50,此处保持同一口径;结果数达到该上限时可能还有更多,
+	// 引擎端把 limit 钳制到 ≤100,此处保持同一口径;结果数达到该上限时可能还有更多,
 	// 由 FormatSearchResult 在头部给出调整 limit/scope 的提示。
 	shown := params.Limit
-	if shown > 50 {
-		shown = 50
+	if shown > 100 {
+		shown = 100
 	}
-	resultText := smart.FormatSearchResult(results, len(results) == shown)
+	resultText := smart.FormatSearchResult(results, len(results) == shown, params.Query)
 
 	return &JSONRPCResponse{
 		JSONRPC: "2.0",

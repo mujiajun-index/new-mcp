@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/model"
@@ -103,10 +104,10 @@ func itemDisabled(m map[string]bool, groupID, serviceID int64, kind, key string)
 
 func (e *SearchEngine) Search(ctx context.Context, apiKeyID int64, query string, opts SearchOptions) ([]SearchResult, error) {
 	if opts.Limit <= 0 {
-		opts.Limit = 10
+		opts.Limit = 20
 	}
-	if opts.Limit > 50 {
-		opts.Limit = 50
+	if opts.Limit > 100 {
+		opts.Limit = 100
 	}
 
 	info, err := bridge.ResolveApiKeyInfo(apiKeyID)
@@ -655,11 +656,18 @@ func formatSchemaParams(schema interface{}) string {
 // content)。每节标题一次性给出该类条目的下一步动作(describe/execute/read),行内
 // 只保留"ID — 摘要":描述折叠成单行并按 searchDescMaxRunes 截断,防止上游多行/
 // 超长描述破坏"一行一条"的列表(细节本就由 mcp.describe 提供)。capped 表示结果数
-// 达到 limit 上限,此时在头部提示可能还有更多。
-func FormatSearchResult(results []SearchResult, capped bool) string {
+// 达到 limit 上限,此时在头部提示可能还有更多。query 只参与空结果分支:仅含汉字
+// (未附英文)时点破语言不匹配,引导附上英文关键词重试。
+func FormatSearchResult(results []SearchResult, capped bool, query string) string {
 	if len(results) == 0 {
 		// 空结果不给线索会让模型放弃或反复瞎猜;按 AWS MCP tool design 的建议,
 		// 在失败点直接告诉它下一步怎么改("helpful errors can steer the next attempt")。
+		// 目录名称/描述基本都是英文,中文 query 分词后与英文索引天然零重叠——仅含
+		// 汉字(未附英文)时,泛泛的"换更宽泛的关键词"没用,要点破真正原因:附上英文
+		// 再搜。query 已带英文关键词仍空结果,说明语言不是问题,退回通用建议。
+		if containsHan(query) && !containsLatinWord(query) {
+			return "No results. The catalog's names and descriptions are mostly English — add English keywords to the query and retry (e.g. \"网络工具\" → \"网络工具 [web search]\"). Also try broader keywords, set scope to \"all\", or remove the group filter. Call mcp.describe if you already know a service or tool name."
+		}
 		return "No results. Try broader, plainer keywords (matched against names and descriptions), set scope to \"all\", or remove the group filter. Call mcp.describe if you already know a service or tool name."
 	}
 
@@ -748,6 +756,34 @@ func FormatSearchResult(results []SearchResult, capped bool) string {
 		sb.WriteString(bodies[fallbackIdx].String())
 	}
 	return sb.String()
+}
+
+// containsHan 检测字符串是否含汉字,判定口径与 bm25.go 的 tokenize 一致
+// (unicode.Han)。用于空结果分支区分中英文 query。
+func containsHan(s string) bool {
+	for _, r := range s {
+		if unicode.Is(unicode.Han, r) {
+			return true
+		}
+	}
+	return false
+}
+
+// containsLatinWord 检测是否含 ≥2 个连续拉丁字母(如 "web"),用于判断 query 是否
+// 已附英文关键词——双语言 query 空结果时语言已不是问题,不应再提示"附英文重试"。
+func containsLatinWord(s string) bool {
+	run := 0
+	for _, r := range s {
+		if unicode.Is(unicode.Latin, r) {
+			run++
+			if run >= 2 {
+				return true
+			}
+		} else {
+			run = 0
+		}
+	}
+	return false
 }
 
 // searchDescMaxRunes 搜索结果里单条描述的截断上限:描述在搜索阶段只是筛选线索,
