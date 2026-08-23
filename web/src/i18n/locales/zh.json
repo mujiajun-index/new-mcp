@@ -159,7 +159,7 @@
     "directMode": "直连模式",
     "directModeDesc": "暴露已聚合服务的全部工具",
     "smartMode": "智能模式",
-    "smartModeDesc": "通过 4 个元工具渐进发现"
+    "smartModeDesc": "通过 5 个元工具渐进发现"
   },
   "apiKeys": {
     "title": "API 密钥",
@@ -454,7 +454,7 @@
     "directMode": "直接模式",
     "smartMode": "智能模式",
     "modeDirectDesc": "直接暴露所有工具，适合工具少的场景",
-    "modeSmartDesc": "仅暴露 4 个元工具（搜索/查看/执行/读取），适合工具多的场景",
+    "modeSmartDesc": "仅暴露 5 个元工具（搜索/查看/执行/批量执行/读取），适合工具多的场景",
     "identifier": "分组标识",
     "identifierRequired": "分组标识 *",
     "identifierTip": "唯一标识，同时作为端点路径使用",
@@ -569,7 +569,7 @@
       "apiKeyRequired": "绑定 API Key *",
       "createApiKeyFirst": "请先创建 API Key 后再添加连接",
       "exposeMode": "暴露模式",
-      "smartDesc": "4 个元工具智能搜索",
+      "smartDesc": "5 个元工具智能搜索",
       "directDesc": "暴露所有工具",
       "create": "创建连接",
       "createSuccess": "连接创建成功"

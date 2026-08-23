@@ -159,7 +159,7 @@
     "directMode": "Direct Mode",
     "directModeDesc": "Exposes all tools aggregated from your services",
     "smartMode": "Smart Mode",
-    "smartModeDesc": "Progressive discovery via 4 meta-tools"
+    "smartModeDesc": "Progressive discovery via 5 meta-tools"
   },
   "apiKeys": {
     "title": "API Keys",
@@ -454,7 +454,7 @@
     "directMode": "Direct Mode",
     "smartMode": "Smart Mode",
     "modeDirectDesc": "Expose all tools directly. Suitable for services with few tools.",
-    "modeSmartDesc": "Expose only 4 meta-tools (search/list/execute/read). Suitable for services with many tools.",
+    "modeSmartDesc": "Expose only 5 meta-tools (search/describe/execute/batch/read). Suitable for services with many tools.",
     "identifier": "Group Identifier",
     "identifierRequired": "Group Identifier *",
     "identifierTip": "Unique identifier, also used as the endpoint path.",
@@ -569,7 +569,7 @@
       "apiKeyRequired": "Bind API Key *",
       "createApiKeyFirst": "Please create an API Key first",
       "exposeMode": "Expose Mode",
-      "smartDesc": "4 meta-tools for intelligent search",
+      "smartDesc": "5 meta-tools for intelligent search",
       "directDesc": "Expose all tools",
       "create": "Create Connection",
       "createSuccess": "Connection created"

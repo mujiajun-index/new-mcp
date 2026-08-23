@@ -38,7 +38,7 @@ cp mcp-config-direct.json .claude/settings.json  # 合并到 mcpServers 字段
 
 **配置文件**: `mcp-config-smart.json`
 
-agent 只看到 4 个元工具 (mcp_search, mcp_describe, mcp_execute, mcp_execute_batch)，需要通过搜索发现工具再调用。
+agent 只看到 5 个元工具 (mcp_search, mcp_describe, mcp_execute, mcp_execute_batch, mcp_read)，需要通过搜索发现工具再调用。
 
 **测试用例**:
 
