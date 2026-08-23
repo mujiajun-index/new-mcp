@@ -230,10 +230,10 @@ CREATE TABLE `vision_configs` (
     `system_prompt`        TEXT            DEFAULT '' COMMENT '系统提示词',
     `max_tokens`           INT             DEFAULT 4096 COMMENT '最大输出 tokens',
 
-    -- 工具自定义名称和描述
-    `analyze_image_name`   VARCHAR(128)    DEFAULT 'analyze_image' COMMENT '工具1名称: analyze_image',
+    -- 工具描述（名称固定: analyze_image / upload_image,不可自定义）
     `analyze_image_desc`   TEXT            DEFAULT 'Analyze an image with a vision model. Covers all image understanding: identify objects, people and text, describe the scene and overall content, extract structured info, or answer any custom question. Pass the prompt parameter to steer the analysis, e.g. describe the scene, transcribe all text, or list defects. Returns: the analysis result as text.' COMMENT '工具1描述',
     -- describe_scene_name/describe_scene_desc 已随 describe_scene 工具下线从模型中移除;
+    -- analyze_image_name 已随"工具名称固定"改造从模型中移除;
     -- 存量库中的孤儿列无害(AutoMigrate 只加不删),新库不再创建
 
     -- 扩展配置
@@ -268,11 +268,11 @@ CREATE TABLE `cameras` (
     -- 绑定视觉配置（必选）
     `vision_config_id`     BIGINT UNSIGNED NOT NULL COMMENT '绑定的视觉配置 ID',
 
-    -- 工具自定义名称和描述
-    `capture_name`         VARCHAR(128)    DEFAULT 'capture' COMMENT '工具1名称: capture',
+    -- 工具描述（名称固定: capture_frame / analyze_frame,不可自定义）
     `capture_desc`         TEXT            DEFAULT 'Capture a single still frame from the live camera feed and return it as an image. Best for: taking snapshots or capturing the current view. Returns: the captured frame as an image.' COMMENT '工具1描述',
-    `analyze_name`         VARCHAR(128)    DEFAULT 'analyze' COMMENT '工具2名称: analyze',
     `analyze_desc`         TEXT            DEFAULT 'Capture the current camera frame and run visual analysis on it. Best for: detecting objects, people, or events in the live feed. Returns: the analysis result for the current frame.' COMMENT '工具2描述',
+    -- capture_name/analyze_name 已随"工具名称固定"改造从模型中移除;
+    -- 存量库中的孤儿列无害(AutoMigrate 只加不删),新库不再创建
 
     -- 扩展配置
     `extra_config`         TEXT            DEFAULT '{}' COMMENT '扩展配置 JSON',
@@ -296,7 +296,7 @@ CREATE TABLE `cameras` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='摄像头表';
 ```
 
-> **启用机制**: 启用 Camera 后，系统自动创建一条 `mcp_services` 记录（`transport_type="virtual"`, `source="camera"`），包含 2 个工具：`capture`（返回最新帧的 base64 图像）和 `analyze`（截取画面并调用关联的 VisionConfig 进行 AI 识别）。
+> **启用机制**: 启用 Camera 后，系统自动创建一条 `mcp_services` 记录（`transport_type="virtual"`, `source="camera"`），包含 2 个工具：`capture_frame`（返回最新帧的 base64 图像）和 `analyze_frame`（截取画面并调用关联的 VisionConfig 进行 AI 识别）。
 >
 > **帧获取方式**: 浏览器通过 WebRTC `getUserMedia` 获取摄像头画面，canvas 定时截图后通过 WebSocket (`/api/v1/cameras/:id/stream?k=<推流密钥>`) 推送到后端，后端 `CameraStreamManager` 缓存最新帧供 MCP 工具调用。不使用 `source_type`/`source_url`/`fps`/`resolution_*` 等服务端拉流字段，完全由浏览器端推流驱动。
 >

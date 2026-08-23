@@ -68,10 +68,6 @@ func (s *CameraService) Create(userID int64, req *dto.CreateCameraReq) (*dto.Cam
 		VisionConfigID: &req.VisionConfigID,
 		AutoRegister:  false,
 		Status:        common.StatusEnabled,
-		CaptureName:   "capture",
-		CaptureDesc:   "Capture a single still frame from the live camera feed and return it as an image. Best for: taking snapshots or capturing the current view. Returns: the captured frame as an image.",
-		AnalyzeName:   "analyze",
-		AnalyzeDesc:   "Capture the current camera frame and run visual analysis on it. Best for: detecting objects, people, or events in the live feed. Returns: the analysis result for the current frame.",
 		ExtraConfig:   "{}",
 	}
 
@@ -105,14 +101,8 @@ func (s *CameraService) Update(userID, id int64, req *dto.UpdateCameraReq) error
 	if req.VisionConfigID != nil {
 		cam.VisionConfigID = req.VisionConfigID
 	}
-	if req.CaptureName != nil {
-		cam.CaptureName = *req.CaptureName
-	}
 	if req.CaptureDesc != nil {
 		cam.CaptureDesc = *req.CaptureDesc
-	}
-	if req.AnalyzeName != nil {
-		cam.AnalyzeName = *req.AnalyzeName
 	}
 	if req.AnalyzeDesc != nil {
 		cam.AnalyzeDesc = *req.AnalyzeDesc
@@ -234,10 +224,31 @@ func (s *CameraService) syncVirtualService(cam *model.Camera) {
 	_ = svc.Update()
 }
 
+// SyncAllRegisteredTools rebuilds the ToolsCache of every registered camera
+// virtual service from its current config. Called once at startup (same
+// pattern as VisionService.SyncAllRegisteredTools) so tool-set changes — e.g.
+// the switch to the fixed capture_frame / analyze_frame names — reach existing
+// services immediately instead of waiting for the user's next edit.
+func (s *CameraService) SyncAllRegisteredTools() int {
+	cameras, err := model.ListAllCameras()
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for i := range cameras {
+		if cameras[i].RegisteredServiceID != nil {
+			s.syncVirtualService(&cameras[i])
+			n++
+		}
+	}
+	return n
+}
+
 func (s *CameraService) buildToolsCache(cam *model.Camera) []map[string]interface{} {
+	// Fixed tool names (non-editable); only the descriptions are user-configurable.
 	return []map[string]interface{}{
 		{
-			"name":        cam.CaptureName,
+			"name":        model.CaptureToolName,
 			"description": cam.CaptureDesc,
 			"inputSchema": map[string]interface{}{
 				"type":       "object",
@@ -245,7 +256,7 @@ func (s *CameraService) buildToolsCache(cam *model.Camera) []map[string]interfac
 			},
 		},
 		{
-			"name":        cam.AnalyzeName,
+			"name":        model.AnalyzeToolName,
 			"description": cam.AnalyzeDesc,
 			"inputSchema": map[string]interface{}{
 				"type": "object",
@@ -279,9 +290,7 @@ func (s *CameraService) toDetail(cam *model.Camera) *dto.CameraDetail {
 		VisionConfigName:    visionConfigName,
 		AutoRegister:        cam.AutoRegister,
 		RegisteredServiceID: cam.RegisteredServiceID,
-		CaptureName:         cam.CaptureName,
 		CaptureDesc:         cam.CaptureDesc,
-		AnalyzeName:         cam.AnalyzeName,
 		AnalyzeDesc:         cam.AnalyzeDesc,
 		ExtraConfig:         cam.ExtraConfig,
 		Streaming:           streaming,

@@ -22,9 +22,7 @@ export interface CameraDetail {
   vision_config_name: string
   auto_register: boolean
   registered_service_id: number | null
-  capture_name: string
   capture_desc: string
-  analyze_name: string
   analyze_desc: string
   extra_config: string
   streaming: boolean
@@ -52,9 +50,7 @@ export interface UpdateCameraReq {
   name?: string
   description?: string
   vision_config_id?: number
-  capture_name?: string
   capture_desc?: string
-  analyze_name?: string
   analyze_desc?: string
   status?: number
 }

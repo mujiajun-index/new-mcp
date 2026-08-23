@@ -86,7 +86,7 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 	// image/image_url param parsing below because its argument is local_path. The
 	// caller's userID (for upload ownership + quota) is injected into ctx by the
 	// gateway at the virtual dispatch sites; fall back to the config owner if absent.
-	if strings.HasSuffix(toolName, "upload_image") {
+	if toolName == UploadImageToolName {
 		uid := CallerUserID(ctx)
 		if uid == 0 {
 			uid = vc.UserID
@@ -180,7 +180,7 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 	var systemPrompt, userPrompt string
 
 	switch {
-	case strings.HasSuffix(toolName, "analyze_image"):
+	case toolName == model.DefaultAnalyzeImageName:
 		systemPrompt = vc.SystemPrompt
 		if systemPrompt == "" {
 			systemPrompt = defaultAnalyzeSystemPrompt

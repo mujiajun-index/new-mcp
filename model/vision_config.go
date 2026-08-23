@@ -6,8 +6,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// Default tool identity for the vision service's single general-purpose tool.
-// The gorm default tags on VisionConfig must stay byte-identical to these.
+// Fixed tool identity for the vision service's single general-purpose tool —
+// non-editable, like the built-in upload_image. The gorm default tag on
+// VisionConfig.AnalyzeImageDesc must stay byte-identical to DefaultAnalyzeImageDesc.
 const (
 	DefaultAnalyzeImageName = "analyze_image"
 	DefaultAnalyzeImageDesc = "Analyze an image with a vision model. Covers all image understanding: identify objects, people and text, describe the scene and overall content, extract structured info, or answer any custom question. Pass the prompt parameter to steer the analysis, e.g. describe the scene, transcribe all text, or list defects. Returns: the analysis result as text."
@@ -37,12 +38,13 @@ type VisionConfig struct {
 	AnalyzeTimeoutSeconds int    `json:"analyze_timeout_seconds" gorm:"default:30"`
 	AutoRegister          bool   `json:"auto_register" gorm:"default:false"`
 	RegisteredServiceID   *int64 `json:"registered_service_id"`
-	// Tool identity for the vision service's single general-purpose tool
-	// (analyze_image + optional custom prompt). describe_scene was removed —
-	// its job is analyze_image with a "describe the scene" prompt — following
-	// zai-mcp-server's single-general-tool design. The gorm default tag must
-	// stay byte-identical to DefaultAnalyzeImageDesc below.
-	AnalyzeImageName string         `json:"analyze_image_name" gorm:"size:128;default:analyze_image"`
+	// Tool description for the vision service's single general-purpose tool —
+	// editable; the tool NAME is the fixed constant above (non-editable, like
+	// upload_image). describe_scene was removed — its job is analyze_image with
+	// a "describe the scene" prompt — following zai-mcp-server's single-general-
+	// tool design. The gorm default tag must stay byte-identical to
+	// DefaultAnalyzeImageDesc. (analyze_image_name was dropped from the model —
+	// orphan column in existing DBs is harmless, AutoMigrate only adds.)
 	AnalyzeImageDesc string         `json:"analyze_image_desc" gorm:"type:varchar(512);default:Analyze an image with a vision model. Covers all image understanding: identify objects, people and text, describe the scene and overall content, extract structured info, or answer any custom question. Pass the prompt parameter to steer the analysis, e.g. describe the scene, transcribe all text, or list defects. Returns: the analysis result as text."`
 	ExtraConfig      string         `json:"extra_config" gorm:"type:varchar(4096);default:'{}'"`
 	Status           int            `json:"status" gorm:"default:1"`

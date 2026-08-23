@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/mujkjk/newmcp/internal/mcp/camera"
@@ -25,10 +24,12 @@ func CameraHandler(ctx context.Context, serviceID int64, config map[string]inter
 		return nil, fmt.Errorf("camera not found: %w", err)
 	}
 
-	switch {
-	case strings.HasSuffix(toolName, "capture"):
+	// Fixed tool names (model.CaptureToolName / AnalyzeToolName): exact match,
+	// no legacy-name fallback.
+	switch toolName {
+	case model.CaptureToolName:
 		return handleCapture(cam.ID)
-	case strings.HasSuffix(toolName, "analyze"):
+	case model.AnalyzeToolName:
 		return handleAnalyze(ctx, cam, args)
 	default:
 		return nil, fmt.Errorf("unknown camera tool: %s", toolName)

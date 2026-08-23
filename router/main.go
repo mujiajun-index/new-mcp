@@ -47,6 +47,9 @@ func InitGateway() {
 	if n := (&service.VisionService{}).SyncAllRegisteredTools(); n > 0 {
 		log.Printf("[virtual] refreshed tools_cache for %d vision services", n)
 	}
+	if n := (&service.CameraService{}).SyncAllRegisteredTools(); n > 0 {
+		log.Printf("[virtual] refreshed tools_cache for %d camera services", n)
+	}
 
 	CloudManager = cloud.NewManager(SessionPool, toolRouter, GatewayHandler)
 	service.CloudManager = CloudManager

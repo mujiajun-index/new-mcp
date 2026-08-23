@@ -145,7 +145,7 @@ Smart 模式暴露的 5 个元工具（参考 mcp-gateway）:
 | 分辨率设置 | P1 | 可配置捕获分辨率 |
 | 绑定视觉模型 | P0 | 将摄像头绑定到已配置的视觉模型 |
 | 手动捕获 | P0 | 手动触发截图 |
-| 摄像头 MCP 工具 | P0 | `capture`, `analyze` |
+| 摄像头 MCP 工具 | P0 | `capture_frame`, `analyze_frame` |
 
 ### 2.8 管理与监控
 | 功能 | 优先级 | 说明 |

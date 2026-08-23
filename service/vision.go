@@ -55,7 +55,6 @@ func (s *VisionService) Create(userID int64, req *dto.CreateVisionConfigReq) (*d
 		AnalyzeTimeoutSeconds: req.AnalyzeTimeoutSeconds,
 		AutoRegister:          false,
 		Status:                common.StatusEnabled,
-		AnalyzeImageName:      model.DefaultAnalyzeImageName,
 		AnalyzeImageDesc:      model.DefaultAnalyzeImageDesc,
 		ExtraConfig:           "{}",
 	}
@@ -111,9 +110,6 @@ func (s *VisionService) Update(userID, id int64, req *dto.UpdateVisionConfigReq)
 	}
 	if req.AnalyzeTimeoutSeconds != nil {
 		vc.AnalyzeTimeoutSeconds = *req.AnalyzeTimeoutSeconds
-	}
-	if req.AnalyzeImageName != nil {
-		vc.AnalyzeImageName = *req.AnalyzeImageName
 	}
 	if req.AnalyzeImageDesc != nil {
 		vc.AnalyzeImageDesc = *req.AnalyzeImageDesc
@@ -345,7 +341,7 @@ func (s *VisionService) buildToolsCache(vc *model.VisionConfig) []map[string]int
 	// unknown-tool error and clients refetch the tool list.
 	return []map[string]interface{}{
 		{
-			"name":        vc.AnalyzeImageName,
+			"name":        model.DefaultAnalyzeImageName,
 			"description": vc.AnalyzeImageDesc,
 			"inputSchema": map[string]interface{}{
 				"type": "object",
@@ -378,7 +374,6 @@ func (s *VisionService) toDetail(vc *model.VisionConfig) *dto.VisionConfigDetail
 		AnalyzeTimeoutSeconds: vc.AnalyzeTimeoutSeconds,
 		AutoRegister:          vc.AutoRegister,
 		RegisteredServiceID:   vc.RegisteredServiceID,
-		AnalyzeImageName:      vc.AnalyzeImageName,
 		AnalyzeImageDesc:      vc.AnalyzeImageDesc,
 		ExtraConfig:           vc.ExtraConfig,
 		Status:                vc.Status,

@@ -10,9 +10,7 @@ type UpdateCameraReq struct {
 	Name         *string `json:"name"`
 	Description  *string `json:"description"`
 	VisionConfigID *int64 `json:"vision_config_id"`
-	CaptureName  *string `json:"capture_name"`
 	CaptureDesc  *string `json:"capture_desc"`
-	AnalyzeName  *string `json:"analyze_name"`
 	AnalyzeDesc  *string `json:"analyze_desc"`
 	Status       *int    `json:"status"`
 }
@@ -38,10 +36,8 @@ type CameraDetail struct {
 	VisionConfigID      *int64 `json:"vision_config_id"`
 	VisionConfigName    string `json:"vision_config_name"`
 	AutoRegister        bool   `json:"auto_register"`
-	RegisteredServiceID *int64 `json:"registered_service_id"`
-	CaptureName         string `json:"capture_name"`
+	RegisteredServiceID *int64  `json:"registered_service_id"`
 	CaptureDesc         string `json:"capture_desc"`
-	AnalyzeName         string `json:"analyze_name"`
 	AnalyzeDesc         string `json:"analyze_desc"`
 	ExtraConfig         string `json:"extra_config"`
 	Streaming           bool   `json:"streaming"`

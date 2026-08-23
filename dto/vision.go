@@ -23,7 +23,6 @@ type UpdateVisionConfigReq struct {
 	SystemPrompt          *string `json:"system_prompt"`
 	MaxTokens             *int    `json:"max_tokens"`
 	AnalyzeTimeoutSeconds *int    `json:"analyze_timeout_seconds"`
-	AnalyzeImageName      *string `json:"analyze_image_name"`
 	AnalyzeImageDesc      *string `json:"analyze_image_desc"`
 	Status                *int    `json:"status"`
 }
@@ -52,7 +51,6 @@ type VisionConfigDetail struct {
 	AnalyzeTimeoutSeconds int    `json:"analyze_timeout_seconds"`
 	AutoRegister          bool   `json:"auto_register"`
 	RegisteredServiceID   *int64 `json:"registered_service_id"`
-	AnalyzeImageName      string `json:"analyze_image_name"`
 	AnalyzeImageDesc      string `json:"analyze_image_desc"`
 	ExtraConfig           string `json:"extra_config"`
 	Status                int    `json:"status"`

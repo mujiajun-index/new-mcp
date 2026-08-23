@@ -932,7 +932,6 @@ passive-ws (被动连接):
         "api_key": "sk-***",
         "system_prompt": "You are a helpful vision assistant.",
         "max_tokens": 4096,
-        "analyze_image_name": "analyze_image",
         "analyze_image_desc": "Analyze an image with a vision model. Covers all image understanding: identify objects, people and text, describe the scene and overall content, extract structured info, or answer any custom question. Pass the prompt parameter to steer the analysis, e.g. describe the scene, transcribe all text, or list defects. Returns: the analysis result as text.",
         "extra_config": "{}",
         "auto_register": true,
@@ -952,10 +951,11 @@ passive-ws (被动连接):
 {
     "name": "OpenAI Vision V2",
     "model_name": "gpt-4o-mini",
-    "analyze_image_name": "custom_analyze",
     "analyze_image_desc": "自定义分析描述"
 }
 ```
+
+> 工具名称固定不可改（`analyze_image` / `upload_image`），仅描述可自定义。
 
 ### DELETE /vision/:id
 删除视觉配置。自动禁用并清理关联的虚拟 McpService、McpGroupService、McpGroupTool。
@@ -1048,7 +1048,7 @@ passive-ws (被动连接):
 ```
 
 ### POST /cameras
-创建摄像头。`vision_config_id` 为必填字段，指定关联的视觉配置用于 `analyze` 工具。
+创建摄像头。`vision_config_id` 为必填字段，指定关联的视觉配置用于 `analyze_frame` 工具。
 
 **Request Body:**
 ```json
@@ -1084,9 +1084,7 @@ passive-ws (被动连接):
         "description": "前门监控",
         "vision_config_id": 1,
         "vision_config_name": "OpenAI Vision",
-        "capture_name": "capture",
         "capture_desc": "Capture a single still frame from the live camera feed and return it as an image. Best for: taking snapshots or capturing the current view. Returns: the captured frame as an image.",
-        "analyze_name": "analyze",
         "analyze_desc": "Capture the current camera frame and run visual analysis on it. Best for: detecting objects, people, or events in the live feed. Returns: the analysis result for the current frame.",
         "extra_config": "{}",
         "auto_register": true,
@@ -1107,16 +1105,17 @@ passive-ws (被动连接):
 {
     "name": "后门摄像头",
     "vision_config_id": 2,
-    "capture_name": "custom_capture",
     "capture_desc": "自定义截取描述"
 }
 ```
+
+> 工具名称固定不可改（`capture_frame` / `analyze_frame`），仅描述可自定义。
 
 ### DELETE /cameras/:id
 删除摄像头。自动禁用、停止流、清理关联的虚拟 McpService、McpGroupService、McpGroupTool。
 
 ### POST /cameras/:id/enable
-启用摄像头。创建虚拟 McpService（`transport_type="virtual"`, `source="camera"`），注册到 VirtualToolRegistry，生成包含 2 个工具（capture、analyze）的 tools_cache。
+启用摄像头。创建虚拟 McpService（`transport_type="virtual"`, `source="camera"`），注册到 VirtualToolRegistry，生成包含 2 个工具（capture_frame、analyze_frame）的 tools_cache。
 
 **Response:** `200 OK`
 ```json
@@ -1126,7 +1125,7 @@ passive-ws (被动连接):
     "data": {
         "service_id": 6,
         "service_name": "camera_1",
-        "tools": ["capture", "analyze"]
+        "tools": ["capture_frame", "analyze_frame"]
     }
 }
 ```
@@ -1155,7 +1154,7 @@ ws://localhost:3000/api/v1/cameras/1/stream?token=<JWT_TOKEN>
 
 **协议:**
 - 浏览器连接后，定时（默认 2 秒间隔）通过 canvas 截取 JPEG 帧，以二进制消息发送
-- 后端通过 `CameraStreamManager` 缓存最新帧，供 MCP 工具 `capture` 和 `analyze` 调用
+- 后端通过 `CameraStreamManager` 缓存最新帧，供 MCP 工具 `capture_frame` 和 `analyze_frame` 调用
 - 连接关闭后自动清理缓存
 
 **连接示例 (浏览器端):**
@@ -1169,7 +1168,7 @@ canvas.toBlob(blob => {
 }, 'image/jpeg', 0.8);
 ```
 
-> **帧缓存**: 后端仅缓存每个摄像头的最新一帧，不存储历史帧。MCP 客户端调用 `capture` 时返回缓存的最新帧（base64），调用 `analyze` 时获取最新帧并调用关联的 VisionConfig 进行 AI 识别。
+> **帧缓存**: 后端仅缓存每个摄像头的最新一帧，不存储历史帧。MCP 客户端调用 `capture_frame` 时返回缓存的最新帧（base64），调用 `analyze_frame` 时获取最新帧并调用关联的 VisionConfig 进行 AI 识别。
 
 ---
 

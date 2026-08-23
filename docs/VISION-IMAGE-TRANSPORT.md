@@ -487,7 +487,7 @@ go build ./... && ./newmcp  # 启动后 uploaded_images 表自动建成
 # 1) local 路径：JWT 上传 → 拿 url → curl 取回原图
 # 2) MCP URL 路径：把 url 作为 image_url 调 analyze_image → 看上游日志里是 URL 而非 base64
 # 3) base64 回归：仍可用 image(base64) 调通；超 VisionUploadMaxBytes 被拒
-# 4) camera 回归：analyze 正常
+# 4) camera 回归：analyze_frame 正常
 # 5) MCP 调用方上传：sk- 鉴权 /vision/mcp-upload 通
 # 6) S3 路径：配 StorageBackend=s3 + 凭证，重复 2-3，对象入桶、URL 指向桶
 # 7) 清理：调小 UploadRetentionHours，等一个 tick，旧行 + 对象被删，近期保留

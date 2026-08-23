@@ -45,9 +45,7 @@ export function CameraDetailPage() {
     name: '',
     description: '',
     vision_config_id: '' as string,
-    capture_name: '',
     capture_desc: '',
-    analyze_name: '',
     analyze_desc: '',
   })
   const [linkDialogOpen, setLinkDialogOpen] = useState(false)
@@ -73,9 +71,7 @@ export function CameraDetailPage() {
         name: camera.name || '',
         description: camera.description || '',
         vision_config_id: camera.vision_config_id ? String(camera.vision_config_id) : '',
-        capture_name: camera.capture_name || '',
         capture_desc: camera.capture_desc || '',
-        analyze_name: camera.analyze_name || '',
         analyze_desc: camera.analyze_desc || '',
       })
     }
@@ -87,9 +83,7 @@ export function CameraDetailPage() {
         name: form.name,
         description: form.description,
         vision_config_id: form.vision_config_id ? Number(form.vision_config_id) : undefined,
-        capture_name: form.capture_name,
         capture_desc: form.capture_desc,
-        analyze_name: form.analyze_name,
         analyze_desc: form.analyze_desc,
       }),
     onSuccess: () => {
@@ -279,22 +273,10 @@ export function CameraDetailPage() {
               </div>
               <div>
                 <p className="text-sm font-medium">{t('cameras.detail.screenshotTool')}</p>
-                <p className="text-xs text-muted-foreground">capture</p>
+                <p className="text-xs text-muted-foreground">capture_frame</p>
               </div>
             </div>
             <div className="space-y-2">
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">{t('cameras.detail.toolName')}</Label>
-                {editing ? (
-                  <Input
-                    value={form.capture_name}
-                    onChange={(e) => setForm({ ...form, capture_name: e.target.value })}
-                    placeholder={t('cameras.detail.screenshotToolName')}
-                  />
-                ) : (
-                  <p className="text-sm">{camera.capture_name || '-'}</p>
-                )}
-              </div>
               <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">{t('cameras.detail.toolDesc')}</Label>
                 {editing ? (
@@ -318,22 +300,10 @@ export function CameraDetailPage() {
               </div>
               <div>
                 <p className="text-sm font-medium">{t('cameras.detail.analyzeTool')}</p>
-                <p className="text-xs text-muted-foreground">analyze</p>
+                <p className="text-xs text-muted-foreground">analyze_frame</p>
               </div>
             </div>
             <div className="space-y-2">
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">{t('cameras.detail.toolName')}</Label>
-                {editing ? (
-                  <Input
-                    value={form.analyze_name}
-                    onChange={(e) => setForm({ ...form, analyze_name: e.target.value })}
-                    placeholder={t('cameras.detail.analyzeToolName')}
-                  />
-                ) : (
-                  <p className="text-sm">{camera.analyze_name || '-'}</p>
-                )}
-              </div>
               <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">{t('cameras.detail.toolDesc')}</Label>
                 {editing ? (

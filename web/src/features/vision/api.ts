@@ -24,7 +24,6 @@ export interface VisionConfigDetail {
   analyze_timeout_seconds: number
   auto_register: boolean
   registered_service_id: number | null
-  analyze_image_name: string
   analyze_image_desc: string
   extra_config: string
   status: number
@@ -54,7 +53,6 @@ export interface UpdateVisionConfigReq {
   system_prompt?: string
   max_tokens?: number
   analyze_timeout_seconds?: number
-  analyze_image_name?: string
   analyze_image_desc?: string
   status?: number
 }

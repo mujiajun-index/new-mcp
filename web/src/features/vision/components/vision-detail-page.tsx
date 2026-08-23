@@ -78,9 +78,8 @@ export function VisionDetailPage() {
   const [modelModalOpen, setModelModalOpen] = useState(false)
   const [modelSearch, setModelSearch] = useState('')
 
-  // Tool form state
+  // Tool form state (the tool NAME is fixed server-side; only desc is editable)
   const [tools, setTools] = useState({
-    analyze_image_name: '',
     analyze_image_desc: '',
   })
 
@@ -98,7 +97,6 @@ export function VisionDetailPage() {
         analyze_timeout_seconds: config.analyze_timeout_seconds ?? 30,
       })
       setTools({
-        analyze_image_name: config.analyze_image_name || 'analyze_image',
         analyze_image_desc: config.analyze_image_desc || '',
       })
     }
@@ -457,17 +455,6 @@ export function VisionDetailPage() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs">{t('vision.toolName')}</Label>
-              <Input
-                value={tools.analyze_image_name}
-                onChange={(e) =>
-                  setTools({ ...tools, analyze_image_name: e.target.value })
-                }
-                className="text-xs h-8"
-              />
-            </div>
-
-            <div className="space-y-2">
               <Label className="text-xs">{t('vision.toolDesc')}</Label>
               <Textarea
                 value={tools.analyze_image_desc}
@@ -487,7 +474,6 @@ export function VisionDetailPage() {
                 disabled={toolMutation.isPending}
                 onClick={() =>
                   toolMutation.mutate({
-                    analyze_image_name: tools.analyze_image_name,
                     analyze_image_desc: tools.analyze_image_desc,
                   })
                 }
@@ -520,15 +506,6 @@ export function VisionDetailPage() {
                 <Lock className="h-3 w-3" />
                 {t('vision.uploadImageBuiltinBadge')}
               </Badge>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs">{t('vision.toolName')}</Label>
-              <Input
-                readOnly
-                value="upload_image"
-                className="text-xs h-8 text-muted-foreground"
-              />
             </div>
 
             <div className="space-y-2">
