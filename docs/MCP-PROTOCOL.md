@@ -647,6 +647,27 @@ func (l *PassiveWSListener) HandleConnection(wsConn *websocket.Conn, tokenClaims
 
 StreamableHTTPAdapter 和 WebSocketAdapter（主动连接远程）实现同前。
 
+### 6.5 Stdio stdout 容忍过滤
+
+MCP stdio 传输约定 stdout 只能出现 JSON-RPC 消息，但不少社区服务会在启动时往
+stdout 打横幅/日志（如 bazi-mcp 的 `Bazi MCP server is running on stdio.`）。
+官方 go-sdk 的 `CommandTransport` 严格按 JSON 流解析 stdout，遇到垃圾字节会在
+initialize 阶段直接断连（`invalid character 'B' ...`），表现为「创建成功但工具
+拉取不到」。
+
+`StdioFilterTransport`（`internal/mcp/transport/stdio_filter.go`）为此替代了
+`CommandTransport`：
+
+- 自己拉起子进程，stdout 经行过滤器净化后交给官方 `mcp.IOTransport`（连接
+  解析、JSON-RPC batch、关闭语义全部复用官方实现）；
+- 行过滤器只放行「能构成完整 JSON 对象/数组」的内容（JSON-RPC 消息的合法
+  形态），横幅/日志行丢弃并记入平台日志（带 `[stdio service <id> <命令>]`
+  前缀，最多逐条记 100 行）；跨行 pretty JSON、`\r\n`、UTF-8 BOM 均可容忍；
+- 子进程 stderr 持续排空并逐行记日志（npx 下载报错、上游崩溃栈都走这里，
+  最多记 200 行），停读会卡住子进程，因此永远只丢弃日志不停读；
+- 进程终止沿用 go-sdk 语义：Close 时关 stdin 优雅退出 → 限时 5s 等待 →
+  SIGTERM → SIGKILL → Wait 回收。
+
 ---
 
 ## 7. 会话池与工具目录缓存

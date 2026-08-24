@@ -53,13 +53,14 @@ func NewSSEAdapter(serviceID int64, url string, headers map[string]string) *SDKA
 }
 
 // NewStdioAdapter 构造 stdio 客户端传输：以子进程方式运行命令，经 stdin/stdout 通信。
+// stdout 上的非 JSON 输出（部分社区服务的启动横幅/日志）会被过滤层丢弃并记日志，
+// 避免官方 SDK 的严格 JSON 解析直接断连（如 bazi-mcp 的启动横幅）。
 func NewStdioAdapter(serviceID int64, command string, args []string, env map[string]string) *SDKAdapter {
-	_ = serviceID
 	cmd := exec.Command(command, args...)
 	cmd.Env = append(os.Environ(), envToSlice(env)...)
 	return &SDKAdapter{
 		typ:       TypeStdio,
-		transport: &mcp.CommandTransport{Command: cmd},
+		transport: NewStdioFilterTransport(cmd, stdioLogf(serviceID, command)),
 	}
 }
 
