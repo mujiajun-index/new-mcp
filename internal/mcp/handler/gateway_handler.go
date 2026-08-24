@@ -212,8 +212,9 @@ func (h *GatewayHandler) handleToolsList(ctx context.Context, req *JSONRPCReques
 		return h.smartToolsResponse(req.ID)
 	}
 
-	// /mcp/group/:slug — mode from group config
-	group, err := model.GetGroupBySlug(logCtx.GroupSlug)
+	// /mcp/group/:slug — mode from group config; slug resolves within the
+	// authenticated user's own groups (per-user uniqueness)
+	group, err := model.GetGroupBySlug(logCtx.UserID, logCtx.GroupSlug)
 	if err != nil {
 		return h.errorResponse(req.ID, -32602, "Group not found: "+logCtx.GroupSlug)
 	}
@@ -265,9 +266,9 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 	// 会把新逻辑请求误判为重试而漏扣;加入 tool/args 哈希后,仅真正的同请求重试(id/工具/参数全同)才命中跳过。
 	requestID := billingRequestID(req.ID, params.Name, params.Arguments)
 
-	// Resolve group info
+	// Resolve group info (within the authenticated user's groups)
 	if logCtx.GroupSlug != "" {
-		if group, err := model.GetGroupBySlug(logCtx.GroupSlug); err == nil {
+		if group, err := model.GetGroupBySlug(logCtx.UserID, logCtx.GroupSlug); err == nil {
 			groupID = group.ID
 			groupName = group.Name
 		}
@@ -324,7 +325,7 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 			if err != nil {
 				resp = h.errorResponse(req.ID, -32602, "Invalid API key")
 			} else {
-				group, gErr := model.GetGroupBySlug(logCtx.GroupSlug)
+				group, gErr := model.GetGroupBySlug(logCtx.UserID, logCtx.GroupSlug)
 				if gErr != nil {
 					resp = h.errorResponse(req.ID, -32602, "Group not found: "+logCtx.GroupSlug)
 				} else if !bridge.HasGroupAccess(info, group.Name) {

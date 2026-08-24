@@ -23,7 +23,8 @@ func AdminListUsers(c *gin.Context) {
 			status = v
 		}
 	}
-	items, total, err := adminService.ListUsers(c.GetString("role"), page, pageSize, keyword, role, status)
+	deletedOnly := c.Query("deleted") == "true"
+	items, total, err := adminService.ListUsers(c.GetString("role"), page, pageSize, keyword, role, status, deletedOnly)
 	if err != nil {
 		common.Error(c, http.StatusInternalServerError, "获取用户列表失败")
 		return
@@ -41,13 +42,32 @@ func AdminGetUserDetail(c *gin.Context) {
 	common.Success(c, resp)
 }
 
-// AdminDeleteUser 管理员硬删除用户(参考 new-api DELETE /api/user/:id)。
+// AdminDeleteUser 管理员软删除用户:数据保留,可在"已删除"筛选中恢复。
 func AdminDeleteUser(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err := adminService.DeleteUser(operatorFromContext(c), id); err != nil {
 		if errors.Is(err, service.ErrSuperAdminProtected) ||
 			errors.Is(err, service.ErrCannotManageTarget) ||
 			errors.Is(err, service.ErrCannotDeleteSelf) {
+			common.Error(c, http.StatusForbidden, err.Error())
+			return
+		}
+		if errors.Is(err, service.ErrUserNotFound) {
+			common.Error(c, http.StatusNotFound, err.Error())
+			return
+		}
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, nil)
+}
+
+// AdminRestoreUser 管理员恢复软删除的用户。
+func AdminRestoreUser(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err := adminService.RestoreUser(operatorFromContext(c), id); err != nil {
+		if errors.Is(err, service.ErrSuperAdminProtected) ||
+			errors.Is(err, service.ErrCannotManageTarget) {
 			common.Error(c, http.StatusForbidden, err.Error())
 			return
 		}

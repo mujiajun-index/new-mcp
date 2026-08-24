@@ -99,6 +99,38 @@ func migrateDB() error {
 			return fmt.Errorf("drop legacy storage_key unique index: %w", err)
 		}
 	}
+	// 分组标识同理: endpoint_slug 的唯一性从全局改为每用户独立,drop 旧的全局唯一
+	// 索引,否则不同用户建同名分组仍会触发唯一冲突。新的 (user_id, endpoint_slug)
+	// 复合唯一由 AutoMigrate 按 struct tag 创建;存量 slug 本就全局唯一,必满足
+	// 每用户唯一,建索引不会失败。
+	if DB.Migrator().HasIndex(&McpGroup{}, "idx_mcp_groups_endpoint_slug") {
+		if err := DB.Migrator().DropIndex(&McpGroup{}, "idx_mcp_groups_endpoint_slug"); err != nil {
+			return fmt.Errorf("drop legacy endpoint_slug unique index: %w", err)
+		}
+	}
+	// 分组删除从软删除改为真删除(见 McpGroup.Delete):物理清理历史软删除的分组
+	// 及其子表残留行,释放 (user_id, name/endpoint_slug) 唯一槽位——否则存量已删
+	// 分组仍占着唯一索引,同用户重建同名分组会继续报唯一冲突。幂等:清空后不再命中。
+	var legacyDeletedGroupIDs []int64
+	if err := DB.Unscoped().Model(&McpGroup{}).Where("deleted_at IS NOT NULL").Pluck("id", &legacyDeletedGroupIDs).Error; err != nil {
+		return err
+	}
+	if len(legacyDeletedGroupIDs) > 0 {
+		if err := DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Where("group_id IN ?", legacyDeletedGroupIDs).Delete(&McpGroupService{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("group_id IN ?", legacyDeletedGroupIDs).Delete(&McpGroupTool{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("group_id IN ?", legacyDeletedGroupIDs).Delete(&McpGroupItem{}).Error; err != nil {
+				return err
+			}
+			return tx.Unscoped().Where("id IN ?", legacyDeletedGroupIDs).Delete(&McpGroup{}).Error
+		}); err != nil {
+			return fmt.Errorf("purge soft-deleted groups: %w", err)
+		}
+	}
 	// 统一日志回填:历史 mcp_call_logs 行均为 MCP 调用,
 	// type 列新增后(default:2)兜底把任何 0/NULL 行置为 Consume。
 	if err := DB.Model(&McpCallLog{}).Where("type = 0 OR type IS NULL").Update("type", LogTypeConsume).Error; err != nil {

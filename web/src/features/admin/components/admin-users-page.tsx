@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { getAdminUsers, createAdminUser, updateAdminUser, getAdminUserDetail, adjustUserQuota, deleteAdminUser } from '@/features/admin/api'
+import { getAdminUsers, createAdminUser, updateAdminUser, getAdminUserDetail, adjustUserQuota, deleteAdminUser, restoreAdminUser } from '@/features/admin/api'
 import type { AdminUserDetail } from '@/types'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
@@ -20,7 +20,7 @@ import { useSystemConfigStore } from '@/stores/system-config-store'
 import { cn } from '@/lib/utils'
 import { formatQuotaCurrency } from '@/lib/billing'
 import { toast } from 'sonner'
-import { Plus, Pencil, Search, ChevronLeft, ChevronRight, X, Eye, Scale, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Search, ChevronLeft, ChevronRight, X, Eye, Scale, Trash2, RotateCcw } from 'lucide-react'
 
 export function AdminUsersPage() {
   const { t } = useTranslation()
@@ -63,15 +63,19 @@ export function AdminUsersPage() {
   })
   const [quotaPreset, setQuotaPreset] = useState('')
 
-  // 删除确认对话框
+  // 删除确认对话框 / 恢复确认对话框
   const [deleteUser, setDeleteUser] = useState<any>(null)
+  const [restoreUserTarget, setRestoreUserTarget] = useState<any>(null)
+  // "已删除"视图:列表只列软删除用户,操作区只保留"恢复"
+  const deletedView = statusFilter === 'deleted'
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-users', page, keyword, roleFilter, statusFilter],
     queryFn: () => getAdminUsers({
       page, page_size: pageSize, keyword,
       role: roleFilter !== 'all' ? roleFilter : undefined,
-      status: statusFilter !== 'all' ? parseInt(statusFilter) : undefined,
+      status: !['all', 'deleted'].includes(statusFilter) ? parseInt(statusFilter) : undefined,
+      deleted: deletedView ? true : undefined,
     }),
   })
 
@@ -131,6 +135,16 @@ export function AdminUsersPage() {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
     },
     onError: (err: any) => toast.error(err?.response?.data?.message || t('admin.users.deleteFailed')),
+  })
+
+  const restoreMutation = useMutation({
+    mutationFn: (id: number) => restoreAdminUser(id),
+    onSuccess: () => {
+      toast.success(t('admin.users.restoreSuccess'))
+      setRestoreUserTarget(null)
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || t('admin.users.restoreFailed')),
   })
 
   const startEdit = (user: any) => {
@@ -292,6 +306,7 @@ export function AdminUsersPage() {
             <SelectItem value="all">{t('admin.users.filterAllStatuses')}</SelectItem>
             <SelectItem value="1">{t('admin.users.badgeEnabled')}</SelectItem>
             <SelectItem value="2">{t('admin.users.badgeDisabled')}</SelectItem>
+            <SelectItem value="deleted">{t('admin.users.filterDeleted')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -462,7 +477,7 @@ export function AdminUsersPage() {
                 badge={
                   <div className="flex flex-col items-end gap-1">
                     {roleLabel(user.role)}
-                    {statusLabel(user.status)}
+                    {deletedView ? <Badge variant="destructive">{t('admin.users.badgeDeleted')}</Badge> : statusLabel(user.status)}
                   </div>
                 }
                 meta={[
@@ -473,24 +488,32 @@ export function AdminUsersPage() {
                 ]}
                 actions={
                   <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => startDetail(user)}>
-                      <Eye className="h-3.5 w-3.5" />{t('admin.users.detail')}
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => startAdjustQuota(user)}>
-                      <Scale className="h-3.5 w-3.5" />{t('admin.users.adjustQuota')}
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => startEdit(user)}>
-                      <Pencil className="h-3.5 w-3.5" />{t('common.edit')}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      disabled={user.id === 1 || user.role === 'super_admin'}
-                      onClick={() => setDeleteUser(user)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />{t('admin.users.delete')}
-                    </Button>
+                    {deletedView ? (
+                      <Button variant="ghost" size="sm" onClick={() => setRestoreUserTarget(user)}>
+                        <RotateCcw className="h-3.5 w-3.5" />{t('admin.users.restore')}
+                      </Button>
+                    ) : (
+                      <>
+                        <Button variant="ghost" size="sm" onClick={() => startDetail(user)}>
+                          <Eye className="h-3.5 w-3.5" />{t('admin.users.detail')}
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => startAdjustQuota(user)}>
+                          <Scale className="h-3.5 w-3.5" />{t('admin.users.adjustQuota')}
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => startEdit(user)}>
+                          <Pencil className="h-3.5 w-3.5" />{t('common.edit')}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          disabled={user.id === 1 || user.role === 'super_admin'}
+                          onClick={() => setDeleteUser(user)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />{t('admin.users.delete')}
+                        </Button>
+                      </>
+                    )}
                   </div>
                 }
               />
@@ -522,29 +545,37 @@ export function AdminUsersPage() {
                   <TableCell>{roleLabel(user.role)}</TableCell>
                   <TableCell>{quotaCell(user)}</TableCell>
                   <TableCell className="text-sm tabular-nums">{user.request_count}</TableCell>
-                  <TableCell>{statusLabel(user.status)}</TableCell>
+                  <TableCell>{deletedView ? <Badge variant="destructive">{t('admin.users.badgeDeleted')}</Badge> : statusLabel(user.status)}</TableCell>
                   <TableCell className="text-sm">{user.group}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => startDetail(user)} title={t('admin.users.detail')}>
-                        <Eye className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => startAdjustQuota(user)} title={t('admin.users.adjustQuota')}>
-                        <Scale className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => startEdit(user)} title={t('common.edit')}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive hover:text-destructive"
-                        disabled={user.id === 1 || user.role === 'super_admin'}
-                        onClick={() => setDeleteUser(user)}
-                        title={t('admin.users.delete')}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      {deletedView ? (
+                        <Button variant="ghost" size="sm" onClick={() => setRestoreUserTarget(user)} title={t('admin.users.restore')}>
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </Button>
+                      ) : (
+                        <>
+                          <Button variant="ghost" size="sm" onClick={() => startDetail(user)} title={t('admin.users.detail')}>
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => startAdjustQuota(user)} title={t('admin.users.adjustQuota')}>
+                            <Scale className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => startEdit(user)} title={t('common.edit')}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:text-destructive"
+                            disabled={user.id === 1 || user.role === 'super_admin'}
+                            onClick={() => setDeleteUser(user)}
+                            title={t('admin.users.delete')}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -673,6 +704,28 @@ export function AdminUsersPage() {
               onClick={() => deleteUser && deleteMutation.mutate(deleteUser.id)}
             >
               {t('admin.users.deleteConfirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Restore confirm dialog */}
+      <Dialog open={!!restoreUserTarget} onOpenChange={(v) => !v && setRestoreUserTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('admin.users.restoreTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('admin.users.restoreDesc', { username: restoreUserTarget?.username })}
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">{t('admin.users.restoreWarning')}</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRestoreUserTarget(null)}>{t('common.cancel')}</Button>
+            <Button
+              disabled={restoreMutation.isPending}
+              onClick={() => restoreUserTarget && restoreMutation.mutate(restoreUserTarget.id)}
+            >
+              {t('admin.users.restoreConfirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

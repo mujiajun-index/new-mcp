@@ -115,10 +115,15 @@ func GetUsersByIDs(ids []int64) (map[int64]User, error) {
 	return result, nil
 }
 
-func ListUsersWithPaged(offset, limit int, keyword string, excludeID int64, role string, status int) ([]User, int64, error) {
+// ListUsersWithPaged 分页列出用户。deletedOnly=true 时改用 Unscoped 只列软删除行
+// (管理员"已删除"筛选视图,供查找与恢复);此时 status 过滤无意义,忽略。
+func ListUsersWithPaged(offset, limit int, keyword string, excludeID int64, role string, status int, deletedOnly bool) ([]User, int64, error) {
 	var users []User
 	var total int64
 	query := DB.Model(&User{})
+	if deletedOnly {
+		query = DB.Unscoped().Model(&User{}).Where("deleted_at IS NOT NULL")
+	}
 	if excludeID > 0 {
 		query = query.Where("id != ?", excludeID)
 	}
@@ -138,16 +143,36 @@ func ListUsersWithPaged(offset, limit int, keyword string, excludeID int64, role
 	return users, total, err
 }
 
-// HardDeleteUserByID 硬删除用户及其 API Key(管理员删除用户,参考 new-api HardDeleteUserById)。
-// 用户与 Key 均物理删除(Unscoped);调用日志(mcp_call_logs)保留作为历史审计记录。
-func HardDeleteUserByID(id int64) error {
-	return DB.Transaction(func(tx *gorm.DB) error {
-		// 先删 API Key,立即终止该用户的所有 MCP 访问
-		if err := tx.Unscoped().Where("user_id = ?", id).Delete(&ApiKey{}).Error; err != nil {
-			return err
-		}
-		return tx.Unscoped().Delete(&User{}, id).Error
-	})
+// SoftDeleteUserByID 软删除用户(管理员删除用户):仅置 deleted_at,用户名下的全部数据
+// (API Key/分组/服务/额度/调用日志)原样保留,可随时 RestoreUserByID 恢复。
+// 访问立即切断:登录与 API Key 认证均走默认作用域查询,软删除后一律"查无此用户"。
+// 用户名在删除期间继续占用唯一索引——防止他人抢注同名账号顶替身份,恢复时也不会冲突。
+func SoftDeleteUserByID(id int64) error {
+	return DB.Delete(&User{}, id).Error
+}
+
+// RestoreUserByID 恢复软删除的用户(清空 deleted_at)。CAS 只命中已删除行,
+// 返回 false 表示该用户不存在或本就未被删除。
+func RestoreUserByID(id int64) (bool, error) {
+	res := DB.Unscoped().Model(&User{}).
+		Where("id = ? AND deleted_at IS NOT NULL", id).
+		Updates(map[string]interface{}{"deleted_at": nil})
+	return res.RowsAffected > 0, res.Error
+}
+
+// GetUserByIDUnscoped 按 ID 取用户,含软删除行(管理员恢复流程需读取被删用户做权限校验)。
+func GetUserByIDUnscoped(id int64) (*User, error) {
+	var user User
+	err := DB.Unscoped().First(&user, id).Error
+	return &user, err
+}
+
+// IsUsernameTaken 报告用户名是否已被占用,含软删除用户(删除期间用户名继续占用唯一
+// 索引以防抢注)。注册预检必须算上这类行,否则漏过预检、在落库时撞唯一索引报原始错误。
+func IsUsernameTaken(username string) bool {
+	var count int64
+	DB.Unscoped().Model(&User{}).Where("username = ?", username).Count(&count)
+	return count > 0
 }
 
 func IncreaseUserQuota(id int64, quota int64) error {

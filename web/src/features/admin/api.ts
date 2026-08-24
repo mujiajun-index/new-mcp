@@ -6,7 +6,7 @@ export async function getAdminStats() {
   return res.data
 }
 
-export async function getAdminUsers(params?: { page?: number; page_size?: number; keyword?: string; role?: string; status?: number }) {
+export async function getAdminUsers(params?: { page?: number; page_size?: number; keyword?: string; role?: string; status?: number; deleted?: boolean }) {
   const res = await api.get('/admin/users', { params })
   return res.data
 }
@@ -23,6 +23,12 @@ export async function updateAdminUser(id: number, data: AdminUpdateUserReq) {
 
 export async function deleteAdminUser(id: number) {
   const res = await api.delete(`/admin/users/${id}`)
+  return res.data
+}
+
+// 恢复软删除用户(数据在删除期间保留)
+export async function restoreAdminUser(id: number) {
+  const res = await api.post(`/admin/users/${id}/restore`)
   return res.data
 }
 

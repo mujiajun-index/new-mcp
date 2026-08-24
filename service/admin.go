@@ -20,17 +20,18 @@ var ErrUserNotFound = errors.New("用户不存在")
 var ErrCannotManageTarget = errors.New("无权操作该用户")
 var ErrInvalidQuotaMode = errors.New("无效的调额模式")
 var ErrCannotDeleteSelf = errors.New("不能删除自己的账号")
+var ErrUserNotDeleted = errors.New("该用户未被删除,无需恢复")
 
 type AdminService struct{}
 
-func (s *AdminService) ListUsers(actorRole string, page, pageSize int, keyword, role string, status int) ([]dto.UserListItem, int64, error) {
+func (s *AdminService) ListUsers(actorRole string, page, pageSize int, keyword, role string, status int, deletedOnly bool) ([]dto.UserListItem, int64, error) {
 	offset := common.GetOffset(page, pageSize)
 	// 普通管理员看不到超级管理员（id=1）。
 	var excludeID int64
 	if actorRole != common.RoleSuperAdmin {
 		excludeID = common.SuperAdminUserID
 	}
-	users, total, err := model.ListUsersWithPaged(offset, pageSize, keyword, excludeID, role, status)
+	users, total, err := model.ListUsersWithPaged(offset, pageSize, keyword, excludeID, role, status, deletedOnly)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -293,8 +294,10 @@ func (s *AdminService) AdjustUserQuota(actor model.Operator, targetID int64, req
 	return newQuota, nil
 }
 
-// DeleteUser 硬删除用户(管理员,参考 new-api HardDeleteUserById):物理删除用户及其
-// API Key,调用日志保留作审计。禁止删除自己、超级管理员;普通管理员仅能删除普通用户。
+// DeleteUser 软删除用户(管理员):仅置 deleted_at,名下数据(API Key/分组/服务/额度/
+// 日志)全部保留,可在"已删除"筛选中恢复(RestoreUser)。删除期间登录与 API Key 认证
+// 立即失效(默认作用域查无此用户),用户名继续占用唯一索引以防抢注。禁止删除自己、
+// 超级管理员;普通管理员仅能删除普通用户。
 func (s *AdminService) DeleteUser(actor model.Operator, targetID int64) error {
 	if actor.ID == targetID {
 		return ErrCannotDeleteSelf
@@ -311,13 +314,42 @@ func (s *AdminService) DeleteUser(actor model.Operator, targetID int64) error {
 	if user.Role == common.RoleAdminUser && actor.Role != common.RoleSuperAdmin {
 		return ErrCannotManageTarget
 	}
-	if err := model.HardDeleteUserByID(targetID); err != nil {
+	if err := model.SoftDeleteUserByID(targetID); err != nil {
 		return err
 	}
 	model.RecordManageLog(targetID, user.Username,
-		fmt.Sprintf("管理员删除用户(%s)", user.Username),
+		fmt.Sprintf("管理员删除用户(%s,软删除可恢复)", user.Username),
 		0, actor,
 		map[string]any{"action": "delete", "username": user.Username})
+	return nil
+}
+
+// RestoreUser 恢复软删除的用户:清空 deleted_at。名下数据在删除期间从未被清理,
+// 恢复即可用。权限守卫与删除一致(超管受保护;普通管理员仅能恢复普通用户)。
+func (s *AdminService) RestoreUser(actor model.Operator, targetID int64) error {
+	// 目标是软删除行,须用 Unscoped 读取做权限校验
+	user, err := model.GetUserByIDUnscoped(targetID)
+	if err != nil {
+		return ErrUserNotFound
+	}
+	targetIsSuper := user.ID == common.SuperAdminUserID || user.Role == common.RoleSuperAdmin
+	if targetIsSuper {
+		return ErrSuperAdminProtected
+	}
+	if user.Role == common.RoleAdminUser && actor.Role != common.RoleSuperAdmin {
+		return ErrCannotManageTarget
+	}
+	restored, err := model.RestoreUserByID(targetID)
+	if err != nil {
+		return err
+	}
+	if !restored {
+		return ErrUserNotDeleted
+	}
+	model.RecordManageLog(targetID, user.Username,
+		fmt.Sprintf("管理员恢复用户(%s)", user.Username),
+		0, actor,
+		map[string]any{"action": "restore", "username": user.Username})
 	return nil
 }
 

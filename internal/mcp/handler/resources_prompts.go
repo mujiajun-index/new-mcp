@@ -93,7 +93,7 @@ type scopeEntry struct {
 func (h *GatewayHandler) servicesInScope(logCtx *LogContext) ([]scopeEntry, error) {
 	var groups []model.McpGroup
 	if logCtx.GroupSlug != "" {
-		group, err := model.GetGroupBySlug(logCtx.GroupSlug)
+		group, err := model.GetGroupBySlug(logCtx.UserID, logCtx.GroupSlug)
 		if err != nil {
 			return nil, fmt.Errorf("group not found: %s", logCtx.GroupSlug)
 		}
@@ -219,7 +219,7 @@ func (h *GatewayHandler) nativeItemsAllowed(logCtx *LogContext) bool {
 	if logCtx.GroupSlug == "" {
 		return logCtx.ExposeMode == "direct"
 	}
-	group, err := model.GetGroupBySlug(logCtx.GroupSlug)
+	group, err := model.GetGroupBySlug(logCtx.UserID, logCtx.GroupSlug)
 	if err != nil {
 		return false
 	}

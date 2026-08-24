@@ -45,7 +45,9 @@ func (s *AuthService) Register(registerIP string, req *dto.RegisterReq) (*dto.Au
 		common.DeleteKey(req.Email, common.EmailVerificationPurpose)
 	}
 
-	if _, err := model.GetUserByUsername(req.Username); err == nil {
+	// 用 IsUsernameTaken(含软删除行)而非 GetUserByUsername:被删用户的用户名在删除
+	// 期间继续占用唯一索引,带作用域的查询会漏检,落库时才撞唯一索引报原始错误。
+	if model.IsUsernameTaken(req.Username) {
 		return nil, ErrUsernameExists
 	}
 
