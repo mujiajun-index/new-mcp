@@ -5,8 +5,12 @@ import { getMarketplaceItem, addToMyServices } from '../api'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import { priceLabel } from '@/lib/billing'
 import { Button } from '@/components/ui/button'
+import { SectionCard } from '@/components/section-card'
+import { ToolItem } from '@/components/tool-params'
+import { ResourceItemCard, PromptItemCard } from '@/components/mcp-items'
 import { toast } from 'sonner'
 import { ArrowLeft, Download, Star, Zap, ExternalLink, Plus } from 'lucide-react'
+import type { McpTool, McpResource, McpResourceTemplate, McpPrompt } from '@/types'
 
 export function MarketplaceDetailPage() {
   const { t } = useTranslation()
@@ -29,6 +33,12 @@ export function MarketplaceDetailPage() {
 
   const item = data?.data
   const priceText = priceLabel(item?.billing_type ?? '', item?.price_per_call ?? 0, config.displayCurrency)
+
+  // 快照数据(与服务详情页同一展示形态;旧市场项无快照时为空)
+  const tools: McpTool[] = item?.tools_snapshot || []
+  const resources: McpResource[] = item?.resources_snapshot?.resources || []
+  const templates: McpResourceTemplate[] = item?.resources_snapshot?.templates || []
+  const prompts: McpPrompt[] = item?.prompts_snapshot || []
 
   if (isLoading) return <div className="flex items-center justify-center py-20 text-muted-foreground">{t('common.loading')}</div>
   if (!item) return <div className="flex items-center justify-center py-20 text-muted-foreground">{t('marketplace.notFound')}</div>
@@ -128,19 +138,46 @@ export function MarketplaceDetailPage() {
       </div>
 
       {/* Tools snapshot */}
-      {item.tools_snapshot && item.tools_snapshot.length > 0 && (
-        <div className="rounded-xl border bg-card p-5">
-          <h2 className="mb-3 text-sm font-semibold">{t('marketplace.toolsProvided', { count: item.tools_snapshot.length })}</h2>
+      <SectionCard title={t('marketplace.toolsProvided', { count: tools.length })}>
+        {tools.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-6">{t('services.noTools')}</p>
+        ) : (
           <div className="space-y-2">
-            {item.tools_snapshot.map((tool: { name: string; description?: string }) => (
-              <div key={tool.name} className="rounded-lg border p-3">
-                <p className="text-sm font-medium font-mono">{tool.name}</p>
-                {tool.description && <p className="mt-0.5 text-xs text-muted-foreground">{tool.description}</p>}
-              </div>
+            {tools.map((tool) => (
+              <ToolItem key={tool.name} name={tool.name} description={tool.description} schema={tool.inputSchema} />
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </SectionCard>
+
+      {/* Resources snapshot */}
+      <SectionCard title={t('marketplace.resourcesProvided', { count: resources.length + templates.length })}>
+        {resources.length === 0 && templates.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-6">{t('services.noResources')}</p>
+        ) : (
+          <div className="space-y-2">
+            {resources.map((r) => (
+              <ResourceItemCard key={r.uri} name={r.name} uri={r.uri} description={r.description} mimeType={r.mimeType} />
+            ))}
+            {templates.map((tpl) => (
+              <ResourceItemCard key={tpl.uriTemplate} name={tpl.name} uri={tpl.uriTemplate} description={tpl.description} mimeType={tpl.mimeType} isTemplate />
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
+      {/* Prompts snapshot */}
+      <SectionCard title={t('marketplace.promptsProvided', { count: prompts.length })}>
+        {prompts.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-6">{t('services.noPrompts')}</p>
+        ) : (
+          <div className="space-y-2">
+            {prompts.map((p) => (
+              <PromptItemCard key={p.name} name={p.name} description={p.description} args={p.arguments} />
+            ))}
+          </div>
+        )}
+      </SectionCard>
 
       {/* Tags */}
       {item.tags && item.tags.length > 0 && (

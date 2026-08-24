@@ -152,6 +152,16 @@ func fetchPromptsCache(ctx context.Context, adapter transport.TransportAdapter) 
 	return "[]"
 }
 
+// FetchAdapterCaches 一次性拉取上游 tools/resources/prompts 缓存 JSON(形态与 mcp_services 缓存列一致)。
+// 供临时连接场景使用(如市场项快照手动刷新):不落库,由调用方决定写入位置。
+func FetchAdapterCaches(ctx context.Context, adapter transport.TransportAdapter) (toolsJSON, resourcesJSON, promptsJSON string) {
+	toolsJSON = "[]"
+	if toolsData, err := json.Marshal(adapter.GetTools()); err == nil {
+		toolsJSON = string(toolsData)
+	}
+	return toolsJSON, fetchResourcesCache(ctx, adapter), fetchPromptsCache(ctx, adapter)
+}
+
 func (p *SessionPool) Get(serviceID int64) *McpSession {
 	p.mu.RLock()
 	defer p.mu.RUnlock()

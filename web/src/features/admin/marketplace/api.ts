@@ -29,6 +29,12 @@ export async function adminDeleteMarketplace(id: number) {
   return res.data
 }
 
+// 手动刷新快照(仅平台托管项):POST /admin/marketplace/:id/refresh
+export async function adminRefreshMarketplace(id: number) {
+  const res = await api.post(`/admin/marketplace/${id}/refresh`)
+  return res.data
+}
+
 // 批量定价(§5.5):PUT /admin/marketplace/pricing/batch
 export async function adminBatchPricing(data: BatchPricingReq) {
   const res = await api.put('/admin/marketplace/pricing/batch', data)

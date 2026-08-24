@@ -310,10 +310,18 @@ func (s *McpServiceService) refreshMarketplaceTools(svc *model.McpService) (*dto
 		return nil, fmt.Errorf("市场项不存在或已下架")
 	}
 	now := time.Now()
-	if err := model.DB.Model(&model.McpService{}).Where("id = ?", svc.ID).Updates(map[string]interface{}{
+	updates := map[string]interface{}{
 		"tools_cache":      item.ToolsSnapshot,
 		"tools_updated_at": now,
-	}).Error; err != nil {
+	}
+	// 资源/提示快照一并同步;仅在市场项快照非空时覆盖,避免无快照的旧市场项清空引用行已有缓存
+	if item.ResourcesSnapshot != "" {
+		updates["resources_cache"] = item.ResourcesSnapshot
+	}
+	if item.PromptsSnapshot != "" {
+		updates["prompts_cache"] = item.PromptsSnapshot
+	}
+	if err := model.DB.Model(&model.McpService{}).Where("id = ?", svc.ID).Updates(updates).Error; err != nil {
 		return nil, err
 	}
 	var tools []interface{}

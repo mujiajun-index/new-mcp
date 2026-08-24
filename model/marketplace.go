@@ -28,6 +28,10 @@ type MarketplaceItem struct {
 	RatingAvg            float64        `json:"rating_avg" gorm:"type:decimal(2,1);default:0.0"`
 	RatingCount          int            `json:"rating_count" gorm:"default:0"`
 	ToolsSnapshot        string         `json:"tools_snapshot" gorm:"type:text"`
+	// 资源/提示快照:形态与 mcp_services 的 resources_cache({"resources":[],"templates":[]})、prompts_cache(裸数组)一致,
+	// 克隆上架时从源服务拷贝,市场详情页展示、安装/同步时回填引用行
+	ResourcesSnapshot    string         `json:"resources_snapshot" gorm:"type:text"`
+	PromptsSnapshot      string         `json:"prompts_snapshot" gorm:"type:text"`
 	// 商业化:服务级计费类型(free / per_call)
 	BillingType string `json:"billing_type" gorm:"size:16;default:per_call"`
 	// 商业化:服务级按次单价(展示货币,如 CNY 元);free 时忽略

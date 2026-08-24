@@ -19,6 +19,8 @@ type CreateMarketplaceItemReq struct {
 	ConfigTemplateSource map[string]interface{} `json:"config_template_source"`
 	RequiredEnv          []string               `json:"required_env"`
 	ToolsSnapshot        []interface{}          `json:"tools_snapshot"`
+	ResourcesSnapshot    map[string]interface{} `json:"resources_snapshot"` // {"resources":[],"templates":[]}
+	PromptsSnapshot      []interface{}          `json:"prompts_snapshot"`
 	Status               *int                   `json:"status"`
 	// 商业化定价(§5):非自用模式上架必须显式定价(§5.6)
 	BillingType   string  `json:"billing_type" binding:"omitempty,oneof=free per_call"`     // free / per_call(默认 per_call)
@@ -41,6 +43,8 @@ type UpdateMarketplaceItemReq struct {
 	ConfigTemplateSource map[string]interface{} `json:"config_template_source"`
 	RequiredEnv          []string               `json:"required_env"`
 	ToolsSnapshot        []interface{}          `json:"tools_snapshot"`
+	ResourcesSnapshot    *map[string]interface{} `json:"resources_snapshot"` // {"resources":[],"templates":[]}
+	PromptsSnapshot      *[]interface{}         `json:"prompts_snapshot"`
 	Status               *int                   `json:"status"`
 	SortOrder            *int                   `json:"sort_order"`
 	// 商业化定价:启用/上架时非自用模式须显式定价(§5.6)
@@ -67,6 +71,14 @@ type CloneMarketplaceReq struct {
 	Description   string  `json:"description"`
 	BillingType   string  `json:"billing_type" binding:"omitempty,oneof=free per_call"`
 	PricePerCall  float64 `json:"price_per_call" binding:"gte=0"`
+}
+
+// MarketplaceRefreshResult 市场项快照手动刷新结果(各快照条目数)。
+type MarketplaceRefreshResult struct {
+	ToolsCount     int `json:"tools_count"`
+	ResourcesCount int `json:"resources_count"`
+	TemplatesCount int `json:"templates_count"`
+	PromptsCount   int `json:"prompts_count"`
 }
 
 type MarketplaceListItem struct {
@@ -113,6 +125,8 @@ type MarketplaceDetail struct {
 	RatingAvg            float64                `json:"rating_avg"`
 	RatingCount          int                    `json:"rating_count"`
 	ToolsSnapshot        []interface{}          `json:"tools_snapshot"`
+	ResourcesSnapshot    map[string]interface{} `json:"resources_snapshot"` // {"resources":[],"templates":[]}
+	PromptsSnapshot      []interface{}          `json:"prompts_snapshot"`
 	Status               int                    `json:"status"`
 	CreatedAt            string                 `json:"created_at"`
 	UpdatedAt            string                 `json:"updated_at"`

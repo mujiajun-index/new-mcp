@@ -72,6 +72,17 @@ func AdminDeleteMarketplaceItem(c *gin.Context) {
 	common.Success(c, nil)
 }
 
+// AdminRefreshMarketplaceItem 手动刷新市场项 tools/resources/prompts 快照(仅平台托管项)。
+func AdminRefreshMarketplaceItem(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	resp, err := marketplaceService.RefreshItemSnapshots(id)
+	if err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, resp)
+}
+
 // AdminBatchUpdateMarketplacePricing 批量设置已上架市场服务价格(§5.5)。
 func AdminBatchUpdateMarketplacePricing(c *gin.Context) {
 	var req dto.BatchPricingReq

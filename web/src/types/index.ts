@@ -440,6 +440,9 @@ export interface MarketplaceDetail {
   rating_avg: number
   rating_count: number
   tools_snapshot: McpTool[]
+  // 形态同 services 的资源/提示缓存;旧市场项无快照时为 null
+  resources_snapshot: { resources: McpResource[]; templates: McpResourceTemplate[] } | null
+  prompts_snapshot: McpPrompt[] | null
   status: number
   created_at: string
   updated_at: string

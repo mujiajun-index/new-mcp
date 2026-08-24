@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useParams, useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { adminGetMarketplace, adminUpdateMarketplace } from '../api'
+import { adminGetMarketplace, adminUpdateMarketplace, adminRefreshMarketplace } from '../api'
 import { adminListMarketplaceGroups, adminListMarketplaceTags } from '@/features/admin/marketplace-categories/api'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import { priceLabel } from '@/lib/billing'
@@ -12,8 +12,11 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { SectionCard } from '@/components/section-card'
+import { ToolItem } from '@/components/tool-params'
+import { ResourceItemCard, PromptItemCard } from '@/components/mcp-items'
 import { toast } from 'sonner'
-import { ArrowLeft, Save } from 'lucide-react'
+import { ArrowLeft, Save, RefreshCw } from 'lucide-react'
 import type { MarketplaceDetail } from '@/types'
 
 // AdminMarketplaceDetailPage 市场项详情 + 编辑(§11)。上半只读概览,下半编辑表单(调 adminUpdateMarketplace)。
@@ -51,9 +54,30 @@ export function AdminMarketplaceDetailPage() {
     },
   })
 
+  // 手动刷新快照(仅平台托管项):用市场项的平台上游配置直连上游,拉取 tools/resources/prompts
+  const refreshMutation = useMutation({
+    mutationFn: () => adminRefreshMarketplace(Number(id)),
+    onSuccess: (res) => {
+      const d = res?.data
+      toast.success(t('marketplace.snapshotsRefreshed', {
+        tools: d?.tools_count ?? 0,
+        resources: d?.resources_count ?? 0,
+        templates: d?.templates_count ?? 0,
+        prompts: d?.prompts_count ?? 0,
+      }))
+      queryClient.invalidateQueries({ queryKey: ['admin-marketplace-detail', id] })
+    },
+  })
+
   if (isLoading || !item) {
     return <div className="p-8 text-sm text-muted-foreground">{t('common.loading')}</div>
   }
+
+  // 快照数据(三个列表区块用;旧市场项无快照时为空)
+  const tools = item.tools_snapshot || []
+  const resources = item.resources_snapshot?.resources || []
+  const templates = item.resources_snapshot?.templates || []
+  const prompts = item.prompts_snapshot || []
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
@@ -61,10 +85,20 @@ export function AdminMarketplaceDetailPage() {
         <ArrowLeft className="h-4 w-4" />{t('marketplace.backToMarketplace')}
       </Button>
 
-      {/* 概览(只读) */}
+      {/* 概览(只读);右上角为快照手动刷新(仅平台托管项) */}
       <div className="rounded-xl border bg-card p-5">
-        <h2 className="text-xl font-semibold">{item.display_name || item.name}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">{item.name} · v{item.version}</p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-semibold">{item.display_name || item.name}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{item.name} · v{item.version}</p>
+          </div>
+          {item.category === 'instant' && (
+            <Button variant="outline" size="sm" className="shrink-0 gap-1.5" disabled={refreshMutation.isPending} onClick={() => refreshMutation.mutate()}>
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
+              {t('marketplace.refreshSnapshots')}
+            </Button>
+          )}
+        </div>
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           <Badge variant="outline">{item.category === 'instant' ? t('marketplace.ready') : t('marketplace.source')}</Badge>
           {item.group_name && <Badge variant="secondary">{item.group_name}</Badge>}
@@ -89,6 +123,46 @@ export function AdminMarketplaceDetailPage() {
       {/* 编辑表单 */}
       <EditForm item={item} groups={groups} tagsLib={tagsLib} notSelfUse={notSelfUse}
         onSave={(body) => updateMutation.mutate({ id: Number(id), body })} pending={updateMutation.isPending} />
+
+      {/* 快照展示(与前台市场/服务详情同款),编辑表单下方 */}
+      <SectionCard title={t('marketplace.toolsProvided', { count: tools.length })}>
+        {tools.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-6">{t('services.noTools')}</p>
+        ) : (
+          <div className="space-y-2">
+            {tools.map((tool) => (
+              <ToolItem key={tool.name} name={tool.name} description={tool.description} schema={tool.inputSchema} />
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard title={t('marketplace.resourcesProvided', { count: resources.length + templates.length })}>
+        {resources.length === 0 && templates.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-6">{t('services.noResources')}</p>
+        ) : (
+          <div className="space-y-2">
+            {resources.map((r) => (
+              <ResourceItemCard key={r.uri} name={r.name} uri={r.uri} description={r.description} mimeType={r.mimeType} />
+            ))}
+            {templates.map((tpl) => (
+              <ResourceItemCard key={tpl.uriTemplate} name={tpl.name} uri={tpl.uriTemplate} description={tpl.description} mimeType={tpl.mimeType} isTemplate />
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard title={t('marketplace.promptsProvided', { count: prompts.length })}>
+        {prompts.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-6">{t('services.noPrompts')}</p>
+        ) : (
+          <div className="space-y-2">
+            {prompts.map((p) => (
+              <PromptItemCard key={p.name} name={p.name} description={p.description} args={p.arguments} />
+            ))}
+          </div>
+        )}
+      </SectionCard>
     </div>
   )
 }

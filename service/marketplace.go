@@ -1,14 +1,17 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mujkjk/newmcp/billing"
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
+	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/model"
 )
 
@@ -34,6 +37,10 @@ var ErrTagNotInDictionary = errors.New("标签不在标签库中,请先在标签
 
 // ErrGroupNotFound 市场分组不存在或未启用(§11)。
 var ErrGroupNotFound = errors.New("市场分组不存在或未启用")
+
+// ErrOnlyInstantRefreshable 仅平台托管(instant)市场项支持手动刷新快照:
+// source 类目为用户自行部署形态,平台侧无上游连接,快照由管理员通过编辑接口维护。
+var ErrOnlyInstantRefreshable = errors.New("仅开箱即用(平台托管)市场项支持刷新快照")
 
 // validatePrice 校验价格非负(§5.5)。
 func validatePrice(price float64) error {
@@ -144,6 +151,16 @@ func (s *MarketplaceService) CreateItem(adminID int64, req *dto.CreateMarketplac
 		b, _ := json.Marshal(req.ToolsSnapshot)
 		toolsSnapshotJSON = string(b)
 	}
+	resourcesSnapshotJSON := "{}"
+	if req.ResourcesSnapshot != nil {
+		b, _ := json.Marshal(req.ResourcesSnapshot)
+		resourcesSnapshotJSON = string(b)
+	}
+	promptsSnapshotJSON := "[]"
+	if req.PromptsSnapshot != nil {
+		b, _ := json.Marshal(req.PromptsSnapshot)
+		promptsSnapshotJSON = string(b)
+	}
 	tags := strings.Join(req.Tags, ",")
 
 	item := &model.MarketplaceItem{
@@ -164,6 +181,8 @@ func (s *MarketplaceService) CreateItem(adminID int64, req *dto.CreateMarketplac
 		ConfigTemplateSource: string(configSourceJSON),
 		RequiredEnv:          string(requiredEnvJSON),
 		ToolsSnapshot:        toolsSnapshotJSON,
+		ResourcesSnapshot:    resourcesSnapshotJSON,
+		PromptsSnapshot:      promptsSnapshotJSON,
 		BillingType:          billingType,
 		PricePerCall:         req.PricePerCall,
 		Status:               common.StatusEnabled,
@@ -252,6 +271,14 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 		b, _ := json.Marshal(req.ToolsSnapshot)
 		item.ToolsSnapshot = string(b)
 	}
+	if req.ResourcesSnapshot != nil {
+		b, _ := json.Marshal(req.ResourcesSnapshot)
+		item.ResourcesSnapshot = string(b)
+	}
+	if req.PromptsSnapshot != nil {
+		b, _ := json.Marshal(req.PromptsSnapshot)
+		item.PromptsSnapshot = string(b)
+	}
 	if req.Status != nil {
 		item.Status = *req.Status
 	}
@@ -293,6 +320,68 @@ func (s *MarketplaceService) DeleteItem(itemID int64) error {
 	// V2 提供显式级联清理 + 引用悬空检测(§11)。
 	billing.InvalidatePricingCacheItem(itemID)
 	return nil
+}
+
+// RefreshItemSnapshots 管理端手动刷新市场项快照:用平台托管的上游配置临时直连上游
+// (与服务详情「刷新工具」同源拉取),把 tools/resources/prompts 写回 marketplace_items 快照列。
+// 临时连接不落库、不入会话池,用完即关。
+func (s *MarketplaceService) RefreshItemSnapshots(itemID int64) (*dto.MarketplaceRefreshResult, error) {
+	item, err := model.GetMarketplaceItemByID(itemID)
+	if err != nil {
+		return nil, err
+	}
+	if item.Category != "instant" {
+		return nil, ErrOnlyInstantRefreshable
+	}
+	// 物化平台上游连接配置(与 materializeMarketplace 一致:解密 config_template、还原真实 transport)
+	tmp := &model.McpService{
+		Name:          item.Name,
+		TransportType: item.TransportType,
+		Config:        item.ConfigTemplate,
+	}
+	if plain, dErr := common.Decrypt(item.ConfigTemplate); dErr == nil && plain != "" {
+		tmp.Config = plain
+	}
+	adapter := bridge.CreateAdapter(tmp)
+	if adapter == nil {
+		return nil, fmt.Errorf("不支持的传输类型: %s", item.TransportType)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := adapter.Connect(ctx); err != nil {
+		return nil, err
+	}
+	defer adapter.Close()
+
+	toolsJSON, resourcesJSON, promptsJSON := bridge.FetchAdapterCaches(ctx, adapter)
+	if err := model.DB.Model(&model.MarketplaceItem{}).Where("id = ?", item.ID).Updates(map[string]interface{}{
+		"tools_snapshot":     toolsJSON,
+		"resources_snapshot": resourcesJSON,
+		"prompts_snapshot":   promptsJSON,
+	}).Error; err != nil {
+		return nil, err
+	}
+
+	var result dto.MarketplaceRefreshResult
+	result.ToolsCount = countJSONItems(toolsJSON)
+	var rc struct {
+		Resources json.RawMessage `json:"resources"`
+		Templates json.RawMessage `json:"templates"`
+	}
+	_ = json.Unmarshal([]byte(resourcesJSON), &rc)
+	result.ResourcesCount = countJSONItems(string(rc.Resources))
+	result.TemplatesCount = countJSONItems(string(rc.Templates))
+	result.PromptsCount = countJSONItems(promptsJSON)
+	return &result, nil
+}
+
+// countJSONItems 统计 JSON 数组的元素个数(非数组/解析失败返回 0)。
+func countJSONItems(s string) int {
+	var arr []interface{}
+	if json.Unmarshal([]byte(s), &arr) != nil {
+		return 0
+	}
+	return len(arr)
 }
 
 // BatchUpdatePricing 批量设置已上架市场服务价格(§5.5)。非自用模式逐条校验显式定价。
@@ -369,6 +458,9 @@ func (s *MarketplaceService) CloneFromService(adminID int64, req *dto.CloneMarke
 		ConfigTemplateSource: svc.AuthConfig,
 		RequiredEnv:   "[]",
 		ToolsSnapshot: svc.ToolsCache,
+		// 资源/提示快照一并拷贝(形态同 services.resources_cache/prompts_cache)
+		ResourcesSnapshot: svc.ResourcesCache,
+		PromptsSnapshot:   svc.PromptsCache,
 		BillingType:   billingType,
 		PricePerCall:  req.PricePerCall,
 		Status:        common.StatusEnabled,
@@ -471,6 +563,8 @@ func (s *MarketplaceService) AddToMyServices(userID, itemID int64) (*dto.Install
 		TransportType:     "marketplace", // 哨兵值:resolver 见此改用平台 session(真实 transport 在调用时从 item 注入)
 		Config:            "{}",          // 空:不复制上游配置/凭证(平台托管)
 		ToolsCache:        item.ToolsSnapshot,
+		ResourcesCache:    item.ResourcesSnapshot,
+		PromptsCache:      item.PromptsSnapshot,
 		Source:            "marketplace",
 		MarketplaceItemID: &item.ID,
 		IconURL:           item.IconURL,
@@ -533,6 +627,10 @@ func (s *MarketplaceService) toDetail(item *model.MarketplaceItem) *dto.Marketpl
 	_ = json.Unmarshal([]byte(item.RequiredEnv), &requiredEnv)
 	var toolsSnapshot []interface{}
 	_ = json.Unmarshal([]byte(item.ToolsSnapshot), &toolsSnapshot)
+	var resourcesSnapshot map[string]interface{}
+	_ = json.Unmarshal([]byte(item.ResourcesSnapshot), &resourcesSnapshot)
+	var promptsSnapshot []interface{}
+	_ = json.Unmarshal([]byte(item.PromptsSnapshot), &promptsSnapshot)
 
 	var tags []string
 	if item.Tags != "" {
@@ -569,6 +667,8 @@ func (s *MarketplaceService) toDetail(item *model.MarketplaceItem) *dto.Marketpl
 		RatingAvg:            item.RatingAvg,
 		RatingCount:          item.RatingCount,
 		ToolsSnapshot:        toolsSnapshot,
+		ResourcesSnapshot:    resourcesSnapshot,
+		PromptsSnapshot:      promptsSnapshot,
 		Status:               item.Status,
 		CreatedAt:            item.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:            item.UpdatedAt.Format("2006-01-02T15:04:05Z"),
