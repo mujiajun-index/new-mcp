@@ -170,9 +170,8 @@ func SetApiRouter(engine *gin.Engine) {
 		admin.GET("/services", controller.AdminListServices)
 		admin.POST("/services", controller.AdminCreateService)
 
-		// Admin: Marketplace management
+		// Admin: Marketplace management(上架仅支持从自有服务克隆,无手动创建)
 		admin.GET("/marketplace", controller.AdminListMarketplaceItems)
-		admin.POST("/marketplace", controller.AdminCreateMarketplaceItem)
 		admin.POST("/marketplace/clone", controller.AdminCloneMarketplaceItem)
 		admin.PUT("/marketplace/pricing/batch", controller.AdminBatchUpdateMarketplacePricing)
 		admin.GET("/marketplace/clone-sources", controller.AdminListCloneSources)

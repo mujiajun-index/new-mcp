@@ -452,8 +452,8 @@ groupRatio 配置(Option, JSON):
 | `false`(非自用/商业,**默认**) | **不生效**(配置项前端隐藏) | **必须显式定价**:`price_per_call>0` 或 `billing_type='free'`,否则拒绝上架/启用 | 报错"价格未配置" |
 
 - **"已显式定价"判定**:`billing_type='free'`(显式免费) 或 (`billing_type='per_call'` 且 `price_per_call>0`)。默认行(`per_call` + `price=0`)视为**未定价**。
-- **上架/启用门控**(非自用模式):`POST /admin/marketplace`、`POST /admin/marketplace/clone`、`PUT /admin/marketplace/:id`(启用/上架)校验显式定价,不满足返回 400。
-- **虚拟服务上架禁令(D16,硬约束)**:**与定价/自用模式无关**——`transport_type='virtual'` 的服务(vision/camera 等)**永远不可上架市场**:`POST /admin/marketplace`(手动添加,拒 `transport_type='virtual'`)与 `POST /admin/marketplace/clone`(从自有服务克隆,源服务 `transport_type='virtual'` 拒绝)直接返回 400。虚拟服务仅供配置者自己免费调用,详见 §11。
+- **上架/启用门控**(非自用模式):`POST /admin/marketplace/clone`(唯一上架入口,已移除手动创建)、`PUT /admin/marketplace/:id`(启用/上架)校验显式定价,不满足返回 400。
+- **虚拟服务上架禁令(D16,硬约束)**:**与定价/自用模式无关**——`transport_type='virtual'` 的服务(vision/camera 等)**永远不可上架市场**:`POST /admin/marketplace/clone`(从自有服务克隆,源服务 `transport_type='virtual'` 拒绝)直接返回 400。虚拟服务仅供配置者自己免费调用,详见 §11。
 - **可设于初始化**:参考 new-api 在 setup 阶段询问(`controller/setup.go:23`),可选;主入口为系统设置。
 - **关联行为(可选,参考 new-api classic)**:自用模式下可隐藏公开注册(已有独立 `RegisterEnabled` 开关,二者可联动)。
 
@@ -798,8 +798,7 @@ type PaymentGateway interface {
 |------|------|------|----|
 | PUT | `/admin/settings` | 全局计费配置 + `UserOwnedServicesEnabled` 开关(新增 key 见 §15) | V1 |
 | **PUT** | **`/admin/marketplace/pricing/batch`** | **批量设置已上架市场服务价格**(D4,§5.5) | V1 |
-| POST | `/admin/marketplace` | 手动添加市场项(空白表单;**非自用模式须显式定价**,§5.6) | V1 |
-| POST | `/admin/marketplace/clone` | 从自有服务克隆(`from_service_id`,深拷贝,凭证保留待替换;**非自用模式须显式定价**) | V1 |
+| POST | `/admin/marketplace/clone` | 从自有服务克隆(`from_service_id`,深拷贝,凭证保留待替换;**非自用模式须显式定价**;唯一上架入口) | V1 |
 | PUT | `/admin/marketplace/:id` | 扩展:市场项服务级定价 + 上游 transport + 启用/上架(**非自用模式须显式定价**) | V1 |
 | PUT | `/admin/marketplace/:id/tools/:tool/pricing` | 工具级定价(§4.4) | V2 |
 | **POST** | **`/admin/users/:id/quota`** | **管理员调额**(mode=add/sub/set,参考 new-api,D13) | V1 |

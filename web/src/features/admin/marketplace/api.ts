@@ -14,11 +14,6 @@ export async function adminGetMarketplace(id: number) {
   return res.data
 }
 
-export async function adminCreateMarketplace(data: Record<string, unknown>) {
-  const res = await api.post('/admin/marketplace', data)
-  return res.data
-}
-
 export async function adminUpdateMarketplace(id: number, data: Record<string, unknown>) {
   const res = await api.put(`/admin/marketplace/${id}`, data)
   return res.data

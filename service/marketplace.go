@@ -120,86 +120,8 @@ func encryptConfigTemplate(plain string) string {
 
 // --- Admin operations ---
 
-func (s *MarketplaceService) CreateItem(adminID int64, req *dto.CreateMarketplaceItemReq) (*dto.MarketplaceDetail, error) {
-	// 虚拟服务(vision/camera 等)不可上架(D16/§11):virtual 是内置 handler,非平台可托管传输类型。
-	if req.TransportType == "virtual" {
-		return nil, ErrVirtualServiceNotListable
-	}
-	if err := validatePrice(req.PricePerCall); err != nil {
-		return nil, err
-	}
-	if err := validateTags(req.Tags); err != nil {
-		return nil, err
-	}
-	if err := validateGroupID(req.GroupID); err != nil {
-		return nil, err
-	}
-	billingType := req.BillingType
-	if billingType == "" {
-		billingType = "per_call"
-	}
-	// 非自用模式强制定价门控(§5.6)
-	if err := requireExplicitPricingIfNotSelfUse(billingType, req.PricePerCall); err != nil {
-		return nil, err
-	}
-
-	configJSON, _ := json.Marshal(req.ConfigTemplate)
-	configSourceJSON, _ := json.Marshal(req.ConfigTemplateSource)
-	requiredEnvJSON, _ := json.Marshal(req.RequiredEnv)
-	toolsSnapshotJSON := "[]"
-	if req.ToolsSnapshot != nil {
-		b, _ := json.Marshal(req.ToolsSnapshot)
-		toolsSnapshotJSON = string(b)
-	}
-	resourcesSnapshotJSON := "{}"
-	if req.ResourcesSnapshot != nil {
-		b, _ := json.Marshal(req.ResourcesSnapshot)
-		resourcesSnapshotJSON = string(b)
-	}
-	promptsSnapshotJSON := "[]"
-	if req.PromptsSnapshot != nil {
-		b, _ := json.Marshal(req.PromptsSnapshot)
-		promptsSnapshotJSON = string(b)
-	}
-	tags := strings.Join(req.Tags, ",")
-
-	item := &model.MarketplaceItem{
-		AdminID:              adminID,
-		Name:                 req.Name,
-		DisplayName:          req.DisplayName,
-		Description:          req.Description,
-		IconURL:              req.IconURL,
-		Category:             req.Category,
-		GroupID:              req.GroupID,
-		Tags:                 tags,
-		Version:              req.Version,
-		TransportType:        req.TransportType,
-		ConfigTemplate:       encryptConfigTemplate(string(configJSON)), // 平台凭证加密落库
-		AuthInstructions:     req.AuthInstructions,
-		RepoURL:              req.RepoURL,
-		InstallGuide:         req.InstallGuide,
-		ConfigTemplateSource: string(configSourceJSON),
-		RequiredEnv:          string(requiredEnvJSON),
-		ToolsSnapshot:        toolsSnapshotJSON,
-		ResourcesSnapshot:    resourcesSnapshotJSON,
-		PromptsSnapshot:      promptsSnapshotJSON,
-		BillingType:          billingType,
-		PricePerCall:         req.PricePerCall,
-		Status:               common.StatusEnabled,
-	}
-	if req.Status != nil {
-		item.Status = *req.Status
-	}
-	if item.Version == "" {
-		item.Version = "1.0.0"
-	}
-
-	if err := item.Insert(); err != nil {
-		return nil, err
-	}
-	billing.InvalidatePricingCacheItem(item.ID)
-	return s.toDetail(item), nil
-}
+// 注:市场项仅支持"从自有服务克隆上架"(CloneFromService),已移除手动创建接口
+// (与"添加服务"功能重复,且无法保证 transport/config 可被平台托管运行)。
 
 func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplaceItemReq) error {
 	item, err := model.GetMarketplaceItemByID(itemID)
@@ -453,6 +375,11 @@ func (s *MarketplaceService) CloneFromService(adminID int64, req *dto.CloneMarke
 	}
 	if err := requireExplicitPricingIfNotSelfUse(billingType, req.PricePerCall); err != nil {
 		return nil, err
+	}
+	// 标识全局唯一(name 唯一索引):前端选择服务后自动回显标识,重复克隆同一服务时
+	// 提前给出可读错误,而非落到唯一索引冲突的晦涩 DB 报错。
+	if exists, e := model.MarketplaceItemNameExists(req.Name); e == nil && exists {
+		return nil, fmt.Errorf("市场项标识已存在: %s,请修改服务标识", req.Name)
 	}
 
 	item := &model.MarketplaceItem{

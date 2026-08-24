@@ -133,7 +133,7 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 ### 4.2 市场 + 分组 + API Key 完整流程 ✅
 
 ```
- 1. 管理员上架 MCP 服务到市场 POST /admin/marketplace ✅
+ 1. 管理员上架 MCP 服务到市场 POST /admin/marketplace/clone ✅(从自有服务克隆,唯一上架入口)
  2. 用户浏览市场 GET /marketplace ✅
  3. 用户从市场引用式安装 POST /marketplace/:id/add ✅(空 config,平台托管)
  4. 用户创建分组 + 添加服务 POST /groups ✅ + POST /groups/:id/services ✅

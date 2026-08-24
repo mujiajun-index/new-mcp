@@ -132,6 +132,13 @@ func (i *MarketplaceItem) Insert() error {
 	return DB.Create(i).Error
 }
 
+// MarketplaceItemNameExists 判断市场项标识(name 全局唯一索引)是否已被占用。
+func MarketplaceItemNameExists(name string) (bool, error) {
+	var count int64
+	err := DB.Model(&MarketplaceItem{}).Where("name = ?", name).Count(&count).Error
+	return count > 0, err
+}
+
 func (i *MarketplaceItem) Update() error {
 	return DB.Save(i).Error
 }

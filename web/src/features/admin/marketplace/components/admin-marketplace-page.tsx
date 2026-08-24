@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import {
-  adminListMarketplace, adminCreateMarketplace, adminUpdateMarketplace, adminDeleteMarketplace,
+  adminListMarketplace, adminUpdateMarketplace, adminDeleteMarketplace,
   adminBatchPricing, adminCloneMarketplace, adminListCloneSources,
 } from '../api'
 import { useSystemConfigStore } from '@/stores/system-config-store'
@@ -22,7 +22,7 @@ import { MobileListCard } from '@/components/ui/mobile-list-card'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { toast } from 'sonner'
 import {
-  Plus, Copy, Trash2, CheckSquare, Square, Tag, AlertTriangle, Store, Eye,
+  Copy, Trash2, CheckSquare, Square, Tag, AlertTriangle, Store, Eye,
 } from 'lucide-react'
 
 export function AdminMarketplacePage() {
@@ -36,7 +36,6 @@ export function AdminMarketplacePage() {
   const pageSize = 20
   const [selected, setSelected] = useState<Set<number>>(new Set())
 
-  const [createOpen, setCreateOpen] = useState(false)
   const [cloneOpen, setCloneOpen] = useState(false)
   const [batchOpen, setBatchOpen] = useState(false)
 
@@ -77,15 +76,6 @@ export function AdminMarketplacePage() {
     },
   })
 
-  const createMutation = useMutation({
-    mutationFn: (body: Record<string, unknown>) => adminCreateMarketplace(body),
-    onSuccess: () => {
-      toast.success(t('common.success'))
-      setCreateOpen(false)
-      queryClient.invalidateQueries({ queryKey: ['admin-marketplace'] })
-    },
-  })
-
   const cloneMutation = useMutation({
     mutationFn: (body: any) => adminCloneMarketplace(body),
     onSuccess: () => {
@@ -116,11 +106,8 @@ export function AdminMarketplacePage() {
           <p className="mt-1 text-sm text-muted-foreground">{t('marketplace.pricing')}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" className="gap-2" onClick={() => setCloneOpen(true)}>
+          <Button className="gap-2" onClick={() => setCloneOpen(true)}>
             <Copy className="h-4 w-4" />{t('marketplace.clone')}
-          </Button>
-          <Button className="gap-2" onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4" />{t('common.create')}
           </Button>
         </div>
       </div>
@@ -294,13 +281,6 @@ export function AdminMarketplacePage() {
         </div>
       )}
 
-      <CreateDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onConfirm={(body) => createMutation.mutate(body)}
-        pending={createMutation.isPending}
-        notSelfUse={notSelfUse}
-      />
       <CloneDialog
         open={cloneOpen}
         onOpenChange={setCloneOpen}
@@ -320,121 +300,7 @@ export function AdminMarketplacePage() {
   )
 }
 
-// --- Create dialog ---
-function CreateDialog({
-  open, onOpenChange, onConfirm, pending, notSelfUse,
-}: {
-  open: boolean
-  onOpenChange: (v: boolean) => void
-  onConfirm: (body: Record<string, unknown>) => void
-  pending: boolean
-  notSelfUse: boolean
-}) {
-  const { t } = useTranslation()
-  const [form, setForm] = useState({
-    name: '', display_name: '', description: '', category: 'instant',
-    transport_type: 'streamable-http', billing_type: 'per_call', price_per_call: '0',
-  })
-
-  const submit = () => {
-    const billingType = form.billing_type
-    const price = parseFloat(form.price_per_call) || 0
-    if (price < 0) {
-      toast.error(t('marketplace.priceNegative'))
-      return
-    }
-    if (notSelfUse && billingType !== 'free' && price <= 0) {
-      toast.error(t('pricing.commercialNote'))
-      return
-    }
-    onConfirm({
-      name: form.name,
-      display_name: form.display_name || undefined,
-      description: form.description || undefined,
-      category: form.category,
-      transport_type: form.transport_type,
-      billing_type: billingType,
-      price_per_call: billingType === 'free' ? 0 : price,
-      status: 1,
-    })
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{t('common.create')}</DialogTitle>
-          <DialogDescription>{t('marketplace.platformHostedDesc')}</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>{t('services.serviceIdentifier')} <span className="text-destructive">*</span></Label>
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('services.displayName')}</Label>
-              <Input value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>{t('services.description')}</Label>
-            <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-          </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>{t('pricing.colCategory')}</Label>
-              <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="instant">{t('marketplace.ready')}</SelectItem>
-                  <SelectItem value="source">{t('marketplace.source')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>{t('services.transportType')}</Label>
-              <Select value={form.transport_type} onValueChange={(v) => setForm({ ...form, transport_type: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {['stdio', 'sse', 'streamable-http', 'websocket', 'passive-ws'].map((tp) => (
-                    <SelectItem key={tp} value={tp}>{tp}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 gap-4 border-t pt-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>{t('marketplace.billingType')}</Label>
-              <Select value={form.billing_type} onValueChange={(v) => setForm({ ...form, billing_type: v, price_per_call: v === 'free' ? '0' : form.price_per_call })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="per_call">{t('marketplace.billingPerCall')}</SelectItem>
-                  <SelectItem value="free">{t('marketplace.billingFree')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>{t('marketplace.pricePerCall')}</Label>
-              <Input type="number" min="0" step="0.0001" disabled={form.billing_type === 'free'}
-                value={form.price_per_call} onChange={(e) => setForm({ ...form, price_per_call: e.target.value })} />
-            </div>
-          </div>
-          {notSelfUse && (
-            <p className="text-xs text-amber-600">{t('pricing.commercialNote')}</p>
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
-          <Button disabled={pending || !form.name.trim()} onClick={submit}>{t('common.create')}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// --- Clone dialog ---
+// --- Clone dialog(从自有服务克隆上架:唯一上架入口)---
 function CloneDialog({
   open, onOpenChange, onConfirm, pending, notSelfUse,
 }: {
@@ -455,6 +321,28 @@ function CloneDialog({
     enabled: open,
   })
   const services: any[] = servicesData?.data ?? []
+
+  // 每次打开重置表单,避免残留上次的选择
+  useEffect(() => {
+    if (open) {
+      setForm({
+        from_service_id: '', name: '', display_name: '', description: '',
+        billing_type: 'per_call', price_per_call: '0',
+      })
+    }
+  }, [open])
+
+  // 选择服务后自动回显标识/名称/描述(一般无需修改,直接提交即可快速上架)
+  const selectService = (v: string) => {
+    const svc = services.find((s) => String(s.id) === v)
+    setForm((prev) => ({
+      ...prev,
+      from_service_id: v,
+      name: svc?.name ?? '',
+      display_name: svc?.display_name ?? '',
+      description: svc?.description ?? '',
+    }))
+  }
 
   const submit = () => {
     const billingType = form.billing_type
@@ -486,8 +374,8 @@ function CloneDialog({
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>{t('marketplace.cloneFrom', { id: '' })} <span className="text-destructive">*</span></Label>
-            <Select value={form.from_service_id} onValueChange={(v) => setForm({ ...form, from_service_id: v })}>
+            <Label>{t('services.service')} <span className="text-destructive">*</span></Label>
+            <Select value={form.from_service_id} onValueChange={selectService}>
               <SelectTrigger><SelectValue placeholder={t('services.service')} /></SelectTrigger>
               <SelectContent>
                 {services.map((s) => (

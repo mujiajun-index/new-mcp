@@ -1,31 +1,7 @@
 package dto
 
-// --- Admin: Create/Update marketplace item ---
-
-type CreateMarketplaceItemReq struct {
-	Name                 string                 `json:"name" binding:"required,min=1,max=128"`
-	DisplayName          string                 `json:"display_name" binding:"omitempty,max=255"`
-	Description          string                 `json:"description"`
-	IconURL              string                 `json:"icon_url" binding:"omitempty,max=512"`
-	Category             string                 `json:"category" binding:"required,oneof=instant source"`
-	GroupID              *int64                 `json:"group_id"`
-	Tags                 []string               `json:"tags"`
-	Version              string                 `json:"version" binding:"omitempty,max=32"`
-	TransportType        string                 `json:"transport_type" binding:"required,oneof=stdio sse streamable-http websocket passive-ws"`
-	ConfigTemplate       map[string]interface{} `json:"config_template"`
-	AuthInstructions     string                 `json:"auth_instructions"`
-	RepoURL              string                 `json:"repo_url" binding:"omitempty,max=1024"`
-	InstallGuide         string                 `json:"install_guide"`
-	ConfigTemplateSource map[string]interface{} `json:"config_template_source"`
-	RequiredEnv          []string               `json:"required_env"`
-	ToolsSnapshot        []interface{}          `json:"tools_snapshot"`
-	ResourcesSnapshot    map[string]interface{} `json:"resources_snapshot"` // {"resources":[],"templates":[]}
-	PromptsSnapshot      []interface{}          `json:"prompts_snapshot"`
-	Status               *int                   `json:"status"`
-	// 商业化定价(§5):非自用模式上架必须显式定价(§5.6)
-	BillingType   string  `json:"billing_type" binding:"omitempty,oneof=free per_call"`     // free / per_call(默认 per_call)
-	PricePerCall  float64 `json:"price_per_call" binding:"gte=0"`   // 展示货币单价(per_call 时需 >0,非自用模式)
-}
+// --- Admin: Update marketplace item ---
+// 注:市场项创建仅支持"从自有服务克隆上架"(CloneMarketplaceReq),无手动创建。
 
 type UpdateMarketplaceItemReq struct {
 	DisplayName          *string                `json:"display_name"`

@@ -1614,12 +1614,10 @@ wss://api.newmcp.pro/mcp/passive/?token=<PASSIVE_JWT>
 - 响应:`{ "success": true, "data": { "affected": 2 } }`
 
 #### POST /admin/marketplace/clone
-**从自有服务克隆上架**(D14):深拷贝 transport/config/auth/tools,与源服务无关联。克隆保留源凭证并加密落库,前端提示替换为平台凭证。非自用模式须显式定价。
+**从自有服务克隆上架**(D14,唯一上架入口,已移除手动创建):深拷贝 transport/config/auth/tools,与源服务无关联。克隆保留源凭证并加密落库,前端提示替换为平台凭证。非自用模式须显式定价。前端选择服务后自动回显 `name`/`display_name`/`description`,一般无需修改直接提交。
 - 请求:`{ "from_service_id": 5, "name": "exa-market", "display_name": "...", "billing_type": "per_call", "price_per_call": 0.05 }`
 - 响应:市场项详情(含价格)。
-
-#### POST /admin/marketplace `(创建市场项)`
-手动添加市场项。请求体在原字段基础上新增 `billing_type` / `price_per_call`。**非自用模式启用态必须显式定价**(`price_per_call>0` 或 `billing_type='free'`),否则 400。
+- `name` 全局唯一,重复返回 400(提示修改服务标识)。
 
 #### PUT /admin/marketplace/:id `(更新市场项)`
 扩展支持 `billing_type` / `price_per_call`(指针,可选更新)。启用状态下非自用模式校验显式定价。`config_template` 平台凭证**加密落库**(API 不返回明文)。

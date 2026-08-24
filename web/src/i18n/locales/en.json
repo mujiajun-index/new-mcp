@@ -955,7 +955,6 @@
     "batchPricing": "Batch pricing",
     "batchPricingTitle": "Batch set marketplace service prices",
     "clone": "Clone from a user-owned service",
-    "cloneFrom": "Cloned from service #{{id}}",
     "credentialReplaceHint": "The clone kept the source service credentials. Replace them with platform credentials soon to avoid reusing a personal key for all platform traffic.",
     "priceNegative": "Price cannot be negative",
     "noGroup": "No group",

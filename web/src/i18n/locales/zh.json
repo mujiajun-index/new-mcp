@@ -955,7 +955,6 @@
     "batchPricing": "批量定价",
     "batchPricingTitle": "批量设置市场服务价格",
     "clone": "从自有服务克隆上架",
-    "cloneFrom": "克隆自服务 #{{id}}",
     "credentialReplaceHint": "克隆保留了源服务的凭证，请尽快替换为平台专用凭证，避免复用个人 Key 承担全平台流量。",
     "priceNegative": "价格不能为负数",
     "noGroup": "无分组",
