@@ -354,11 +354,21 @@ func (s *MarketplaceService) RefreshItemSnapshots(itemID int64) (*dto.Marketplac
 	defer adapter.Close()
 
 	toolsJSON, resourcesJSON, promptsJSON := bridge.FetchAdapterCaches(ctx, adapter)
-	if err := model.DB.Model(&model.MarketplaceItem{}).Where("id = ?", item.ID).Updates(map[string]interface{}{
+	updates := map[string]interface{}{
 		"tools_snapshot":     toolsJSON,
 		"resources_snapshot": resourcesJSON,
 		"prompts_snapshot":   promptsJSON,
-	}).Error; err != nil {
+	}
+	// 握手拿到的真实服务版本/协议版本一并落库;上游没给时不动旧值
+	if v := adapter.GetProtocolVersion(); v != "" {
+		updates["protocol_version"] = v
+	}
+	if si := adapter.GetServerInfo(); si != nil {
+		if b, err := json.Marshal(si); err == nil {
+			updates["server_info"] = string(b)
+		}
+	}
+	if err := model.DB.Model(&model.MarketplaceItem{}).Where("id = ?", item.ID).Updates(updates).Error; err != nil {
 		return nil, err
 	}
 
@@ -461,6 +471,9 @@ func (s *MarketplaceService) CloneFromService(adminID int64, req *dto.CloneMarke
 		// 资源/提示快照一并拷贝(形态同 services.resources_cache/prompts_cache)
 		ResourcesSnapshot: svc.ResourcesCache,
 		PromptsSnapshot:   svc.PromptsCache,
+		// 上游握手信息从源服务拷贝(源服务已连接过即有值;否则待手动刷新补齐)
+		ServerInfo:      svc.ServerInfo,
+		ProtocolVersion: svc.ProtocolVersion,
 		BillingType:   billingType,
 		PricePerCall:  req.PricePerCall,
 		Status:        common.StatusEnabled,
@@ -565,6 +578,9 @@ func (s *MarketplaceService) AddToMyServices(userID, itemID int64) (*dto.Install
 		ToolsCache:        item.ToolsSnapshot,
 		ResourcesCache:    item.ResourcesSnapshot,
 		PromptsCache:      item.PromptsSnapshot,
+		// 上游握手信息一并复制,用户侧服务详情无需等网关首次调用即有真实版本
+		ServerInfo:      item.ServerInfo,
+		ProtocolVersion: item.ProtocolVersion,
 		Source:            "marketplace",
 		MarketplaceItemID: &item.ID,
 		IconURL:           item.IconURL,
@@ -631,6 +647,8 @@ func (s *MarketplaceService) toDetail(item *model.MarketplaceItem) *dto.Marketpl
 	_ = json.Unmarshal([]byte(item.ResourcesSnapshot), &resourcesSnapshot)
 	var promptsSnapshot []interface{}
 	_ = json.Unmarshal([]byte(item.PromptsSnapshot), &promptsSnapshot)
+	var serverInfo map[string]interface{}
+	_ = json.Unmarshal([]byte(item.ServerInfo), &serverInfo)
 
 	var tags []string
 	if item.Tags != "" {
@@ -669,6 +687,8 @@ func (s *MarketplaceService) toDetail(item *model.MarketplaceItem) *dto.Marketpl
 		ToolsSnapshot:        toolsSnapshot,
 		ResourcesSnapshot:    resourcesSnapshot,
 		PromptsSnapshot:      promptsSnapshot,
+		ServerInfo:           serverInfo,
+		ProtocolVersion:      item.ProtocolVersion,
 		Status:               item.Status,
 		CreatedAt:            item.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:            item.UpdatedAt.Format("2006-01-02T15:04:05Z"),

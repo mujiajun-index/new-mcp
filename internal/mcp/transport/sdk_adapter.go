@@ -23,12 +23,14 @@ var clientImpl = &mcp.Implementation{Name: "newmcp", Version: "1.0.0"}
 // 三种客户端传输。协议握手（initialize、notifications/initialized）、
 // Mcp-Session-Id、SSE 解析、分页等全部交由 SDK 处理。
 type SDKAdapter struct {
-	typ       TransportType
-	transport mcp.Transport
-	sess      *mcp.ClientSession
-	tools     []Tool
-	connected bool
-	mu        sync.Mutex
+	typ             TransportType
+	transport       mcp.Transport
+	sess            *mcp.ClientSession
+	tools           []Tool
+	protocolVersion string
+	serverInfo      *ServerInfo
+	connected       bool
+	mu              sync.Mutex
 }
 
 // NewStreamableHTTPAdapter 构造 Streamable HTTP 客户端传输。
@@ -71,6 +73,14 @@ func (a *SDKAdapter) Connect(ctx context.Context) error {
 		return fmt.Errorf("connect: %w", err)
 	}
 	a.sess = sess
+
+	// 记录握手结果:协商出的协议版本与 serverInfo,供服务详情/测试结果展示真实值。
+	if ir := sess.InitializeResult(); ir != nil {
+		a.protocolVersion = ir.ProtocolVersion
+		if ir.ServerInfo != nil {
+			a.serverInfo = &ServerInfo{Name: ir.ServerInfo.Name, Version: ir.ServerInfo.Version}
+		}
+	}
 
 	// SDK 的 Tools 迭代器自动翻页，收集全部工具。取工具失败不视为致命错误，
 	// 与既有行为一致（连接成功但工具列表为空）。
@@ -147,6 +157,18 @@ func (a *SDKAdapter) GetTools() []Tool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.tools
+}
+
+func (a *SDKAdapter) GetProtocolVersion() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.protocolVersion
+}
+
+func (a *SDKAdapter) GetServerInfo() *ServerInfo {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.serverInfo
 }
 
 // --- Resources / Prompts 透传 ---

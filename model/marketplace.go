@@ -32,6 +32,10 @@ type MarketplaceItem struct {
 	// 克隆上架时从源服务拷贝,市场详情页展示、安装/同步时回填引用行
 	ResourcesSnapshot    string         `json:"resources_snapshot" gorm:"type:text"`
 	PromptsSnapshot      string         `json:"prompts_snapshot" gorm:"type:text"`
+	// 上游握手信息:克隆上架时从源服务拷贝、手动刷新快照时从临时直连捕获。
+	// server_info 为 JSON({"name":...,"version":...}),protocol_version 为协商出的协议版本。
+	ServerInfo      string `json:"server_info" gorm:"type:varchar(4096);default:'{}'"`
+	ProtocolVersion string `json:"protocol_version" gorm:"size:32"`
 	// 商业化:服务级计费类型(free / per_call)
 	BillingType string `json:"billing_type" gorm:"size:16;default:per_call"`
 	// 商业化:服务级按次单价(展示货币,如 CNY 元);free 时忽略

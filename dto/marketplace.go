@@ -127,6 +127,9 @@ type MarketplaceDetail struct {
 	ToolsSnapshot        []interface{}          `json:"tools_snapshot"`
 	ResourcesSnapshot    map[string]interface{} `json:"resources_snapshot"` // {"resources":[],"templates":[]}
 	PromptsSnapshot      []interface{}          `json:"prompts_snapshot"`
+	// 上游握手信息(克隆/刷新时捕获):真实 serverInfo 与协商协议版本
+	ServerInfo      map[string]interface{} `json:"server_info"`
+	ProtocolVersion string                 `json:"protocol_version"`
 	Status               int                    `json:"status"`
 	CreatedAt            string                 `json:"created_at"`
 	UpdatedAt            string                 `json:"updated_at"`

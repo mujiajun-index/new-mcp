@@ -12,6 +12,7 @@ import (
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/internal/mcp/camera"
 	"github.com/mujkjk/newmcp/internal/mcp/installer"
+	"github.com/mujkjk/newmcp/internal/mcp/transport"
 	"github.com/mujkjk/newmcp/internal/mcp/virtual"
 	"github.com/mujkjk/newmcp/model"
 )
@@ -129,10 +130,21 @@ func (s *McpServiceService) TestConnection(req *dto.TestConnectionReq) (*dto.Tes
 	tools := adapter.GetTools()
 
 	return &dto.TestResult{
-		Connected:  true,
-		ToolsCount: len(tools),
-		LatencyMs:  time.Since(start).Milliseconds(),
+		Connected:       true,
+		ToolsCount:      len(tools),
+		LatencyMs:       time.Since(start).Milliseconds(),
+		ProtocolVersion: adapter.GetProtocolVersion(),
+		ServerInfo:      handshakeInfoMap(adapter),
 	}, nil
+}
+
+// handshakeInfoMap 从 adapter 握手结果取上游 serverInfo(name/version);未拿到时为 nil。
+func handshakeInfoMap(adapter transport.TransportAdapter) map[string]interface{} {
+	si := adapter.GetServerInfo()
+	if si == nil {
+		return nil
+	}
+	return map[string]interface{}{"name": si.Name, "version": si.Version}
 }
 
 // PrepareStdio runs the pre-flight detect/install for a stdio service
@@ -321,6 +333,13 @@ func (s *McpServiceService) refreshMarketplaceTools(svc *model.McpService) (*dto
 	if item.PromptsSnapshot != "" {
 		updates["prompts_cache"] = item.PromptsSnapshot
 	}
+	// 握手信息同理:市场项刷新过即有真实版本,一并同步到引用行
+	if item.ProtocolVersion != "" {
+		updates["protocol_version"] = item.ProtocolVersion
+	}
+	if item.ServerInfo != "" && item.ServerInfo != "{}" {
+		updates["server_info"] = item.ServerInfo
+	}
 	if err := model.DB.Model(&model.McpService{}).Where("id = ?", svc.ID).Updates(updates).Error; err != nil {
 		return nil, err
 	}
@@ -386,9 +405,11 @@ func (s *McpServiceService) Test(userID, serviceID int64) (*dto.TestResult, erro
 	tools := adapter.GetTools()
 
 	return &dto.TestResult{
-		Connected:  true,
-		ToolsCount: len(tools),
-		LatencyMs:  time.Since(start).Milliseconds(),
+		Connected:       true,
+		ToolsCount:      len(tools),
+		LatencyMs:       time.Since(start).Milliseconds(),
+		ProtocolVersion: adapter.GetProtocolVersion(),
+		ServerInfo:      handshakeInfoMap(adapter),
 	}, nil
 }
 

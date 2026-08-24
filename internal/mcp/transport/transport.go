@@ -34,6 +34,11 @@ type TransportAdapter interface {
 	GetType() TransportType
 	GetTools() []Tool
 
+	// 握手信息(上游 initialize result):GetProtocolVersion 为协商出的协议版本,
+	// GetServerInfo 为上游 serverInfo(name/version)。未完成握手时分别为空串/nil。
+	GetProtocolVersion() string
+	GetServerInfo() *ServerInfo
+
 	// Resources / Prompts 透传(网关聚合用)。返回值为 MCP 规范形态的 result JSON:
 	// ListResources/ListResourceTemplates/ListPrompts 返回 {"resources":[...]} 等,
 	// ReadResource/GetPrompt 返回完整 result;上游未声明对应能力时 List* 返回空列表。

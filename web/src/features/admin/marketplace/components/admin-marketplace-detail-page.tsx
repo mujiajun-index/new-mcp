@@ -78,6 +78,9 @@ export function AdminMarketplaceDetailPage() {
   const resources = item.resources_snapshot?.resources || []
   const templates = item.resources_snapshot?.templates || []
   const prompts = item.prompts_snapshot || []
+  // 上游握手拿到的真实服务版本(优先于手填的上架版本展示)
+  const serverName = typeof item.server_info?.name === 'string' ? item.server_info.name : ''
+  const serverVersion = typeof item.server_info?.version === 'string' ? item.server_info.version : ''
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
@@ -88,9 +91,13 @@ export function AdminMarketplaceDetailPage() {
       {/* 概览(只读);右上角为快照手动刷新(仅平台托管项) */}
       <div className="rounded-xl border bg-card p-5">
         <div className="flex items-start justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <h2 className="text-xl font-semibold">{item.display_name || item.name}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{item.name} · v{item.version}</p>
+            <p className="mt-1 break-words text-sm text-muted-foreground">
+              {item.name} · {serverVersion
+                ? <>{serverName && <span>{serverName} · </span>}v{serverVersion}</>
+                : <>v{item.version}</>}
+            </p>
           </div>
           {item.category === 'instant' && (
             <Button variant="outline" size="sm" className="shrink-0 gap-1.5" disabled={refreshMutation.isPending} onClick={() => refreshMutation.mutate()}>
@@ -116,6 +123,8 @@ export function AdminMarketplaceDetailPage() {
           <div><span className="text-muted-foreground">{t('marketplace.rating')}</span>: {item.rating_count > 0 ? item.rating_avg.toFixed(1) : '-'}</div>
           <div><span className="text-muted-foreground">{t('services.transportType')}</span>: {item.transport_type}</div>
           <div><span className="text-muted-foreground">{t('common.createdAt')}</span>: {item.created_at.slice(0, 10)}</div>
+          <div><span className="text-muted-foreground">{t('services.protocolVersion')}</span>: {item.protocol_version || '-'}</div>
+          <div><span className="text-muted-foreground">{t('marketplace.listingVersion')}</span>: v{item.version}</div>
         </div>
         {item.description && <p className="mt-3 text-sm text-muted-foreground">{item.description}</p>}
       </div>

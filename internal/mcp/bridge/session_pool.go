@@ -84,15 +84,25 @@ func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (
 
 	p.sessions[svc.ID] = session
 
-	// Update tools cache in database
-	if toolsData, err := json.Marshal(session.Tools); err == nil {
-		now := time.Now()
-		model.DB.Model(&model.McpService{}).Where("id = ?", svc.ID).Updates(map[string]interface{}{
-			"tools_cache":    string(toolsData),
-			"tools_updated_at": now,
-			"health_status":  "healthy",
-		})
+	// Update tools cache + handshake info in database
+	now := time.Now()
+	updates := map[string]interface{}{
+		"tools_updated_at": now,
+		"health_status":    "healthy",
 	}
+	if toolsData, err := json.Marshal(session.Tools); err == nil {
+		updates["tools_cache"] = string(toolsData)
+	}
+	// 上游握手拿到的真实协议版本/serverInfo 一并落库;拿不到时不动旧值
+	if v := adapter.GetProtocolVersion(); v != "" {
+		updates["protocol_version"] = v
+	}
+	if si := adapter.GetServerInfo(); si != nil {
+		if b, err := json.Marshal(si); err == nil {
+			updates["server_info"] = string(b)
+		}
+	}
+	model.DB.Model(&model.McpService{}).Where("id = ?", svc.ID).Updates(updates)
 
 	// 资源/提示缓存异步预热:不阻塞连接路径(tools/call 热路径不为列表枚举多等两次上游往返),
 	// 失败静默(缓存留空,由"刷新"或下次重连补齐)。

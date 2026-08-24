@@ -506,6 +506,9 @@ export function ServiceCreatePage() {
                 <div className="space-y-1 text-sm">
                   <p className="font-medium text-emerald-600 dark:text-emerald-400">{t('services.create.testSuccess')}</p>
                   <p className="text-muted-foreground">{t('services.create.testInfo', { count: testResult.tools_count, ms: testResult.latency_ms })}</p>
+                  {testResult.protocol_version && (
+                    <p className="text-muted-foreground">{t('services.create.testProtocol', { version: testResult.protocol_version })}</p>
+                  )}
                 </div>
               ) : (
                 <p className="text-sm text-red-600 dark:text-red-400">{t('services.create.testFailed', { error: testResult.error || t('common.unknownError') })}</p>

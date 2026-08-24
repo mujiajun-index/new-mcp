@@ -127,6 +127,7 @@ export interface UpdateServiceReq {
 export interface TestResult {
   connected: boolean
   server_info: Record<string, unknown>
+  protocol_version?: string
   tools_count: number
   latency_ms: number
   error?: string
@@ -443,6 +444,9 @@ export interface MarketplaceDetail {
   // 形态同 services 的资源/提示缓存;旧市场项无快照时为 null
   resources_snapshot: { resources: McpResource[]; templates: McpResourceTemplate[] } | null
   prompts_snapshot: McpPrompt[] | null
+  // 上游握手信息(克隆上架/手动刷新时捕获);未刷新过的市场项为空
+  server_info: { name?: string; version?: string } | null
+  protocol_version: string
   status: number
   created_at: string
   updated_at: string

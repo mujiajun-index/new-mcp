@@ -86,11 +86,12 @@ type PrepareStdioResult struct {
 }
 
 type TestResult struct {
-	Connected  bool                   `json:"connected"`
-	Error      string                 `json:"error,omitempty"`
-	ServerInfo map[string]interface{} `json:"server_info"`
-	ToolsCount int                    `json:"tools_count"`
-	LatencyMs  int64                  `json:"latency_ms"`
+	Connected       bool                   `json:"connected"`
+	Error           string                 `json:"error,omitempty"`
+	ServerInfo      map[string]interface{} `json:"server_info"`
+	ProtocolVersion string                 `json:"protocol_version,omitempty"`
+	ToolsCount      int                    `json:"tools_count"`
+	LatencyMs       int64                  `json:"latency_ms"`
 }
 
 type RefreshToolsResult struct {
