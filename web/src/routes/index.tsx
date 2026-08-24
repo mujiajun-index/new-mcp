@@ -364,7 +364,7 @@ function EndpointsSection({ baseUrl }: { baseUrl: string }) {
           </p>
         </div>
 
-        <div className="grid gap-6 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           {endpoints.map((ep, i) => {
             const url = `${base}${ep.path}`
             const isCopied = copied === url
@@ -395,8 +395,8 @@ function EndpointsSection({ baseUrl }: { baseUrl: string }) {
                   <p className="mb-4 text-sm text-muted-foreground">{ep.desc}</p>
 
                   <div className="flex items-center gap-2">
-                    <div className="flex-1 overflow-hidden rounded-lg border bg-muted/50 px-3 py-2">
-                      <code className="block truncate text-sm font-mono text-foreground">{url}</code>
+                    <div className="min-w-0 flex-1 overflow-hidden rounded-lg border bg-muted/50 px-3 py-2">
+                      <code className="block truncate font-mono text-xs text-foreground sm:text-sm">{url}</code>
                     </div>
                     <Button
                       variant="ghost"
@@ -437,13 +437,13 @@ function EndpointsSection({ baseUrl }: { baseUrl: string }) {
 
             <p className="mb-4 text-sm text-muted-foreground">{t('landing.authDesc')}</p>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {authHeaders.map((header) => {
                 const isCopied = copied === header
                 return (
                   <div key={header} className="flex items-center gap-2">
-                    <div className="flex-1 overflow-hidden rounded-lg border bg-muted/50 px-3 py-2">
-                      <code className="block truncate text-sm font-mono text-foreground">{header}</code>
+                    <div className="min-w-0 flex-1 overflow-hidden rounded-lg border bg-muted/50 px-3 py-2">
+                      <code className="block truncate font-mono text-xs text-foreground sm:text-sm">{header}</code>
                     </div>
                     <Button
                       variant="ghost"

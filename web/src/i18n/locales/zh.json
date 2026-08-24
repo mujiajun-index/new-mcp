@@ -442,7 +442,8 @@
     "promptsList": "提示列表 ({{count}})",
     "noResources": "暂无资源",
     "noPrompts": "暂无提示",
-    "resourceTemplate": "模板"
+    "resourceTemplate": "模板",
+    "resourceKind": "资源"
   },
   "groups": {
     "subtitle": "将多个服务聚合为统一的 MCP 端点",

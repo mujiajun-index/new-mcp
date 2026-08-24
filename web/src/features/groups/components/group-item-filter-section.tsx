@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
+import { SectionCard } from '@/components/section-card'
 import { Check, ChevronDown, ChevronRight, Settings2 } from 'lucide-react'
 
 // 分组内资源/提示的条目级勾选管理(与工具管理同一交互,独立成组件避免页面继续膨胀)。
@@ -37,6 +38,8 @@ export function GroupItemFilterSection({ title, manageLabel, searchPlaceholder, 
   const [states, setStates] = useState<Record<string, boolean>>({})
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
+  // 展开描述的条目(单开,两个视图共用;面板内行点击是启用/禁用,名称点击 stopPropagation 后走这里)
+  const [openKey, setOpenKey] = useState<string | null>(null)
 
   const enabledCount = items.filter((i) => i.enabled).length
 
@@ -114,17 +117,15 @@ export function GroupItemFilterSection({ title, manageLabel, searchPlaceholder, 
   }
 
   return (
-    <div className="rounded-xl border bg-card p-5">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        {items.length > 0 && (
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => (showManager ? setShowManager(false) : openManager())}>
-            <Settings2 className="h-3.5 w-3.5" />
-            {showManager ? t('groups.collapse') : manageLabel}
-          </Button>
-        )}
-      </div>
-
+    <SectionCard
+      title={title}
+      actions={items.length > 0 ? (
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => (showManager ? setShowManager(false) : openManager())}>
+          <Settings2 className="h-3.5 w-3.5" />
+          {showManager ? t('groups.collapse') : manageLabel}
+        </Button>
+      ) : undefined}
+    >
       {items.length === 0 ? null : showManager ? (
         <div className="space-y-3">
           <div className="relative">
@@ -175,8 +176,22 @@ export function GroupItemFilterSection({ title, manageLabel, searchPlaceholder, 
                               {isEnabled && <Check className="h-3 w-3" />}
                             </span>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-mono break-all">{item.key}</p>
-                              {item.description && <p className="text-xs text-muted-foreground break-all">{item.description}</p>}
+                              <div className="flex items-start gap-1">
+                                <button
+                                  type="button"
+                                  disabled={!item.description}
+                                  onClick={(e) => { e.stopPropagation(); setOpenKey((prev) => (prev === k ? null : k)) }}
+                                  className={`min-w-0 flex-1 text-left text-sm font-mono break-all ${item.description ? 'cursor-pointer' : 'cursor-default'}`}
+                                >
+                                  {item.key}
+                                </button>
+                                {item.description && (openKey === k
+                                  ? <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                  : <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />)}
+                              </div>
+                              {item.description && openKey === k && (
+                                <p className="text-xs text-muted-foreground break-all">{item.description}</p>
+                              )}
                               {item.meta && item.meta.length > 0 && (
                                 <div className="mt-0.5 flex flex-wrap gap-1">
                                   {item.meta.map((m) => (
@@ -214,26 +229,43 @@ export function GroupItemFilterSection({ title, manageLabel, searchPlaceholder, 
           {enabledCount === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-6">{t('groups.noEnabledItemsHint')}</p>
           ) : (
-            items.filter((i) => i.enabled).map((item) => (
-              <div key={itemKey(item)} className="flex items-start gap-3 rounded-lg border p-3">
-                <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium font-mono break-all">{item.key}</p>
-                  <p className="text-xs text-muted-foreground">{t('groups.itemFrom', { name: item.service_name })}</p>
-                  {item.description && <p className="mt-1 text-xs text-muted-foreground break-all">{item.description}</p>}
-                  {item.meta && item.meta.length > 0 && (
-                    <div className="mt-0.5 flex flex-wrap gap-1">
-                      {item.meta.map((m) => (
-                        <span key={m} className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{m}</span>
-                      ))}
+            items.filter((i) => i.enabled).map((item) => {
+              const ik = itemKey(item)
+              return (
+                <div key={ik} className="flex items-start gap-3 rounded-lg border p-3">
+                  <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start gap-1">
+                      <button
+                        type="button"
+                        disabled={!item.description}
+                        onClick={() => setOpenKey((k) => (k === ik ? null : ik))}
+                        className={`min-w-0 flex-1 text-left text-sm font-medium font-mono break-all ${item.description ? 'cursor-pointer' : 'cursor-default'}`}
+                      >
+                        {item.key}
+                      </button>
+                      {item.description && (openKey === ik
+                        ? <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        : <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />)}
                     </div>
-                  )}
+                    <p className="text-xs text-muted-foreground">{t('groups.itemFrom', { name: item.service_name })}</p>
+                    {item.description && openKey === ik && (
+                      <p className="mt-1 text-xs text-muted-foreground break-all">{item.description}</p>
+                    )}
+                    {item.meta && item.meta.length > 0 && (
+                      <div className="mt-0.5 flex flex-wrap gap-1">
+                        {item.meta.map((m) => (
+                          <span key={m} className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{m}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))
+              )
+            })
           )}
         </div>
       )}
-    </div>
+    </SectionCard>
   )
 }

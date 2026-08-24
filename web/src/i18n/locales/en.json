@@ -442,7 +442,8 @@
     "promptsList": "Prompts ({{count}})",
     "noResources": "No resources",
     "noPrompts": "No prompts",
-    "resourceTemplate": "Template"
+    "resourceTemplate": "Template",
+    "resourceKind": "Resource"
   },
   "groups": {
     "subtitle": "Aggregate multiple services into a unified MCP endpoint",

@@ -3,7 +3,8 @@ import { useNavigate, useParams } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { getGroup, deleteGroup, removeGroupService, getGroupTools, getGroupEndpoint, updateGroup, batchUpdateGroupTools, checkGroupName, getGroupResources, batchUpdateGroupResources, getGroupPrompts, batchUpdateGroupPrompts } from '../api'
 import { getServices } from '@/features/services/api'
-import { ToolParams } from '@/components/tool-params'
+import { ToolItem, ToolParams } from '@/components/tool-params'
+import { SectionCard } from '@/components/section-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
@@ -41,6 +42,8 @@ export function GroupDetailPage() {
   const [toolStates, setToolStates] = useState<Record<string, boolean>>({})
   const [expandedServices, setExpandedServices] = useState<Set<string>>(new Set())
   const [searchQuery, setSearchQuery] = useState('')
+  // 管理面板中展开描述的工具(单开;行点击是启用/禁用,名称点击 stopPropagation 后走这里)
+  const [descOpenKey, setDescOpenKey] = useState<string | null>(null)
 
   const { data: groupData, isLoading } = useQuery({
     queryKey: ['group', id],
@@ -393,7 +396,7 @@ export function GroupDetailPage() {
           {endpoint.streamable_http_url && (
             <div className="flex items-center gap-2">
               <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
-              <code className="flex-1 rounded bg-muted px-2 py-1 text-xs truncate">{endpoint.streamable_http_url}</code>
+              <code className="min-w-0 flex-1 overflow-hidden rounded bg-muted px-2 py-1 text-xs truncate">{endpoint.streamable_http_url}</code>
               <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => copyToClipboard(endpoint.streamable_http_url)}>
                 <Copy className="h-3.5 w-3.5" />
               </Button>
@@ -402,7 +405,7 @@ export function GroupDetailPage() {
           {endpoint.websocket_url && (
             <div className="flex items-center gap-2">
               <Radio className="h-4 w-4 text-muted-foreground shrink-0" />
-              <code className="flex-1 rounded bg-muted px-2 py-1 text-xs truncate">{endpoint.websocket_url}</code>
+              <code className="min-w-0 flex-1 overflow-hidden rounded bg-muted px-2 py-1 text-xs truncate">{endpoint.websocket_url}</code>
               <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => copyToClipboard(endpoint.websocket_url)}>
                 <Copy className="h-3.5 w-3.5" />
               </Button>
@@ -481,19 +484,15 @@ export function GroupDetailPage() {
       </div>
 
       {/* Aggregated tools */}
-      <div className="rounded-xl border bg-card p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold">
-            {t('groups.toolsListTitle', { count: tools.length, enabled: enabledCount }).replace(`(${tools.length})`, `(${enabledCount}/${tools.length})`)}
-          </h2>
-          {tools.length > 0 && (
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => showToolManager ? setShowToolManager(false) : openToolManager()}>
-              <Settings2 className="h-3.5 w-3.5" />
-              {showToolManager ? t('groups.collapse') : t('groups.manageTools')}
-            </Button>
-          )}
-        </div>
-
+      <SectionCard
+        title={t('groups.toolsListTitle', { count: tools.length, enabled: enabledCount }).replace(`(${tools.length})`, `(${enabledCount}/${tools.length})`)}
+        actions={tools.length > 0 ? (
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => showToolManager ? setShowToolManager(false) : openToolManager()}>
+            <Settings2 className="h-3.5 w-3.5" />
+            {showToolManager ? t('groups.collapse') : t('groups.manageTools')}
+          </Button>
+        ) : undefined}
+      >
         {tools.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-6">{t('groups.toolsEmptyHint')}</p>
         ) : showToolManager ? (
@@ -557,9 +556,22 @@ export function GroupDetailPage() {
                                 {isEnabled && <Check className="h-3 w-3" />}
                               </span>
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm font-mono">{t.original_name}</p>
-                                {t.description && (
-                                  <p className="text-xs text-muted-foreground truncate">{t.description}</p>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    disabled={!t.description}
+                                    title={t.original_name}
+                                    onClick={(e) => { e.stopPropagation(); setDescOpenKey((k) => (k === key ? null : key)) }}
+                                    className={`min-w-0 flex-1 truncate text-left text-sm font-mono ${t.description ? 'cursor-pointer' : 'cursor-default'}`}
+                                  >
+                                    {t.original_name}
+                                  </button>
+                                  {t.description && (descOpenKey === key
+                                    ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                    : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />)}
+                                </div>
+                                {t.description && descOpenKey === key && (
+                                  <p className="break-words text-xs text-muted-foreground">{t.description}</p>
                                 )}
                                 <ToolParams schema={t.inputSchema} />
                               </div>
@@ -603,22 +615,19 @@ export function GroupDetailPage() {
               <p className="text-sm text-muted-foreground text-center py-6">{t('groups.noEnabledToolsHint')}</p>
             ) : (
               tools.filter(t => t.enabled).map((tool) => (
-                <div key={tool.name} className="flex items-start gap-3 rounded-lg border p-3">
-                  <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium font-mono">{tool.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {t('groups.toolFrom', { name: tool.service_name, original: tool.original_name })}
-                    </p>
-                    {tool.description && <p className="mt-1 text-xs text-muted-foreground">{tool.description}</p>}
-                    <ToolParams schema={tool.inputSchema} />
-                  </div>
-                </div>
+                <ToolItem
+                  key={tool.name}
+                  name={tool.name}
+                  description={tool.description}
+                  schema={tool.inputSchema}
+                  leading={<span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-emerald-500" />}
+                  subtitle={<p className="break-words text-xs text-muted-foreground">{t('groups.toolFrom', { name: tool.service_name, original: tool.original_name })}</p>}
+                />
               ))
             )}
           </div>
         )}
-      </div>
+      </SectionCard>
 
       {/* Aggregated resources (per-item enable) */}
       <GroupItemFilterSection

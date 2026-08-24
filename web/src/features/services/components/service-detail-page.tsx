@@ -7,11 +7,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { ToolParams } from '@/components/tool-params'
+import { ToolItem } from '@/components/tool-params'
+import { SectionCard } from '@/components/section-card'
 import { toast } from 'sonner'
 import {
   ArrowLeft, Trash2, Zap, RefreshCw, Server,
-  Pencil, X, Check, Loader2,
+  Pencil, X, Check, Loader2, ChevronDown, ChevronRight,
 } from 'lucide-react'
 import type { McpTool, McpResource, McpResourceTemplate, McpPrompt, AuthType, UpdateServiceReq } from '@/types'
 
@@ -65,6 +66,8 @@ export function ServiceDetailPage() {
   ]
 
   const [editing, setEditing] = useState(false)
+  // 资源/模板/提示的展开项(单开):点击名称切换描述显隐,与工具条目同一交互
+  const [openItem, setOpenItem] = useState<string | null>(null)
   const [form, setForm] = useState<EditForm>({
     display_name: '',
     description: '',
@@ -502,8 +505,7 @@ export function ServiceDetailPage() {
       )}
 
       {/* Tools */}
-      <div className="rounded-xl border bg-card p-5">
-        <h2 className="mb-3 text-sm font-semibold">{t('services.toolsList', { count: tools.length })}</h2>
+      <SectionCard title={t('services.toolsList', { count: tools.length })}>
         {tools.length === 0 ? (
           <div className="flex flex-col items-center py-8 text-center">
             <Server className="h-8 w-8 text-muted-foreground/30 mb-2" />
@@ -513,62 +515,95 @@ export function ServiceDetailPage() {
         ) : (
           <div className="space-y-2">
             {tools.map((tool) => (
-              <div key={tool.name} className="rounded-lg border p-3">
-                <p className="text-sm font-medium font-mono">{tool.name}</p>
-                {tool.description && (
-                  <p className="mt-0.5 text-xs text-muted-foreground">{tool.description}</p>
-                )}
-                <ToolParams schema={tool.inputSchema} />
-              </div>
+              <ToolItem
+                key={tool.name}
+                name={tool.name}
+                description={tool.description}
+                schema={tool.inputSchema}
+              />
             ))}
           </div>
         )}
-      </div>
+      </SectionCard>
 
       {/* Resources */}
-      <div className="rounded-xl border bg-card p-5">
-        <h2 className="mb-3 text-sm font-semibold">{t('services.resourcesList', { count: resources.length + templates.length })}</h2>
+      <SectionCard title={t('services.resourcesList', { count: resources.length + templates.length })}>
         {resources.length === 0 && templates.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-6">{t('services.noResources')}</p>
         ) : (
           <div className="space-y-2">
             {resources.map((r) => (
               <div key={r.uri} className="rounded-lg border p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-medium font-mono break-all">{r.name || r.uri}</p>
-                  {r.mimeType && (
-                    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{r.mimeType}</span>
-                  )}
+                <div className="flex items-start gap-1">
+                  <button
+                    type="button"
+                    disabled={!r.description}
+                    onClick={() => setOpenItem((v) => (v === `res:${r.uri}` ? null : `res:${r.uri}`))}
+                    className={`min-w-0 flex-1 text-left text-sm font-medium font-mono break-all ${r.description ? 'cursor-pointer' : 'cursor-default'}`}
+                  >
+                    {r.name || r.uri}
+                  </button>
+                  {r.description && (openItem === `res:${r.uri}`
+                    ? <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    : <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />)}
                 </div>
                 {r.name && <p className="mt-0.5 text-xs font-mono text-muted-foreground break-all">{r.uri}</p>}
-                {r.description && <p className="mt-0.5 text-xs text-muted-foreground">{r.description}</p>}
+                {r.description && openItem === `res:${r.uri}` && <p className="mt-0.5 text-xs text-muted-foreground">{r.description}</p>}
+                <div className="mt-0.5 flex flex-wrap gap-1">
+                  <span className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{t('services.resourceKind')}</span>
+                  {r.mimeType && <span className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{r.mimeType}</span>}
+                </div>
               </div>
             ))}
             {templates.map((tpl) => (
               <div key={tpl.uriTemplate} className="rounded-lg border border-dashed p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-medium font-mono break-all">{tpl.name || tpl.uriTemplate}</p>
-                  <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">{t('services.resourceTemplate')}</span>
+                <div className="flex items-start gap-1">
+                  <button
+                    type="button"
+                    disabled={!tpl.description}
+                    onClick={() => setOpenItem((v) => (v === `tpl:${tpl.uriTemplate}` ? null : `tpl:${tpl.uriTemplate}`))}
+                    className={`min-w-0 flex-1 text-left text-sm font-medium font-mono break-all ${tpl.description ? 'cursor-pointer' : 'cursor-default'}`}
+                  >
+                    {tpl.name || tpl.uriTemplate}
+                  </button>
+                  {tpl.description && (openItem === `tpl:${tpl.uriTemplate}`
+                    ? <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    : <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />)}
                 </div>
                 {tpl.name && <p className="mt-0.5 text-xs font-mono text-muted-foreground break-all">{tpl.uriTemplate}</p>}
-                {tpl.description && <p className="mt-0.5 text-xs text-muted-foreground">{tpl.description}</p>}
+                {tpl.description && openItem === `tpl:${tpl.uriTemplate}` && <p className="mt-0.5 text-xs text-muted-foreground">{tpl.description}</p>}
+                <div className="mt-0.5 flex flex-wrap gap-1">
+                  <span className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{t('services.resourceTemplate')}</span>
+                  {tpl.mimeType && <span className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{tpl.mimeType}</span>}
+                </div>
               </div>
             ))}
           </div>
         )}
-      </div>
+      </SectionCard>
 
       {/* Prompts */}
-      <div className="rounded-xl border bg-card p-5">
-        <h2 className="mb-3 text-sm font-semibold">{t('services.promptsList', { count: prompts.length })}</h2>
+      <SectionCard title={t('services.promptsList', { count: prompts.length })}>
         {prompts.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-6">{t('services.noPrompts')}</p>
         ) : (
           <div className="space-y-2">
             {prompts.map((p) => (
               <div key={p.name} className="rounded-lg border p-3">
-                <p className="text-sm font-medium font-mono">{p.name}</p>
-                {p.description && <p className="mt-0.5 text-xs text-muted-foreground">{p.description}</p>}
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={!p.description}
+                    onClick={() => setOpenItem((v) => (v === `prompt:${p.name}` ? null : `prompt:${p.name}`))}
+                    className={`min-w-0 flex-1 text-left text-sm font-medium font-mono ${p.description ? 'cursor-pointer' : 'cursor-default'}`}
+                  >
+                    {p.name}
+                  </button>
+                  {p.description && (openItem === `prompt:${p.name}`
+                    ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />)}
+                </div>
+                {p.description && openItem === `prompt:${p.name}` && <p className="mt-0.5 text-xs text-muted-foreground">{p.description}</p>}
                 {p.arguments && p.arguments.length > 0 && (
                   <div className="mt-1 flex flex-wrap gap-1">
                     {p.arguments.map((a) => (
@@ -582,7 +617,7 @@ export function ServiceDetailPage() {
             ))}
           </div>
         )}
-      </div>
+      </SectionCard>
     </div>
   )
 }

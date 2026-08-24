@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 
 // 工具参数展示:参数名 chips(必填带 *),点击 chip 展开该参数的类型与描述,再点收起。
+// ToolItem:工具条目卡片,点击工具名展开/收起工具描述(默认收起,与参数 chips 同一交互)。
 // 分组详情(聚合工具列表)与服务详情(工具列表)共用。
 export function ToolParams({ schema }: { schema?: Record<string, unknown> }) {
   const { t } = useTranslation()
@@ -20,13 +22,13 @@ export function ToolParams({ schema }: { schema?: Record<string, unknown> }) {
             key={name}
             type="button"
             onClick={(e) => { e.stopPropagation(); setSelected(selected === name ? null : name) }}
-            className={`rounded px-1.5 py-0.5 font-mono text-[10px] transition-colors ${
+            className={`inline-flex max-w-full items-baseline rounded px-1.5 py-0.5 font-mono text-[10px] transition-colors ${
               selected === name
                 ? 'bg-primary text-primary-foreground'
                 : 'bg-muted text-muted-foreground hover:text-foreground'
             }`}
           >
-            {name}{required.has(name) && <span className="ml-0.5 text-red-500">*</span>}
+            <span className="truncate">{name}</span>{required.has(name) && <span className="ml-0.5 shrink-0 text-red-500">*</span>}
           </button>
         ))}
       </div>
@@ -44,6 +46,48 @@ export function ToolParams({ schema }: { schema?: Record<string, unknown> }) {
           {meta.description && <span className="min-w-0 text-muted-foreground">{meta.description}</span>}
         </div>
       )}
+    </div>
+  )
+}
+
+export function ToolItem({
+  name,
+  description,
+  schema,
+  leading,
+  subtitle,
+}: {
+  name: string
+  description?: string
+  schema?: Record<string, unknown>
+  leading?: ReactNode
+  subtitle?: ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="flex items-start gap-3 rounded-lg border p-3">
+      {leading}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            disabled={!description}
+            onClick={() => setOpen((v) => !v)}
+            title={name}
+            className={`min-w-0 flex-1 truncate text-left text-sm font-medium font-mono ${description ? 'cursor-pointer' : 'cursor-default'}`}
+          >
+            {name}
+          </button>
+          {description && (open
+            ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />)}
+        </div>
+        {subtitle}
+        {open && description && (
+          <p className="mt-1 break-words text-xs text-muted-foreground">{description}</p>
+        )}
+        <ToolParams schema={schema} />
+      </div>
     </div>
   )
 }
