@@ -22,11 +22,16 @@ async function openStream(facingMode: FacingMode): Promise<MediaStream> {
  * 手持设备（手机/平板）判定：桌面 Chrome 会把请求的 facingMode 约束原样回显到
  * getSettings()，笔记本红外摄像头还会让设备数虚增，这些信号在桌面端都不可信，
  * 因此只有手持设备才信任 track 上报值。请求桌面站点的 iPad UA 形如 Macintosh，
- * 需额外用多点触屏区分（Windows 触屏本 UA 含 Windows NT，不会误入该分支）。
+ * 需按触屏硬件区分，但 maxTouchPoints 在新版桌面 Chrome/Firefox 会因触控板虚报
+ * 为 >0（真 Mac 被误判成手持设备、摄像头错标为后置），故改用 (any-pointer: coarse)：
+ * 它描述真实触屏硬件，UA 伪装与触控板都影响不到（Windows 触屏本 UA 含 Windows NT，
+ * 不会误入该分支）。
  */
 function isHandheldDevice(): boolean {
   const ua = navigator.userAgent
-  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) return true
+  if (/Macintosh/i.test(ua)) return window.matchMedia('(any-pointer: coarse)').matches
+  return false
 }
 
 /**
