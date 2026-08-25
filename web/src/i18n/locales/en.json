@@ -386,6 +386,12 @@
       "requiredMissing": "Required parameter missing",
       "truncated": "Result truncated"
     },
+    "resourceTest": {
+      "resolvedUri": "Resolved URI"
+    },
+    "promptTest": {
+      "noParams": "This prompt takes no arguments"
+    },
     "create": {
       "title": "Register New Service",
       "step": "Step {{current}} — {{total}}",

@@ -458,27 +458,16 @@ func (s *McpServiceService) CallTool(userID, serviceID int64, req *dto.CallToolR
 		if vErr != nil {
 			return &dto.CallToolResult{IsError: true, Error: vErr.Error(), DurationMs: time.Since(start).Milliseconds()}, nil
 		}
-		return parseToolCallResult(raw, start)
+		return parseTestResult(raw, start)
 	}
 
-	// 普通服务:优先复用会话池连接(stdio 不必每次拉起子进程);池未初始化时回退一次性连接(同 Test)。
-	var adapter transport.TransportAdapter
-	if SessionPool != nil {
-		session, pErr := SessionPool.GetOrConnect(ctx, svc)
-		if pErr != nil {
-			return &dto.CallToolResult{IsError: true, Error: pErr.Error(), DurationMs: time.Since(start).Milliseconds()}, nil
-		}
-		adapter = session.Adapter
-	} else {
-		adapter = bridge.CreateAdapter(svc)
-		if adapter == nil {
-			return &dto.CallToolResult{IsError: true, Error: "不支持的传输类型"}, nil
-		}
-		if cErr := adapter.Connect(ctx); cErr != nil {
-			return &dto.CallToolResult{IsError: true, Error: cErr.Error(), DurationMs: time.Since(start).Milliseconds()}, nil
-		}
-		defer adapter.Close()
+	// 普通服务:获取测试用适配器(优先复用会话池,见 acquireTestAdapter)。
+	adapter, closeAdapter, fail := acquireTestAdapter(ctx, svc)
+	if fail != nil {
+		fail.DurationMs = time.Since(start).Milliseconds()
+		return fail, nil
 	}
+	defer closeAdapter()
 
 	// 工具名仅在服务自身工具列表中校验(单服务调试,不涉及网关命名空间路由)。
 	if !serviceHasTool(adapter, svc, req.Name) {
@@ -492,7 +481,84 @@ func (s *McpServiceService) CallTool(userID, serviceID int64, req *dto.CallToolR
 	if cErr != nil {
 		return &dto.CallToolResult{IsError: true, Error: cErr.Error(), DurationMs: time.Since(start).Milliseconds()}, nil
 	}
-	return parseToolCallResult(raw, start)
+	return parseTestResult(raw, start)
+}
+
+// ReadResource 服务详情页资源测试:对指定 URI 执行 resources/read。
+// 与工具测试同策略:不计费的调试用途,市场(平台托管)服务禁止;虚拟服务无资源能力。
+func (s *McpServiceService) ReadResource(userID, serviceID int64, req *dto.ReadResourceReq) (*dto.CallToolResult, error) {
+	svc, err := model.GetServiceByID(userID, serviceID)
+	if err != nil {
+		return nil, err
+	}
+	if svc.Source == "marketplace" {
+		return &dto.CallToolResult{IsError: true, Error: "平台托管(市场)服务不支持资源测试"}, nil
+	}
+	if svc.TransportType == "virtual" {
+		return &dto.CallToolResult{IsError: true, Error: "虚拟服务不支持资源测试"}, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	start := time.Now()
+	adapter, closeAdapter, fail := acquireTestAdapter(ctx, svc)
+	if fail != nil {
+		fail.DurationMs = time.Since(start).Milliseconds()
+		return fail, nil
+	}
+	defer closeAdapter()
+	raw, rErr := adapter.ReadResource(ctx, req.URI)
+	if rErr != nil {
+		return &dto.CallToolResult{IsError: true, Error: rErr.Error(), DurationMs: time.Since(start).Milliseconds()}, nil
+	}
+	return parseTestResult(raw, start)
+}
+
+// GetPrompt 服务详情页提示测试:按传入参数渲染提示(prompts/get),限制策略同 ReadResource。
+func (s *McpServiceService) GetPrompt(userID, serviceID int64, req *dto.GetPromptReq) (*dto.CallToolResult, error) {
+	svc, err := model.GetServiceByID(userID, serviceID)
+	if err != nil {
+		return nil, err
+	}
+	if svc.Source == "marketplace" {
+		return &dto.CallToolResult{IsError: true, Error: "平台托管(市场)服务不支持提示测试"}, nil
+	}
+	if svc.TransportType == "virtual" {
+		return &dto.CallToolResult{IsError: true, Error: "虚拟服务不支持提示测试"}, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	start := time.Now()
+	adapter, closeAdapter, fail := acquireTestAdapter(ctx, svc)
+	if fail != nil {
+		fail.DurationMs = time.Since(start).Milliseconds()
+		return fail, nil
+	}
+	defer closeAdapter()
+	raw, gErr := adapter.GetPrompt(ctx, req.Name, req.Arguments)
+	if gErr != nil {
+		return &dto.CallToolResult{IsError: true, Error: gErr.Error(), DurationMs: time.Since(start).Milliseconds()}, nil
+	}
+	return parseTestResult(raw, start)
+}
+
+// acquireTestAdapter 获取测试用上游适配器:优先复用会话池连接(stdio 不必每次拉起子进程),
+// 池未初始化时回退一次性连接(同 Test)。失败时返回可直接下发的 IsError 结果(DurationMs 由调用方补)。
+func acquireTestAdapter(ctx context.Context, svc *model.McpService) (transport.TransportAdapter, func(), *dto.CallToolResult) {
+	if SessionPool != nil {
+		session, err := SessionPool.GetOrConnect(ctx, svc)
+		if err != nil {
+			return nil, nil, &dto.CallToolResult{IsError: true, Error: err.Error()}
+		}
+		return session.Adapter, func() {}, nil
+	}
+	adapter := bridge.CreateAdapter(svc)
+	if adapter == nil {
+		return nil, nil, &dto.CallToolResult{IsError: true, Error: "不支持的传输类型"}
+	}
+	if err := adapter.Connect(ctx); err != nil {
+		return nil, nil, &dto.CallToolResult{IsError: true, Error: err.Error()}
+	}
+	return adapter, func() { adapter.Close() }, nil
 }
 
 // serviceHasTool 校验工具名是否属于该服务:优先用 adapter 实时工具列表,回退 tools_cache。
@@ -513,8 +579,9 @@ func serviceHasTool(adapter transport.TransportAdapter, svc *model.McpService, n
 	return false
 }
 
-// parseToolCallResult 解析上游 tools/call 原始结果({content, isError, ...}),提取 isError 并记录耗时。
-func parseToolCallResult(raw json.RawMessage, start time.Time) (*dto.CallToolResult, error) {
+// parseTestResult 解析上游测试调用原始结果(tools/call/resources/read/prompts/get),
+// 提取其中的 isError 标记(tools/call 特有,其余调用无此字段保持 false)并记录耗时。
+func parseTestResult(raw json.RawMessage, start time.Time) (*dto.CallToolResult, error) {
 	result := &dto.CallToolResult{DurationMs: time.Since(start).Milliseconds()}
 	if uErr := json.Unmarshal(raw, &result.Result); uErr != nil {
 		return &dto.CallToolResult{IsError: true, Error: "结果解析失败: " + uErr.Error(), DurationMs: result.DurationMs}, nil

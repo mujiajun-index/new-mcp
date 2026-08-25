@@ -60,6 +60,17 @@ export async function callServiceTool(id: number, data: { name: string; argument
   return res.data
 }
 
+// 资源测试(resources/read)与提示测试(prompts/get),超时口径同工具测试
+export async function readServiceResource(id: number, data: { uri: string }) {
+  const res = await api.post(`/services/${id}/resources/read`, data, { timeout: 65_000 })
+  return res.data
+}
+
+export async function callServicePrompt(id: number, data: { name: string; arguments: Record<string, string> }) {
+  const res = await api.post(`/services/${id}/prompts/get`, data, { timeout: 65_000 })
+  return res.data
+}
+
 export async function getServiceResources(id: number) {
   const res = await api.get(`/services/${id}/resources`)
   return res.data

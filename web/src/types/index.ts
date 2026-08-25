@@ -103,18 +103,26 @@ export interface McpTool {
   inputSchema: Record<string, unknown>
 }
 
-// 工具测试(tools/call)返回:MCP content 块(text/image/resource)+ 耗时与错误信息
+// MCP 内容块:text/image/resource 等,工具调用 content 与提示消息 content 共用
+export interface McpContentBlock {
+  type: string
+  text?: string
+  data?: string
+  mimeType?: string
+  url?: string
+  resource?: { uri?: string; text?: string; blob?: string; mimeType?: string }
+  [key: string]: unknown
+}
+
+// 服务详情页测试调用(tools/call / resources/read / prompts/get)共用返回:
+// result 为上游完整结果 JSON;连接失败等本地错误走 is_error + error
 export interface ToolCallResult {
   result: {
-    content?: Array<{
-      type: string
-      text?: string
-      data?: string
-      mimeType?: string
-      url?: string
-      resource?: { uri?: string; text?: string; blob?: string; mimeType?: string }
-      [key: string]: unknown
-    }>
+    content?: McpContentBlock[]
+    // resources/read:{contents:[{uri, mimeType, text|blob}]}
+    contents?: Array<{ uri?: string; mimeType?: string; text?: string; blob?: string; [key: string]: unknown }>
+    // prompts/get:{messages:[{role, content}]}
+    messages?: Array<{ role?: string; content?: McpContentBlock; [key: string]: unknown }>
     isError?: boolean
     [key: string]: unknown
   }

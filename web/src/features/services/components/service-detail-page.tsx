@@ -4,6 +4,8 @@ import { useNavigate, useParams } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { getService, updateService, deleteService, testService, refreshTools, getServiceResources, getServicePrompts } from '../api'
 import { ToolTestDialog } from './tool-test-dialog'
+import { ResourceTestDialog, type ResourceTarget } from './resource-test-dialog'
+import { PromptTestDialog } from './prompt-test-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -71,6 +73,8 @@ export function ServiceDetailPage() {
   const [openItem, setOpenItem] = useState<string | null>(null)
   // 工具测试:当前正在测试的工具(弹窗打开时非空)
   const [testingTool, setTestingTool] = useState<McpTool | null>(null)
+  const [testingResource, setTestingResource] = useState<ResourceTarget | null>(null)
+  const [testingPrompt, setTestingPrompt] = useState<McpPrompt | null>(null)
   const [form, setForm] = useState<EditForm>({
     display_name: '',
     description: '',
@@ -560,6 +564,17 @@ export function ServiceDetailPage() {
                   >
                     {r.name || r.uri}
                   </button>
+                  {service.source !== 'marketplace' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 shrink-0 gap-1 px-1.5 text-[11px]"
+                      onClick={() => setTestingResource({ kind: 'resource', data: r })}
+                    >
+                      <FlaskConical className="h-3 w-3" />
+                      {t('services.testTool')}
+                    </Button>
+                  )}
                 </div>
                 {r.name && <p className="mt-0.5 text-xs font-mono text-muted-foreground break-all">{r.uri}</p>}
                 {r.description && openItem === `res:${r.uri}` && <p className="mt-0.5 text-xs text-muted-foreground">{r.description}</p>}
@@ -583,6 +598,17 @@ export function ServiceDetailPage() {
                   >
                     {tpl.name || tpl.uriTemplate}
                   </button>
+                  {service.source !== 'marketplace' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 shrink-0 gap-1 px-1.5 text-[11px]"
+                      onClick={() => setTestingResource({ kind: 'template', data: tpl })}
+                    >
+                      <FlaskConical className="h-3 w-3" />
+                      {t('services.testTool')}
+                    </Button>
+                  )}
                 </div>
                 {tpl.name && <p className="mt-0.5 text-xs font-mono text-muted-foreground break-all">{tpl.uriTemplate}</p>}
                 {tpl.description && openItem === `tpl:${tpl.uriTemplate}` && <p className="mt-0.5 text-xs text-muted-foreground">{tpl.description}</p>}
@@ -616,6 +642,17 @@ export function ServiceDetailPage() {
                   >
                     {p.name}
                   </button>
+                  {service.source !== 'marketplace' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 shrink-0 gap-1 px-1.5 text-[11px]"
+                      onClick={() => setTestingPrompt(p)}
+                    >
+                      <FlaskConical className="h-3 w-3" />
+                      {t('services.testTool')}
+                    </Button>
+                  )}
                 </div>
                 {p.description && openItem === `prompt:${p.name}` && <p className="mt-0.5 text-xs text-muted-foreground">{p.description}</p>}
                 {p.arguments && p.arguments.length > 0 && (
@@ -639,6 +676,20 @@ export function ServiceDetailPage() {
         tool={testingTool}
         open={!!testingTool}
         onOpenChange={(v) => !v && setTestingTool(null)}
+      />
+
+      {/* 资源/提示测试弹窗 */}
+      <ResourceTestDialog
+        serviceId={serviceId}
+        target={testingResource}
+        open={!!testingResource}
+        onOpenChange={(v) => !v && setTestingResource(null)}
+      />
+      <PromptTestDialog
+        serviceId={serviceId}
+        prompt={testingPrompt}
+        open={!!testingPrompt}
+        onOpenChange={(v) => !v && setTestingPrompt(null)}
       />
     </div>
   )

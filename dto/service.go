@@ -105,11 +105,23 @@ type CallToolReq struct {
 	Arguments map[string]interface{} `json:"arguments"`
 }
 
-// CallToolResult 工具测试结果:Result 为上游 tools/call 完整结果({content, isError, ...});
-// 连接失败/工具不存在等本地错误通过 IsError+Error 返回(前端在结果区展示,而非仅弹 toast)。
+// CallToolResult 服务详情页测试调用(工具/资源/提示)共用结果:
+// Result 为上游完整 result JSON(tools/call 为 {content, isError, ...} 等);
+// 连接失败/条目不存在等本地错误通过 IsError+Error 返回(前端在结果区展示,而非仅弹 toast)。
 type CallToolResult struct {
 	Result     interface{} `json:"result"`
 	IsError    bool        `json:"is_error"`
 	Error      string      `json:"error,omitempty"`
 	DurationMs int64       `json:"duration_ms"`
+}
+
+// ReadResourceReq 资源测试请求:对指定 URI 执行 resources/read。
+type ReadResourceReq struct {
+	URI string `json:"uri" binding:"required"`
+}
+
+// GetPromptReq 提示测试请求:按传入参数渲染提示(prompts/get,参数均为字符串)。
+type GetPromptReq struct {
+	Name      string            `json:"name" binding:"required"`
+	Arguments map[string]string `json:"arguments"`
 }

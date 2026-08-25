@@ -178,6 +178,40 @@ func CallServiceTool(c *gin.Context) {
 	common.Success(c, resp)
 }
 
+// ReadServiceResource 服务详情页资源测试:对指定 URI 执行 resources/read,返回内容与耗时。
+func ReadServiceResource(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	var req dto.ReadResourceReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	resp, err := mcpServiceService.ReadResource(userID, id, &req)
+	if err != nil {
+		common.Error(c, http.StatusNotFound, "服务不存在")
+		return
+	}
+	common.Success(c, resp)
+}
+
+// CallServicePrompt 服务详情页提示测试:按参数渲染提示(prompts/get),返回消息与耗时。
+func CallServicePrompt(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	var req dto.GetPromptReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	resp, err := mcpServiceService.GetPrompt(userID, id, &req)
+	if err != nil {
+		common.Error(c, http.StatusNotFound, "服务不存在")
+		return
+	}
+	common.Success(c, resp)
+}
+
 func GetServiceResources(c *gin.Context) {
 	userID := c.GetInt64("user_id")
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)

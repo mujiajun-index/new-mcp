@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { Check, Copy, Loader2, Play } from 'lucide-react'
+import { Loader2, Play } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -15,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { callServiceTool } from '../api'
+import { ContentBlock, TestResultPanel } from './test-result-panel'
 import type { McpTool, ToolCallResult } from '@/types'
 
 // 工具测试弹窗:服务详情页工具列表的「测试」入口。
@@ -28,28 +28,6 @@ interface ParamSchema {
   enum?: (string | number)[]
   default?: unknown
   items?: { type?: string }
-}
-
-const TEXT_TRUNCATE = 100_000
-const RAW_TRUNCATE = 200_000
-
-// 安全上下文(HTTPS)用 navigator.clipboard,否则回退 execCommand(与 user-logs-page 一致)。
-async function copyText(text: string) {
-  if (navigator.clipboard && window.isSecureContext) {
-    await navigator.clipboard.writeText(text)
-    return
-  }
-  const ta = document.createElement('textarea')
-  ta.value = text
-  ta.style.position = 'fixed'
-  ta.style.top = '0'
-  ta.style.opacity = '0'
-  document.body.appendChild(ta)
-  ta.focus()
-  ta.select()
-  const ok = document.execCommand('copy')
-  document.body.removeChild(ta)
-  if (!ok) throw new Error('copy failed')
 }
 
 function schemaOf(tool: McpTool | null) {
@@ -67,38 +45,6 @@ function schemaOf(tool: McpTool | null) {
 function firstType(p: ParamSchema | null): string {
   const t = p?.type
   return Array.isArray(t) ? (t[0] || 'string') : (t || 'string')
-}
-
-// 单个 content 块渲染:text 等宽展示、image 内联图片、resource 展示 uri+文本,未知类型回退原始 JSON。
-function ContentBlock({ block, index }: { block: NonNullable<ToolCallResult['result']['content']>[number]; index: number }) {
-  const { t } = useTranslation()
-  if (block.type === 'text' && typeof block.text === 'string') {
-    const truncated = block.text.length > TEXT_TRUNCATE
-    const text = truncated ? block.text.slice(0, TEXT_TRUNCATE) : block.text
-    return (
-      <>
-        <pre key={index} className="whitespace-pre-wrap break-words font-mono text-xs">{text}</pre>
-        {truncated && <p className="mt-1 text-[10px] text-muted-foreground">{t('services.toolTest.truncated')}</p>}
-      </>
-    )
-  }
-  if (block.type === 'image') {
-    const src = block.data ? `data:${block.mimeType || 'image/png'};base64,${block.data}` : block.url
-    if (src) {
-      return <img key={index} src={src} alt="" className="max-h-96 rounded-md border" />
-    }
-  }
-  if (block.type === 'resource' && block.resource) {
-    const r = block.resource
-    const text = r.text ?? r.blob
-    return (
-      <div key={index} className="rounded-md bg-muted/40 p-2">
-        {r.uri && <p className="break-all font-mono text-[10px] text-muted-foreground">{r.uri}</p>}
-        {typeof text === 'string' && <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-xs">{text}</pre>}
-      </div>
-    )
-  }
-  return <pre key={index} className="whitespace-pre-wrap break-words font-mono text-xs">{JSON.stringify(block, null, 2)}</pre>
 }
 
 export function ToolTestDialog({
@@ -124,8 +70,6 @@ export function ToolTestDialog({
   const [jsonText, setJsonText] = useState('{}')
   const [jsonError, setJsonError] = useState('')
   const [result, setResult] = useState<ToolCallResult | null>(null)
-  const [showRaw, setShowRaw] = useState(false)
-  const [copied, setCopied] = useState(false)
 
   // 打开/切换工具时重置,并带入 schema 默认值
   useEffect(() => {
@@ -133,8 +77,6 @@ export function ToolTestDialog({
     setMode('form')
     setJsonError('')
     setResult(null)
-    setShowRaw(false)
-    setCopied(false)
     const init: Record<string, string | boolean> = {}
     for (const [name, p] of Object.entries(properties)) {
       if (p.default === undefined) continue
@@ -245,7 +187,6 @@ export function ToolTestDialog({
   function handleRun() {
     const args = mode === 'json' ? parseJsonArguments() : buildFormArguments()
     if (args === null) return
-    setShowRaw(false)
     runMutation.mutate(args)
   }
 
@@ -277,21 +218,6 @@ export function ToolTestDialog({
     setValues((prev) => ({ ...prev, ...nextValues }))
     setMode('form')
   }
-
-  async function handleCopy() {
-    if (!result) return
-    try {
-      // ?? null:JSON.stringify(undefined) 返回 undefined,会导致下游 .length 崩溃
-      await copyText(JSON.stringify(result.result ?? null, null, 2))
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      toast.error(t('common.copyFailed'))
-    }
-  }
-
-  const rawJson = result ? JSON.stringify(result.result ?? null, null, 2) : ''
-  const rawTruncated = rawJson.length > RAW_TRUNCATE
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -396,42 +322,13 @@ export function ToolTestDialog({
 
           {/* 结果区 */}
           {result && (
-            <div className="space-y-2 border-t pt-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium">{t('services.toolTest.result')}</span>
-                <span className="text-xs text-muted-foreground">{t('services.toolTest.duration', { ms: result.duration_ms })}</span>
-                {result.is_error && <Badge variant="destructive">{t('services.toolTest.error')}</Badge>}
-                <div className="ml-auto flex gap-1">
-                  <Button variant="outline" size="sm" className="h-7" onClick={() => setShowRaw((v) => !v)}>
-                    {t('services.toolTest.rawJson')}
-                  </Button>
-                  <Button variant="outline" size="sm" className="h-7" onClick={handleCopy}>
-                    {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                    {copied ? t('services.toolTest.copied') : t('services.toolTest.copy')}
-                  </Button>
-                </div>
-              </div>
-              {result.error ? (
-                <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2.5 text-xs text-destructive break-words">
-                  {result.error}
-                </div>
-              ) : showRaw ? (
-                <>
-                  <pre className="max-h-72 overflow-auto rounded-md bg-muted/50 p-2.5 font-mono text-xs whitespace-pre-wrap break-all">
-                    {rawTruncated ? rawJson.slice(0, RAW_TRUNCATE) : rawJson}
-                  </pre>
-                  {rawTruncated && <p className="text-[10px] text-muted-foreground">{t('services.toolTest.truncated')}</p>}
-                </>
-              ) : Array.isArray(result.result?.content) && result.result.content.length > 0 ? (
+            <TestResultPanel result={result}>
+              {Array.isArray(result.result?.content) && result.result.content.length > 0 ? (
                 <div className="max-h-72 space-y-2 overflow-y-auto rounded-md bg-muted/50 p-2.5">
                   {result.result.content.map((block, i) => <ContentBlock key={i} block={block} index={i} />)}
                 </div>
-              ) : (
-                <pre className="max-h-72 overflow-auto rounded-md bg-muted/50 p-2.5 font-mono text-xs whitespace-pre-wrap break-all">
-                  {rawJson}
-                </pre>
-              )}
-            </div>
+              ) : undefined}
+            </TestResultPanel>
           )}
         </div>
 

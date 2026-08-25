@@ -386,6 +386,12 @@
       "requiredMissing": "必填参数未填",
       "truncated": "结果过长已截断"
     },
+    "resourceTest": {
+      "resolvedUri": "生成 URI"
+    },
+    "promptTest": {
+      "noParams": "该提示无需参数"
+    },
     "create": {
       "title": "注册新服务",
       "step": "步骤 {{current}} — {{total}}",
