@@ -161,6 +161,23 @@ func GetServiceTools(c *gin.Context) {
 	common.Success(c, tools)
 }
 
+// CallServiceTool 服务详情页工具测试:对服务的单个工具执行 tools/call,返回结果与耗时。
+func CallServiceTool(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	var req dto.CallToolReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	resp, err := mcpServiceService.CallTool(userID, id, &req)
+	if err != nil {
+		common.Error(c, http.StatusNotFound, "服务不存在")
+		return
+	}
+	common.Success(c, resp)
+}
+
 func GetServiceResources(c *gin.Context) {
 	userID := c.GetInt64("user_id")
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)

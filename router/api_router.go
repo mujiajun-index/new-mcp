@@ -62,6 +62,7 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.POST("/services/:id/test", controller.TestService)
 		auth.POST("/services/:id/refresh-tools", controller.RefreshTools)
 		auth.GET("/services/:id/tools", controller.GetServiceTools)
+		auth.POST("/services/:id/tools/call", controller.CallServiceTool)
 		auth.GET("/services/:id/resources", controller.GetServiceResources)
 		auth.GET("/services/:id/prompts", controller.GetServicePrompts)
 		auth.GET("/services/:id/health", controller.GetServiceHealth)

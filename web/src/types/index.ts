@@ -103,6 +103,26 @@ export interface McpTool {
   inputSchema: Record<string, unknown>
 }
 
+// 工具测试(tools/call)返回:MCP content 块(text/image/resource)+ 耗时与错误信息
+export interface ToolCallResult {
+  result: {
+    content?: Array<{
+      type: string
+      text?: string
+      data?: string
+      mimeType?: string
+      url?: string
+      resource?: { uri?: string; text?: string; blob?: string; mimeType?: string }
+      [key: string]: unknown
+    }>
+    isError?: boolean
+    [key: string]: unknown
+  }
+  is_error: boolean
+  error?: string
+  duration_ms: number
+}
+
 export interface CreateServiceReq {
   name: string
   display_name?: string

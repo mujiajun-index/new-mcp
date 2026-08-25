@@ -423,6 +423,110 @@ func (s *McpServiceService) GetTools(userID, serviceID int64) ([]interface{}, er
 	return tools, nil
 }
 
+// CallTool 服务详情页工具测试:直连该服务的上游会话执行 tools/call(调试用途,不计费)。
+// 虚拟服务(vision/camera)走 VirtualRegistry 分发;市场引用服务注入平台上游配置后调用。
+// 本地错误(连接失败/工具不存在)以 IsError+Error 返回,由前端在结果区展示。
+func (s *McpServiceService) CallTool(userID, serviceID int64, req *dto.CallToolReq) (*dto.CallToolResult, error) {
+	svc, err := model.GetServiceByID(userID, serviceID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 平台托管(市场)服务:工具测试不计费,禁止免费消耗平台上游,只能测试自有服务。
+	// 连通性测试 Test() 不受此限制(仍走 materializeMarketplace 物化后连接)。
+	if svc.Source == "marketplace" {
+		return &dto.CallToolResult{IsError: true, Error: "平台托管(市场)服务不支持工具测试"}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	var args json.RawMessage
+	if req.Arguments != nil {
+		args, _ = json.Marshal(req.Arguments)
+	}
+	start := time.Now()
+
+	// 虚拟服务:按 serviceID 分发到虚拟工具处理器(vision/camera 等自有性质,免费)。
+	if svc.TransportType == "virtual" {
+		if VirtualRegistry == nil {
+			return &dto.CallToolResult{IsError: true, Error: "虚拟服务未初始化"}, nil
+		}
+		var config map[string]interface{}
+		_ = json.Unmarshal([]byte(svc.Config), &config)
+		raw, vErr := VirtualRegistry.Handle(virtual.WithCallerUserID(ctx, userID), svc.ID, config, req.Name, args)
+		if vErr != nil {
+			return &dto.CallToolResult{IsError: true, Error: vErr.Error(), DurationMs: time.Since(start).Milliseconds()}, nil
+		}
+		return parseToolCallResult(raw, start)
+	}
+
+	// 普通服务:优先复用会话池连接(stdio 不必每次拉起子进程);池未初始化时回退一次性连接(同 Test)。
+	var adapter transport.TransportAdapter
+	if SessionPool != nil {
+		session, pErr := SessionPool.GetOrConnect(ctx, svc)
+		if pErr != nil {
+			return &dto.CallToolResult{IsError: true, Error: pErr.Error(), DurationMs: time.Since(start).Milliseconds()}, nil
+		}
+		adapter = session.Adapter
+	} else {
+		adapter = bridge.CreateAdapter(svc)
+		if adapter == nil {
+			return &dto.CallToolResult{IsError: true, Error: "不支持的传输类型"}, nil
+		}
+		if cErr := adapter.Connect(ctx); cErr != nil {
+			return &dto.CallToolResult{IsError: true, Error: cErr.Error(), DurationMs: time.Since(start).Milliseconds()}, nil
+		}
+		defer adapter.Close()
+	}
+
+	// 工具名仅在服务自身工具列表中校验(单服务调试,不涉及网关命名空间路由)。
+	if !serviceHasTool(adapter, svc, req.Name) {
+		return &dto.CallToolResult{IsError: true, Error: "工具不存在: " + req.Name}, nil
+	}
+
+	raw, cErr := adapter.Call(ctx, "tools/call", map[string]interface{}{
+		"name":      req.Name,
+		"arguments": req.Arguments,
+	})
+	if cErr != nil {
+		return &dto.CallToolResult{IsError: true, Error: cErr.Error(), DurationMs: time.Since(start).Milliseconds()}, nil
+	}
+	return parseToolCallResult(raw, start)
+}
+
+// serviceHasTool 校验工具名是否属于该服务:优先用 adapter 实时工具列表,回退 tools_cache。
+func serviceHasTool(adapter transport.TransportAdapter, svc *model.McpService, name string) bool {
+	for _, t := range adapter.GetTools() {
+		if t.Name == name {
+			return true
+		}
+	}
+	var cache []transport.Tool
+	if json.Unmarshal([]byte(svc.ToolsCache), &cache) == nil {
+		for _, t := range cache {
+			if t.Name == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// parseToolCallResult 解析上游 tools/call 原始结果({content, isError, ...}),提取 isError 并记录耗时。
+func parseToolCallResult(raw json.RawMessage, start time.Time) (*dto.CallToolResult, error) {
+	result := &dto.CallToolResult{DurationMs: time.Since(start).Milliseconds()}
+	if uErr := json.Unmarshal(raw, &result.Result); uErr != nil {
+		return &dto.CallToolResult{IsError: true, Error: "结果解析失败: " + uErr.Error(), DurationMs: result.DurationMs}, nil
+	}
+	if m, ok := result.Result.(map[string]interface{}); ok {
+		if flag, _ := m["isError"].(bool); flag {
+			result.IsError = true
+		}
+	}
+	return result, nil
+}
+
 // GetResources 返回服务缓存的资源与资源模板({"resources":[],"templates":[]} 形态)。
 func (s *McpServiceService) GetResources(userID, serviceID int64) (map[string]interface{}, error) {
 	svc, err := model.GetServiceByID(userID, serviceID)

@@ -56,12 +56,14 @@ export function ToolItem({
   schema,
   leading,
   subtitle,
+  action,
 }: {
   name: string
   description?: string
   schema?: Record<string, unknown>
   leading?: ReactNode
   subtitle?: ReactNode
+  action?: ReactNode
 }) {
   const [open, setOpen] = useState(false)
   return (
@@ -74,13 +76,17 @@ export function ToolItem({
             disabled={!description}
             onClick={() => setOpen((v) => !v)}
             title={name}
-            className={`min-w-0 flex-1 truncate text-left text-sm font-medium font-mono ${description ? 'cursor-pointer' : 'cursor-default'}`}
+            className={`flex min-w-0 flex-1 items-center gap-1 text-left text-sm font-medium font-mono ${description ? 'cursor-pointer' : 'cursor-default'}`}
           >
-            {name}
+            {/* 展开箭头放名称前,避免与右侧 action 按钮挤在一起;固定宽占位保持无描述条目名称对齐 */}
+            <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center text-muted-foreground">
+              {description && (open
+                ? <ChevronDown className="h-3.5 w-3.5" />
+                : <ChevronRight className="h-3.5 w-3.5" />)}
+            </span>
+            <span className="truncate">{name}</span>
           </button>
-          {description && (open
-            ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />)}
+          {action && <div className="shrink-0">{action}</div>}
         </div>
         {subtitle}
         {open && description && (

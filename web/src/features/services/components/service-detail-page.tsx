@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { getService, updateService, deleteService, testService, refreshTools, getServiceResources, getServicePrompts } from '../api'
+import { ToolTestDialog } from './tool-test-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,7 +13,7 @@ import { SectionCard } from '@/components/section-card'
 import { toast } from 'sonner'
 import {
   ArrowLeft, Trash2, Zap, RefreshCw, Server,
-  Pencil, X, Check, Loader2, ChevronDown, ChevronRight,
+  Pencil, X, Check, Loader2, ChevronDown, ChevronRight, FlaskConical,
 } from 'lucide-react'
 import type { McpTool, McpResource, McpResourceTemplate, McpPrompt, AuthType, UpdateServiceReq } from '@/types'
 
@@ -68,6 +69,8 @@ export function ServiceDetailPage() {
   const [editing, setEditing] = useState(false)
   // 资源/模板/提示的展开项(单开):点击名称切换描述显隐,与工具条目同一交互
   const [openItem, setOpenItem] = useState<string | null>(null)
+  // 工具测试:当前正在测试的工具(弹窗打开时非空)
+  const [testingTool, setTestingTool] = useState<McpTool | null>(null)
   const [form, setForm] = useState<EditForm>({
     display_name: '',
     description: '',
@@ -520,6 +523,17 @@ export function ServiceDetailPage() {
                 name={tool.name}
                 description={tool.description}
                 schema={tool.inputSchema}
+                action={service.source !== 'marketplace' ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 gap-1 px-1.5 text-[11px]"
+                    onClick={() => setTestingTool(tool)}
+                  >
+                    <FlaskConical className="h-3 w-3" />
+                    {t('services.testTool')}
+                  </Button>
+                ) : undefined}
               />
             ))}
           </div>
@@ -535,6 +549,9 @@ export function ServiceDetailPage() {
             {resources.map((r) => (
               <div key={r.uri} className="rounded-lg border p-3">
                 <div className="flex items-start gap-1">
+                  {r.description && (openItem === `res:${r.uri}`
+                    ? <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    : <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />)}
                   <button
                     type="button"
                     disabled={!r.description}
@@ -543,9 +560,6 @@ export function ServiceDetailPage() {
                   >
                     {r.name || r.uri}
                   </button>
-                  {r.description && (openItem === `res:${r.uri}`
-                    ? <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    : <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />)}
                 </div>
                 {r.name && <p className="mt-0.5 text-xs font-mono text-muted-foreground break-all">{r.uri}</p>}
                 {r.description && openItem === `res:${r.uri}` && <p className="mt-0.5 text-xs text-muted-foreground">{r.description}</p>}
@@ -558,6 +572,9 @@ export function ServiceDetailPage() {
             {templates.map((tpl) => (
               <div key={tpl.uriTemplate} className="rounded-lg border border-dashed p-3">
                 <div className="flex items-start gap-1">
+                  {tpl.description && (openItem === `tpl:${tpl.uriTemplate}`
+                    ? <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    : <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />)}
                   <button
                     type="button"
                     disabled={!tpl.description}
@@ -566,9 +583,6 @@ export function ServiceDetailPage() {
                   >
                     {tpl.name || tpl.uriTemplate}
                   </button>
-                  {tpl.description && (openItem === `tpl:${tpl.uriTemplate}`
-                    ? <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    : <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />)}
                 </div>
                 {tpl.name && <p className="mt-0.5 text-xs font-mono text-muted-foreground break-all">{tpl.uriTemplate}</p>}
                 {tpl.description && openItem === `tpl:${tpl.uriTemplate}` && <p className="mt-0.5 text-xs text-muted-foreground">{tpl.description}</p>}
@@ -591,6 +605,9 @@ export function ServiceDetailPage() {
             {prompts.map((p) => (
               <div key={p.name} className="rounded-lg border p-3">
                 <div className="flex items-center gap-1">
+                  {p.description && (openItem === `prompt:${p.name}`
+                    ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />)}
                   <button
                     type="button"
                     disabled={!p.description}
@@ -599,9 +616,6 @@ export function ServiceDetailPage() {
                   >
                     {p.name}
                   </button>
-                  {p.description && (openItem === `prompt:${p.name}`
-                    ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />)}
                 </div>
                 {p.description && openItem === `prompt:${p.name}` && <p className="mt-0.5 text-xs text-muted-foreground">{p.description}</p>}
                 {p.arguments && p.arguments.length > 0 && (
@@ -618,6 +632,14 @@ export function ServiceDetailPage() {
           </div>
         )}
       </SectionCard>
+
+      {/* 工具测试弹窗 */}
+      <ToolTestDialog
+        serviceId={serviceId}
+        tool={testingTool}
+        open={!!testingTool}
+        onOpenChange={(v) => !v && setTestingTool(null)}
+      />
     </div>
   )
 }

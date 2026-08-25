@@ -98,3 +98,18 @@ type RefreshToolsResult struct {
 	ToolsCount int           `json:"tools_count"`
 	Tools      []interface{} `json:"tools"`
 }
+
+// CallToolReq 服务详情页工具测试请求:工具名放 body(避免路径特殊字符问题)。
+type CallToolReq struct {
+	Name      string                 `json:"name" binding:"required"`
+	Arguments map[string]interface{} `json:"arguments"`
+}
+
+// CallToolResult 工具测试结果:Result 为上游 tools/call 完整结果({content, isError, ...});
+// 连接失败/工具不存在等本地错误通过 IsError+Error 返回(前端在结果区展示,而非仅弹 toast)。
+type CallToolResult struct {
+	Result     interface{} `json:"result"`
+	IsError    bool        `json:"is_error"`
+	Error      string      `json:"error,omitempty"`
+	DurationMs int64       `json:"duration_ms"`
+}
