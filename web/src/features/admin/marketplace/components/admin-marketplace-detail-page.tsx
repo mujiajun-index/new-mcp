@@ -61,12 +61,15 @@ export function AdminMarketplaceDetailPage() {
     mutationFn: () => adminRefreshMarketplace(Number(id)),
     onSuccess: (res) => {
       const d = res?.data
-      toast.success(t('marketplace.snapshotsRefreshed', {
-        tools: d?.tools_count ?? 0,
-        resources: d?.resources_count ?? 0,
-        templates: d?.templates_count ?? 0,
-        prompts: d?.prompts_count ?? 0,
-      }))
+      // 工具恒显;资源/模板/提示计数为 0 时不进提示文案
+      const segs = [t('marketplace.refreshSegTools', { num: d?.tools_count ?? 0 })]
+      const add = (key: string, num: number | undefined) => {
+        if ((num ?? 0) > 0) segs.push(t(key, { num }))
+      }
+      add('marketplace.refreshSegResources', d?.resources_count)
+      add('marketplace.refreshSegTemplates', d?.templates_count)
+      add('marketplace.refreshSegPrompts', d?.prompts_count)
+      toast.success(t('marketplace.refreshedPrefix') + segs.join(t('marketplace.refreshSeparator')))
       queryClient.invalidateQueries({ queryKey: ['admin-marketplace-detail', id] })
     },
   })
