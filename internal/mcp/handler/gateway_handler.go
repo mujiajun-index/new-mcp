@@ -474,10 +474,11 @@ func (h *GatewayHandler) routeAndCall(ctx context.Context, reqID interface{}, lo
 
 func (h *GatewayHandler) handleSearch(ctx context.Context, reqID interface{}, logCtx *LogContext, args json.RawMessage) *JSONRPCResponse {
 	var params struct {
-		Query string `json:"query"`
-		Scope string `json:"scope"`
-		Group string `json:"group"`
-		Limit int    `json:"limit"`
+		Query  string `json:"query"`
+		Scope  string `json:"scope"`
+		Group  string `json:"group"`
+		Limit  int    `json:"limit"`
+		Offset int    `json:"offset"`
 	}
 	_ = json.Unmarshal(args, &params)
 
@@ -487,23 +488,23 @@ func (h *GatewayHandler) handleSearch(ctx context.Context, reqID interface{}, lo
 	if params.Limit <= 0 {
 		params.Limit = 20
 	}
+	if params.Offset < 0 {
+		params.Offset = 0
+	}
 
-	results, err := h.searchEngine.Search(ctx, logCtx.ApiKeyID, params.Query, smart.SearchOptions{
-		Scope: params.Scope,
-		Group: params.Group,
-		Limit: params.Limit,
+	results, total, err := h.searchEngine.Search(ctx, logCtx.ApiKeyID, params.Query, smart.SearchOptions{
+		Scope:  params.Scope,
+		Group:  params.Group,
+		Limit:  params.Limit,
+		Offset: params.Offset,
 	})
 	if err != nil {
 		return h.errorResponse(reqID, -32603, "Search failed: "+err.Error())
 	}
 
-	// 引擎端把 limit 钳制到 ≤100,此处保持同一口径;结果数达到该上限时可能还有更多,
-	// 由 FormatSearchResult 在头部给出调整 limit/scope 的提示。
-	shown := params.Limit
-	if shown > 100 {
-		shown = 100
-	}
-	resultText := smart.FormatSearchResult(results, len(results) == shown, params.Query)
+	// 引擎侧同样钳制 limit/offset 并返回切片前的匹配总数;头部由 FormatSearchResult
+	// 依据总数生成 "共 N 条 / 下一页 offset" 的分页提示。
+	resultText := smart.FormatSearchResult(results, total, params.Offset, params.Query)
 
 	return &JSONRPCResponse{
 		JSONRPC: "2.0",

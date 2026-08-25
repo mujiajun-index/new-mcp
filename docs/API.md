@@ -1385,7 +1385,8 @@ canvas.toBlob(blob => {
             "query": {"type": "string", "description": "搜索关键字，可选；省略则浏览全部条目"},
             "scope": {"type": "string", "enum": ["mcp", "tool", "resource", "prompt", "all"], "default": "all", "description": "搜索范围（resource 含资源模板；不确定时保持 all）"},
             "group": {"type": "string", "description": "限定分组"},
-            "limit": {"type": "number", "default": 20, "maximum": 100}
+            "limit": {"type": "number", "default": 20, "maximum": 100},
+            "offset": {"type": "number", "minimum": 0, "default": 0}
         },
         "required": []
     }

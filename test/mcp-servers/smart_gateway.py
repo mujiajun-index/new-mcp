@@ -84,8 +84,8 @@ def _tokenize(text: str) -> list[str]:
     return tokens
 
 
-def _bm25_search(query: str, docs: list[dict], limit: int = 10) -> list[dict]:
-    """极简 BM25 搜索，用于验证 smart 模式搜索是否可用"""
+def _bm25_search(query: str, docs: list[dict]) -> list[dict]:
+    """极简 BM25 搜索，用于验证 smart 模式搜索是否可用（返回全部匹配，分页在调用侧切片）"""
     q_tokens = set(_tokenize(query))
     scored = []
     for doc in docs:
@@ -95,18 +95,19 @@ def _bm25_search(query: str, docs: list[dict], limit: int = 10) -> list[dict]:
         if overlap > 0:
             scored.append((overlap, doc))
     scored.sort(key=lambda x: -x[0])
-    return [d for _, d in scored[:limit]]
+    return [d for _, d in scored]
 
 
 # ── 元工具实现 ──
 
 @mcp.tool()
-def mcp_search(query: str = "", scope: str = "all", limit: int = 10) -> str:
+def mcp_search(query: str = "", scope: str = "all", limit: int = 10, offset: int = 0) -> str:
     """搜索可用的 MCP 服务和工具。支持按关键字搜索服务名或工具名。query 为空时返回所有可用项。
     参数:
       query: 搜索关键字，为空则返回所有
       scope: 搜索范围 "mcp"(服务) "tool"(工具) "all"(全部)
-      limit: 最大返回数量
+      limit: 每页最大返回数量
+      offset: 跳过前 N 条匹配（SQL OFFSET 语义），与 limit 组合翻页，默认 0
     """
     docs = []
     for svc_name, svc in REGISTRY.items():
@@ -128,14 +129,26 @@ def mcp_search(query: str = "", scope: str = "all", limit: int = 10) -> str:
                 })
 
     if query:
-        results = _bm25_search(query, docs, limit)
+        matched = _bm25_search(query, docs)
     else:
-        results = docs[:limit]
+        matched = docs
+    total = len(matched)
+    offset = max(offset, 0)
+    results = matched[offset:offset + limit]
 
     if not results:
+        if total > 0:
+            return f"offset={offset} 已越过结果末尾 — 共 {total} 条匹配，请调低 offset 或收窄关键字"
         return f"未找到与 '{query}' 匹配的结果" if query else "当前没有可用的服务或工具"
 
-    lines = [f"找到 {len(results)} 个结果:\n"]
+    page_end = offset + len(results)
+    if page_end < total:
+        header = f"共 {total} 条匹配 — 显示第 {offset + 1}-{page_end} 条（下一页 offset={page_end}）:"
+    elif offset or total > len(results):
+        header = f"共 {total} 条匹配 — 显示第 {offset + 1}-{page_end} 条（已是最后一页）:"
+    else:
+        header = f"找到 {len(results)} 个结果:"
+    lines = [f"{header}\n"]
     for i, r in enumerate(results, 1):
         if r["type"] == "mcp":
             lines.append(f"{i}. **{r['name']}** (服务)")

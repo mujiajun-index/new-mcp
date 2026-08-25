@@ -24,14 +24,15 @@ var MetaTools = []struct {
 }{
 	{
 		Name:        "mcp.search",
-		Description: "Search the catalog of available MCP services, tools, resources, and prompts by keyword. Keywords are matched against item names, service names, and descriptions. The catalog is written mostly in English, so always include English keywords in the query alongside the task's own language — don't choose between them. Returns matching items with their exact IDs: tools as `service.toolName` (call via mcp.execute), resources as `newmcp://service/...` URIs and prompts as `service__promptName` (fetch via mcp.read), each with a short description and group. Use this FIRST when you don't yet know which service or tool fits a task, or to see what exists (omit `query`). If you already know a service or tool name, use mcp.describe instead.",
+		Description: "Search the catalog of available MCP services, tools, resources, and prompts by keyword. Keywords are matched against item names, service names, and descriptions. The catalog is written mostly in English, so always include English keywords in the query alongside the task's own language — don't choose between them. Returns matching items with their exact IDs: tools as `service.toolName` (call via mcp.execute), resources as `newmcp://service/...` URIs and prompts as `service__promptName` (fetch via mcp.read), each with a short description and group. Results are paginated: the header reports the total match count and, when more pages exist, the exact `offset` to pass for the next page. Use this FIRST when you don't yet know which service or tool fits a task, or to see what exists (omit `query`). If you already know a service or tool name, use mcp.describe instead.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"query": {"type": "string", "description": "Keywords matched against names and descriptions (English-dominant catalog). For non-English tasks include both the task language and its English translation; for English tasks plain English, e.g. \"weather forecast\". Omit to browse available items."},
 				"scope": {"type": "string", "enum": ["mcp", "tool", "resource", "prompt", "all"], "default": "all", "description": "Restrict results to: mcp (services), tool, resource (includes templates), prompt, or all. Prefer \"all\" for first or exploratory searches; narrow only when you specifically need one kind"},
 				"group": {"type": "string", "description": "Restrict results to one group by its exact group name"},
-				"limit": {"type": "number", "minimum": 1, "maximum": 100, "default": 20, "description": "Max results to return"}
+				"limit": {"type": "number", "minimum": 1, "maximum": 100, "default": 20, "description": "Page size: max results to return per call"},
+				"offset": {"type": "number", "minimum": 0, "default": 0, "description": "Skip the first N matches before returning, like SQL OFFSET — page through large result sets by keeping the same query and incrementing offset, e.g. offset=20, limit=20 returns matches 21-40. The result header names the next page's offset when more matches exist"}
 			},
 			"required": []
 		}`),

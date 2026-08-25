@@ -81,10 +81,13 @@ func buildIndex(docs []SearchDoc) *bm25Index {
 	return idx
 }
 
-func (idx *bm25Index) search(query string, limit int) []SearchResult {
+// search 返回 [offset, offset+limit) 区间的得分降序结果,以及匹配文档总数
+// (切片前统计,供调用方输出"共 N 条 / 下一页 offset"的分页头部)。
+// offset 由调用方保证 ≥0。
+func (idx *bm25Index) search(query string, offset, limit int) ([]SearchResult, int) {
 	queryTerms := tokenize(query)
 	if len(queryTerms) == 0 {
-		return nil
+		return nil, 0
 	}
 
 	// Expand with fuzzy matches
@@ -124,23 +127,32 @@ func (idx *bm25Index) search(query string, limit int) []SearchResult {
 		results = append(results, scored{docIdx, score})
 	}
 
-		// Sort by score descending
-		sort.Slice(results, func(i, j int) bool {
+	// Sort by score descending. 同分按文档序号破平:scores 来自 map 遍历,不破平
+	// 则同分条目在两次请求间顺序随机,offset 翻页时会在两页间漂移(漏条/重复)。
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].score != results[j].score {
 			return results[i].score > results[j].score
-		})
+		}
+		return results[i].idx < results[j].idx
+	})
 
-	if limit > len(results) {
-		limit = len(results)
+	total := len(results)
+	start, end := offset, offset+limit
+	if start > total {
+		start = total
+	}
+	if end > total {
+		end = total
 	}
 
-	out := make([]SearchResult, limit)
-	for i := 0; i < limit; i++ {
-		out[i] = SearchResult{
+	out := make([]SearchResult, 0, end-start)
+	for i := start; i < end; i++ {
+		out = append(out, SearchResult{
 			Doc:   idx.docs[results[i].idx],
 			Score: results[i].score,
-		}
+		})
 	}
-	return out
+	return out, total
 }
 
 func tokenize(text string) []string {

@@ -13,9 +13,10 @@ import (
 )
 
 type SearchOptions struct {
-	Scope string // "mcp", "tool", "all"
-	Group string
-	Limit int
+	Scope  string // "mcp", "tool", "all"
+	Group  string
+	Limit  int
+	Offset int
 }
 
 type SearchEngine struct{}
@@ -102,35 +103,45 @@ func itemDisabled(m map[string]bool, groupID, serviceID int64, kind, key string)
 	return m[itemDisableKey(groupID, serviceID, kind, key)]
 }
 
-func (e *SearchEngine) Search(ctx context.Context, apiKeyID int64, query string, opts SearchOptions) ([]SearchResult, error) {
+// Search 在 API Key 可达目录上执行 BM25 搜索(query 为空则浏览全量),返回
+// [Offset, Offset+Limit) 区间的结果与匹配总数(切片前统计,供分页头部提示)。
+// Limit 钳制到 [1,100],负 Offset 归零。
+func (e *SearchEngine) Search(ctx context.Context, apiKeyID int64, query string, opts SearchOptions) ([]SearchResult, int, error) {
 	if opts.Limit <= 0 {
 		opts.Limit = 20
 	}
 	if opts.Limit > 100 {
 		opts.Limit = 100
 	}
+	if opts.Offset < 0 {
+		opts.Offset = 0
+	}
 
 	info, err := bridge.ResolveApiKeyInfo(apiKeyID)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	docs := e.buildSearchDocs(info, opts.Group, opts.Scope)
 
 	if query == "" {
-		limit := opts.Limit
-		if limit > len(docs) {
-			limit = len(docs)
+		start, end := opts.Offset, opts.Offset+opts.Limit
+		if start > len(docs) {
+			start = len(docs)
 		}
-		results := make([]SearchResult, limit)
-		for i := 0; i < limit; i++ {
-			results[i] = SearchResult{Doc: docs[i], Score: 1.0}
+		if end > len(docs) {
+			end = len(docs)
 		}
-		return results, nil
+		results := make([]SearchResult, 0, end-start)
+		for i := start; i < end; i++ {
+			results = append(results, SearchResult{Doc: docs[i], Score: 1.0})
+		}
+		return results, len(docs), nil
 	}
 
 	idx := buildIndex(docs)
-	return idx.search(query, opts.Limit), nil
+	results, total := idx.search(query, opts.Offset, opts.Limit)
+	return results, total, nil
 }
 
 func (e *SearchEngine) buildSearchDocs(info *bridge.ApiKeyInfo, scopeGroup string, scope string) []SearchDoc {
@@ -655,11 +666,17 @@ func formatSchemaParams(schema interface{}) string {
 // FormatSearchResult 把搜索结果格式化为按类型分节的紧凑文本(mcp.search 的 text
 // content)。每节标题一次性给出该类条目的下一步动作(describe/execute/read),行内
 // 只保留"ID — 摘要":描述折叠成单行并按 searchDescMaxRunes 截断,防止上游多行/
-// 超长描述破坏"一行一条"的列表(细节本就由 mcp.describe 提供)。capped 表示结果数
-// 达到 limit 上限,此时在头部提示可能还有更多。query 只参与空结果分支:仅含汉字
-// (未附英文)时点破语言不匹配,引导附上英文关键词重试。
-func FormatSearchResult(results []SearchResult, capped bool, query string) string {
+// 超长描述破坏"一行一条"的列表(细节本就由 mcp.describe 提供)。
+// total 为引擎切片前统计的匹配总数,offset 为本页跳过数:结果一页放得下且从头
+// 返回时维持 "Found N items";跨页时头部输出 "Found <总数> matches — showing X-Y"
+// 并直接给出下一页 offset(或 end of results 终止翻页),模型无需自行计算;
+// offset 越过总数时提示调低 offset。query 只参与空结果分支:仅含汉字(未附英文)
+// 时点破语言不匹配,引导附上英文关键词重试。
+func FormatSearchResult(results []SearchResult, total, offset int, query string) string {
 	if len(results) == 0 {
+		if total > 0 {
+			return fmt.Sprintf("No results at offset=%d — only %d matches exist. Lower the offset or refine the query.", offset, total)
+		}
 		// 空结果不给线索会让模型放弃或反复瞎猜;按 AWS MCP tool design 的建议,
 		// 在失败点直接告诉它下一步怎么改("helpful errors can steer the next attempt")。
 		// 目录名称/描述基本都是英文,中文 query 分词后与英文索引天然零重叠——仅含
@@ -672,10 +689,15 @@ func FormatSearchResult(results []SearchResult, capped bool, query string) strin
 	}
 
 	var sb strings.Builder
-	if capped {
-		fmt.Fprintf(&sb, "Found %d items (limit reached, more may exist — raise limit or narrow scope):\n", len(results))
-	} else {
+	// offset+1 起数:对模型展示人类习惯的 1-based 区间,end 即下一页 offset。
+	pageEnd := offset + len(results)
+	switch {
+	case offset == 0 && total <= len(results):
 		fmt.Fprintf(&sb, "Found %d items:\n", len(results))
+	case pageEnd < total:
+		fmt.Fprintf(&sb, "Found %d matches — showing %d-%d (pass offset=%d for the next page):\n", total, offset+1, pageEnd, pageEnd)
+	default:
+		fmt.Fprintf(&sb, "Found %d matches — showing %d-%d (end of results):\n", total, offset+1, pageEnd)
 	}
 
 	type resultSection struct {
