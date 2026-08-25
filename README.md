@@ -2,9 +2,9 @@
 
 ![new-mcp](/web/public/logo.png)
 
-# NewMCP
+# New MCP
 
-**Next-Generation Unified MCP Service Management Platform**
+🍥 **Next-Generation Unified MCP Service Management Platform**
 
 <p align="center">
   <a href="./README.zh_CN.md">简体中文</a> |
@@ -23,9 +23,6 @@
   </a><!--
   --><a href="https://hub.docker.com/r/mujkjk/new-mcp">
     <img src="https://img.shields.io/badge/docker-dockerHub-blue" alt="docker">
-  </a><!--
-  --><a href="https://goreportcard.com/report/github.com/mujiajun-index/new-mcp">
-    <img src="https://goreportcard.com/badge/github.com/mujiajun-index/new-mcp" alt="GoReportCard">
   </a>
 </p>
 
@@ -329,7 +326,7 @@ volumes:
 
 <div align="center">
 
-[![Star History Chart](https://api.star-history.com/chart?repos=mujiajun-index/new-mcp&type=date&legend=top-left)](https://www.star-history.com/?type=date&repos=mujiajun-index%2Fnew-mcp)
+[![Star History Chart](https://api.star-history.com/svg?repos=mujiajun-index/new-mcp&type=Date)](https://star-history.com/#mujiajun-index/new-mcp&Date)
 
 </div>
 
