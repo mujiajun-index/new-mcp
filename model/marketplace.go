@@ -34,7 +34,8 @@ type MarketplaceItem struct {
 	PromptsSnapshot      string         `json:"prompts_snapshot" gorm:"type:text"`
 	// 上游握手信息:克隆上架时从源服务拷贝、手动刷新快照时从临时直连捕获。
 	// server_info 为 JSON({"name":...,"version":...}),protocol_version 为协商出的协议版本。
-	ServerInfo      string `json:"server_info" gorm:"type:varchar(4096);default:'{}'"`
+	// text 而非 varchar(4096):本表 varchar 预算已贴近 MySQL 65535 行上限,再加大 varchar 会迁移失败
+	ServerInfo      string `json:"server_info" gorm:"type:text"`
 	ProtocolVersion string `json:"protocol_version" gorm:"size:32"`
 	// 商业化:服务级计费类型(free / per_call)
 	BillingType string `json:"billing_type" gorm:"size:16;default:per_call"`

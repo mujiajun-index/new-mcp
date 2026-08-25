@@ -22,7 +22,7 @@ type McpService struct {
 	PromptsCache      string     `json:"prompts_cache" gorm:"type:text"`
 	HealthStatus      string     `json:"health_status" gorm:"size:16;default:unknown;index"`
 	LastHealthCheck   *time.Time `json:"last_health_check"`
-	ServerInfo        string     `json:"server_info" gorm:"type:varchar(4096);default:'{}'"`
+	ServerInfo        string     `json:"server_info" gorm:"type:text"`
 	ProtocolVersion   string     `json:"protocol_version" gorm:"size:32"`
 	IconURL           string     `json:"icon_url" gorm:"size:512"`
 	Tags              string     `json:"tags" gorm:"size:512"`
