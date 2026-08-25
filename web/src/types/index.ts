@@ -432,6 +432,8 @@ export interface MarketplaceDetail {
   tags: string[]
   version: string
   transport_type: TransportType
+  // 平台上游连接配置(解密;headers/env 的凭证值为首尾掩码,明文不出服务端);仅 admin 详情接口回传
+  config_template?: Record<string, unknown>
   config_template_source: Record<string, unknown>
   auth_instructions: string
   repo_url: string

@@ -209,6 +209,19 @@ func (p *SessionPool) Remove(serviceID int64) {
 	}
 }
 
+// RemoveByMarketplaceItem 踢掉某市场项全部引用服务的池内会话(市场项平台上游配置变更后调用),
+// 下次调用时按新 config_template 重新物化连接。只清内存池,不查 DB:无引用的项自然无会话可踢。
+func (p *SessionPool) RemoveByMarketplaceItem(itemID int64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for id, s := range p.sessions {
+		if s.MarketplaceItemID != nil && *s.MarketplaceItemID == itemID {
+			s.Adapter.Close()
+			delete(p.sessions, id)
+		}
+	}
+}
+
 func (p *SessionPool) CloseAll() {
 	p.mu.Lock()
 	defer p.mu.Unlock()

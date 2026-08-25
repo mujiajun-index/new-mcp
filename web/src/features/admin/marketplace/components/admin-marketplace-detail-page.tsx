@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -16,8 +16,10 @@ import { SectionCard } from '@/components/section-card'
 import { ToolItem } from '@/components/tool-params'
 import { ResourceItemCard, PromptItemCard } from '@/components/mcp-items'
 import { toast } from 'sonner'
-import { ArrowLeft, Save, RefreshCw } from 'lucide-react'
-import type { MarketplaceDetail } from '@/types'
+import {
+  ArrowLeft, Save, RefreshCw, Pencil, X, Check, Loader2, ChevronDown, ChevronRight,
+} from 'lucide-react'
+import type { MarketplaceDetail, AuthType } from '@/types'
 
 // AdminMarketplaceDetailPage 市场项详情 + 编辑(§11)。上半只读概览,下半编辑表单(调 adminUpdateMarketplace)。
 export function AdminMarketplaceDetailPage() {
@@ -128,6 +130,9 @@ export function AdminMarketplaceDetailPage() {
         </div>
         {item.description && <p className="mt-3 text-sm text-muted-foreground">{item.description}</p>}
       </div>
+
+      {/* 平台上游配置编辑(仅平台托管项):折叠区,展开后可改 URL/鉴权等,与服务详情同款 */}
+      {item.category === 'instant' && <UpstreamConfigCard item={item} queryId={id} />}
 
       {/* 编辑表单 */}
       <EditForm item={item} groups={groups} tagsLib={tagsLib} notSelfUse={notSelfUse}
@@ -327,6 +332,268 @@ function EditForm({ item, groups, tagsLib, notSelfUse, onSave, pending }: {
       <div className="flex justify-end">
         <Button className="gap-2" disabled={pending} onClick={submit}><Save className="h-4 w-4" />{t('common.save')}</Button>
       </div>
+    </div>
+  )
+}
+
+// --- 平台上游配置(instant 项)折叠编辑区 ---
+
+// 与服务详情一致:环境变量用「每行 KEY=value」文本表示,而非 JSON
+function parseEnvText(text: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) continue
+    const i = line.indexOf('=')
+    if (i <= 0) continue
+    out[line.slice(0, i).trim()] = line.slice(i + 1)
+  }
+  return out
+}
+
+function envToText(env: Record<string, unknown> | undefined | null): string {
+  if (!env || typeof env !== 'object') return ''
+  return Object.entries(env)
+    .map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`)
+    .join('\n')
+}
+
+type UpstreamForm = {
+  url: string
+  env: string
+  auth_type: AuthType
+  api_key: string
+  bearer_token: string
+  custom_header_key: string
+  custom_header_value: string
+}
+
+// UpstreamConfigCard 平台托管项的上游连接配置:默认折叠,展开可查看并以服务详情同款交互编辑
+// URL/鉴权(stdio 为环境变量)。保存调 adminUpdateMarketplace({config_template}),
+// 后端踢掉该市场项全部引用服务的旧会话,新调用按新配置重连。
+function UpstreamConfigCard({ item, queryId }: { item: MarketplaceDetail; queryId: string }) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState<UpstreamForm>({
+    url: '', env: '', auth_type: 'none',
+    api_key: '', bearer_token: '', custom_header_key: '', custom_header_value: '',
+  })
+
+  const cfg = (item.config_template || {}) as Record<string, unknown>
+  const isStdio = item.transport_type === 'stdio'
+
+  const updateMutation = useMutation({
+    mutationFn: (body: Record<string, unknown>) => adminUpdateMarketplace(item.id, body),
+    onSuccess: () => {
+      toast.success(t('common.success'))
+      setEditing(false)
+      queryClient.invalidateQueries({ queryKey: ['admin-marketplace-detail', queryId] })
+      queryClient.invalidateQueries({ queryKey: ['admin-marketplace'] })
+    },
+  })
+
+  // 非编辑态下把上游配置反向解析回表单(认证方式从 headers 推断),便于编辑预填
+  useEffect(() => {
+    if (editing) return
+    const headers = (cfg.headers as Record<string, string>) || {}
+    let authType: AuthType = 'none'
+    let apiKey = ''
+    let bearerToken = ''
+    let customKey = ''
+    let customValue = ''
+    if (headers['X-API-Key']) {
+      authType = 'api_key'
+      apiKey = headers['X-API-Key']
+    } else if (headers['Authorization']?.startsWith('Bearer ')) {
+      authType = 'bearer'
+      bearerToken = headers['Authorization']!.slice(7)
+    } else {
+      const k = Object.keys(headers)[0]
+      if (k) {
+        authType = 'custom'
+        customKey = k
+        customValue = headers[k] || ''
+      }
+    }
+    setForm({
+      url: typeof cfg.url === 'string' ? cfg.url : '',
+      env: envToText(cfg.env as Record<string, unknown> | undefined),
+      auth_type: authType,
+      api_key: apiKey,
+      bearer_token: bearerToken,
+      custom_header_key: customKey,
+      custom_header_value: customValue,
+    })
+  }, [item, editing])
+
+  // 与服务详情 buildConfig 同款:未填新凭据时保留原 headers,切回 none 才清空;
+  // stdio 的命令/参数不可编辑,沿用原配置仅改环境变量
+  function buildConfig(): Record<string, unknown> {
+    const originalHeaders = (cfg.headers as Record<string, string>) || {}
+    const hasNewAuth =
+      (form.auth_type === 'api_key' && !!form.api_key) ||
+      (form.auth_type === 'bearer' && !!form.bearer_token) ||
+      (form.auth_type === 'custom' && !!form.custom_header_key)
+
+    let headers: Record<string, string>
+    if (form.auth_type === 'none') {
+      headers = {}
+    } else if (hasNewAuth) {
+      headers = {}
+      if (form.auth_type === 'api_key') headers['X-API-Key'] = form.api_key
+      else if (form.auth_type === 'bearer') headers['Authorization'] = `Bearer ${form.bearer_token}`
+      else if (form.auth_type === 'custom' && form.custom_header_key) headers[form.custom_header_key] = form.custom_header_value
+    } else {
+      headers = { ...originalHeaders }
+    }
+
+    switch (item.transport_type) {
+      case 'stdio':
+        return { command: cfg.command, args: Array.isArray(cfg.args) ? cfg.args : [], env: parseEnvText(form.env) }
+      case 'sse':
+      case 'streamable-http':
+        return { url: form.url, headers }
+      case 'websocket':
+      case 'passive-ws':
+        return { url: form.url }
+      default:
+        return cfg
+    }
+  }
+
+  const authOptions: { value: AuthType; label: string }[] = [
+    { value: 'none', label: t('services.authNone') },
+    { value: 'api_key', label: t('services.authApiKey') },
+    { value: 'bearer', label: t('services.authBearer') },
+    { value: 'custom', label: t('services.authCustom') },
+  ]
+
+  const canSave = isStdio ? !!cfg.command : form.url.trim().length > 0
+
+  return (
+    <div className="rounded-xl border bg-card">
+      <button type="button" className="flex w-full items-center gap-2 p-5 text-left"
+        onClick={() => setOpen((v) => !v)}>
+        {open
+          ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+          : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />}
+        <h3 className="font-semibold">{t('marketplace.upstreamConfig')}</h3>
+        <span className="truncate text-xs text-muted-foreground">
+          {isStdio ? String(cfg.command || '-') : form.url || t('services.serviceUrlRequired')}
+        </span>
+      </button>
+      {open && (
+        <div className="space-y-4 border-t p-5">
+          <p className="text-xs text-muted-foreground">{t('marketplace.upstreamConfigHint')}</p>
+          <p className="text-xs text-muted-foreground">{t('marketplace.upstreamMaskHint')}</p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {isStdio ? (
+              <>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">{t('services.commandRequired')}</Label>
+                  <code className="block text-sm break-all rounded-md bg-muted/50 px-3 py-2">{String(cfg.command || '-')}</code>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">{t('services.args')}</Label>
+                  <code className="block text-sm break-all rounded-md bg-muted/50 px-3 py-2">
+                    {Array.isArray(cfg.args) ? (cfg.args as unknown[]).join(' ') : '-'}
+                  </code>
+                </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label className="text-xs text-muted-foreground">{t('services.create.envLabel')}</Label>
+                  {editing ? (
+                    <>
+                      <Textarea rows={4} value={form.env} onChange={(e) => setForm({ ...form, env: e.target.value })}
+                        placeholder={'API_KEY=xxx\nNODE_ENV=production'} />
+                      <p className="text-xs text-muted-foreground">{t('services.create.envHint')}</p>
+                    </>
+                  ) : (
+                    <code className="block whitespace-pre-wrap text-sm break-all rounded-md bg-muted/50 px-3 py-2">{form.env || '-'}</code>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label className="text-xs text-muted-foreground">{t('services.serviceUrlRequired')}</Label>
+                {editing ? (
+                  <Input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://example.com/mcp" />
+                ) : (
+                  <code className="block text-sm break-all rounded-md bg-muted/50 px-3 py-2">{form.url || '-'}</code>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label className="text-xs text-muted-foreground">{t('services.authMethod')}</Label>
+              {editing ? (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {authOptions.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setForm({ ...form, auth_type: opt.value })}
+                      className={`rounded-lg border px-3 py-1.5 text-sm transition-all ${
+                        form.auth_type === opt.value ? 'border-primary bg-primary/5' : 'hover:border-primary/30'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm">{authOptions.find((o) => o.value === form.auth_type)?.label || t('services.authNone')}</p>
+              )}
+            </div>
+
+            {editing && form.auth_type === 'api_key' && (
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label className="text-xs text-muted-foreground">API Key</Label>
+                <Input value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })}
+                  placeholder={t('services.placeholderKeepUnchanged')} autoComplete="off" />
+              </div>
+            )}
+            {editing && form.auth_type === 'bearer' && (
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label className="text-xs text-muted-foreground">Token</Label>
+                <Input value={form.bearer_token} onChange={(e) => setForm({ ...form, bearer_token: e.target.value })}
+                  placeholder={t('services.placeholderKeepUnchanged')} autoComplete="off" />
+              </div>
+            )}
+            {editing && form.auth_type === 'custom' && (
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label className="text-xs text-muted-foreground">{t('services.customHeaders')}</Label>
+                <div className="flex gap-2">
+                  <Input value={form.custom_header_key} onChange={(e) => setForm({ ...form, custom_header_key: e.target.value })} placeholder="Header Key" />
+                  <Input value={form.custom_header_value} onChange={(e) => setForm({ ...form, custom_header_value: e.target.value })} placeholder="Value" />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {editing ? (
+            <div className="flex justify-end gap-2 border-t pt-4">
+              <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
+                <X className="h-3.5 w-3.5 mr-1.5" />{t('common.cancel')}
+              </Button>
+              <Button size="sm" onClick={() => updateMutation.mutate({ config_template: buildConfig() })}
+                disabled={!canSave || updateMutation.isPending}>
+                {updateMutation.isPending
+                  ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  : <Check className="h-3.5 w-3.5 mr-1.5" />}
+                {t('common.save')}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex justify-end border-t pt-4">
+              <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+                <Pencil className="h-3.5 w-3.5 mr-1.5" />{t('common.edit')}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -194,7 +194,7 @@ ALTER TABLE `marketplace_items`
 > - **用户侧**:浏览市场 → **"添加到我的服务"**(`POST /marketplace/:id/add`)→ 生成 `mcp_services` 引用行(§4.2)→ 可加入分组 → 经 `/mcp/group/:slug` 调用 → 按市场价扣费。
 > - 定价走**工具级 > 服务级 > 全局默认** 3 级解析(§5.2);服务级即本表 `billing_type`/`price_per_call`。**批量定价**:`PUT /admin/marketplace/pricing/batch`。
 > - **源码型(`category='source'`)在托管模型下不再适用**,降级为文档展示或下线;市场仅保留平台托管型(原 `instant`)。
-> - **平台凭证加密(安全)**:`config_template` 含平台上游凭证,**敏感字段加密落库**(参考 `vision_configs.api_key` 加密存储);API 返回掩码,仅平台侧调上游时解密,管理员/用户均无法读取明文凭证。
+> - **平台凭证加密(安全)**:`config_template` 含平台上游凭证,**敏感字段加密落库**(参考 `vision_configs.api_key` 加密存储);仅平台侧调上游时解密。管理端详情为支持编辑回传 `config_template`,其中凭证值(headers/env)替换为首尾掩码(如 `sk-A...x9z`,便于比对),保存时掩码原样传回则回填库内明文;用户侧任何接口均不返回,管理员/用户均无法读取明文凭证。
 > - **存量迁移**:开启计费后,存量市场项默认 `billing_type='per_call'`+`price=0` → 非自用模式判为"未定价"无法启用;需经批量定价(§5.5)显式设价后方可启用。
 
 ### 4.4 `mcp_tool_prices` 表 — 工具级定价(市场服务,V1可选/V2 UI)

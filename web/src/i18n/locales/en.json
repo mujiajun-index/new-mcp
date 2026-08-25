@@ -965,7 +965,10 @@
     "category": "Category",
     "repoUrl": "Repository URL",
     "installGuide": "Install Guide",
-    "sourceFieldsHint": "Source-type services show users: repository URL and install guide"
+    "sourceFieldsHint": "Source-type services show users: repository URL and install guide",
+    "upstreamConfig": "Upstream Connection",
+    "upstreamConfigHint": "Platform-hosted endpoint URL and credentials. Saved changes apply to new calls immediately (existing connections are dropped and reconnect on demand).",
+    "upstreamMaskHint": "Saved credentials (auth headers / env vars) are shown masked with head and tail kept (e.g. sk-A...x9z) for comparison without exposing plaintext: save the mask as-is to keep it unchanged, or type a new value to replace it."
   },
   "categories": {
     "subtitle": "Manage marketplace business groups and tag dictionary",

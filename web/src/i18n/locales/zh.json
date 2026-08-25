@@ -965,7 +965,10 @@
     "category": "分类",
     "repoUrl": "仓库地址",
     "installGuide": "安装指南",
-    "sourceFieldsHint": "源码型服务展示给用户:仓库地址与安装指南"
+    "sourceFieldsHint": "源码型服务展示给用户:仓库地址与安装指南",
+    "upstreamConfig": "平台上游配置",
+    "upstreamConfigHint": "平台托管的连接地址与鉴权凭证。修改保存后对新调用立即生效（旧连接断开，按需重连）。",
+    "upstreamMaskHint": "已保存的凭证（鉴权请求头/环境变量）以首尾掩码显示（如 sk-A...x9z），便于比对且不暴露明文：掩码原样保存即保持不变，输入新值则替换。"
   },
   "categories": {
     "subtitle": "管理市场的业务分组与标签字典",

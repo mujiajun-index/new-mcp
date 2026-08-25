@@ -1620,7 +1620,7 @@ wss://api.newmcp.pro/mcp/passive/?token=<PASSIVE_JWT>
 - `name` 全局唯一,重复返回 400(提示修改服务标识)。
 
 #### PUT /admin/marketplace/:id `(更新市场项)`
-扩展支持 `billing_type` / `price_per_call`(指针,可选更新)。启用状态下非自用模式校验显式定价。`config_template` 平台凭证**加密落库**(API 不返回明文)。
+扩展支持 `billing_type` / `price_per_call`(指针,可选更新)。启用状态下非自用模式校验显式定价。`config_template` 平台凭证**加密落库**。管理端详情(GET /admin/marketplace/:id)回传 `config_template` 供编辑:url/command/args 等结构明文,headers/env 的**凭证值替换为首尾掩码**(如 `sk-A...x9z`);保存时掩码值原样传回则回填库内明文(未改动),输入新值则替换。
 
 #### GET /admin/redemptions `(列表)` / POST /admin/redemptions `(批量生成)`
 - POST 批量生成:`{ "name": "活动码", "quota": 5000000, "count": 10, "expired_at": 0 }`(`count` 上限 100,`expired_at` 0=永久)。返回含明文 `code` 的条目(仅此一次可见)。

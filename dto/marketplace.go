@@ -92,6 +92,10 @@ type MarketplaceDetail struct {
 	Tags                 []string               `json:"tags"`
 	Version              string                 `json:"version"`
 	TransportType        string                 `json:"transport_type"`
+	// 平台上游连接配置(config_template 解密):url/command/args 等结构明文,headers/env 的凭证值
+	// 为首尾掩码(如 sk-A...x9z),明文凭证不离开服务端。仅 admin 详情(GetItemByID)回传供编辑,
+	// 保存时掩码原样传回由后端回填明文;公开浏览(GetPublished)绝不携带。
+	ConfigTemplate       map[string]interface{} `json:"config_template,omitempty"`
 	ConfigTemplateSource map[string]interface{} `json:"config_template_source"`
 	AuthInstructions     string                 `json:"auth_instructions"`
 	RepoURL              string                 `json:"repo_url"`

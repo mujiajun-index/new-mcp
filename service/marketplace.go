@@ -118,6 +118,103 @@ func encryptConfigTemplate(plain string) string {
 	return enc
 }
 
+// --- 平台凭证掩码(管理端详情回显 / 保存回填) ---
+
+// secretMask 短凭证(<10 字符)的整体掩码:过短的值连首尾都不保留,避免被整体还原。
+const secretMask = "****"
+
+// maskSecret 把凭证值掩码为「首4...尾4」(API Key 展示惯例):保留首尾便于管理员比对是否换了钥匙,
+// 中间至少隐藏 2 个字符;不足 10 字符的值整体遮蔽。
+func maskSecret(v string) string {
+	r := []rune(v)
+	if len(r) < 10 {
+		return secretMask
+	}
+	return string(r[:4]) + "..." + string(r[len(r)-4:])
+}
+
+// configCredentialKeys config_template 中承载凭证值的两个顶层字段:HTTP 类的 headers、stdio 的 env。
+var configCredentialKeys = [2]string{"headers", "env"}
+
+// maskConfigCredentials 返回 config 的浅拷贝,其中 headers/env 每项的**值**替换为掩码;
+// url/command/args 等非凭证结构保持明文(编辑 URL 不受影响)。不修改原 map。
+func maskConfigCredentials(cfg map[string]interface{}) map[string]interface{} {
+	if cfg == nil {
+		return nil
+	}
+	out := make(map[string]interface{}, len(cfg))
+	for k, v := range cfg {
+		out[k] = v
+	}
+	for _, key := range configCredentialKeys {
+		m, ok := out[key].(map[string]interface{})
+		if !ok || len(m) == 0 {
+			continue
+		}
+		masked := make(map[string]interface{}, len(m))
+		for hk, hv := range m {
+			s, isStr := hv.(string)
+			if !isStr {
+				masked[hk] = hv
+				continue
+			}
+			// Bearer 保留 scheme 前缀、仅掩码 token(如 Bearer tok-...cdef):
+			// 前端按 "Bearer " 前缀识别认证类型并重组头,整值掩码会让该逻辑失配。
+			if key == "headers" && hk == "Authorization" && strings.HasPrefix(s, "Bearer ") {
+				masked[hk] = "Bearer " + maskSecret(strings.TrimPrefix(s, "Bearer "))
+				continue
+			}
+			masked[hk] = maskSecret(s)
+		}
+		out[key] = masked
+	}
+	return out
+}
+
+// mergeMaskedCredentials 保存时回填:入参 config 里与「库内值的掩码」逐字相同的首尾掩码值,
+// 替换回库内明文(管理员未改动凭证、掩码原样传回的场景);输入了新值(≠掩码)则原样保留。
+// 就地修改 incoming。
+func mergeMaskedCredentials(incoming, stored map[string]interface{}) {
+	if incoming == nil || stored == nil {
+		return
+	}
+	for _, key := range configCredentialKeys {
+		in, ok := incoming[key].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		st, ok := stored[key].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for k, v := range in {
+			s, isStr := v.(string)
+			if !isStr {
+				continue
+			}
+			old, exists := st[k]
+			if !exists {
+				continue
+			}
+			oldStr, oldIsStr := old.(string)
+			if !oldIsStr {
+				continue
+			}
+			// Bearer:token 部分与库内 token 的掩码相同 → 回填完整原值(与 maskConfigCredentials 对称)
+			if key == "headers" && k == "Authorization" &&
+				strings.HasPrefix(s, "Bearer ") && strings.HasPrefix(oldStr, "Bearer ") {
+				if strings.TrimPrefix(s, "Bearer ") == maskSecret(strings.TrimPrefix(oldStr, "Bearer ")) {
+					in[k] = oldStr
+				}
+				continue
+			}
+			if s == maskSecret(oldStr) {
+				in[k] = oldStr
+			}
+		}
+	}
+}
+
 // --- Admin operations ---
 
 // 注:市场项仅支持"从自有服务克隆上架"(CloneFromService),已移除手动创建接口
@@ -169,6 +266,15 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 		item.TransportType = *req.TransportType
 	}
 	if req.ConfigTemplate != nil {
+		// 管理端详情回显的是首尾掩码:未改动的凭证以掩码原样传回,先回填库内明文再加密落库;
+		// 输入了新值的项(≠库内值的掩码)不受影响。存量明文行 Decrypt 失败回退原值。
+		stored := map[string]interface{}{}
+		if plain, dErr := common.Decrypt(item.ConfigTemplate); dErr == nil && plain != "" {
+			_ = json.Unmarshal([]byte(plain), &stored)
+		} else {
+			_ = json.Unmarshal([]byte(item.ConfigTemplate), &stored)
+		}
+		mergeMaskedCredentials(req.ConfigTemplate, stored)
 		b, _ := json.Marshal(req.ConfigTemplate)
 		item.ConfigTemplate = encryptConfigTemplate(string(b)) // 平台凭证加密落库
 	}
@@ -225,6 +331,11 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 	}
 	if err := item.Update(); err != nil {
 		return err
+	}
+	// 平台上游配置变更后,该市场项全部引用服务的池内会话仍带旧配置/旧凭证,
+	// 踢掉待下次调用按新配置重连(引用服务众多,不做预连,按需重连即可)。
+	if req.ConfigTemplate != nil && SessionPool != nil {
+		SessionPool.RemoveByMarketplaceItem(item.ID)
 	}
 	billing.InvalidatePricingCacheItem(item.ID)
 	return nil
@@ -450,12 +561,24 @@ func (s *MarketplaceService) GetPublished(itemID int64) (*dto.MarketplaceDetail,
 	return s.toDetail(item), nil
 }
 
+// GetItemByID 管理端详情:额外回传平台上游配置(config_template 解密)供编辑预填,
+// 其中 headers/env 的凭证值替换为首尾掩码(如 sk-A...x9z),明文凭证不离开服务端
+// (COMMERCIALIZATION「API 返回掩码」约束)。公开路径 GetPublished 不回传该字段。
 func (s *MarketplaceService) GetItemByID(itemID int64) (*dto.MarketplaceDetail, error) {
 	item, err := model.GetMarketplaceItemByID(itemID)
 	if err != nil {
 		return nil, err
 	}
-	return s.toDetail(item), nil
+	detail := s.toDetail(item)
+	// config_template 加密落库(§4.3):Decrypt 失败的存量明文项回退原值(与 materializeMarketplace 一致)
+	plain := item.ConfigTemplate
+	if p, dErr := common.Decrypt(item.ConfigTemplate); dErr == nil && p != "" {
+		plain = p
+	}
+	var cfg map[string]interface{}
+	_ = json.Unmarshal([]byte(plain), &cfg)
+	detail.ConfigTemplate = maskConfigCredentials(cfg)
+	return detail, nil
 }
 
 // --- User: 引用式安装(AddToMyServices,§4.2/§11)---
