@@ -85,3 +85,9 @@ export async function getServiceHealth(id: number) {
   const res = await api.get(`/services/${id}/health`)
   return res.data
 }
+
+// stdio 服务进程资源占用(详情页 5s 轮询)
+export async function getServiceProcessStat(id: number) {
+  const res = await api.get(`/services/${id}/process`)
+  return res.data
+}

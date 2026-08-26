@@ -244,3 +244,15 @@ func GetServiceHealth(c *gin.Context) {
 	}
 	common.Success(c, resp)
 }
+
+// GetServiceProcess 返回 stdio 服务子进程的资源占用快照(详情页 5s 轮询)。
+func GetServiceProcess(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	resp, err := mcpServiceService.GetProcessStat(userID, id)
+	if err != nil {
+		common.Error(c, http.StatusNotFound, "服务不存在")
+		return
+	}
+	common.Success(c, resp)
+}

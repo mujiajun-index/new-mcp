@@ -103,6 +103,18 @@ export interface McpTool {
   inputSchema: Record<string, unknown>
 }
 
+// stdio 服务子进程(整棵进程树)的资源占用快照;running 为 false 时其余字段缺省
+export interface ServiceProcessStat {
+  running: boolean
+  pid?: number
+  command?: string
+  process_count?: number
+  memory_rss_bytes?: number
+  memory_vms_bytes?: number
+  cpu_percent?: number
+  uptime_seconds?: number
+}
+
 // MCP 内容块:text/image/resource 等,工具调用 content 与提示消息 content 共用
 export interface McpContentBlock {
   type: string

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
-import { getService, updateService, deleteService, testService, refreshTools, getServiceResources, getServicePrompts } from '../api'
+import { getService, updateService, deleteService, testService, refreshTools, getServiceResources, getServicePrompts, getServiceProcessStat } from '../api'
 import { ToolTestDialog } from './tool-test-dialog'
 import { ResourceTestDialog, type ResourceTarget } from './resource-test-dialog'
 import { PromptTestDialog } from './prompt-test-dialog'
@@ -12,12 +12,13 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ToolItem } from '@/components/tool-params'
 import { SectionCard } from '@/components/section-card'
+import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import {
-  ArrowLeft, Trash2, Zap, RefreshCw, Server,
+  ArrowLeft, Trash2, Zap, RefreshCw, Server, Activity,
   Pencil, X, Check, Loader2, ChevronDown, ChevronRight, FlaskConical,
 } from 'lucide-react'
-import type { McpTool, McpResource, McpResourceTemplate, McpPrompt, AuthType, UpdateServiceReq } from '@/types'
+import type { McpTool, McpResource, McpResourceTemplate, McpPrompt, AuthType, UpdateServiceReq, ServiceProcessStat } from '@/types'
 
 // parseEnv / envToString: 与注册页一致，环境变量用「每行 KEY=value」文本表示，
 // 而非 JSON。编辑 stdio 服务时仅环境变量可编辑，命令/参数只读。
@@ -38,6 +39,31 @@ function envToString(env: Record<string, unknown> | undefined | null): string {
   return Object.entries(env)
     .map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`)
     .join('\n')
+}
+
+// formatBytes/formatUptime: 进程资源指标的展示格式化(B/KB/MB/GB、d/h/m/s)
+function formatBytes(bytes?: number): string {
+  if (!bytes || bytes <= 0) return '-'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let v = bytes
+  let i = 0
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i++
+  }
+  return `${v >= 100 ? v.toFixed(0) : v.toFixed(1)} ${units[i]}`
+}
+
+function formatUptime(seconds?: number): string {
+  if (!seconds || seconds <= 0) return '-'
+  const d = Math.floor(seconds / 86400)
+  const h = Math.floor((seconds % 86400) / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  if (d > 0) return `${d}d ${h}h`
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
 }
 
 export function ServiceDetailPage() {
@@ -100,6 +126,15 @@ export function ServiceDetailPage() {
   const { data: promptsData } = useQuery({
     queryKey: ['service-prompts', id],
     queryFn: () => getServicePrompts(serviceId),
+  })
+
+  // stdio 服务进程资源占用:仅 stdio 启用,5s 自动轮询,离开详情页(组件卸载)即停止
+  const isStdioService = data?.data?.transport_type === 'stdio'
+  const { data: processData } = useQuery({
+    queryKey: ['service-process', id],
+    queryFn: () => getServiceProcessStat(serviceId),
+    enabled: isStdioService,
+    refetchInterval: 5000,
   })
 
   const deleteMutation = useMutation({
@@ -510,6 +545,51 @@ export function ServiceDetailPage() {
           </pre>
         </div>
       )}
+
+      {/* Process stats (stdio only): 整棵进程树的内存/CPU/运行时长,5s 轮询 */}
+      {isStdio && (() => {
+        const proc: ServiceProcessStat | undefined = processData?.data
+        return (
+          <SectionCard
+            title={t('services.processInfo')}
+            actions={
+              <Badge variant={proc?.running ? 'success' : 'secondary'}>
+                {proc?.running ? t('services.processRunning') : t('services.processStopped')}
+              </Badge>
+            }
+          >
+            {proc?.running ? (
+              <div className="space-y-3">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  {[
+                    { label: t('services.memoryUsage'), value: formatBytes(proc.memory_rss_bytes), sub: t('services.processCount', { count: proc.process_count || 1 }) },
+                    { label: t('services.cpuUsage'), value: `${(proc.cpu_percent ?? 0).toFixed(1)}%`, sub: null },
+                    { label: t('services.uptime'), value: formatUptime(proc.uptime_seconds), sub: null },
+                    { label: 'PID', value: String(proc.pid ?? '-'), sub: null },
+                  ].map((item) => (
+                    <div key={item.label} className="rounded-xl border bg-card p-4">
+                      <p className="text-xs text-muted-foreground">{item.label}</p>
+                      <p className="mt-1 text-lg font-semibold tabular-nums">{item.value}</p>
+                      {item.sub && <p className="mt-0.5 text-xs text-muted-foreground">{item.sub}</p>}
+                    </div>
+                  ))}
+                </div>
+                {proc.command && (
+                  <p className="truncate font-mono text-xs text-muted-foreground" title={proc.command}>
+                    {proc.command}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center py-8 text-center">
+                <Activity className="h-8 w-8 text-muted-foreground/30 mb-2" />
+                <p className="text-sm text-muted-foreground">{t('services.processStopped')}</p>
+                <p className="mt-1 text-xs text-muted-foreground/60">{t('services.processNotRunningHint')}</p>
+              </div>
+            )}
+          </SectionCard>
+        )
+      })()}
 
       {/* Tools */}
       <SectionCard title={t('services.toolsList', { count: tools.length })}>

@@ -633,6 +633,41 @@ func (s *McpServiceService) GetHealth(userID, serviceID int64) (map[string]inter
 	}, nil
 }
 
+// GetProcessStat 返回 stdio 服务子进程(整棵进程树)的资源占用快照。
+// 非 stdio 服务或进程未运行(服务未被连接/已退出)时返回 Running:false,不报错,
+// 供前端以固定形态渲染"未运行"状态。
+func (s *McpServiceService) GetProcessStat(userID, serviceID int64) (*dto.ServiceProcessStat, error) {
+	svc, err := model.GetServiceByID(userID, serviceID)
+	if err != nil {
+		return nil, err
+	}
+
+	notRunning := &dto.ServiceProcessStat{}
+	if svc.TransportType != string(transport.TypeStdio) || SessionPool == nil {
+		return notRunning, nil
+	}
+	session := SessionPool.Get(serviceID)
+	if session == nil || !session.Adapter.IsConnected() {
+		return notRunning, nil
+	}
+	proc := session.Adapter.GetStdioProcess()
+	if proc == nil {
+		return notRunning, nil
+	}
+
+	tree := transport.CollectProcessTreeStat(proc.PID, proc.Command)
+	return &dto.ServiceProcessStat{
+		Running:       tree.Running,
+		PID:           tree.PID,
+		Command:       tree.Command,
+		ProcessCount:  tree.ProcessCount,
+		MemoryRSS:     tree.RSSBytes,
+		MemoryVMS:     tree.VMSBytes,
+		CPUPercent:    tree.CPUPercent,
+		UptimeSeconds: tree.UptimeSeconds,
+	}, nil
+}
+
 // --- Admin service management ---
 
 func (s *McpServiceService) CreateAdminService(adminID int64, req *dto.CreateServiceReq) (*dto.ServiceDetail, error) {

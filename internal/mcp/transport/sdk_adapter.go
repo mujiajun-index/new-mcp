@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -170,6 +171,17 @@ func (a *SDKAdapter) GetServerInfo() *ServerInfo {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.serverInfo
+}
+
+// GetStdioProcess 返回 stdio 传输拉起的子进程信息;其余传输类型/未启动返回 nil。
+func (a *SDKAdapter) GetStdioProcess() *StdioProcessInfo {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	st, ok := a.transport.(*StdioFilterTransport)
+	if !ok || st.Command == nil || st.Command.Process == nil {
+		return nil
+	}
+	return &StdioProcessInfo{PID: st.Command.Process.Pid, Command: strings.Join(st.Command.Args, " ")}
 }
 
 // --- Resources / Prompts 透传 ---

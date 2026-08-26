@@ -56,6 +56,19 @@ type ServiceDetail struct {
 	PassiveConnected bool                   `json:"passive_connected,omitempty"`
 }
 
+// ServiceProcessStat 是 stdio 服务子进程(整棵进程树)的资源占用快照。
+// Running 为 false 时(未连接/进程已退出/非 stdio 服务)其余字段为零值。
+type ServiceProcessStat struct {
+	Running       bool    `json:"running"`
+	PID           int     `json:"pid,omitempty"`
+	Command       string  `json:"command,omitempty"`
+	ProcessCount  int     `json:"process_count,omitempty"` // 树内进程总数(含 wrapper)
+	MemoryRSS     uint64  `json:"memory_rss_bytes,omitempty"`
+	MemoryVMS     uint64  `json:"memory_vms_bytes,omitempty"`
+	CPUPercent    float64 `json:"cpu_percent,omitempty"` // 树累计 CPU/生存期,可 >100%
+	UptimeSeconds int64   `json:"uptime_seconds,omitempty"`
+}
+
 type TestConnectionReq struct {
 	TransportType string                 `json:"transport_type" binding:"required,oneof=stdio sse streamable-http websocket passive-ws"`
 	Config        map[string]interface{} `json:"config"`

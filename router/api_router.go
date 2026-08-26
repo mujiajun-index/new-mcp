@@ -68,6 +68,7 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.GET("/services/:id/prompts", controller.GetServicePrompts)
 		auth.POST("/services/:id/prompts/get", controller.CallServicePrompt)
 		auth.GET("/services/:id/health", controller.GetServiceHealth)
+		auth.GET("/services/:id/process", controller.GetServiceProcess)
 
 		// MCP Groups
 		auth.GET("/groups", controller.ListGroups)
