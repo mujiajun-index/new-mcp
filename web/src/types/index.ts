@@ -221,6 +221,7 @@ export interface GroupServiceItem {
   id: number
   name: string
   display_name: string
+  source: string
   enabled: boolean
   tools_count: number
 }

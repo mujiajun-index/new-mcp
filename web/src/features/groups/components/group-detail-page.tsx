@@ -431,7 +431,7 @@ export function GroupDetailPage() {
               <>
                 <p className="text-xs text-muted-foreground">{t('groups.selectService')}</p>
                 <div className="flex flex-wrap gap-2">
-                  {availableServices.map((s: { id: number; name: string; display_name: string }) => (
+                  {availableServices.map((s: { id: number; name: string; display_name: string; source: string }) => (
                     <Button
                       key={s.id}
                       variant="outline"
@@ -445,6 +445,9 @@ export function GroupDetailPage() {
                       }}
                     >
                       {s.display_name || s.name}
+                      {s.source === 'marketplace' && (
+                        <span className="inline-flex items-center rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">{t('marketplace.platformHosted')}</span>
+                      )}
                     </Button>
                   ))}
                 </div>
@@ -457,7 +460,7 @@ export function GroupDetailPage() {
           <p className="text-sm text-muted-foreground text-center py-6">{t('groups.noServiceHint')}</p>
         ) : (
           <div className="space-y-2">
-            {group.services.map((s: { id: number; name: string; display_name: string; enabled: boolean; tools_count: number }) => (
+            {group.services.map((s: { id: number; name: string; display_name: string; source: string; enabled: boolean; tools_count: number }) => (
               <div key={s.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
                 <div className="flex items-center gap-2">
                   <span className={`h-2 w-2 rounded-full ${s.enabled ? 'bg-emerald-500' : 'bg-zinc-400'}`} />
@@ -466,6 +469,9 @@ export function GroupDetailPage() {
                       ? <>{s.display_name} <span className="font-normal text-muted-foreground">({s.name})</span></>
                       : s.name}
                   </span>
+                  {s.source === 'marketplace' && (
+                    <span className="inline-flex items-center rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">{t('marketplace.platformHosted')}</span>
+                  )}
                   <span className="text-xs text-muted-foreground">{s.tools_count} {t('groups.toolsCount')}</span>
                   {s.name.startsWith('vision_') && (
                     <span className="inline-flex items-center rounded-md bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">{t('groups.badgeVision')}</span>

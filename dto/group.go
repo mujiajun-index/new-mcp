@@ -116,6 +116,7 @@ type GroupServiceItem struct {
 	ID          int64  `json:"id"`
 	Name        string `json:"name"`
 	DisplayName string `json:"display_name"`
+	Source      string `json:"source"`
 	Enabled     bool   `json:"enabled"`
 	ToolsCount  int    `json:"tools_count"`
 }

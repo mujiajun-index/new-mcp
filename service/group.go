@@ -469,6 +469,7 @@ func (s *GroupService) toDetail(group *model.McpGroup) (*dto.GroupDetail, error)
 			ID:          svc.ID,
 			Name:        svc.Name,
 			DisplayName: svc.DisplayName,
+			Source:      svc.Source,
 			Enabled:     gs.Enabled,
 			ToolsCount:  len(tools),
 		})
