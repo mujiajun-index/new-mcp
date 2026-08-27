@@ -256,3 +256,14 @@ func GetServiceProcess(c *gin.Context) {
 	}
 	common.Success(c, resp)
 }
+
+// GetServicesOverview 服务总览页:统计摘要 + 全部服务的运行/资源快照(5s 轮询)。
+func GetServicesOverview(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	resp, err := mcpServiceService.GetServicesOverview(userID)
+	if err != nil {
+		common.Error(c, http.StatusInternalServerError, "获取服务总览失败")
+		return
+	}
+	common.Success(c, resp)
+}

@@ -115,6 +115,43 @@ export interface ServiceProcessStat {
   uptime_seconds?: number
 }
 
+// 服务总览:单个服务的运行/资源快照,running=false 时进程字段缺省
+export interface ServicesOverviewItem {
+  id: number
+  name: string
+  display_name: string
+  transport_type: TransportType
+  source: string
+  health_status: string
+  status: number
+  tools_count: number
+  created_at: string
+  running: boolean
+  pid?: number
+  process_count?: number
+  memory_rss_bytes?: number
+  cpu_percent?: number
+  uptime_seconds?: number
+}
+
+// 服务总览:顶部统计卡数据;cpu_percent_total 多核下可超 100%
+export interface ServicesOverviewSummary {
+  total_services: number
+  running_services: number
+  tools_total: number
+  process_total: number
+  memory_rss_bytes_total: number
+  cpu_percent_total: number
+  healthy_count: number
+  host_memory_total_bytes: number
+}
+
+// 服务总览接口响应:统计摘要 + 全量服务快照(不分页,前端本地筛选)
+export interface ServicesOverviewData {
+  summary: ServicesOverviewSummary
+  services: ServicesOverviewItem[]
+}
+
 // MCP 内容块:text/image/resource 等,工具调用 content 与提示消息 content 共用
 export interface McpContentBlock {
   type: string

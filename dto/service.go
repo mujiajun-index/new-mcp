@@ -69,6 +69,45 @@ type ServiceProcessStat struct {
 	UptimeSeconds int64   `json:"uptime_seconds,omitempty"`
 }
 
+// ServicesOverviewItem 总览页单个服务的运行/资源快照。Running=false 时(未连接/
+// 非 stdio/进程已退出)进程相关字段为零值被 omitempty 省略,口径同 ServiceProcessStat。
+type ServicesOverviewItem struct {
+	ID            int64   `json:"id"`
+	Name          string  `json:"name"`
+	DisplayName   string  `json:"display_name"`
+	TransportType string  `json:"transport_type"`
+	Source        string  `json:"source"`
+	HealthStatus  string  `json:"health_status"`
+	Status        int     `json:"status"`
+	ToolsCount    int     `json:"tools_count"`
+	CreatedAt     string  `json:"created_at"`
+	Running       bool    `json:"running"`
+	PID           int     `json:"pid,omitempty"`
+	ProcessCount  int     `json:"process_count,omitempty"`
+	MemoryRSS     uint64  `json:"memory_rss_bytes,omitempty"` // 树 RSS;进度条分母用 summary.host_memory_total_bytes
+	CPUPercent    float64 `json:"cpu_percent,omitempty"`      // 树累计 CPU/生存期,可 >100%(多核)
+	UptimeSeconds int64   `json:"uptime_seconds,omitempty"`
+}
+
+// ServicesOverviewSummary 总览页顶部统计卡数据。CPUTotalPercent 为各 stdio 进程树
+// 求和,多核下可超过 100%,由前端如实展示并提示口径。
+type ServicesOverviewSummary struct {
+	TotalServices   int     `json:"total_services"`
+	RunningServices int     `json:"running_services"`
+	ToolsTotal      int     `json:"tools_total"`
+	ProcessTotal    int     `json:"process_total"` // stdio 运行树的进程数总和
+	MemoryRSSTotal  uint64  `json:"memory_rss_bytes_total"`
+	CPUTotalPercent float64 `json:"cpu_percent_total"`
+	HealthyCount    int     `json:"healthy_count"` // health_status==healthy 数,健康率由前端计算
+	HostMemoryTotal uint64  `json:"host_memory_total_bytes"` // 主机物理内存总量(gopsutil),内存条分母
+}
+
+// ServicesOverview 是总览接口响应:统计摘要 + 全量服务快照(不分页,前端本地筛选)。
+type ServicesOverview struct {
+	Summary  ServicesOverviewSummary `json:"summary"`
+	Services []ServicesOverviewItem  `json:"services"`
+}
+
 type TestConnectionReq struct {
 	TransportType string                 `json:"transport_type" binding:"required,oneof=stdio sse streamable-http websocket passive-ws"`
 	Config        map[string]interface{} `json:"config"`

@@ -15,6 +15,7 @@ import (
 	"github.com/mujkjk/newmcp/internal/mcp/transport"
 	"github.com/mujkjk/newmcp/internal/mcp/virtual"
 	"github.com/mujkjk/newmcp/model"
+	"github.com/shirou/gopsutil/v4/mem"
 )
 
 var SessionPool *bridge.SessionPool
@@ -666,6 +667,98 @@ func (s *McpServiceService) GetProcessStat(userID, serviceID int64) (*dto.Servic
 		CPUPercent:    tree.CPUPercent,
 		UptimeSeconds: tree.UptimeSeconds,
 	}, nil
+}
+
+// GetServicesOverview 服务总览页数据:全部服务(不分页) + 统计摘要 + 各 stdio 服务
+// 进程树资源快照。只读 SessionPool 现状,绝不触发 GetOrConnect(查看总览不拉起
+// 进程);全部进程树合并为一次系统进程扫描。
+func (s *McpServiceService) GetServicesOverview(userID int64) (*dto.ServicesOverview, error) {
+	services, err := model.ListAllServicesByUser(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 池内会话快照(一次加锁),后续只读判断连接状态
+	sessions := map[int64]*bridge.McpSession{}
+	if SessionPool != nil {
+		for _, sess := range SessionPool.GetAllSessions() {
+			sessions[sess.ServiceID] = sess
+		}
+	}
+
+	// 收集已连接 stdio 服务的进程根,一次扫描采集全部进程树
+	var roots []transport.ProcessRoot
+	for i := range services {
+		svc := &services[i]
+		if svc.TransportType != string(transport.TypeStdio) {
+			continue
+		}
+		session := sessions[svc.ID]
+		if session == nil || !session.Adapter.IsConnected() {
+			continue
+		}
+		if proc := session.Adapter.GetStdioProcess(); proc != nil {
+			roots = append(roots, transport.ProcessRoot{Key: svc.ID, RootPID: proc.PID, Command: proc.Command})
+		}
+	}
+	treeStats := transport.CollectProcessTreesStat(roots)
+
+	resp := &dto.ServicesOverview{Services: make([]dto.ServicesOverviewItem, len(services))}
+	for i, svc := range services {
+		var tools []interface{}
+		_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
+
+		item := dto.ServicesOverviewItem{
+			ID:            svc.ID,
+			Name:          svc.Name,
+			DisplayName:   svc.DisplayName,
+			TransportType: svc.TransportType,
+			Source:        svc.Source,
+			HealthStatus:  svc.HealthStatus,
+			ToolsCount:    len(tools),
+			Status:        svc.Status,
+			CreatedAt:     svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		}
+
+		// running 口径:stdio = 池内会话已连接且进程树确实存活(连接标记可能滞后
+		// 于进程退出,以采集结果为准);远程/虚拟无本机进程可测,取最近一次健康
+		// 检测结果(当前有活跃连接同样算),禁用服务恒为未运行。
+		session := sessions[svc.ID]
+		connected := session != nil && session.Adapter.IsConnected()
+		if svc.TransportType == string(transport.TypeStdio) {
+			tree := treeStats[svc.ID]
+			item.Running = connected && tree != nil && tree.Running
+			if item.Running {
+				item.PID = tree.PID
+				item.ProcessCount = tree.ProcessCount
+				item.MemoryRSS = tree.RSSBytes
+				item.CPUPercent = tree.CPUPercent
+				item.UptimeSeconds = tree.UptimeSeconds
+			}
+		} else {
+			item.Running = svc.Status == common.StatusEnabled &&
+				(connected || svc.HealthStatus == common.HealthHealthy)
+		}
+
+		resp.Summary.ToolsTotal += item.ToolsCount
+		resp.Summary.ProcessTotal += item.ProcessCount
+		resp.Summary.MemoryRSSTotal += item.MemoryRSS
+		resp.Summary.CPUTotalPercent += item.CPUPercent
+		if item.Running {
+			resp.Summary.RunningServices++
+		}
+		if svc.HealthStatus == common.HealthHealthy {
+			resp.Summary.HealthyCount++
+		}
+		resp.Services[i] = item
+	}
+	resp.Summary.TotalServices = len(services)
+
+	// 主机物理内存总量:总览内存条与卡片的公共分母
+	if vm, err := mem.VirtualMemory(); err == nil && vm != nil {
+		resp.Summary.HostMemoryTotal = vm.Total
+	}
+	return resp, nil
 }
 
 // --- Admin service management ---

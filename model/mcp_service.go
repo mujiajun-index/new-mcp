@@ -57,6 +57,14 @@ func ListServicesByUser(userID int64, offset, limit int, filters map[string]stri
 	return services, total, err
 }
 
+// ListAllServicesByUser 返回用户全部服务(不分页),供总览页一次拉全量、前端本地筛选。
+func ListAllServicesByUser(userID int64) ([]McpService, error) {
+	var services []McpService
+	err := DB.Where("user_id = ?", userID).
+		Order("sort_order ASC, created_at DESC").Find(&services).Error
+	return services, err
+}
+
 func GetServiceByID(userID, serviceID int64) (*McpService, error) {
 	var svc McpService
 	err := DB.Where("id = ? AND user_id = ?", serviceID, userID).First(&svc).Error

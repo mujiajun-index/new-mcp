@@ -61,6 +61,9 @@ const AuthenticatedVisionCreateLazyRouteImport = createFileRoute(
 const AuthenticatedVisionIdLazyRouteImport = createFileRoute(
   '/_authenticated/vision/$id',
 )()
+const AuthenticatedServicesOverviewLazyRouteImport = createFileRoute(
+  '/_authenticated/services/overview',
+)()
 const AuthenticatedServicesCreateLazyRouteImport = createFileRoute(
   '/_authenticated/services/create',
 )()
@@ -270,6 +273,16 @@ const AuthenticatedVisionIdLazyRoute =
   } as any).lazy(() =>
     import('./routes/_authenticated/vision/$id.lazy').then((d) => d.Route),
   )
+const AuthenticatedServicesOverviewLazyRoute =
+  AuthenticatedServicesOverviewLazyRouteImport.update({
+    id: '/services/overview',
+    path: '/services/overview',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any).lazy(() =>
+    import('./routes/_authenticated/services/overview.lazy').then(
+      (d) => d.Route,
+    ),
+  )
 const AuthenticatedServicesCreateLazyRoute =
   AuthenticatedServicesCreateLazyRouteImport.update({
     id: '/services/create',
@@ -459,6 +472,7 @@ export interface FileRoutesByFullPath {
   '/marketplace/$id': typeof AuthenticatedMarketplaceIdLazyRoute
   '/services/$id': typeof AuthenticatedServicesIdLazyRoute
   '/services/create': typeof AuthenticatedServicesCreateLazyRoute
+  '/services/overview': typeof AuthenticatedServicesOverviewLazyRoute
   '/vision/$id': typeof AuthenticatedVisionIdLazyRoute
   '/vision/create': typeof AuthenticatedVisionCreateLazyRoute
   '/cameras/': typeof AuthenticatedCamerasIndexLazyRoute
@@ -500,6 +514,7 @@ export interface FileRoutesByTo {
   '/marketplace/$id': typeof AuthenticatedMarketplaceIdLazyRoute
   '/services/$id': typeof AuthenticatedServicesIdLazyRoute
   '/services/create': typeof AuthenticatedServicesCreateLazyRoute
+  '/services/overview': typeof AuthenticatedServicesOverviewLazyRoute
   '/vision/$id': typeof AuthenticatedVisionIdLazyRoute
   '/vision/create': typeof AuthenticatedVisionCreateLazyRoute
   '/cameras': typeof AuthenticatedCamerasIndexLazyRoute
@@ -544,6 +559,7 @@ export interface FileRoutesById {
   '/_authenticated/marketplace/$id': typeof AuthenticatedMarketplaceIdLazyRoute
   '/_authenticated/services/$id': typeof AuthenticatedServicesIdLazyRoute
   '/_authenticated/services/create': typeof AuthenticatedServicesCreateLazyRoute
+  '/_authenticated/services/overview': typeof AuthenticatedServicesOverviewLazyRoute
   '/_authenticated/vision/$id': typeof AuthenticatedVisionIdLazyRoute
   '/_authenticated/vision/create': typeof AuthenticatedVisionCreateLazyRoute
   '/_authenticated/cameras/': typeof AuthenticatedCamerasIndexLazyRoute
@@ -587,6 +603,7 @@ export interface FileRouteTypes {
     | '/marketplace/$id'
     | '/services/$id'
     | '/services/create'
+    | '/services/overview'
     | '/vision/$id'
     | '/vision/create'
     | '/cameras/'
@@ -628,6 +645,7 @@ export interface FileRouteTypes {
     | '/marketplace/$id'
     | '/services/$id'
     | '/services/create'
+    | '/services/overview'
     | '/vision/$id'
     | '/vision/create'
     | '/cameras'
@@ -671,6 +689,7 @@ export interface FileRouteTypes {
     | '/_authenticated/marketplace/$id'
     | '/_authenticated/services/$id'
     | '/_authenticated/services/create'
+    | '/_authenticated/services/overview'
     | '/_authenticated/vision/$id'
     | '/_authenticated/vision/create'
     | '/_authenticated/cameras/'
@@ -848,6 +867,13 @@ declare module '@tanstack/react-router' {
       path: '/vision/$id'
       fullPath: '/vision/$id'
       preLoaderRoute: typeof AuthenticatedVisionIdLazyRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/services/overview': {
+      id: '/_authenticated/services/overview'
+      path: '/services/overview'
+      fullPath: '/services/overview'
+      preLoaderRoute: typeof AuthenticatedServicesOverviewLazyRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/services/create': {
@@ -1039,6 +1065,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMarketplaceIdLazyRoute: typeof AuthenticatedMarketplaceIdLazyRoute
   AuthenticatedServicesIdLazyRoute: typeof AuthenticatedServicesIdLazyRoute
   AuthenticatedServicesCreateLazyRoute: typeof AuthenticatedServicesCreateLazyRoute
+  AuthenticatedServicesOverviewLazyRoute: typeof AuthenticatedServicesOverviewLazyRoute
   AuthenticatedVisionIdLazyRoute: typeof AuthenticatedVisionIdLazyRoute
   AuthenticatedVisionCreateLazyRoute: typeof AuthenticatedVisionCreateLazyRoute
   AuthenticatedCamerasIndexLazyRoute: typeof AuthenticatedCamerasIndexLazyRoute
@@ -1066,6 +1093,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMarketplaceIdLazyRoute: AuthenticatedMarketplaceIdLazyRoute,
   AuthenticatedServicesIdLazyRoute: AuthenticatedServicesIdLazyRoute,
   AuthenticatedServicesCreateLazyRoute: AuthenticatedServicesCreateLazyRoute,
+  AuthenticatedServicesOverviewLazyRoute:
+    AuthenticatedServicesOverviewLazyRoute,
   AuthenticatedVisionIdLazyRoute: AuthenticatedVisionIdLazyRoute,
   AuthenticatedVisionCreateLazyRoute: AuthenticatedVisionCreateLazyRoute,
   AuthenticatedCamerasIndexLazyRoute: AuthenticatedCamerasIndexLazyRoute,

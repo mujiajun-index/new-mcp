@@ -11,13 +11,21 @@ import (
 // 因此内存/CPU 均按整棵进程树聚合。
 type ProcessTreeStat struct {
 	Running       bool
-	PID           int    // 主(wrapper)进程 PID
-	Command       string // 完整命令行
-	ProcessCount  int    // 树内进程总数(含主进程)
-	RSSBytes      uint64 // 树内 RSS 物理内存总和
-	VMSBytes      uint64 // 树内虚拟内存总和
+	PID           int     // 主(wrapper)进程 PID
+	Command       string  // 完整命令行
+	ProcessCount  int     // 树内进程总数(含主进程)
+	RSSBytes      uint64  // 树内 RSS 物理内存总和
+	VMSBytes      uint64  // 树内虚拟内存总和
 	CPUPercent    float64 // 树累计 CPU 时间 / 主进程生存期,>100% 表示占多核
-	UptimeSeconds int64  // 主进程已运行秒数
+	UptimeSeconds int64   // 主进程已运行秒数
+}
+
+// ProcessRoot 是批量采集的入参:Key 为调用方业务键(如服务 id),RootPID/Command
+// 含义同单根采集。Key 只用于结果索引,不进 ProcessTreeStat。
+type ProcessRoot struct {
+	Key     int64
+	RootPID int
+	Command string
 }
 
 // CollectProcessTreeStat 以 rootPID 为根枚举系统进程构建 ppid→children 索引,
@@ -25,16 +33,41 @@ type ProcessTreeStat struct {
 // 返回 Running:false。逐次现场采集,不做缓存——5s 轮询的单详情页场景下,
 // 百级进程的全量枚举开销可接受。
 func CollectProcessTreeStat(rootPID int, command string) *ProcessTreeStat {
-	stat := &ProcessTreeStat{PID: rootPID, Command: command}
+	procs, children, ok := buildProcIndex()
+	if !ok {
+		return &ProcessTreeStat{PID: rootPID, Command: command}
+	}
+	return collectTreeStat(procs, children, rootPID, command)
+}
 
+// CollectProcessTreesStat 以一次系统进程扫描聚合多棵进程树,结果按 ProcessRoot.Key
+// 索引(每个 root 必有对应条目,根不存在时 Running:false)。供服务总览页一次性
+// 采集全部 stdio 服务,避免逐服务全量枚举 N 次系统进程。
+func CollectProcessTreesStat(roots []ProcessRoot) map[int64]*ProcessTreeStat {
+	stats := make(map[int64]*ProcessTreeStat, len(roots))
+	if len(roots) == 0 {
+		return stats
+	}
+	procs, children, ok := buildProcIndex()
+	for _, r := range roots {
+		if !ok {
+			stats[r.Key] = &ProcessTreeStat{PID: r.RootPID, Command: r.Command}
+			continue
+		}
+		stats[r.Key] = collectTreeStat(procs, children, r.RootPID, r.Command)
+	}
+	return stats
+}
+
+// buildProcIndex 一趟扫描系统进程,构建 pid→进程对象与 ppid→children 双索引。
+// 个别进程查询失败(正在退出/权限)直接跳过,不影响其余;枚举失败时 ok=false。
+func buildProcIndex() (procs map[int32]*process.Process, children map[int32][]int32, ok bool) {
 	pids, err := process.Pids()
 	if err != nil {
-		return stat
+		return nil, nil, false
 	}
-
-	// 一趟扫描建索引;个别进程查询失败(正在退出/权限)直接跳过,不影响其余。
-	children := make(map[int32][]int32, len(pids))
-	procs := make(map[int32]*process.Process, len(pids))
+	children = make(map[int32][]int32, len(pids))
+	procs = make(map[int32]*process.Process, len(pids))
 	for _, pid := range pids {
 		p, err := process.NewProcess(pid)
 		if err != nil {
@@ -47,6 +80,13 @@ func CollectProcessTreeStat(rootPID int, command string) *ProcessTreeStat {
 		procs[pid] = p
 		children[ppid] = append(children[ppid], pid)
 	}
+	return procs, children, true
+}
+
+// collectTreeStat 在已建好的索引上以 rootPID 为根 BFS 收集整棵进程树并汇总
+// 内存/CPU/运行时长。主进程不在索引中(已退出或 PID 复用)时返回 Running:false。
+func collectTreeStat(procs map[int32]*process.Process, children map[int32][]int32, rootPID int, command string) *ProcessTreeStat {
+	stat := &ProcessTreeStat{PID: rootPID, Command: command}
 
 	if _, ok := procs[int32(rootPID)]; !ok {
 		return stat

@@ -13,10 +13,12 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { MobileListCard } from '@/components/ui/mobile-list-card'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useAuthStore } from '@/stores/auth-store'
+import { isAdminRole } from '@/lib/roles'
 import type { TransportType, ServiceListItem } from '@/types'
 import {
   Plus, Search, Server, Trash2, Zap, Loader2,
-  Wifi, Terminal, Globe, Radio, Plug, MoreHorizontal,
+  Wifi, Terminal, Globe, Radio, Plug, MoreHorizontal, LayoutGrid,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -59,6 +61,8 @@ function HealthLabel({ status }: { status: string }) {
 
 export function ServiceListPage() {
   const { t } = useTranslation()
+  const { auth } = useAuthStore()
+  const isAdmin = isAdminRole(auth.user?.role)
   const transportLabel = useTransportLabel()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
@@ -131,12 +135,22 @@ export function ServiceListPage() {
           <h1 className="text-2xl font-semibold tracking-tight">{t('nav.services')}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{t('services.subtitle')}</p>
         </div>
-        <Link to="/services/create">
-          <Button className="gap-2">
-            <Plus className="h-4 w-4" />
-            {t('services.registerNew')}
-          </Button>
-        </Link>
+        <div className="flex gap-2">
+          {isAdmin && (
+            <Link to="/services/overview">
+              <Button variant="outline" className="gap-2">
+                <LayoutGrid className="h-4 w-4" />
+                {t('services.overview.title')}
+              </Button>
+            </Link>
+          )}
+          <Link to="/services/create">
+            <Button className="gap-2">
+              <Plus className="h-4 w-4" />
+              {t('services.registerNew')}
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Filters */}

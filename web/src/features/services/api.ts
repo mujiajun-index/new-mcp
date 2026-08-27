@@ -91,3 +91,9 @@ export async function getServiceProcessStat(id: number) {
   const res = await api.get(`/services/${id}/process`)
   return res.data
 }
+
+// 服务总览(管理员专属):统计摘要 + 全部服务资源快照(总览页 5s 轮询)
+export async function getServiceOverview() {
+  const res = await api.get('/admin/services/overview')
+  return res.data
+}

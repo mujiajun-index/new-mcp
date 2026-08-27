@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from '@tanstack/react-router'
+import { useNavigate, useParams, useRouter } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { getService, updateService, deleteService, testService, refreshTools, getServiceResources, getServicePrompts, getServiceProcessStat } from '../api'
 import { ToolTestDialog } from './tool-test-dialog'
@@ -69,6 +69,7 @@ function formatUptime(seconds?: number): string {
 export function ServiceDetailPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const router = useRouter()
   const { id } = useParams({ strict: false }) as { id: string }
   const queryClient = useQueryClient()
   const serviceId = Number(id)
@@ -317,7 +318,16 @@ export function ServiceDetailPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate({ to: '/services' })}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              // 真回退:从总览/列表/仪表盘任一入口进详情都回到来路;
+              // 新标签直开详情时无历史可退,兜底回服务列表。
+              if (router.history.canGoBack()) router.history.back()
+              else navigate({ to: '/services' })
+            }}
+          >
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>

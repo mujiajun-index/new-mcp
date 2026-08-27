@@ -173,6 +173,8 @@ func SetApiRouter(engine *gin.Engine) {
 		// Admin: Platform services
 		admin.GET("/services", controller.AdminListServices)
 		admin.POST("/services", controller.AdminCreateService)
+		// 服务总览(管理员专属):统计摘要 + 各 stdio 服务进程资源快照
+		admin.GET("/services/overview", controller.GetServicesOverview)
 
 		// Admin: Marketplace management(上架仅支持从自有服务克隆,无手动创建)
 		admin.GET("/marketplace", controller.AdminListMarketplaceItems)
