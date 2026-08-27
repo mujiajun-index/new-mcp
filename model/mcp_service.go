@@ -83,6 +83,15 @@ func (s *McpService) Delete() error {
 	return DB.Delete(s).Error
 }
 
+// UpdateHealthStatusIfChanged 幂等回写健康状态:已是目标值则不写(常态下零
+// RowsAffected),返回是否实际发生变更(调用方据此决定是否记系统日志)。
+func UpdateHealthStatusIfChanged(serviceID int64, status string) bool {
+	res := DB.Model(&McpService{}).
+		Where("id = ? AND health_status <> ?", serviceID, status).
+		Update("health_status", status)
+	return res.Error == nil && res.RowsAffected > 0
+}
+
 func GetServiceByIDWithoutUser(serviceID int64) (*McpService, error) {
 	var svc McpService
 	err := DB.Where("id = ?", serviceID).First(&svc).Error

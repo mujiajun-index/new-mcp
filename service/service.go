@@ -435,6 +435,7 @@ func (s *McpServiceService) GetTools(userID, serviceID int64) ([]interface{}, er
 // CallTool 服务详情页工具测试:直连该服务的上游会话执行 tools/call(调试用途,不计费)。
 // 虚拟服务(vision/camera)走 VirtualRegistry 分发;市场引用服务注入平台上游配置后调用。
 // 本地错误(连接失败/工具不存在)以 IsError+Error 返回,由前端在结果区展示。
+// 测试结果同样落调用日志(recordManualTestLog),健康状态条与健康回写一并吃到数据。
 func (s *McpServiceService) CallTool(userID, serviceID int64, req *dto.CallToolReq) (*dto.CallToolResult, error) {
 	svc, err := model.GetServiceByID(userID, serviceID)
 	if err != nil {
@@ -447,6 +448,14 @@ func (s *McpServiceService) CallTool(userID, serviceID int64, req *dto.CallToolR
 		return &dto.CallToolResult{IsError: true, Error: "平台托管(市场)服务不支持工具测试"}, nil
 	}
 
+	res := callToolTested(svc, userID, req)
+	recordManualTestLog(svc, userID, "tools/call", req.Name, res)
+	return res, nil
+}
+
+// callToolTested 工具测试的实际调用:虚拟服务分发或上游 tools/call,全部出口
+// (连接失败/工具不存在/调用失败/结果解析)统一返回 CallToolResult 供外层落日志。
+func callToolTested(svc *model.McpService, userID int64, req *dto.CallToolReq) *dto.CallToolResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -459,28 +468,29 @@ func (s *McpServiceService) CallTool(userID, serviceID int64, req *dto.CallToolR
 	// 虚拟服务:按 serviceID 分发到虚拟工具处理器(vision/camera 等自有性质,免费)。
 	if svc.TransportType == "virtual" {
 		if VirtualRegistry == nil {
-			return &dto.CallToolResult{IsError: true, Error: "虚拟服务未初始化"}, nil
+			return &dto.CallToolResult{IsError: true, Error: "虚拟服务未初始化"}
 		}
 		var config map[string]interface{}
 		_ = json.Unmarshal([]byte(svc.Config), &config)
 		raw, vErr := VirtualRegistry.Handle(virtual.WithCallerUserID(ctx, userID), svc.ID, config, req.Name, args)
 		if vErr != nil {
-			return &dto.CallToolResult{IsError: true, Error: vErr.Error(), DurationMs: time.Since(start).Milliseconds()}, nil
+			return &dto.CallToolResult{IsError: true, Error: vErr.Error(), DurationMs: time.Since(start).Milliseconds()}
 		}
-		return parseTestResult(raw, start)
+		res, _ := parseTestResult(raw, start)
+		return res
 	}
 
 	// 普通服务:获取测试用适配器(优先复用会话池,见 acquireTestAdapter)。
 	adapter, closeAdapter, fail := acquireTestAdapter(ctx, svc)
 	if fail != nil {
 		fail.DurationMs = time.Since(start).Milliseconds()
-		return fail, nil
+		return fail
 	}
 	defer closeAdapter()
 
 	// 工具名仅在服务自身工具列表中校验(单服务调试,不涉及网关命名空间路由)。
 	if !serviceHasTool(adapter, svc, req.Name) {
-		return &dto.CallToolResult{IsError: true, Error: "工具不存在: " + req.Name}, nil
+		return &dto.CallToolResult{IsError: true, Error: "工具不存在: " + req.Name, DurationMs: time.Since(start).Milliseconds()}
 	}
 
 	raw, cErr := adapter.Call(ctx, "tools/call", map[string]interface{}{
@@ -488,13 +498,15 @@ func (s *McpServiceService) CallTool(userID, serviceID int64, req *dto.CallToolR
 		"arguments": req.Arguments,
 	})
 	if cErr != nil {
-		return &dto.CallToolResult{IsError: true, Error: cErr.Error(), DurationMs: time.Since(start).Milliseconds()}, nil
+		return &dto.CallToolResult{IsError: true, Error: cErr.Error(), DurationMs: time.Since(start).Milliseconds()}
 	}
-	return parseTestResult(raw, start)
+	res, _ := parseTestResult(raw, start)
+	return res
 }
 
 // ReadResource 服务详情页资源测试:对指定 URI 执行 resources/read。
-// 与工具测试同策略:不计费的调试用途,市场(平台托管)服务禁止;虚拟服务无资源能力。
+// 与工具测试同策略:不计费的调试用途,市场(平台托管)服务禁止;虚拟服务无资源能力;
+// 结果同样落调用日志(recordManualTestLog)。
 func (s *McpServiceService) ReadResource(userID, serviceID int64, req *dto.ReadResourceReq) (*dto.CallToolResult, error) {
 	svc, err := model.GetServiceByID(userID, serviceID)
 	if err != nil {
@@ -506,23 +518,32 @@ func (s *McpServiceService) ReadResource(userID, serviceID int64, req *dto.ReadR
 	if svc.TransportType == "virtual" {
 		return &dto.CallToolResult{IsError: true, Error: "虚拟服务不支持资源测试"}, nil
 	}
+	res := readResourceTested(svc, req)
+	recordManualTestLog(svc, userID, "resources/read", req.URI, res)
+	return res, nil
+}
+
+// readResourceTested 资源测试的实际调用,全部出口统一返回 CallToolResult 供外层落日志。
+func readResourceTested(svc *model.McpService, req *dto.ReadResourceReq) *dto.CallToolResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	start := time.Now()
 	adapter, closeAdapter, fail := acquireTestAdapter(ctx, svc)
 	if fail != nil {
 		fail.DurationMs = time.Since(start).Milliseconds()
-		return fail, nil
+		return fail
 	}
 	defer closeAdapter()
 	raw, rErr := adapter.ReadResource(ctx, req.URI)
 	if rErr != nil {
-		return &dto.CallToolResult{IsError: true, Error: rErr.Error(), DurationMs: time.Since(start).Milliseconds()}, nil
+		return &dto.CallToolResult{IsError: true, Error: rErr.Error(), DurationMs: time.Since(start).Milliseconds()}
 	}
-	return parseTestResult(raw, start)
+	res, _ := parseTestResult(raw, start)
+	return res
 }
 
-// GetPrompt 服务详情页提示测试:按传入参数渲染提示(prompts/get),限制策略同 ReadResource。
+// GetPrompt 服务详情页提示测试:按传入参数渲染提示(prompts/get),限制策略同
+// ReadResource;结果同样落调用日志(recordManualTestLog)。
 func (s *McpServiceService) GetPrompt(userID, serviceID int64, req *dto.GetPromptReq) (*dto.CallToolResult, error) {
 	svc, err := model.GetServiceByID(userID, serviceID)
 	if err != nil {
@@ -534,20 +555,28 @@ func (s *McpServiceService) GetPrompt(userID, serviceID int64, req *dto.GetPromp
 	if svc.TransportType == "virtual" {
 		return &dto.CallToolResult{IsError: true, Error: "虚拟服务不支持提示测试"}, nil
 	}
+	res := getPromptTested(svc, req)
+	recordManualTestLog(svc, userID, "prompts/get", req.Name, res)
+	return res, nil
+}
+
+// getPromptTested 提示测试的实际调用,全部出口统一返回 CallToolResult 供外层落日志。
+func getPromptTested(svc *model.McpService, req *dto.GetPromptReq) *dto.CallToolResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	start := time.Now()
 	adapter, closeAdapter, fail := acquireTestAdapter(ctx, svc)
 	if fail != nil {
 		fail.DurationMs = time.Since(start).Milliseconds()
-		return fail, nil
+		return fail
 	}
 	defer closeAdapter()
 	raw, gErr := adapter.GetPrompt(ctx, req.Name, req.Arguments)
 	if gErr != nil {
-		return &dto.CallToolResult{IsError: true, Error: gErr.Error(), DurationMs: time.Since(start).Milliseconds()}, nil
+		return &dto.CallToolResult{IsError: true, Error: gErr.Error(), DurationMs: time.Since(start).Milliseconds()}
 	}
-	return parseTestResult(raw, start)
+	res, _ := parseTestResult(raw, start)
+	return res
 }
 
 // acquireTestAdapter 获取测试用上游适配器:优先复用会话池连接(stdio 不必每次拉起子进程),
@@ -722,12 +751,24 @@ func (s *McpServiceService) ControlProcess(userID, serviceID int64, action strin
 }
 
 // GetServicesOverview 服务总览页数据:全部服务(不分页) + 统计摘要 + 各 stdio 服务
-// 进程树资源快照。只读 SessionPool 现状,绝不触发 GetOrConnect(查看总览不拉起
-// 进程);全部进程树合并为一次系统进程扫描。
-func (s *McpServiceService) GetServicesOverview(userID int64) (*dto.ServicesOverview, error) {
+// 进程树资源快照 + 非 stdio 服务健康快照(调用日志聚合)。只读 SessionPool 现状,
+// 绝不触发 GetOrConnect(查看总览不拉起进程);全部进程树合并为一次系统进程扫描。
+// 普通用户(isAdmin=false)排除 stdio 服务(进程资源/启停操作属管理员运维视角),
+// 页面呈现健康状态条视角;marketplace 等其余来源不排除。
+func (s *McpServiceService) GetServicesOverview(userID int64, isAdmin bool) (*dto.ServicesOverview, error) {
 	services, err := model.ListAllServicesByUser(userID)
 	if err != nil {
 		return nil, err
+	}
+	if !isAdmin {
+		kept := make([]model.McpService, 0, len(services))
+		for i := range services {
+			if services[i].TransportType == string(transport.TypeStdio) {
+				continue
+			}
+			kept = append(kept, services[i])
+		}
+		services = kept
 	}
 
 	// 池内会话快照(一次加锁),后续只读判断连接状态
@@ -754,6 +795,16 @@ func (s *McpServiceService) GetServicesOverview(userID int64) (*dto.ServicesOver
 		}
 	}
 	treeStats := transport.CollectProcessTreesStat(roots)
+
+	// 非 stdio 服务健康快照:mcp_call_logs 真实调用聚合(30s 缓存),出错降级为
+	// 不带健康字段,同样不触碰 SessionPool
+	var remoteIDs []int64
+	for i := range services {
+		if services[i].TransportType != string(transport.TypeStdio) {
+			remoteIDs = append(remoteIDs, services[i].ID)
+		}
+	}
+	healthSnaps := GetServiceHealthSnapshots(remoteIDs)
 
 	resp := &dto.ServicesOverview{Services: make([]dto.ServicesOverviewItem, len(services))}
 	for i, svc := range services {
@@ -790,6 +841,15 @@ func (s *McpServiceService) GetServicesOverview(userID int64) (*dto.ServicesOver
 		} else {
 			item.Running = svc.Status == common.StatusEnabled &&
 				(connected || svc.HealthStatus == common.HealthHealthy)
+			// 健康 5 字段仅非 stdio 填充(近 1h 分数 + 24h 时间条),无调用的
+			// 服务也是全零桶 + no_data,前端渲染灰色时间条
+			if snap := healthSnaps[svc.ID]; snap != nil {
+				item.HealthScore = snap.Score
+				item.HealthState = snap.State
+				item.HealthBuckets = snap.Buckets
+				item.LastErrorMessage = snap.LastErrorMessage
+				item.LastErrorAt = snap.LastErrorUnix
+			}
 		}
 
 		resp.Summary.ToolsTotal += item.ToolsCount

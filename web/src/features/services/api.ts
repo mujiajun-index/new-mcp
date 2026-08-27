@@ -99,8 +99,9 @@ export async function controlServiceProcess(id: number, action: ProcessControlAc
   return res.data
 }
 
-// 服务总览(管理员专属):统计摘要 + 全部服务资源快照(总览页 5s 轮询)
+// 服务总览(所有登录用户,按 user_id 只看自己的服务):统计摘要 + 全部服务资源
+// 快照 + 非 stdio 健康状态条(总览页 5s 轮询)
 export async function getServiceOverview() {
-  const res = await api.get('/admin/services/overview')
+  const res = await api.get('/services/overview')
   return res.data
 }

@@ -75,8 +75,19 @@ type ProcessControlReq struct {
 	Action string `json:"action" binding:"required,oneof=start stop restart"`
 }
 
+// HealthBucket 健康 24 小时时间条的单个小时桶。Total==0 表示该小时无调用;
+// StartUnix 为桶起点 epoch 秒,前端 dayjs 本地化展示。
+type HealthBucket struct {
+	StartUnix     int64 `json:"start_unix"`
+	Total         int64 `json:"total"`
+	Success       int64 `json:"success"`
+	AvgDurationMs int64 `json:"avg_duration_ms"` // 0 表示该桶无数据
+}
+
 // ServicesOverviewItem 总览页单个服务的运行/资源快照。Running=false 时(未连接/
 // 非 stdio/进程已退出)进程相关字段为零值被 omitempty 省略,口径同 ServiceProcessStat。
+// 健康 5 字段仅非 stdio 服务填充(由 mcp_call_logs 真实调用聚合,见
+// service/health_snapshot.go),stdio 行不带。
 type ServicesOverviewItem struct {
 	ID            int64   `json:"id"`
 	Name          string  `json:"name"`
@@ -93,6 +104,12 @@ type ServicesOverviewItem struct {
 	MemoryRSS     uint64  `json:"memory_rss_bytes,omitempty"` // 树 RSS;进度条分母用 summary.host_memory_total_bytes
 	CPUPercent    float64 `json:"cpu_percent,omitempty"`      // 树累计 CPU/生存期,可 >100%(多核)
 	UptimeSeconds int64   `json:"uptime_seconds,omitempty"`
+
+	HealthScore       *int          `json:"health_score,omitempty"`        // 0-100,nil = 近 1h 无调用
+	HealthState       string        `json:"health_state,omitempty"`        // healthy/ok/degraded/critical/no_data
+	HealthBuckets     []HealthBucket `json:"health_buckets,omitempty"`     // 恒 24 项(近 24h,每小时一格)
+	LastErrorMessage  string        `json:"last_error_message,omitempty"` // 24h 内最近一次失败信息
+	LastErrorAt       int64         `json:"last_error_at,omitempty"`       // unix 秒,0 = 无
 }
 
 // ServicesOverviewSummary 总览页顶部统计卡数据。CPUTotalPercent 为各 stdio 进程树

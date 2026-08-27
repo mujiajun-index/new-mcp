@@ -275,9 +275,12 @@ func ControlServiceProcess(c *gin.Context) {
 }
 
 // GetServicesOverview 服务总览页:统计摘要 + 全部服务的运行/资源快照(5s 轮询)。
+// 所有登录用户可用(按 user_id 只看自己的服务);普通用户额外排除 stdio 服务
+// (健康状态条视角)。
 func GetServicesOverview(c *gin.Context) {
 	userID := c.GetInt64("user_id")
-	resp, err := mcpServiceService.GetServicesOverview(userID)
+	isAdmin := common.IsAdminRole(c.GetString("role"))
+	resp, err := mcpServiceService.GetServicesOverview(userID, isAdmin)
 	if err != nil {
 		common.Error(c, http.StatusInternalServerError, "获取服务总览失败")
 		return

@@ -125,6 +125,7 @@ type LogFilter struct {
 	GroupName   string `form:"group_name"`
 	Username    string `form:"username"`
 	ServiceName string `form:"service_name"`
+	ApiKeyName  string `form:"api_key_name"` // 令牌名称(含手动测试占位 tool-test)
 	Keyword     string `form:"keyword"`
 	Type        int    `form:"type"` // 0=全部(哨兵),否则按 LogType 过滤
 }

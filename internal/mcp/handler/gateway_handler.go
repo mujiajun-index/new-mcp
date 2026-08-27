@@ -1176,6 +1176,8 @@ func (h *GatewayHandler) errorResponse(id interface{}, code int, message string)
 
 func (h *GatewayHandler) recordLog(log *model.McpCallLog) {
 	_ = log.Insert()
+	// 健康回写:失败风暴标 unhealthy / 成功恢复 healthy(与手动测试共用,见 model.ApplyHealthWriteBack)
+	model.ApplyHealthWriteBack(log)
 	if log.UserID > 0 {
 		_ = model.IncreaseUserRequestCount(log.UserID)
 	}
@@ -1186,6 +1188,7 @@ func (h *GatewayHandler) recordLog(log *model.McpCallLog) {
 func (h *GatewayHandler) recordLogs(logs []*model.McpCallLog, userID int64) {
 	for _, l := range logs {
 		_ = l.Insert()
+		model.ApplyHealthWriteBack(l)
 	}
 	if userID > 0 {
 		_ = model.IncreaseUserRequestCount(userID)

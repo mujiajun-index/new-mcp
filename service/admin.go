@@ -455,6 +455,7 @@ func dtoToModelFilter(f *dto.LogFilter) *model.LogFilter {
 		GroupName:   f.GroupName,
 		Username:    f.Username,
 		ServiceName: f.ServiceName,
+		ApiKeyName:  f.ApiKeyName,
 		Keyword:     f.Keyword,
 		Type:        f.Type,
 	}

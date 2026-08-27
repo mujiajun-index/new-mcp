@@ -3,6 +3,7 @@ package model
 import (
 	"time"
 
+	"github.com/mujkjk/newmcp/common"
 	"gorm.io/gorm"
 )
 
@@ -81,6 +82,7 @@ type LogFilter struct {
 	GroupName   string
 	Username    string
 	ServiceName string
+	ApiKeyName  string // 令牌名称(含手动测试占位 tool-test)
 	Keyword     string
 	Type        int // 0=全部(哨兵),否则按 LogType 过滤
 }
@@ -119,6 +121,9 @@ func applyLogFilter(query *gorm.DB, f *LogFilter) *gorm.DB {
 	if f.ServiceName != "" {
 		query = query.Where("service_name LIKE ?", "%"+f.ServiceName+"%")
 	}
+	if f.ApiKeyName != "" {
+		query = query.Where("api_key_name LIKE ?", "%"+f.ApiKeyName+"%")
+	}
 	if f.Keyword != "" {
 		query = query.Where("tool_name LIKE ? OR group_name LIKE ? OR service_name LIKE ? OR username LIKE ? OR error_message LIKE ?",
 			"%"+f.Keyword+"%", "%"+f.Keyword+"%", "%"+f.Keyword+"%", "%"+f.Keyword+"%", "%"+f.Keyword+"%")
@@ -136,6 +141,68 @@ func GetCallLogs(filter *LogFilter, offset, limit int) ([]McpCallLog, int64, err
 	}
 	err := query.Offset(offset).Limit(limit).Order("created_at DESC").Find(&logs).Error
 	return logs, total, err
+}
+
+// CallLogRow 是健康聚合用的窄行:只取 5 列,不触碰 mediumtext 的 payload 列。
+// ErrorMessage 供健康快照取"24h 内最近一次错误";成功行为空串,几乎无额外开销。
+type CallLogRow struct {
+	ServiceID      int64
+	ResponseStatus string
+	DurationMs     int
+	ErrorMessage   string
+	CreatedAt      time.Time
+}
+
+// GetCallLogRowsForServices 取一批服务 since 之后的调用窄行(created_at 有索引)。
+// 只统计消费行(type=LogTypeConsume),与 GetCallLogStats 口径一致;时间分桶在
+// Go 侧完成,避免 SQLite/MySQL/PG 三方言的时间表达式分叉。Limit 兜底防止病态
+// 数据集撑爆内存(真实 24h 非 stdio 调用量远低于此,触顶时快照略微少计)。
+func GetCallLogRowsForServices(serviceIDs []int64, since time.Time) ([]CallLogRow, error) {
+	if len(serviceIDs) == 0 {
+		return nil, nil
+	}
+	var rows []CallLogRow
+	err := DB.Model(&McpCallLog{}).
+		Where("service_id IN ? AND created_at >= ? AND type = ?", serviceIDs, since, LogTypeConsume).
+		Select("service_id, response_status, duration_ms, error_message, created_at").
+		Limit(200000).
+		Find(&rows).Error
+	return rows, err
+}
+
+// CountRecentFailures 统计某服务 since 之后的失败调用数。仅在健康回写的失败
+// 路径触发(失败是少数事件),用于"5 分钟内失败 ≥3 → unhealthy"的判定。
+func CountRecentFailures(serviceID int64, since time.Time) (int64, error) {
+	var n int64
+	err := DB.Model(&McpCallLog{}).
+		Where("service_id = ? AND created_at >= ? AND response_status <> ? AND type = ?",
+			serviceID, since, "success", LogTypeConsume).
+		Count(&n).Error
+	return n, err
+}
+
+// ApplyHealthWriteBack 依据真实调用结果回写 mcp_services.health_status。此前
+// 只有池连接成功时写 healthy、从不写 unhealthy(常量定义了却无人写),此处补齐:
+//   - 失败:5 分钟内失败 ≥3 → unhealthy(幂等,已是目标值不写)
+//   - 成功:仅当前为 unhealthy 时恢复 healthy
+//
+// 网关调用(internal/mcp/handler recordLog/recordLogs)与服务详情页手动测试
+// (service recordManualTestLog)共用此逻辑;调用方自行决定是否异步执行。
+func ApplyHealthWriteBack(log *McpCallLog) {
+	if log.ServiceID == 0 {
+		return
+	}
+	if log.ResponseStatus == "success" {
+		UpdateHealthStatusIfChanged(log.ServiceID, common.HealthHealthy)
+		return
+	}
+	since := time.Now().Add(-5 * time.Minute)
+	if n, err := CountRecentFailures(log.ServiceID, since); err == nil && n >= 3 {
+		if UpdateHealthStatusIfChanged(log.ServiceID, common.HealthUnhealthy) {
+			RecordSystemLog(0, "", "服务 "+log.ServiceName+" 连续失败,健康状态标记为 unhealthy", 0, "",
+				map[string]any{"service_id": log.ServiceID, "recent_failures": n})
+		}
+	}
 }
 
 func GetCallLogsByUser(userID int64, filter *LogFilter, offset, limit int) ([]McpCallLog, int64, error) {

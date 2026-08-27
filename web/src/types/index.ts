@@ -118,7 +118,20 @@ export interface ServiceProcessStat {
   uptime_seconds?: number
 }
 
-// 服务总览:单个服务的运行/资源快照,running=false 时进程字段缺省
+// 健康 24 小时时间条的单个小时桶:total==0 表示该小时无调用;start_unix 为桶起点
+// epoch 秒,dayjs 本地化展示
+export interface HealthBucket {
+  start_unix: number
+  total: number
+  success: number
+  avg_duration_ms: number
+}
+
+// 健康分档位,与后端 service/health_score.go 档位常量对齐
+export type HealthState = 'healthy' | 'ok' | 'degraded' | 'critical' | 'no_data'
+
+// 服务总览:单个服务的运行/资源快照,running=false 时进程字段缺省;
+// 健康 5 字段仅非 stdio 服务返回(真实调用日志聚合)
 export interface ServicesOverviewItem {
   id: number
   name: string
@@ -135,6 +148,11 @@ export interface ServicesOverviewItem {
   memory_rss_bytes?: number
   cpu_percent?: number
   uptime_seconds?: number
+  health_score?: number
+  health_state?: HealthState
+  health_buckets?: HealthBucket[]
+  last_error_message?: string
+  last_error_at?: number
 }
 
 // 服务总览:顶部统计卡数据;cpu_percent_total 多核下可超 100%
@@ -642,6 +660,7 @@ export interface LogFilter {
   group_name?: string
   username?: string
   service_name?: string
+  api_key_name?: string
   keyword?: string
   type?: number // 0=全部(哨兵),否则按日志类型(LogType)过滤
   page?: number

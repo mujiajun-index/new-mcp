@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { Link, Navigate } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { getServiceOverview } from '../api'
 import { StdioProcessControl } from './stdio-process-control'
+import { ServiceHealthBar } from './service-health-bar'
 import { useAuthStore } from '@/stores/auth-store'
 import { isAdminRole } from '@/lib/roles'
 import { Button } from '@/components/ui/button'
@@ -37,7 +38,8 @@ function formatBytes(bytes?: number): string {
 }
 
 type StatusFilter = 'all' | 'running' | 'stopped'
-type TypeFilter = 'all' | TransportType
+// marketplace 非传输类型而是 source 维度:平台托管(市场)服务的专属筛选项
+type TypeFilter = 'all' | TransportType | 'marketplace'
 // 类型筛选可选项(顺序即下拉展示顺序)
 const TYPE_FILTERS: TransportType[] = ['stdio', 'sse', 'streamable-http', 'websocket', 'passive-ws', 'virtual']
 
@@ -117,29 +119,37 @@ function ServiceCard({ s, hostTotal }: { s: ServicesOverviewItem; hostTotal: num
           </span>
         </div>
 
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-muted-foreground">{t('services.overview.cpuRow')}</span>
-            <span className="tabular-nums">
-              {showProcess && s.cpu_percent != null ? `${s.cpu_percent.toFixed(1)}%` : '—'}
-            </span>
-          </div>
-          <Progress value={cpu} className="h-1 bg-sky-500/15 [&_[data-slot=progress-indicator]]:bg-sky-500" />
-        </div>
+        {/* stdio 显示进程 CPU/内存两行;非 stdio 无本机进程,改为健康状态条
+            (近 1h 健康分 + 近 24h 每小时一格的调用成功/失败时间条) */}
+        {isStdio ? (
+          <>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">{t('services.overview.cpuRow')}</span>
+                <span className="tabular-nums">
+                  {showProcess && s.cpu_percent != null ? `${s.cpu_percent.toFixed(1)}%` : '—'}
+                </span>
+              </div>
+              <Progress value={cpu} className="h-1 bg-sky-500/15 [&_[data-slot=progress-indicator]]:bg-sky-500" />
+            </div>
 
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-muted-foreground">{t('services.overview.memRow')}</span>
-            <span className="tabular-nums">
-              {showProcess && s.memory_rss_bytes != null
-                ? hostTotal > 0
-                  ? `${formatBytes(s.memory_rss_bytes)} / ${formatBytes(hostTotal)}`
-                  : formatBytes(s.memory_rss_bytes)
-                : '—'}
-            </span>
-          </div>
-          <Progress value={memPct} className="h-1 bg-emerald-500/15 [&_[data-slot=progress-indicator]]:bg-emerald-500" />
-        </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">{t('services.overview.memRow')}</span>
+                <span className="tabular-nums">
+                  {showProcess && s.memory_rss_bytes != null
+                    ? hostTotal > 0
+                      ? `${formatBytes(s.memory_rss_bytes)} / ${formatBytes(hostTotal)}`
+                      : formatBytes(s.memory_rss_bytes)
+                    : '—'}
+                </span>
+              </div>
+              <Progress value={memPct} className="h-1 bg-emerald-500/15 [&_[data-slot=progress-indicator]]:bg-emerald-500" />
+            </div>
+          </>
+        ) : (
+          <ServiceHealthBar s={s} disabled={s.status !== 1} />
+        )}
     </div>
   )
 }
@@ -149,25 +159,28 @@ export function ServiceOverviewPage() {
   const { auth } = useAuthStore()
   const isAdmin = isAdminRole(auth.user?.role)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>('stdio')
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [search, setSearch] = useState('')
 
   const { data, isPending, isFetching, refetch } = useQuery({
     queryKey: ['services-overview'],
     queryFn: getServiceOverview,
     refetchInterval: 5000,
-    enabled: isAdmin,
   })
 
   const ov: ServicesOverviewData | undefined = data?.data
   const summary = ov?.summary
   const services = useMemo(() => ov?.services ?? [], [ov])
 
-  // 筛选与搜索均为前端本地操作(接口返回全量)
+  // 筛选与搜索均为前端本地操作(接口返回全量);marketplace 项按 source 过滤
   const filtered = useMemo(() => {
     const kw = search.trim().toLowerCase()
     return services.filter((s) => {
-      if (typeFilter !== 'all' && s.transport_type !== typeFilter) return false
+      if (typeFilter === 'marketplace') {
+        if (s.source !== 'marketplace') return false
+      } else if (typeFilter !== 'all' && s.transport_type !== typeFilter) {
+        return false
+      }
       if (statusFilter === 'running' && !s.running) return false
       if (statusFilter === 'stopped' && s.running) return false
       if (!kw) return true
@@ -180,17 +193,15 @@ export function ServiceOverviewPage() {
     ? Math.round((summary.healthy_count / summary.total_services) * 100)
     : 0
 
-  // 管理员专属页面:非管理员直接输入 URL 访问时退回服务列表
-  if (!isAdmin) {
-    return <Navigate to="/services" replace />
-  }
-
+  // 进程/内存/CPU 三卡为 stdio 运维视角,普通用户总览不含 stdio 服务,不展示
   const statCards = [
     { label: t('services.overview.servicesCard'), value: String(summary?.total_services ?? 0), sub: t('services.overview.runningSub', { count: summary?.running_services ?? 0 }), icon: Server, color: 'text-sky-500', bg: 'bg-sky-500/10' },
     { label: t('services.overview.toolsTotal'), value: String(summary?.tools_total ?? 0), icon: Wrench, color: 'text-violet-500', bg: 'bg-violet-500/10' },
-    { label: t('services.overview.processes'), value: String(summary?.process_total ?? 0), icon: Layers, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-    { label: t('services.overview.memoryUsage'), value: formatBytes(summary?.memory_rss_bytes_total ?? 0), sub: `${t('services.overview.hostTotal')}: ${formatBytes(hostTotal)}`, icon: MemoryStick, color: 'text-amber-500', bg: 'bg-amber-500/10' },
-    { label: t('services.overview.cpuUsage'), value: `${(summary?.cpu_percent_total ?? 0).toFixed(1)}%`, hint: t('services.overview.cpuHint'), icon: Activity, color: 'text-rose-500', bg: 'bg-rose-500/10' },
+    ...(isAdmin ? [
+      { label: t('services.overview.processes'), value: String(summary?.process_total ?? 0), icon: Layers, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+      { label: t('services.overview.memoryUsage'), value: formatBytes(summary?.memory_rss_bytes_total ?? 0), sub: `${t('services.overview.hostTotal')}: ${formatBytes(hostTotal)}`, icon: MemoryStick, color: 'text-amber-500', bg: 'bg-amber-500/10' },
+      { label: t('services.overview.cpuUsage'), value: `${(summary?.cpu_percent_total ?? 0).toFixed(1)}%`, hint: t('services.overview.cpuHint'), icon: Activity, color: 'text-rose-500', bg: 'bg-rose-500/10' },
+    ] : []),
     { label: t('services.overview.healthRate'), value: `${healthRate}%`, sub: `${summary?.healthy_count ?? 0} / ${summary?.total_services ?? 0}`, icon: HeartPulse, color: 'text-teal-500', bg: 'bg-teal-500/10' },
   ]
 
@@ -214,8 +225,8 @@ export function ServiceOverviewPage() {
         </Button>
       </div>
 
-      {/* 资源概述 */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      {/* 资源概述(普通用户仅 3 卡:服务/工具/健康率) */}
+      <div className={`grid gap-4 sm:grid-cols-2 lg:grid-cols-3 ${isAdmin ? 'xl:grid-cols-6' : 'xl:grid-cols-3'}`}>
         {statCards.map((stat, i) => (
           <div
             key={i}
@@ -256,8 +267,15 @@ export function ServiceOverviewPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{t('services.overview.filterTypeAll')}</SelectItem>
-                {TYPE_FILTERS.map((type) => (
-                  <SelectItem key={type} value={type}>{transportTypeLabel(t, type)}</SelectItem>
+                {/* 管理员与用户选项一致,仅管理员多 stdio(用户总览后端已排除 stdio);
+                    末尾追加「平台托管」选项按 source=marketplace 过滤(非传输类型) */}
+                {[
+                  ...(isAdmin ? TYPE_FILTERS : TYPE_FILTERS.filter((type) => type !== 'stdio')),
+                  ...(['marketplace'] as const),
+                ].map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {type === 'marketplace' ? t('marketplace.platformHosted') : transportTypeLabel(t, type)}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>

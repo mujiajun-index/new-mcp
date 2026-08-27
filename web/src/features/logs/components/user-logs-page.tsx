@@ -17,6 +17,7 @@ import { CompactDateTimeRangePicker } from '@/components/ui/date-time-range-pick
 import { Activity, CheckCircle, XCircle, Clock, Zap, Search, RotateCw, ChevronLeft, ChevronRight, Copy, Eye } from 'lucide-react'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatQuotaCurrency } from '@/lib/billing'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import type { LogFilter } from '@/types'
@@ -278,6 +279,13 @@ export function UserLogsPage() {
                 onChange={e => updateFilter('username', e.target.value)}
                 className="w-[130px] h-9"
               />
+              {/* 令牌名称筛选(与令牌列同口径仅管理员可见);输入 tool-test 可筛出手动测试记录 */}
+              <Input
+                placeholder={t('logs.apiKeyName')}
+                value={filter.api_key_name ?? ''}
+                onChange={e => updateFilter('api_key_name', e.target.value)}
+                className="w-[130px] h-9"
+              />
             </>
           )}
 
@@ -472,7 +480,7 @@ function LogMobileCard({ log, isAdmin, showBilling, fmtMoney, formatTime, format
         { label: 'IP', value: <span className="font-mono">{log.client_ip}</span> },
         { label: t('logs.time'), value: formatTime(log.created_at) },
         ...(isAdmin ? [
-          { label: t('logs.apiKeyName'), value: log.api_key_name || '-' },
+          { label: t('logs.apiKeyName'), value: <ApiKeyNameCell name={log.api_key_name} /> },
           { label: t('logs.serviceName'), value: log.service_name || '-' },
         ] : []),
       ]}
@@ -489,6 +497,29 @@ function LogMobileCard({ log, isAdmin, showBilling, fmtMoney, formatTime, format
       }
     />
   )
+}
+
+// ApiKeyNameCell 令牌名展示:"tool-test" 是手动测试的占位令牌名(手动测试走会话
+// 鉴权、无真实令牌,与后端 service.ManualTestTokenName 对齐)。用 Radix Tooltip
+// 给出说明(原生 title 触屏不触发且延迟样式不可控);tabIndex 让触屏点按/键盘
+// 聚焦也能弹出。普通令牌名保留原生 title 用于截断时悬停看全名。
+function ApiKeyNameCell({ name }: { name?: string }) {
+  const { t } = useTranslation()
+  if (name === 'tool-test') {
+    return (
+      <TooltipProvider delayDuration={100}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span tabIndex={0} className="cursor-help italic text-muted-foreground">
+              {name}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[260px]">{t('logs.toolTestHint')}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    )
+  }
+  return <span title={name}>{name || '-'}</span>
 }
 
 function LogRow({ log, isAdmin, showBilling, fmtMoney, formatTime, formatDuration, onErrorClick }: {
@@ -547,7 +578,11 @@ function LogRow({ log, isAdmin, showBilling, fmtMoney, formatTime, formatDuratio
       <TableCell className="text-xs text-muted-foreground tabular-nums">{log.id}</TableCell>
       <TableCell>{typeBadge}</TableCell>
       <TableCell className="text-sm truncate" title={log.username}>{log.username || '-'}</TableCell>
-      {isAdmin && <TableCell className="text-sm truncate" title={log.api_key_name}>{log.api_key_name || '-'}</TableCell>}
+      {isAdmin && (
+        <TableCell className="text-sm truncate">
+          <ApiKeyNameCell name={log.api_key_name} />
+        </TableCell>
+      )}
       <TableCell className="truncate" title={log.tool_name}>
         <span className="flex items-center gap-1.5">
           <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{log.tool_name}</code>
