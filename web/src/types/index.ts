@@ -103,6 +103,9 @@ export interface McpTool {
   inputSchema: Record<string, unknown>
 }
 
+// stdio 进程操作动作(总览卡片/详情页进程信息)
+export type ProcessControlAction = 'start' | 'stop' | 'restart'
+
 // stdio 服务子进程(整棵进程树)的资源占用快照;running 为 false 时其余字段缺省
 export interface ServiceProcessStat {
   running: boolean

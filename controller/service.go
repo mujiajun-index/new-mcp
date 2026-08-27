@@ -257,6 +257,23 @@ func GetServiceProcess(c *gin.Context) {
 	common.Success(c, resp)
 }
 
+// ControlServiceProcess 启动/停止/重启 stdio 服务子进程(总览卡片/详情页进程信息)。
+func ControlServiceProcess(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	var req dto.ProcessControlReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	resp, err := mcpServiceService.ControlProcess(userID, id, req.Action)
+	if err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, resp)
+}
+
 // GetServicesOverview 服务总览页:统计摘要 + 全部服务的运行/资源快照(5s 轮询)。
 func GetServicesOverview(c *gin.Context) {
 	userID := c.GetInt64("user_id")

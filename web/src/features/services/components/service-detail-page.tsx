@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useRouter } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { getService, updateService, deleteService, testService, refreshTools, getServiceResources, getServicePrompts, getServiceProcessStat } from '../api'
+import { StdioProcessControl } from './stdio-process-control'
 import { ToolTestDialog } from './tool-test-dialog'
 import { ResourceTestDialog, type ResourceTarget } from './resource-test-dialog'
 import { PromptTestDialog } from './prompt-test-dialog'
@@ -16,7 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import {
   ArrowLeft, Trash2, Zap, RefreshCw, Server, Activity,
-  Pencil, X, Check, Loader2, ChevronDown, ChevronRight, FlaskConical,
+  Pencil, X, Check, Loader2, ChevronDown, ChevronRight, FlaskConical, Ban, Play,
 } from 'lucide-react'
 import type { McpTool, McpResource, McpResourceTemplate, McpPrompt, AuthType, UpdateServiceReq, ServiceProcessStat } from '@/types'
 
@@ -143,6 +144,20 @@ export function ServiceDetailPage() {
     onSuccess: () => {
       toast.success(t('services.deleteSuccess'))
       navigate({ to: '/services' })
+    },
+  })
+
+  // 启用/禁用:与列表页同口径。禁用会从全部分组移除服务并终止 stdio 进程,需二次确认;
+  // 成功后一并失效进程/总览轮询键,禁用即停的状态立即回读。
+  const toggleStatusMutation = useMutation({
+    mutationFn: (status: number) => updateService(serviceId, { status }),
+    onSuccess: (_data, status) => {
+      queryClient.invalidateQueries({ queryKey: ['service', id] })
+      queryClient.invalidateQueries({ queryKey: ['services'] })
+      queryClient.invalidateQueries({ queryKey: ['groups'] })
+      queryClient.invalidateQueries({ queryKey: ['service-process'] })
+      queryClient.invalidateQueries({ queryKey: ['services-overview'] })
+      toast.success(status === 0 ? t('services.disabledToast') : t('services.enabledToast'))
     },
   })
 
@@ -362,6 +377,27 @@ export function ServiceDetailPage() {
               <Pencil className="h-3.5 w-3.5 mr-1.5" />{t('common.edit')}
             </Button>
           )}
+          {!editing && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              disabled={toggleStatusMutation.isPending}
+              onClick={() => {
+                if (service.status === 1) {
+                  if (confirm(t('services.disableConfirm', { name: service.display_name || service.name }))) {
+                    toggleStatusMutation.mutate(0)
+                  }
+                } else {
+                  toggleStatusMutation.mutate(1)
+                }
+              }}
+            >
+              {service.status === 1
+                ? <><Ban className="h-3.5 w-3.5" />{t('services.statusBadgeDisabled')}</>
+                : <><Play className="h-3.5 w-3.5" />{t('services.statusBadgeEnabled')}</>}
+            </Button>
+          )}
           {!isVirtual && (
           <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" disabled={editing} onClick={() => {
             if (confirm(t('services.deletePrompt'))) deleteMutation.mutate()
@@ -563,9 +599,14 @@ export function ServiceDetailPage() {
           <SectionCard
             title={t('services.processInfo')}
             actions={
-              <Badge variant={proc?.running ? 'success' : 'secondary'}>
-                {proc?.running ? t('services.processRunning') : t('services.processStopped')}
-              </Badge>
+              <div className="flex items-center gap-1.5">
+                {service.status === 1 && (
+                  <StdioProcessControl serviceId={serviceId} running={!!proc?.running} />
+                )}
+                <Badge variant={proc?.running ? 'success' : 'secondary'}>
+                  {proc?.running ? t('services.processRunning') : t('services.processStopped')}
+                </Badge>
+              </div>
             }
           >
             {proc?.running ? (

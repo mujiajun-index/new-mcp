@@ -3,6 +3,7 @@ import { Link, Navigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { getServiceOverview } from '../api'
+import { StdioProcessControl } from './stdio-process-control'
 import { useAuthStore } from '@/stores/auth-store'
 import { isAdminRole } from '@/lib/roles'
 import { Button } from '@/components/ui/button'
@@ -79,17 +80,30 @@ function ServiceCard({ s, hostTotal }: { s: ServicesOverviewItem; hostTotal: num
   }
 
   return (
-    <Link to="/services/$id" params={{ id: String(s.id) }}>
-      <div className="space-y-4 rounded-xl border bg-card p-5 transition-all duration-200 hover:border-ring/20 hover:shadow-md hover:shadow-black/[0.03]">
+    <div className="space-y-4 rounded-xl border bg-card p-5 transition-all duration-200 hover:border-ring/20 hover:shadow-md hover:shadow-black/[0.03]">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <span
               className={`h-2 w-2 shrink-0 rounded-full ${dotCls}`}
               title={dotTitle}
             />
-            <span className="truncate text-sm font-medium">{s.display_name || s.name}</span>
+            {/* 仅名称跳转详情,卡片其余区域(含右上角进程操作按钮)不触发跳转;
+                truncate 超出截断省略号,title 悬停可看全名 */}
+            <Link to="/services/$id" params={{ id: String(s.id) }} title={s.display_name || s.name} className="min-w-0 truncate text-sm font-medium transition-colors hover:text-primary">
+              {s.display_name || s.name}
+            </Link>
+            {s.status !== 1 && (
+              <span className="shrink-0 rounded bg-zinc-500/10 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500">
+                {t('services.statusBadgeDisabled')}
+              </span>
+            )}
           </div>
-          <Badge variant="secondary" className="shrink-0 text-[10px]">{transportLabel}</Badge>
+          <div className="flex shrink-0 items-center gap-1">
+            <Badge variant="secondary" className="text-[10px]">{transportLabel}</Badge>
+            {isStdio && s.status === 1 && (
+              <StdioProcessControl serviceId={s.id} running={s.running} />
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -126,8 +140,7 @@ function ServiceCard({ s, hostTotal }: { s: ServicesOverviewItem; hostTotal: num
           </div>
           <Progress value={memPct} className="h-1 bg-emerald-500/15 [&_[data-slot=progress-indicator]]:bg-emerald-500" />
         </div>
-      </div>
-    </Link>
+    </div>
   )
 }
 
@@ -139,7 +152,7 @@ export function ServiceOverviewPage() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('stdio')
   const [search, setSearch] = useState('')
 
-  const { data, isFetching, refetch } = useQuery({
+  const { data, isPending, isFetching, refetch } = useQuery({
     queryKey: ['services-overview'],
     queryFn: getServiceOverview,
     refetchInterval: 5000,
@@ -266,7 +279,31 @@ export function ServiceOverviewPage() {
           </div>
         </div>
 
-        {services.length === 0 ? (
+        {/* 首屏骨架屏:总览接口首次返回前 services 为空数组,不能命中「还没有服务」空态。
+            卡片网格为 auto-fill 自适应 1-6 列:每卡至少 240px,宽度增长时逐列增加,
+            轨道 1fr 撑满整个内容区;max-w 封在 1775px(出现 7 列需 7*240+6*16=1776px),
+            更宽的屏幕保持 6 列不再加列 */}
+        {isPending ? (
+          <div className="grid gap-4 max-w-[1775px] grid-cols-[repeat(auto-fill,minmax(min(240px,100%),1fr))]">
+            {Array.from({ length: 6 }, (_, i) => (
+              <div key={i} className="space-y-4 rounded-xl border bg-card p-5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="h-4 w-1/2 animate-pulse rounded bg-muted" />
+                  <div className="h-4 w-14 shrink-0 animate-pulse rounded bg-muted" />
+                </div>
+                <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+                <div className="space-y-1.5">
+                  <div className="h-3 w-1/3 animate-pulse rounded bg-muted" />
+                  <div className="h-1 w-full animate-pulse rounded bg-muted" />
+                </div>
+                <div className="space-y-1.5">
+                  <div className="h-3 w-1/3 animate-pulse rounded bg-muted" />
+                  <div className="h-1 w-full animate-pulse rounded bg-muted" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : services.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-xl border bg-card py-12 text-center">
             <Server className="mb-2 h-8 w-8 text-muted-foreground/30" />
             <p className="text-sm text-muted-foreground">{t('services.overview.emptyHint')}</p>
@@ -277,7 +314,7 @@ export function ServiceOverviewPage() {
             <p className="text-sm text-muted-foreground">{t('services.overview.noMatch')}</p>
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 max-w-[1775px] grid-cols-[repeat(auto-fill,minmax(min(240px,100%),1fr))]">
             {filtered.map((s) => (
               <ServiceCard key={s.id} s={s} hostTotal={hostTotal} />
             ))}

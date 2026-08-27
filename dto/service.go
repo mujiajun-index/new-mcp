@@ -69,6 +69,12 @@ type ServiceProcessStat struct {
 	UptimeSeconds int64   `json:"uptime_seconds,omitempty"`
 }
 
+// ProcessControlReq stdio 服务进程操作请求。action: start 拉起子进程并完成握手 /
+// stop 终止整棵进程树并释放内存 / restart = stop + start。
+type ProcessControlReq struct {
+	Action string `json:"action" binding:"required,oneof=start stop restart"`
+}
+
 // ServicesOverviewItem 总览页单个服务的运行/资源快照。Running=false 时(未连接/
 // 非 stdio/进程已退出)进程相关字段为零值被 omitempty 省略,口径同 ServiceProcessStat。
 type ServicesOverviewItem struct {

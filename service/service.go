@@ -230,13 +230,21 @@ func (s *McpServiceService) Update(userID, serviceID int64, req *dto.UpdateServi
 		if err := model.DeleteGroupItemsByServiceID(serviceID); err != nil {
 			return err
 		}
+		// 禁用即停:踢掉池内会话,stdio 子进程走完整终止序列(关 stdin → SIGTERM →
+		// SIGKILL → Wait)立即释放内存;重新启用后按需懒连接,不自动拉起。
+		if SessionPool != nil {
+			SessionPool.Remove(serviceID)
+		}
 	}
 	// 配置（command/args/env/registry/url/headers）变更后，运行中的连接/子进程仍带旧配置。
 	// 踢掉旧 session 并按新配置异步重连（与 Create 一致）：让新 env 立即生效，同时刷新
 	// tools_cache 并预热连接。AuthConfig 不喂给 adapter、DisplayName/Description/Tags 为展示字段，均无需重连。
+	// 同请求里一并禁用的服务不重连——禁用即停,重连会把刚停的进程又拉起来。
 	if req.Config != nil && SessionPool != nil {
 		SessionPool.Remove(serviceID)
-		go SessionPool.GetOrConnect(context.Background(), svc)
+		if req.Status == nil || *req.Status == common.StatusEnabled {
+			go SessionPool.GetOrConnect(context.Background(), svc)
+		}
 	}
 	return nil
 }
@@ -667,6 +675,50 @@ func (s *McpServiceService) GetProcessStat(userID, serviceID int64) (*dto.Servic
 		CPUPercent:    tree.CPUPercent,
 		UptimeSeconds: tree.UptimeSeconds,
 	}, nil
+}
+
+// ControlProcess 对 stdio 服务子进程执行启动/停止/重启。启动(及重启的拉起)同步等待
+// 握手完成后返回最新进程快照;停止走 Remove 的完整终止序列,并清掉过期的健康标记。
+func (s *McpServiceService) ControlProcess(userID, serviceID int64, action string) (*dto.ServiceProcessStat, error) {
+	svc, err := model.GetServiceByID(userID, serviceID)
+	if err != nil {
+		return nil, err
+	}
+	if svc.TransportType != string(transport.TypeStdio) {
+		return nil, fmt.Errorf("仅 stdio 服务支持进程操作")
+	}
+	if svc.Status != common.StatusEnabled {
+		return nil, fmt.Errorf("服务已禁用,请先启用再操作进程")
+	}
+	if SessionPool == nil {
+		return nil, fmt.Errorf("会话池未初始化")
+	}
+
+	switch action {
+	case "stop":
+		SessionPool.Remove(serviceID)
+		// 进程已停,库里的 healthy 是过期标记,还原为未知
+		model.DB.Model(&model.McpService{}).Where("id = ?", serviceID).Update("health_status", common.HealthUnknown)
+	case "start", "restart":
+		if action == "restart" {
+			SessionPool.Remove(serviceID)
+		}
+		// 市场引用服务:config 为空,先注入平台上游配置再拉起(与网关/测试口径一致)
+		if svc.Source == "marketplace" && svc.MarketplaceItemID != nil {
+			if mErr := s.materializeMarketplace(svc); mErr != nil {
+				return nil, mErr
+			}
+		}
+		// npx/uvx 首次拉起可能要下载依赖,放宽到 60s(与前端 65s 超时对齐)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		if _, cErr := SessionPool.GetOrConnect(ctx, svc); cErr != nil {
+			return nil, cErr
+		}
+	default:
+		return nil, fmt.Errorf("不支持的操作: %s", action)
+	}
+	return s.GetProcessStat(userID, serviceID)
 }
 
 // GetServicesOverview 服务总览页数据:全部服务(不分页) + 统计摘要 + 各 stdio 服务

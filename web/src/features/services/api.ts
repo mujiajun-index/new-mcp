@@ -1,7 +1,7 @@
 import { api } from '@/lib/api'
 import type {
   ServiceListParams,
-  CreateServiceReq, UpdateServiceReq, PrepareStdioReq,
+  CreateServiceReq, UpdateServiceReq, PrepareStdioReq, ProcessControlAction,
 } from '@/types'
 
 export async function getServices(params?: ServiceListParams) {
@@ -89,6 +89,13 @@ export async function getServiceHealth(id: number) {
 // stdio 服务进程资源占用(详情页 5s 轮询)
 export async function getServiceProcessStat(id: number) {
   const res = await api.get(`/services/${id}/process`)
+  return res.data
+}
+
+// stdio 进程 启动/停止/重启:后端同步等待启动握手(npx 首拉可能要下载依赖),
+// 超时口径与工具测试一致放宽到 65s
+export async function controlServiceProcess(id: number, action: ProcessControlAction) {
+  const res = await api.post(`/services/${id}/process/control`, { action }, { timeout: 65_000 })
   return res.data
 }
 
