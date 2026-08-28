@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/mujkjk/newmcp/common"
@@ -144,13 +145,69 @@ func GetCallLogs(filter *LogFilter, offset, limit int) ([]McpCallLog, int64, err
 }
 
 // CallLogRow 是健康聚合用的窄行:只取 5 列,不触碰 mediumtext 的 payload 列。
-// ErrorMessage 供健康快照取"24h 内最近一次错误";成功行为空串,几乎无额外开销。
+// ErrorMessage 供健康快照取"窗口内最近一次错误";成功行为空串,几乎无额外开销。
 type CallLogRow struct {
 	ServiceID      int64
 	ResponseStatus string
 	DurationMs     int
 	ErrorMessage   string
 	CreatedAt      time.Time
+}
+
+// GetLastConsumeTime 服务全历史最近一次消费调用时间(无则 nil);总览给空窗
+// (近 200 分钟无调用)服务显示"上次调用"的时间锚点。MAX(created_at) 在
+// glebarez/sqlite 下返回字符串而非 time.Time,经 flexTime 兼容扫描。
+func GetLastConsumeTime(serviceID int64) *time.Time {
+	row := DB.Model(&McpCallLog{}).
+		Where("service_id = ? AND type = ?", serviceID, LogTypeConsume).
+		Select("MAX(created_at)").Row()
+	var ft flexTime
+	if err := row.Scan(&ft); err != nil || !ft.ok {
+		return nil
+	}
+	return &ft.t
+}
+
+// flexTime 兼容聚合 MAX(created_at) 在不同驱动的返回:MySQL/PG 给 time.Time,
+// glebarez/sqlite 给 "2006-01-02 15:04:05.9999999+08:00" 形态的字符串(带时区偏移)。
+// 用原生 rows/Row.Scan 走 database/sql 的 Scanner 约定;GORM 的 .Scan() 会把
+// 自定义类型字段当关系解析,不可用于 struct 字段。
+type flexTime struct {
+	t  time.Time
+	ok bool
+}
+
+func (f *flexTime) Scan(v any) error {
+	switch val := v.(type) {
+	case nil:
+		return nil
+	case time.Time:
+		f.t, f.ok = val, true
+		return nil
+	case string:
+		return f.parse(val)
+	case []byte:
+		return f.parse(string(val))
+	default:
+		return fmt.Errorf("flexTime: unsupported driver value %T", v)
+	}
+}
+
+func (f *flexTime) parse(s string) error {
+	layouts := []string{
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05",
+		time.RFC3339Nano,
+		time.RFC3339,
+	}
+	for _, l := range layouts {
+		if t, err := time.Parse(l, s); err == nil {
+			f.t, f.ok = t, true
+			return nil
+		}
+	}
+	return fmt.Errorf("flexTime: unparsable time %q", s)
 }
 
 // GetCallLogRowsForServices 取一批服务 since 之后的调用窄行(created_at 有索引)。

@@ -75,18 +75,18 @@ type ProcessControlReq struct {
 	Action string `json:"action" binding:"required,oneof=start stop restart"`
 }
 
-// HealthBucket 健康 24 小时时间条的单个小时桶。Total==0 表示该小时无调用;
-// StartUnix 为桶起点 epoch 秒,前端 dayjs 本地化展示。
+// HealthBucket 近期调用色带的单个 10 分钟桶(对齐 CLIProxyAPI recent_requests 口径:
+// 20 桶 × 10 分钟 = 近 200 分钟滚动窗口)。Success+Failed==0 表示该桶无调用;
+// StartUnix 为桶起点 epoch 秒(绝对 10 分钟边界),前端本地化展示。
 type HealthBucket struct {
-	StartUnix     int64 `json:"start_unix"`
-	Total         int64 `json:"total"`
-	Success       int64 `json:"success"`
-	AvgDurationMs int64 `json:"avg_duration_ms"` // 0 表示该桶无数据
+	StartUnix int64 `json:"start_unix"`
+	Success   int64 `json:"success"`
+	Failed    int64 `json:"failed"`
 }
 
 // ServicesOverviewItem 总览页单个服务的运行/资源快照。Running=false 时(未连接/
 // 非 stdio/进程已退出)进程相关字段为零值被 omitempty 省略,口径同 ServiceProcessStat。
-// 健康 5 字段仅非 stdio 服务填充(由 mcp_call_logs 真实调用聚合,见
+// 健康字段仅非 stdio 服务填充(由 mcp_call_logs 真实调用聚合,见
 // service/health_snapshot.go),stdio 行不带。
 type ServicesOverviewItem struct {
 	ID            int64   `json:"id"`
@@ -94,22 +94,25 @@ type ServicesOverviewItem struct {
 	DisplayName   string  `json:"display_name"`
 	TransportType string  `json:"transport_type"`
 	Source        string  `json:"source"`
-	HealthStatus  string  `json:"health_status"`
-	Status        int     `json:"status"`
-	ToolsCount    int     `json:"tools_count"`
-	CreatedAt     string  `json:"created_at"`
-	Running       bool    `json:"running"`
-	PID           int     `json:"pid,omitempty"`
-	ProcessCount  int     `json:"process_count,omitempty"`
-	MemoryRSS     uint64  `json:"memory_rss_bytes,omitempty"` // 树 RSS;进度条分母用 summary.host_memory_total_bytes
-	CPUPercent    float64 `json:"cpu_percent,omitempty"`      // 树累计 CPU/生存期,可 >100%(多核)
-	UptimeSeconds int64   `json:"uptime_seconds,omitempty"`
+	// HealthStatus:stdio 为进程实测口径,非 stdio 为实时被动推导(连接>窗口成败>未知),
+	// 不依赖库里仅在调用后回写的标记。
+	HealthStatus string  `json:"health_status"`
+	Status       int     `json:"status"`
+	ToolsCount   int     `json:"tools_count"`
+	CreatedAt    string  `json:"created_at"`
+	Running      bool    `json:"running"`
+	PID          int     `json:"pid,omitempty"`
+	ProcessCount int     `json:"process_count,omitempty"`
+	MemoryRSS    uint64  `json:"memory_rss_bytes,omitempty"` // 树 RSS;进度条分母用 summary.host_memory_total_bytes
+	CPUPercent   float64 `json:"cpu_percent,omitempty"`      // 树累计 CPU/生存期,可 >100%(多核)
+	UptimeSeconds int64  `json:"uptime_seconds,omitempty"`
 
-	HealthScore       *int          `json:"health_score,omitempty"`        // 0-100,nil = 近 1h 无调用
-	HealthState       string        `json:"health_state,omitempty"`        // healthy/ok/degraded/critical/no_data
-	HealthBuckets     []HealthBucket `json:"health_buckets,omitempty"`     // 恒 24 项(近 24h,每小时一格)
-	LastErrorMessage  string        `json:"last_error_message,omitempty"` // 24h 内最近一次失败信息
-	LastErrorAt       int64         `json:"last_error_at,omitempty"`       // unix 秒,0 = 无
+	// 非 stdio 服务:近 200 分钟(20 桶 × 10 分钟,旧→新)真实调用成败 + 窗口内最近
+	// 一次调用时间 + 窗口内最近一次失败(悬停可见,不占布局)
+	HealthBuckets    []HealthBucket `json:"health_buckets,omitempty"`    // 恒 20 项
+	LastCallAt       int64          `json:"last_call_at,omitempty"`      // unix 秒,0 = 从未调用
+	LastErrorMessage string         `json:"last_error_message,omitempty"`
+	LastErrorAt      int64          `json:"last_error_at,omitempty"`     // unix 秒,0 = 无
 }
 
 // ServicesOverviewSummary 总览页顶部统计卡数据。CPUTotalPercent 为各 stdio 进程树
@@ -121,7 +124,7 @@ type ServicesOverviewSummary struct {
 	ProcessTotal    int     `json:"process_total"` // stdio 运行树的进程数总和
 	MemoryRSSTotal  uint64  `json:"memory_rss_bytes_total"`
 	CPUTotalPercent float64 `json:"cpu_percent_total"`
-	HealthyCount    int     `json:"healthy_count"` // health_status==healthy 数,健康率由前端计算
+	HealthyCount    int     `json:"healthy_count"` // 实时健康数(stdio=进程存活;非stdio=连接中或窗口内有成功),健康率由前端计算
 	HostMemoryTotal uint64  `json:"host_memory_total_bytes"` // 主机物理内存总量(gopsutil),内存条分母
 }
 

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { getServiceOverview } from '../api'
 import { StdioProcessControl } from './stdio-process-control'
-import { ServiceHealthBar } from './service-health-bar'
+import { ServiceHealthBar, StatusPill } from './service-health-bar'
 import { useAuthStore } from '@/stores/auth-store'
 import { isAdminRole } from '@/lib/roles'
 import { Button } from '@/components/ui/button'
@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/select'
 import type { ServicesOverviewData, ServicesOverviewItem, TransportType } from '@/types'
 import {
-  Activity, ArrowLeft, Clock, HeartPulse, Layers, MemoryStick,
+  Activity, ArrowLeft, HeartPulse, Layers, MemoryStick,
   RefreshCw, Search, Server, Wrench,
 } from 'lucide-react'
 
@@ -59,68 +59,58 @@ function ServiceCard({ s, hostTotal }: { s: ServicesOverviewItem; hostTotal: num
     : 0
   const transportLabel = transportTypeLabel(t, s.transport_type)
 
-  // 状态圆点:禁用恒灰;stdio 看进程实测;远程/虚拟看最近健康检测结果(健康/异常/未知)
+  // 状态圆点:stdio 专属,表示启用/禁用(绿=启用,灰=禁用);进程实际运行状态由
+  // 右上角电源按钮颜色承载(绿=运行中,红=已停止)
   let dotCls = 'bg-zinc-300 dark:bg-zinc-600'
-  let dotTitle: string
-  if (s.status !== 1) {
+  let dotTitle = ''
+  if (isStdio && s.status !== 1) {
     dotTitle = t('services.statusBadgeDisabled')
   } else if (isStdio) {
-    if (s.running) {
-      dotCls = 'bg-emerald-500'
-      dotTitle = t('services.overview.filterRunning')
-    } else {
-      dotTitle = t('services.overview.filterStopped')
-    }
-  } else if (s.running) {
     dotCls = 'bg-emerald-500'
-    dotTitle = t('services.healthHealthy')
-  } else if (s.health_status === 'unhealthy') {
-    dotCls = 'bg-red-500'
-    dotTitle = t('services.healthUnhealthy')
-  } else {
-    dotTitle = t('services.healthUnknown')
+    dotTitle = t('services.statusBadgeEnabled')
   }
+  // 右侧状态徽章:启用/禁用两态;stdio 启用时不用徽章,启用态由绿色进程操作按钮承载
+  const pill = s.status !== 1
+    ? { kind: 'unknown' as const, label: t('services.statusBadgeDisabled') }
+    : !isStdio
+      ? { kind: 'healthy' as const, label: t('services.statusBadgeEnabled') }
+      : null
 
   return (
     <div className="space-y-4 rounded-xl border bg-card p-5 transition-all duration-200 hover:border-ring/20 hover:shadow-md hover:shadow-black/[0.03]">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
-            <span
-              className={`h-2 w-2 shrink-0 rounded-full ${dotCls}`}
-              title={dotTitle}
-            />
+            {isStdio && (
+              <span
+                className={`h-2 w-2 shrink-0 rounded-full ${dotCls}`}
+                title={dotTitle}
+              />
+            )}
             {/* 仅名称跳转详情,卡片其余区域(含右上角进程操作按钮)不触发跳转;
                 truncate 超出截断省略号,title 悬停可看全名 */}
             <Link to="/services/$id" params={{ id: String(s.id) }} title={s.display_name || s.name} className="min-w-0 truncate text-sm font-medium transition-colors hover:text-primary">
               {s.display_name || s.name}
             </Link>
-            {s.status !== 1 && (
-              <span className="shrink-0 rounded bg-zinc-500/10 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500">
-                {t('services.statusBadgeDisabled')}
-              </span>
-            )}
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            <Badge variant="secondary" className="text-[10px]">{transportLabel}</Badge>
+            {pill && <StatusPill kind={pill.kind} label={pill.label} />}
             {isStdio && s.status === 1 && (
-              <StdioProcessControl serviceId={s.id} running={s.running} />
+              <StdioProcessControl serviceId={s.id} running={s.running} colored />
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1">
+        {/* 传输类型徽章放本行右端,不与名称/状态徽章挤在头部 */}
+        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span className="inline-flex min-w-0 items-center gap-1">
             <Wrench className="h-3.5 w-3.5" />
             {t('services.toolsCount')} {s.tools_count}
           </span>
-          <span className="inline-flex items-center gap-1">
-            <Clock className="h-3.5 w-3.5" />
-            {s.created_at.slice(0, 10)}
-          </span>
+          <Badge variant="secondary" className="shrink-0 text-[10px]">{transportLabel}</Badge>
         </div>
 
-        {/* stdio 显示进程 CPU/内存两行;非 stdio 无本机进程,改为健康状态条
-            (近 1h 健康分 + 近 24h 每小时一格的调用成功/失败时间条) */}
+        {/* stdio 显示进程 CPU/内存两行;非 stdio 无本机进程,改为近期调用色带
+            (近 200 分钟 = 20 格 × 10 分钟,成功/失败插值着色,对齐 CLIProxyAPI) */}
         {isStdio ? (
           <>
             <div className="space-y-1.5">

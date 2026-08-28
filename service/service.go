@@ -824,8 +824,9 @@ func (s *McpServiceService) GetServicesOverview(userID int64, isAdmin bool) (*dt
 		}
 
 		// running 口径:stdio = 池内会话已连接且进程树确实存活(连接标记可能滞后
-		// 于进程退出,以采集结果为准);远程/虚拟无本机进程可测,取最近一次健康
-		// 检测结果(当前有活跃连接同样算),禁用服务恒为未运行。
+		// 于进程退出,以采集结果为准);远程/虚拟无本机进程可测,取被动口径——当前
+		// 有活跃连接或近 200 分钟窗口内有成功调用即算运行,禁用服务恒为未运行。
+		// 健康状态同口径实时推导(derivePassiveHealth),不依赖库里仅在调用后回写的标记。
 		session := sessions[svc.ID]
 		connected := session != nil && session.Adapter.IsConnected()
 		if svc.TransportType == string(transport.TypeStdio) {
@@ -838,17 +839,35 @@ func (s *McpServiceService) GetServicesOverview(userID int64, isAdmin bool) (*dt
 				item.CPUPercent = tree.CPUPercent
 				item.UptimeSeconds = tree.UptimeSeconds
 			}
-		} else {
+			// 健康率口径:stdio 以进程实测存活为准
+			if item.Running {
+				item.HealthStatus = common.HealthHealthy
+				resp.Summary.HealthyCount++
+			} else {
+				item.HealthStatus = common.HealthUnknown
+			}
+		} else if snap := healthSnaps[svc.ID]; snap != nil {
+			item.HealthBuckets = snap.Buckets
+			item.LastErrorMessage = snap.LastErrorMessage
+			item.LastErrorAt = snap.LastErrorUnix
+			item.HealthStatus = derivePassiveHealth(svc.Status, connected, snap.Buckets)
 			item.Running = svc.Status == common.StatusEnabled &&
-				(connected || svc.HealthStatus == common.HealthHealthy)
-			// 健康 5 字段仅非 stdio 填充(近 1h 分数 + 24h 时间条),无调用的
-			// 服务也是全零桶 + no_data,前端渲染灰色时间条
-			if snap := healthSnaps[svc.ID]; snap != nil {
-				item.HealthScore = snap.Score
-				item.HealthState = snap.State
-				item.HealthBuckets = snap.Buckets
-				item.LastErrorMessage = snap.LastErrorMessage
-				item.LastErrorAt = snap.LastErrorUnix
+				(connected || hasRecentSuccess(snap.Buckets))
+			if item.HealthStatus == common.HealthHealthy {
+				resp.Summary.HealthyCount++
+			}
+			// 窗口内有调用直接取快照时间;空窗服务点查全历史,给"暂无调用"一个时间锚点
+			if snap.LastCallUnix > 0 {
+				item.LastCallAt = snap.LastCallUnix
+			} else if lt := model.GetLastConsumeTime(svc.ID); lt != nil {
+				item.LastCallAt = lt.Unix()
+			}
+		} else {
+			// 健康聚合失败降级:退回连接状态/未知,不报错
+			item.HealthStatus = derivePassiveHealth(svc.Status, connected, nil)
+			item.Running = svc.Status == common.StatusEnabled && connected
+			if item.HealthStatus == common.HealthHealthy {
+				resp.Summary.HealthyCount++
 			}
 		}
 
@@ -859,9 +878,6 @@ func (s *McpServiceService) GetServicesOverview(userID int64, isAdmin bool) (*dt
 		if item.Running {
 			resp.Summary.RunningServices++
 		}
-		if svc.HealthStatus == common.HealthHealthy {
-			resp.Summary.HealthyCount++
-		}
 		resp.Services[i] = item
 	}
 	resp.Summary.TotalServices = len(services)
@@ -871,6 +887,39 @@ func (s *McpServiceService) GetServicesOverview(userID int64, isAdmin bool) (*dt
 		resp.Summary.HostMemoryTotal = vm.Total
 	}
 	return resp, nil
+}
+
+// derivePassiveHealth 非 stdio 服务的实时被动健康推导(对齐 CLIProxyAPI:只看真实流量):
+// 禁用/无数据 → 未知;当前有活跃连接 → 健康;否则看窗口内最近一个非空桶——
+// 全失败 → 异常,有成功 → 健康。展示琥珀色由前端负责,红色只出现在色带插值里。
+func derivePassiveHealth(status int, connected bool, buckets []dto.HealthBucket) string {
+	if status != common.StatusEnabled {
+		return common.HealthUnknown
+	}
+	if connected {
+		return common.HealthHealthy
+	}
+	for i := len(buckets) - 1; i >= 0; i-- {
+		b := buckets[i]
+		if b.Success+b.Failed == 0 {
+			continue
+		}
+		if b.Success > 0 {
+			return common.HealthHealthy
+		}
+		return common.HealthUnhealthy
+	}
+	return common.HealthUnknown
+}
+
+// hasRecentSuccess 近 200 分钟窗口内是否有成功调用(与"有活跃连接"共同构成远程服务 running 判定)。
+func hasRecentSuccess(buckets []dto.HealthBucket) bool {
+	for _, b := range buckets {
+		if b.Success > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // --- Admin service management ---
