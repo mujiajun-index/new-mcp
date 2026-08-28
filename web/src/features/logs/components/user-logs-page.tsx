@@ -70,7 +70,7 @@ function SmartBadge({ log }: { log: any }) {
   )
 }
 
-// 从 extra JSON 解析管理日志的操作者(管理员)展示文本,对齐 new-api 的 "username (ID: n)"。
+// 从 extra JSON 解析管理日志的操作者(管理员)展示文本"。
 // 普通用户视图的 extra 已在后端剥离 operator,故仅管理员可见。
 function getOperatorDisplay(extra?: string): string | null {
   if (!extra) return null
@@ -166,8 +166,7 @@ export function UserLogsPage() {
 
   const formatTime = (dateStr: string) => {
     if (!dateStr) return '-'
-    const d = new Date(dateStr)
-    return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    return dayjs(dateStr).format('YYYY-MM-DD HH:mm:ss')
   }
 
   const formatDuration = (ms: number) => {
@@ -182,6 +181,24 @@ export function UserLogsPage() {
     { label: t('logs.avgDuration'), value: stats?.data?.avg_duration_ms ? formatDuration(stats.data.avg_duration_ms) : '0ms', icon: Clock, color: 'text-violet-500', bg: 'bg-violet-500/10' },
     { label: t('logs.todayCalls'), value: stats?.data?.calls_today ?? 0, icon: Zap, color: 'text-amber-500', bg: 'bg-amber-500/10' },
   ]
+
+  // 列宽权重(px),通用日志的 DataTableColgroup:经 <colgroup> 换算成各列占总宽的
+  // 百分比,表格 w-full 时所有列等比例同步伸缩(全屏分布均匀,视口加宽每列按占比变宽);
+  // 视口窄于权重总和时表格按 minWidth(=总和)横向滚动,此时每列恰好等于其 px 权重。
+  const logColumns = [
+    { key: 'time', w: 140 },
+    { key: 'type', w: 72 },
+    { key: 'apiKey', w: 110 },
+    { key: 'tool', w: 220 },
+    { key: 'group', w: 100 },
+    ...(isAdmin ? [{ key: 'service', w: 120 }] : []),
+    { key: 'status', w: 68 },
+    ...(showBilling ? [{ key: 'billing', w: 88 }] : []),
+    { key: 'duration', w: 72 },
+    { key: 'error', w: 150 },
+    { key: 'ip', w: 112 },
+  ]
+  const logColumnsTotal = logColumns.reduce((s, c) => s + c.w, 0)
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
@@ -266,28 +283,28 @@ export function UserLogsPage() {
           />
 
           {isAdmin && (
-            <>
-              <Input
-                placeholder={t('logs.serviceName')}
-                value={filter.service_name ?? ''}
-                onChange={e => updateFilter('service_name', e.target.value)}
-                className="w-[150px] h-9"
-              />
-              <Input
-                placeholder={t('logs.username')}
-                value={filter.username ?? ''}
-                onChange={e => updateFilter('username', e.target.value)}
-                className="w-[130px] h-9"
-              />
-              {/* 令牌名称筛选(与令牌列同口径仅管理员可见);输入 tool-test 可筛出手动测试记录 */}
-              <Input
-                placeholder={t('logs.apiKeyName')}
-                value={filter.api_key_name ?? ''}
-                onChange={e => updateFilter('api_key_name', e.target.value)}
-                className="w-[130px] h-9"
-              />
-            </>
+            <Input
+              placeholder={t('logs.serviceName')}
+              value={filter.service_name ?? ''}
+              onChange={e => updateFilter('service_name', e.target.value)}
+              className="w-[150px] h-9"
+            />
           )}
+          {isAdmin && (
+            <Input
+              placeholder={t('logs.username')}
+              value={filter.username ?? ''}
+              onChange={e => updateFilter('username', e.target.value)}
+              className="w-[130px] h-9"
+            />
+          )}
+          {/* 令牌名称筛选(与令牌列同口径对所有用户开放);输入 tool-test 可筛出手动测试记录 */}
+          <Input
+            placeholder={t('logs.apiKeyName')}
+            value={filter.api_key_name ?? ''}
+            onChange={e => updateFilter('api_key_name', e.target.value)}
+            className="w-[130px] h-9"
+          />
 
           <Button variant="outline" size="sm" onClick={resetFilters} className="h-9">
             <RotateCw className="mr-1.5 h-3.5 w-3.5" />
@@ -321,22 +338,25 @@ export function UserLogsPage() {
               ))}
             </div>
           ) : (
-            <Table className="table-fixed" style={{ minWidth: `${isAdmin ? 1370 : showBilling ? 1140 : 1050}px` }}>
+            <Table className="table-fixed" style={{ minWidth: `${logColumnsTotal}px` }}>
+              <colgroup>
+                {logColumns.map(c => (
+                  <col key={c.key} style={{ width: `${(c.w / logColumnsTotal) * 100}%` }} />
+                ))}
+              </colgroup>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[64px] whitespace-nowrap">ID</TableHead>
-                  <TableHead className="w-[72px] whitespace-nowrap">{t('logs.type')}</TableHead>
-                  <TableHead className="w-[110px] whitespace-nowrap">{t('logs.username')}</TableHead>
-                  {isAdmin && <TableHead className="w-[110px] whitespace-nowrap">{t('logs.apiKeyName')}</TableHead>}
-                  <TableHead className="w-[220px] whitespace-nowrap">{t('logs.toolName')}</TableHead>
-                  <TableHead className="w-[100px] whitespace-nowrap">{t('logs.groupName')}</TableHead>
-                  {isAdmin && <TableHead className="w-[120px] whitespace-nowrap">{t('logs.serviceName')}</TableHead>}
-                  <TableHead className="w-[68px] whitespace-nowrap">{t('logs.status')}</TableHead>
-                  {showBilling && <TableHead className="w-[88px] whitespace-nowrap">{t('logs.billing')}</TableHead>}
-                  <TableHead className="w-[72px] whitespace-nowrap">{t('logs.duration')}</TableHead>
-                  <TableHead className="w-[150px] whitespace-nowrap">{t('logs.errorMessage')}</TableHead>
-                  <TableHead className="w-[112px] whitespace-nowrap">IP</TableHead>
-                  <TableHead className="w-[104px] whitespace-nowrap">{t('logs.time')}</TableHead>
+                  <TableHead className="whitespace-nowrap">{t('logs.time')}</TableHead>
+                  <TableHead className="whitespace-nowrap">{t('logs.type')}</TableHead>
+                  <TableHead className="whitespace-nowrap">{t('logs.apiKeyName')}</TableHead>
+                  <TableHead className="whitespace-nowrap">{t('logs.toolName')}</TableHead>
+                  <TableHead className="whitespace-nowrap">{t('logs.groupName')}</TableHead>
+                  {isAdmin && <TableHead className="whitespace-nowrap">{t('logs.serviceName')}</TableHead>}
+                  <TableHead className="whitespace-nowrap">{t('logs.status')}</TableHead>
+                  {showBilling && <TableHead className="whitespace-nowrap">{t('logs.billing')}</TableHead>}
+                  <TableHead className="whitespace-nowrap">{t('logs.duration')}</TableHead>
+                  <TableHead className="whitespace-nowrap">{t('logs.errorMessage')}</TableHead>
+                  <TableHead className="whitespace-nowrap">IP</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -442,7 +462,7 @@ function LogMobileCard({ log, isAdmin, showBilling, fmtMoney, formatTime, format
           </span>
         }
         meta={[
-          { label: t('logs.username'), value: log.username || '-' },
+          ...(isAdmin && log.username ? [{ label: t('logs.username'), value: log.username }] : []),
           ...(operator ? [{ label: t('logs.operator'), value: operator }] : []),
           ...(quota !== 0 ? [{ label: t('logs.billingConsumed'), value: <QuotaDelta value={quota} fmt={fmtMoney} /> }] : []),
           { label: 'IP', value: <span className="font-mono">{log.client_ip || '-'}</span> },
@@ -471,7 +491,7 @@ function LogMobileCard({ log, isAdmin, showBilling, fmtMoney, formatTime, format
         </Badge>
       }
       meta={[
-        { label: t('logs.username'), value: log.username || '-' },
+        { label: t('logs.apiKeyName'), value: <ApiKeyNameCell name={log.api_key_name} /> },
         { label: t('logs.duration'), value: <span className="tabular-nums">{formatDuration(log.duration_ms)}</span> },
         ...(showBilling && log.billing_status && log.billing_status !== 'skipped' && log.quota_consumed > 0 ? [
           { label: t('logs.billing'), value: <span className="font-medium tabular-nums">{fmtMoney(log.quota_consumed)}</span> },
@@ -480,7 +500,6 @@ function LogMobileCard({ log, isAdmin, showBilling, fmtMoney, formatTime, format
         { label: 'IP', value: <span className="font-mono">{log.client_ip}</span> },
         { label: t('logs.time'), value: formatTime(log.created_at) },
         ...(isAdmin ? [
-          { label: t('logs.apiKeyName'), value: <ApiKeyNameCell name={log.api_key_name} /> },
           { label: t('logs.serviceName'), value: log.service_name || '-' },
         ] : []),
       ]}
@@ -541,20 +560,22 @@ function LogRow({ log, isAdmin, showBilling, fmtMoney, formatTime, formatDuratio
     </span>
   )
 
-  // 非消费行:用户(谁)+ 描述 + 操作者(哪个管理员) + 额度变动,合并调用明细相关列。
+  // 非消费行:描述 + 用户/操作者(哪个管理员) + 额度变动,合并调用明细相关列。
   if (!isConsume) {
     // 合并 api_key/tool/group/service/status/billing/duration/errorMessage。
-    const middleCols = (isAdmin ? 7 : 5) + (showBilling ? 1 : 0)
+    const middleCols = (isAdmin ? 7 : 6) + (showBilling ? 1 : 0)
     const quota = log.quota_consumed ?? 0
     const operator = getOperatorDisplay(log.extra)
     return (
       <TableRow>
-        <TableCell className="text-xs text-muted-foreground tabular-nums">{log.id}</TableCell>
+        <TableCell className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">{formatTime(log.created_at)}</TableCell>
         <TableCell>{typeBadge}</TableCell>
-        <TableCell className="text-sm truncate" title={log.username}>{log.username || '-'}</TableCell>
         <TableCell colSpan={middleCols}>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="text-sm">{log.content || '-'}</span>
+            {isAdmin && log.username && (
+              <span className="text-xs text-muted-foreground">{t('logs.username')}: {log.username}</span>
+            )}
             {operator && (
               <span className="text-xs text-muted-foreground">{t('logs.operator')}: {operator}</span>
             )}
@@ -562,7 +583,6 @@ function LogRow({ log, isAdmin, showBilling, fmtMoney, formatTime, formatDuratio
           </div>
         </TableCell>
         <TableCell className="text-xs text-muted-foreground font-mono truncate" title={log.client_ip}>{log.client_ip || '-'}</TableCell>
-        <TableCell className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">{formatTime(log.created_at)}</TableCell>
       </TableRow>
     )
   }
@@ -575,14 +595,11 @@ function LogRow({ log, isAdmin, showBilling, fmtMoney, formatTime, formatDuratio
 
   return (
     <TableRow>
-      <TableCell className="text-xs text-muted-foreground tabular-nums">{log.id}</TableCell>
+      <TableCell className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">{formatTime(log.created_at)}</TableCell>
       <TableCell>{typeBadge}</TableCell>
-      <TableCell className="text-sm truncate" title={log.username}>{log.username || '-'}</TableCell>
-      {isAdmin && (
-        <TableCell className="text-sm truncate">
-          <ApiKeyNameCell name={log.api_key_name} />
-        </TableCell>
-      )}
+      <TableCell className="text-sm truncate">
+        <ApiKeyNameCell name={log.api_key_name} />
+      </TableCell>
       <TableCell className="truncate" title={log.tool_name}>
         <span className="flex items-center gap-1.5">
           <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{log.tool_name}</code>
@@ -626,7 +643,6 @@ function LogRow({ log, isAdmin, showBilling, fmtMoney, formatTime, formatDuratio
         )}
       </TableCell>
       <TableCell className="text-xs text-muted-foreground font-mono truncate" title={log.client_ip}>{log.client_ip || '-'}</TableCell>
-      <TableCell className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">{formatTime(log.created_at)}</TableCell>
     </TableRow>
   )
 }
