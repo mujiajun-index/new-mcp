@@ -78,16 +78,28 @@ func sameIDSets(cached map[int64]struct{}, want []int64) bool {
 	return true
 }
 
-// buildServiceHealthSnapshots 一次窄行扫描聚合全部服务。桶边界为绝对 10 分钟
-// 整点;分桶在 Go 侧完成,避免 SQLite/MySQL/PG 三方言的时间表达式分叉(与
+// firstHealthBucket 窗口最旧桶的起始时刻(绝对 10 分钟整点对齐)。
+func firstHealthBucket(now time.Time) time.Time {
+	return now.Truncate(healthBucketLength).Add(-(healthBucketCount - 1) * healthBucketLength)
+}
+
+// buildServiceHealthSnapshots 一次窄行扫描聚合全部服务(每行归到其服务自身)。
+// 分桶在 Go 侧完成,避免 SQLite/MySQL/PG 三方言的时间表达式分叉(与
 // GetCallLogRowsForServices 的既有取舍一致)。
 func buildServiceHealthSnapshots(serviceIDs []int64, now time.Time) (map[int64]*ServiceHealthSnapshot, error) {
-	firstBucket := now.Truncate(healthBucketLength).Add(-(healthBucketCount - 1) * healthBucketLength)
+	firstBucket := firstHealthBucket(now)
 	rows, err := model.GetCallLogRowsForServices(serviceIDs, firstBucket)
 	if err != nil {
 		return nil, err
 	}
+	return buildSnapshotsFromRows(rows, nil, serviceIDs, firstBucket), nil
+}
 
+// buildSnapshotsFromRows 在已取到的窄行上做 20 桶聚合:每行经 keyOf 归到聚合键
+// (keyOf 为 nil 时恒等,即总览的按服务自身聚合),keys 为需产出的全部聚合键,
+// 无调用的键照样产出全灰快照。市场健康用它把条目下全部用户的引用行多对一归到
+// 条目,其余口径与总览一致。
+func buildSnapshotsFromRows(rows []model.CallLogRow, keyOf func(serviceID int64) int64, keys []int64, firstBucket time.Time) map[int64]*ServiceHealthSnapshot {
 	type healthAcc struct {
 		bucketSucc [healthBucketCount]int64
 		bucketFail [healthBucketCount]int64
@@ -95,13 +107,17 @@ func buildServiceHealthSnapshots(serviceIDs []int64, now time.Time) (map[int64]*
 		lastErrMsg string
 		lastErrAt  int64
 	}
-	accs := make(map[int64]*healthAcc, len(serviceIDs))
+	accs := make(map[int64]*healthAcc, len(keys))
 	for i := range rows {
 		r := &rows[i]
-		acc := accs[r.ServiceID]
+		key := r.ServiceID
+		if keyOf != nil {
+			key = keyOf(r.ServiceID)
+		}
+		acc := accs[key]
 		if acc == nil {
 			acc = &healthAcc{}
-			accs[r.ServiceID] = acc
+			accs[key] = acc
 		}
 		idx := int(r.CreatedAt.Sub(firstBucket) / healthBucketLength)
 		if idx < 0 || idx >= healthBucketCount { // 防御时钟漂移的越界行,正常查询范围不会出现
@@ -122,9 +138,9 @@ func buildServiceHealthSnapshots(serviceIDs []int64, now time.Time) (map[int64]*
 		}
 	}
 
-	snaps := make(map[int64]*ServiceHealthSnapshot, len(serviceIDs))
-	for _, id := range serviceIDs {
-		acc := accs[id] // 无任何调用的服务为 nil,照样产出全灰快照
+	snaps := make(map[int64]*ServiceHealthSnapshot, len(keys))
+	for _, key := range keys {
+		acc := accs[key] // 无任何调用的键为 nil,照样产出全灰快照
 		snap := &ServiceHealthSnapshot{Buckets: make([]dto.HealthBucket, healthBucketCount)}
 		for i := 0; i < healthBucketCount; i++ {
 			snap.Buckets[i].StartUnix = firstBucket.Add(time.Duration(i) * healthBucketLength).Unix()
@@ -138,7 +154,7 @@ func buildServiceHealthSnapshots(serviceIDs []int64, now time.Time) (map[int64]*
 			snap.LastErrorMessage = acc.lastErrMsg
 			snap.LastErrorUnix = acc.lastErrAt
 		}
-		snaps[id] = snap
+		snaps[key] = snap
 	}
-	return snaps, nil
+	return snaps
 }

@@ -5,9 +5,12 @@ import { useTranslation } from 'react-i18next'
 import {
   adminListMarketplace, adminUpdateMarketplace, adminDeleteMarketplace,
   adminBatchPricing, adminCloneMarketplace, adminListCloneSources,
+  adminGetMarketplaceHealth,
 } from '../api'
+import { ServiceHealthBar } from '@/features/services/components/service-health-bar'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import { priceLabel, isExplicitlyPriced } from '@/lib/billing'
+import type { MarketplaceItemHealth } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -43,6 +46,13 @@ export function AdminMarketplacePage() {
     queryKey: ['admin-marketplace', page],
     queryFn: () => adminListMarketplace({ page, page_size: pageSize }),
   })
+  // 平台级健康:全部条目同条目下全部用户引用行的调用聚合;30s 轮询对齐后端缓存
+  const { data: healthData } = useQuery({
+    queryKey: ['admin-marketplace-health'],
+    queryFn: adminGetMarketplaceHealth,
+    refetchInterval: 30_000,
+  })
+  const healthById: Record<string, MarketplaceItemHealth> = healthData?.data ?? {}
   const items: any[] = data?.data ?? []
   const pagination = data?.pagination
   const totalPages = pagination?.total_pages ?? 1
@@ -97,6 +107,22 @@ export function AdminMarketplacePage() {
   })
 
   const notSelfUse = !config.selfUseModeEnabled
+
+  // 列宽权重(px),与调用日志列表同口径:经 <colgroup> 换算成各列占总宽的百分比,
+  // 表格 w-full 时所有列等比例同步伸缩;视口窄于权重总和时表格按 minWidth(=总和)
+  // 横向滚动,此时每列恰好等于其 px 权重。服务名列 truncate 防长名撑行,健康
+  // 色带列(20 格 flex-1)吃伸缩余量。
+  const columns = [
+    { key: 'check', w: 40 },
+    { key: 'service', w: 200 },
+    { key: 'category', w: 88 },
+    { key: 'billing', w: 104 },
+    { key: 'price', w: 88 },
+    { key: 'health', w: 240 },
+    { key: 'status', w: 112 },
+    { key: 'actions', w: 100 },
+  ]
+  const columnsTotal = columns.reduce((s, c) => s + c.w, 0)
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
@@ -171,6 +197,13 @@ export function AdminMarketplacePage() {
                       ),
                     },
                   ]}
+                  note={
+                    <ServiceHealthBar
+                      s={healthById[String(item.id)] ?? {}}
+                      wide
+                      disabled={item.status !== 1}
+                    />
+                  }
                   actions={
                     <>
                       <div className="mr-auto flex items-center gap-2">
@@ -198,22 +231,28 @@ export function AdminMarketplacePage() {
             })}
           </div>
         ) : (
-          <Table>
+          <Table className="table-fixed" style={{ minWidth: `${columnsTotal}px` }}>
+            <colgroup>
+              {columns.map((c) => (
+                <col key={c.key} style={{ width: `${(c.w / columnsTotal) * 100}%` }} />
+              ))}
+            </colgroup>
             <TableHeader>
               <TableRow className="bg-muted/50">
-                <TableHead className="w-10 px-4">
+                <TableHead className="whitespace-nowrap">
                   <button onClick={toggleSelectAll} className="text-muted-foreground hover:text-foreground">
                     {selected.size === items.length && items.length > 0
                       ? <CheckSquare className="h-4 w-4" />
                       : <Square className="h-4 w-4" />}
                   </button>
                 </TableHead>
-                <TableHead className="px-4">{t('pricing.colService')}</TableHead>
-                <TableHead className="px-4">{t('pricing.colCategory')}</TableHead>
-                <TableHead className="px-4">{t('marketplace.billingType')}</TableHead>
-                <TableHead className="px-4">{t('pricing.colPrice')}</TableHead>
-                <TableHead className="px-4">{t('common.status')}</TableHead>
-                <TableHead className="px-4 text-right">{t('common.actions')}</TableHead>
+                <TableHead className="whitespace-nowrap">{t('pricing.colService')}</TableHead>
+                <TableHead className="whitespace-nowrap">{t('pricing.colCategory')}</TableHead>
+                <TableHead className="whitespace-nowrap">{t('marketplace.billingType')}</TableHead>
+                <TableHead className="whitespace-nowrap">{t('pricing.colPrice')}</TableHead>
+                <TableHead className="whitespace-nowrap">{t('marketplace.healthCol')}</TableHead>
+                <TableHead className="whitespace-nowrap">{t('common.status')}</TableHead>
+                <TableHead className="whitespace-nowrap text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -221,27 +260,36 @@ export function AdminMarketplacePage() {
                 const priced = isExplicitlyPriced(item.billing_type, item.price_per_call)
                 return (
                   <TableRow key={item.id} data-state={selected.has(item.id) ? 'selected' : undefined}>
-                    <TableCell className="px-4">
+                    <TableCell>
                       <button onClick={() => toggleSelect(item.id)} className="text-muted-foreground hover:text-foreground">
                         {selected.has(item.id) ? <CheckSquare className="h-4 w-4 text-primary" /> : <Square className="h-4 w-4" />}
                       </button>
                     </TableCell>
-                    <TableCell className="px-4 font-medium">{item.display_name || item.name}</TableCell>
-                    <TableCell className="px-4 text-xs text-muted-foreground">
+                    <TableCell className="truncate font-medium" title={item.display_name || item.name}>
+                      {item.display_name || item.name}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                       {item.category === 'instant' ? t('marketplace.ready') : t('marketplace.source')}
                     </TableCell>
-                    <TableCell className="px-4 text-xs">
+                    <TableCell className="text-xs">
                       <Badge variant={item.billing_type === 'free' ? 'secondary' : 'outline'}>
                         {item.billing_type === 'free' ? t('marketplace.billingFree') : t('marketplace.billingPerCall')}
                       </Badge>
                     </TableCell>
-                    <TableCell className="px-4">
+                    <TableCell>
                       <span className={`text-sm font-medium ${priced ? 'text-primary' : 'text-amber-600'}`}>
                         {priceLabel(item.billing_type, item.price_per_call, config.displayCurrency)}
                       </span>
                     </TableCell>
-                    <TableCell className="px-4">
-                      <div className="flex items-center gap-2">
+                    <TableCell>
+                      <ServiceHealthBar
+                        s={healthById[String(item.id)] ?? {}}
+                        wide
+                        disabled={item.status !== 1}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2 whitespace-nowrap">
                         <Switch
                           checked={item.status === 1}
                           onCheckedChange={(checked) => statusMutation.mutate({ id: item.id, status: checked ? 1 : 2 })}
@@ -252,7 +300,7 @@ export function AdminMarketplacePage() {
                         </span>
                       </div>
                     </TableCell>
-                    <TableCell className="px-4 text-right">
+                    <TableCell className="whitespace-nowrap text-right">
                       <Button variant="ghost" size="sm" title={t('common.details')}
                         onClick={() => navigate({ to: '/admin/marketplace/$id', params: { id: String(item.id) } })}>
                         <Eye className="h-3.5 w-3.5" />

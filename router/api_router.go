@@ -180,6 +180,7 @@ func SetApiRouter(engine *gin.Engine) {
 
 		// Admin: Marketplace management(上架仅支持从自有服务克隆,无手动创建)
 		admin.GET("/marketplace", controller.AdminListMarketplaceItems)
+		admin.GET("/marketplace/health", controller.AdminGetMarketplaceHealth) // 平台级健康(全用户调用聚合)
 		admin.POST("/marketplace/clone", controller.AdminCloneMarketplaceItem)
 		admin.PUT("/marketplace/pricing/batch", controller.AdminBatchUpdateMarketplacePricing)
 		admin.GET("/marketplace/clone-sources", controller.AdminListCloneSources)

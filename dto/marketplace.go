@@ -57,6 +57,17 @@ type MarketplaceRefreshResult struct {
 	PromptsCount   int `json:"prompts_count"`
 }
 
+// MarketplaceItemHealth 管理端市场页的平台级健康:同条目下全部用户引用行的
+// 真实调用聚合(20 桶 × 10 分钟,与总览被动健康同口径),含实时推导状态。
+// 字段命名与总览 ServicesOverviewItem 的健康字段一致,前端共用健康色带组件。
+type MarketplaceItemHealth struct {
+	HealthStatus     string         `json:"health_status"`
+	Buckets          []HealthBucket `json:"health_buckets"`
+	LastCallAt       int64          `json:"last_call_at"`
+	LastErrorMessage string         `json:"last_error_message"`
+	LastErrorAt      int64          `json:"last_error_at"`
+}
+
 type MarketplaceListItem struct {
 	ID            int64    `json:"id"`
 	Name          string   `json:"name"`

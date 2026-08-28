@@ -168,6 +168,20 @@ func GetLastConsumeTime(serviceID int64) *time.Time {
 	return &ft.t
 }
 
+// GetLastConsumeTimeForItem 市场条目全历史最近一次消费调用时间(无则 nil)。
+// 市场管理页给空窗条目显示"上次调用"锚点——条目健康按日志表 marketplace_item_id
+// 聚合,锚点同口径(marketplace_item_id 有索引,点查即索引定位)。
+func GetLastConsumeTimeForItem(itemID int64) *time.Time {
+	row := DB.Model(&McpCallLog{}).
+		Where("marketplace_item_id = ? AND type = ?", itemID, LogTypeConsume).
+		Select("MAX(created_at)").Row()
+	var ft flexTime
+	if err := row.Scan(&ft); err != nil || !ft.ok {
+		return nil
+	}
+	return &ft.t
+}
+
 // flexTime 兼容聚合 MAX(created_at) 在不同驱动的返回:MySQL/PG 给 time.Time,
 // glebarez/sqlite 给 "2006-01-02 15:04:05.9999999+08:00" 形态的字符串(带时区偏移)。
 // 用原生 rows/Row.Scan 走 database/sql 的 Scanner 约定;GORM 的 .Scan() 会把
@@ -222,6 +236,24 @@ func GetCallLogRowsForServices(serviceIDs []int64, since time.Time) ([]CallLogRo
 	err := DB.Model(&McpCallLog{}).
 		Where("service_id IN ? AND created_at >= ? AND type = ?", serviceIDs, since, LogTypeConsume).
 		Select("service_id, response_status, duration_ms, error_message, created_at").
+		Limit(200000).
+		Find(&rows).Error
+	return rows, err
+}
+
+// GetCallLogRowsForItems 取一批市场条目 since 之后的调用窄行,ServiceID 字段承载
+// marketplace_item_id(SELECT 别名)——与 GetCallLogRowsForServices 同构,聚合核心
+// (buildSnapshotsFromRows)按恒等键直接复用。marketplace_item_id 有索引,IN 列表
+// 恒为条目数(小),不随用户安装量增长;且不依赖 mcp_services 引用行,用户卸载后
+// 遗留的历史日志照样计入条目健康。
+func GetCallLogRowsForItems(itemIDs []int64, since time.Time) ([]CallLogRow, error) {
+	if len(itemIDs) == 0 {
+		return nil, nil
+	}
+	var rows []CallLogRow
+	err := DB.Model(&McpCallLog{}).
+		Where("marketplace_item_id IN ? AND created_at >= ? AND type = ?", itemIDs, since, LogTypeConsume).
+		Select("marketplace_item_id AS service_id, response_status, duration_ms, error_message, created_at").
 		Limit(200000).
 		Find(&rows).Error
 	return rows, err

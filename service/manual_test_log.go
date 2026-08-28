@@ -75,6 +75,11 @@ func recordManualTestLog(svc *model.McpService, userID int64, method, target str
 		l.QuotaConsumed = bill.Quota
 		l.PriceScope = bill.PriceScope
 		l.MarketplaceItemID = bill.ItemID
+	} else {
+		// 资源/提示测试与自有服务工具测试不走计费(bill=nil),市场归属直接取
+		// 服务行——条目健康按日志 marketplace_item_id 聚合,漏写则市场服务的
+		// 这几类手动测试不计入平台健康(自有服务该值为 nil,行为不变)。
+		l.MarketplaceItemID = svc.MarketplaceItemID
 	}
 	_ = l.Insert()
 	model.ApplyHealthWriteBack(l)

@@ -28,7 +28,9 @@ type McpService struct {
 	Tags              string     `json:"tags" gorm:"size:512"`
 	Visibility        string     `json:"visibility" gorm:"size:16;default:private;index"`
 	Source            string     `json:"source" gorm:"size:16;default:user"`
-	MarketplaceItemID *int64     `json:"marketplace_item_id"`
+	// 平台健康按日志表 marketplace_item_id 聚合,不枚举本表引用行;此索引供
+	// 按 item 定位引用行/回填 item 归属的点查(如按条目踢会话、启停市场服务)
+	MarketplaceItemID *int64     `json:"marketplace_item_id" gorm:"index"`
 	SortOrder         int        `json:"sort_order" gorm:"default:0"`
 	Status            int        `json:"status" gorm:"default:1"`
 	CreatedAt         time.Time  `json:"created_at"`
@@ -63,6 +65,23 @@ func ListAllServicesByUser(userID int64) ([]McpService, error) {
 	err := DB.Where("user_id = ?", userID).
 		Order("sort_order ASC, created_at DESC").Find(&services).Error
 	return services, err
+}
+
+// GetServiceMarketplaceItemID 点查服务行的市场条目归属。resources/read、
+// prompts/get、mcp.read 等不走计费路径的调用日志用它回填 marketplace_item_id
+// (tools/call 由 applyBillingToLog 写入),市场条目健康/日志筛选口径才完整;
+// 非市场服务返回 nil。
+func GetServiceMarketplaceItemID(serviceID int64) *int64 {
+	var svc struct {
+		MarketplaceItemID *int64
+	}
+	if err := DB.Model(&McpService{}).
+		Where("id = ?", serviceID).
+		Select("marketplace_item_id").
+		Take(&svc).Error; err != nil {
+		return nil
+	}
+	return svc.MarketplaceItemID
 }
 
 func GetServiceByID(userID, serviceID int64) (*McpService, error) {

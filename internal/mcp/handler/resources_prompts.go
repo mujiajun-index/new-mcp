@@ -526,6 +526,12 @@ func (h *GatewayHandler) recordConsumeLog(logCtx *LogContext, serviceID int64, s
 		ClientIP:       logCtx.ClientIP,
 		UserAgent:      truncate(logCtx.UserAgent, 512),
 	}
+	// 市场来源服务的 item 归属回填:tools/call 由计费路径(applyBillingToLog)写入,
+	// resources/prompts 不走计费,这里补上——市场条目健康按日志 marketplace_item_id
+	// 聚合,漏写则这几类真实上游调用不计入条目健康。
+	if serviceID != 0 {
+		callLog.MarketplaceItemID = model.GetServiceMarketplaceItemID(serviceID)
+	}
 	go h.recordLog(callLog)
 }
 

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import dayjs from 'dayjs'
-import type { HealthBucket, ServicesOverviewItem } from '@/types'
+import type { HealthBucket } from '@/types'
 
 // 桶成功率 → 颜色:0 红 → 0.5 黄 → 1 绿线性插值(色值与 CLIProxyAPI 参考色带一致)
 const RATE_STOPS = [
@@ -49,11 +49,21 @@ export function StatusPill({ kind, label }: { kind: keyof typeof STATUS_PILL; la
   )
 }
 
+// HealthBarData 色带面板所需的最小数据形状:总览的 ServicesOverviewItem 与市场
+// 管理页的条目健康(后端字段同名)都结构兼容,可直接传入。
+export interface HealthBarData {
+  health_buckets?: HealthBucket[]
+  last_error_message?: string
+  last_error_at?: number
+  last_call_at?: number
+}
+
 // ServiceHealthBar 非 stdio 服务的近期调用色带面板,替代 stdio 卡片的 CPU/内存两行:
 // 近 200 分钟 = 20 格 × 10 分钟,每格按该时段成功率着色(红→黄→绿连续插值),
 // 悬停看时段明细;行首窗口计数「成功 N · 失败 N」与整窗成功率,空窗时退化为
 // 灰带 + 上次调用时间。数据来自 mcp_call_logs 真实调用聚合(被动口径,无探测)。
-export function ServiceHealthBar({ s, disabled }: { s: ServicesOverviewItem; disabled: boolean }) {
+// wide:平台级口径(市场管理页),标签与提示注明含全部用户的调用。
+export function ServiceHealthBar({ s, disabled, wide }: { s: HealthBarData; disabled: boolean; wide?: boolean }) {
   const { t } = useTranslation()
   // 自绘悬停提示:state 记录悬停格下标,气泡绝对定位其上。
   // (Radix Tooltip 在相邻触发器间移动时内容不刷新,色带这种 20 格连扫场景不可用)
@@ -84,8 +94,8 @@ export function ServiceHealthBar({ s, disabled }: { s: ServicesOverviewItem; dis
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2 text-xs">
-        <span className="text-muted-foreground" title={t('services.overview.recentCallsHint')}>
-          {t('services.overview.recentCalls')}
+        <span className="text-muted-foreground" title={wide ? t('services.overview.recentCallsHintAllUsers') : t('services.overview.recentCallsHint')}>
+          {wide ? t('services.overview.recentCallsAllUsers') : t('services.overview.recentCalls')}
         </span>
         <span className="tabular-nums" title={lastErrorTitle}>
           <span className={successTotal > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}>

@@ -927,7 +927,8 @@ func (s *McpServiceService) GetServicesOverview(userID int64, isAdmin bool) (*dt
 	treeStats := transport.CollectProcessTreesStat(roots)
 
 	// 非 stdio 服务健康快照:mcp_call_logs 真实调用聚合(30s 缓存),出错降级为
-	// 不带健康字段,同样不触碰 SessionPool
+	// 不带健康字段,同样不触碰 SessionPool。口径为当前用户自己的服务行;平台托管
+	// 服务的全用户聚合健康在管理端市场页(GET /admin/marketplace/health)单独提供。
 	var remoteIDs []int64
 	for i := range services {
 		if services[i].TransportType != string(transport.TypeStdio) {

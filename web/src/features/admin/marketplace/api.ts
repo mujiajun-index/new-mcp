@@ -9,6 +9,12 @@ export async function adminListMarketplace(params?: { page?: number; page_size?:
   return res.data
 }
 
+// 平台级健康:全部条目同条目下全部用户引用行的真实调用聚合(30s 缓存,30s 轮询对齐)
+export async function adminGetMarketplaceHealth() {
+  const res = await api.get('/admin/marketplace/health')
+  return res.data
+}
+
 export async function adminGetMarketplace(id: number) {
   const res = await api.get(`/admin/marketplace/${id}`)
   return res.data

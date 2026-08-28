@@ -24,6 +24,16 @@ func AdminListMarketplaceItems(c *gin.Context) {
 	common.PageOf(c, items, page, pageSize, total)
 }
 
+// AdminGetMarketplaceHealth 市场管理页:全部条目的平台级健康(同条目下全部
+// 用户引用行的真实调用聚合,30s 缓存)。
+func AdminGetMarketplaceHealth(c *gin.Context) {
+	health := service.GetMarketplaceItemHealth()
+	if health == nil {
+		health = map[int64]*dto.MarketplaceItemHealth{}
+	}
+	common.Success(c, health)
+}
+
 func AdminGetMarketplaceItem(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 	resp, err := marketplaceService.GetItemByID(id)

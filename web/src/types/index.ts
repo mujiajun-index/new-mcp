@@ -152,6 +152,16 @@ export interface ServicesOverviewItem {
   last_error_at?: number
 }
 
+// 管理端市场页:单个市场条目的平台级健康(同条目下全部用户引用行的真实调用
+// 聚合,口径同总览被动健康);字段与 ServicesOverviewItem 健康字段同名,共用健康色带组件
+export interface MarketplaceItemHealth {
+  health_status: string
+  health_buckets?: HealthBucket[]
+  last_call_at?: number
+  last_error_message?: string
+  last_error_at?: number
+}
+
 // 服务总览:顶部统计卡数据;cpu_percent_total 多核下可超 100%
 export interface ServicesOverviewSummary {
   total_services: number

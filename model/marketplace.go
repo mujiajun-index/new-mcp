@@ -111,6 +111,14 @@ func ListAllMarketplaceItems(offset, limit int) ([]MarketplaceItem, int64, error
 	return items, total, err
 }
 
+// ListMarketplaceItemStatuses 全部条目的 id+status 窄行(管理页平台级健康聚合用,
+// 不携带 tools/resources 快照等 text 大列)。
+func ListMarketplaceItemStatuses() ([]MarketplaceItem, error) {
+	var items []MarketplaceItem
+	err := DB.Model(&MarketplaceItem{}).Select("id, status").Find(&items).Error
+	return items, err
+}
+
 func IncrementInstallCount(itemID int64) error {
 	return DB.Model(&MarketplaceItem{}).Where("id = ?", itemID).
 		UpdateColumn("install_count", gorm.Expr("install_count + 1")).Error

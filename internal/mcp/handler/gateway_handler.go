@@ -388,6 +388,12 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 		UserAgent:      truncate(logCtx.UserAgent, 512),
 	}
 	applyBillingToLog(callLog, billing)
+	// 智能模式 mcp.read / 非市场 mcp.execute 不走计费(billing==nil),日志缺市场
+	// item 归属,按服务行点查回填(市场条目健康按 marketplace_item_id 聚合,口径
+	// 需完整)。市场直调由计费路径写入、search/describe 无服务归属,均不触发。
+	if billing == nil && serviceID != 0 {
+		callLog.MarketplaceItemID = model.GetServiceMarketplaceItemID(serviceID)
+	}
 	go h.recordLog(callLog)
 
 	return resp
