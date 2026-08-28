@@ -174,11 +174,17 @@ export function UserLogsPage() {
     return `${(ms / 1000).toFixed(2)}s`
   }
 
+  // 平均耗时来自后端 AVG,是未取整的浮点数,统一保留两位小数
+  const formatAvgDuration = (ms: number) => {
+    if (ms < 1000) return `${ms.toFixed(2)}ms`
+    return `${(ms / 1000).toFixed(2)}s`
+  }
+
   const statCards = [
     { label: t('logs.totalCalls'), value: stats?.data?.total_calls ?? 0, icon: Activity, color: 'text-sky-500', bg: 'bg-sky-500/10' },
     { label: t('logs.successCalls'), value: stats?.data?.success_calls ?? 0, icon: CheckCircle, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
     { label: t('logs.failedCalls'), value: stats?.data?.failed_calls ?? 0, icon: XCircle, color: 'text-red-500', bg: 'bg-red-500/10' },
-    { label: t('logs.avgDuration'), value: stats?.data?.avg_duration_ms ? formatDuration(stats.data.avg_duration_ms) : '0ms', icon: Clock, color: 'text-violet-500', bg: 'bg-violet-500/10' },
+    { label: t('logs.avgDuration'), value: stats?.data?.avg_duration_ms ? formatAvgDuration(stats.data.avg_duration_ms) : '0ms', icon: Clock, color: 'text-violet-500', bg: 'bg-violet-500/10' },
     { label: t('logs.todayCalls'), value: stats?.data?.calls_today ?? 0, icon: Zap, color: 'text-amber-500', bg: 'bg-amber-500/10' },
   ]
 
@@ -188,6 +194,8 @@ export function UserLogsPage() {
   const logColumns = [
     { key: 'time', w: 140 },
     { key: 'type', w: 72 },
+    // 所属用户列仅管理员可见:普通用户视角日志全是自己的,无需重复展示。
+    ...(isAdmin ? [{ key: 'user', w: 110 }] : []),
     { key: 'apiKey', w: 110 },
     { key: 'tool', w: 220 },
     { key: 'group', w: 100 },
@@ -348,6 +356,7 @@ export function UserLogsPage() {
                 <TableRow>
                   <TableHead className="whitespace-nowrap">{t('logs.time')}</TableHead>
                   <TableHead className="whitespace-nowrap">{t('logs.type')}</TableHead>
+                  {isAdmin && <TableHead className="whitespace-nowrap">{t('logs.username')}</TableHead>}
                   <TableHead className="whitespace-nowrap">{t('logs.apiKeyName')}</TableHead>
                   <TableHead className="whitespace-nowrap">{t('logs.toolName')}</TableHead>
                   <TableHead className="whitespace-nowrap">{t('logs.groupName')}</TableHead>
@@ -491,6 +500,7 @@ function LogMobileCard({ log, isAdmin, showBilling, fmtMoney, formatTime, format
         </Badge>
       }
       meta={[
+        ...(isAdmin ? [{ label: t('logs.username'), value: log.username || '-' }] : []),
         { label: t('logs.apiKeyName'), value: <ApiKeyNameCell name={log.api_key_name} /> },
         { label: t('logs.duration'), value: <span className="tabular-nums">{formatDuration(log.duration_ms)}</span> },
         ...(showBilling && log.billing_status && log.billing_status !== 'skipped' && log.quota_consumed > 0 ? [
@@ -570,12 +580,10 @@ function LogRow({ log, isAdmin, showBilling, fmtMoney, formatTime, formatDuratio
       <TableRow>
         <TableCell className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">{formatTime(log.created_at)}</TableCell>
         <TableCell>{typeBadge}</TableCell>
+        {isAdmin && <TableCell className="text-sm truncate" title={log.username}>{log.username || '-'}</TableCell>}
         <TableCell colSpan={middleCols}>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="text-sm">{log.content || '-'}</span>
-            {isAdmin && log.username && (
-              <span className="text-xs text-muted-foreground">{t('logs.username')}: {log.username}</span>
-            )}
             {operator && (
               <span className="text-xs text-muted-foreground">{t('logs.operator')}: {operator}</span>
             )}
@@ -597,6 +605,7 @@ function LogRow({ log, isAdmin, showBilling, fmtMoney, formatTime, formatDuratio
     <TableRow>
       <TableCell className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">{formatTime(log.created_at)}</TableCell>
       <TableCell>{typeBadge}</TableCell>
+      {isAdmin && <TableCell className="text-sm truncate" title={log.username}>{log.username || '-'}</TableCell>}
       <TableCell className="text-sm truncate">
         <ApiKeyNameCell name={log.api_key_name} />
       </TableCell>

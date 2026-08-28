@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/mujkjk/newmcp/common"
@@ -348,7 +349,7 @@ func GetCallLogStats(filter *LogFilter) (*LogStatsResult, error) {
 		TotalCalls:    total,
 		SuccessCalls:  successCount,
 		FailedCalls:   total - successCount,
-		AvgDurationMs: avgDuration,
+		AvgDurationMs: math.Round(avgDuration*100) / 100,
 		CallsToday:    todayCount,
 	}, nil
 }
@@ -426,7 +427,7 @@ func getCallLogStatsInternal(userID int64, filter *LogFilter) (*LogStatsResult, 
 		TotalCalls:    total,
 		SuccessCalls:  successCount,
 		FailedCalls:   total - successCount,
-		AvgDurationMs: avgDuration,
+		AvgDurationMs: math.Round(avgDuration*100) / 100,
 		CallsToday:    todayCount,
 	}, nil
 }
