@@ -440,7 +440,8 @@
       "copy": "复制",
       "copied": "已复制",
       "requiredMissing": "必填参数未填",
-      "truncated": "结果过长已截断"
+      "truncated": "结果过长已截断",
+      "billingNotice": "平台托管服务:测试将按网关价格正常计费"
     },
     "resourceTest": {
       "resolvedUri": "生成 URI"

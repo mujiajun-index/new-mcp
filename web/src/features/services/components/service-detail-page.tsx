@@ -658,7 +658,7 @@ export function ServiceDetailPage() {
                 name={tool.name}
                 description={tool.description}
                 schema={tool.inputSchema}
-                action={service.source !== 'marketplace' ? (
+                action={(
                   <Button
                     variant="outline"
                     size="sm"
@@ -668,7 +668,7 @@ export function ServiceDetailPage() {
                     <FlaskConical className="h-3 w-3" />
                     {t('services.testTool')}
                   </Button>
-                ) : undefined}
+                )}
               />
             ))}
           </div>
@@ -695,17 +695,15 @@ export function ServiceDetailPage() {
                   >
                     {r.name || r.uri}
                   </button>
-                  {service.source !== 'marketplace' && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-6 shrink-0 gap-1 px-1.5 text-[11px]"
-                      onClick={() => setTestingResource({ kind: 'resource', data: r })}
-                    >
-                      <FlaskConical className="h-3 w-3" />
-                      {t('services.testTool')}
-                    </Button>
-                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 shrink-0 gap-1 px-1.5 text-[11px]"
+                    onClick={() => setTestingResource({ kind: 'resource', data: r })}
+                  >
+                    <FlaskConical className="h-3 w-3" />
+                    {t('services.testTool')}
+                  </Button>
                 </div>
                 {r.name && <p className="mt-0.5 text-xs font-mono text-muted-foreground break-all">{r.uri}</p>}
                 {r.description && openItem === `res:${r.uri}` && <p className="mt-0.5 text-xs text-muted-foreground">{r.description}</p>}
@@ -729,17 +727,15 @@ export function ServiceDetailPage() {
                   >
                     {tpl.name || tpl.uriTemplate}
                   </button>
-                  {service.source !== 'marketplace' && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-6 shrink-0 gap-1 px-1.5 text-[11px]"
-                      onClick={() => setTestingResource({ kind: 'template', data: tpl })}
-                    >
-                      <FlaskConical className="h-3 w-3" />
-                      {t('services.testTool')}
-                    </Button>
-                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 shrink-0 gap-1 px-1.5 text-[11px]"
+                    onClick={() => setTestingResource({ kind: 'template', data: tpl })}
+                  >
+                    <FlaskConical className="h-3 w-3" />
+                    {t('services.testTool')}
+                  </Button>
                 </div>
                 {tpl.name && <p className="mt-0.5 text-xs font-mono text-muted-foreground break-all">{tpl.uriTemplate}</p>}
                 {tpl.description && openItem === `tpl:${tpl.uriTemplate}` && <p className="mt-0.5 text-xs text-muted-foreground">{tpl.description}</p>}
@@ -773,17 +769,15 @@ export function ServiceDetailPage() {
                   >
                     {p.name}
                   </button>
-                  {service.source !== 'marketplace' && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-6 shrink-0 gap-1 px-1.5 text-[11px]"
-                      onClick={() => setTestingPrompt(p)}
-                    >
-                      <FlaskConical className="h-3 w-3" />
-                      {t('services.testTool')}
-                    </Button>
-                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 shrink-0 gap-1 px-1.5 text-[11px]"
+                    onClick={() => setTestingPrompt(p)}
+                  >
+                    <FlaskConical className="h-3 w-3" />
+                    {t('services.testTool')}
+                  </Button>
                 </div>
                 {p.description && openItem === `prompt:${p.name}` && <p className="mt-0.5 text-xs text-muted-foreground">{p.description}</p>}
                 {p.arguments && p.arguments.length > 0 && (
@@ -801,10 +795,11 @@ export function ServiceDetailPage() {
         )}
       </SectionCard>
 
-      {/* 工具测试弹窗 */}
+      {/* 工具测试弹窗:市场(平台托管)服务测试按网关价格计费,billable 让弹窗出提示 */}
       <ToolTestDialog
         serviceId={serviceId}
         tool={testingTool}
+        billable={service.source === 'marketplace'}
         open={!!testingTool}
         onOpenChange={(v) => !v && setTestingTool(null)}
       />

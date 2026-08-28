@@ -440,7 +440,8 @@
       "copy": "Copy",
       "copied": "Copied",
       "requiredMissing": "Required parameter missing",
-      "truncated": "Result truncated"
+      "truncated": "Result truncated",
+      "billingNotice": "Platform-hosted service: test calls are billed at gateway prices"
     },
     "resourceTest": {
       "resolvedUri": "Resolved URI"

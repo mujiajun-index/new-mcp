@@ -50,11 +50,14 @@ function firstType(p: ParamSchema | null): string {
 export function ToolTestDialog({
   serviceId,
   tool,
+  billable = false,
   open,
   onOpenChange,
 }: {
   serviceId: number
   tool: McpTool | null
+  /** 市场(平台托管)服务:测试按网关价格正常计费,弹窗内提示用户 */
+  billable?: boolean
   open: boolean
   onOpenChange: (v: boolean) => void
 }) {
@@ -334,6 +337,11 @@ export function ToolTestDialog({
 
         <DialogFooter>
           {missingRequired && <p className="mr-auto text-xs text-red-500">{t('services.toolTest.requiredMissing')}</p>}
+          {billable && (
+            <p className="mr-auto text-xs text-amber-600 dark:text-amber-400">
+              {t('services.toolTest.billingNotice')}
+            </p>
+          )}
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
           <Button onClick={handleRun} disabled={runMutation.isPending || missingRequired || !tool}>
             {runMutation.isPending

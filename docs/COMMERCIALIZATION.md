@@ -487,6 +487,8 @@ POST /mcp、/smart/mcp、/mcp/group/:slug  (tools/call)
 
 > 此架构比"市场专用端点"更优:市场服务天然融入用户的分组/API Key 工具视图,可在同一分组混用免费自有 + 付费市场服务;计费仅在 resolver 命中 `source=marketplace` 时介入,自有服务路径零改动。
 
+> **服务详情页工具测试同口径计费**(`service/service.go` `callMarketplaceToolTested`):服务详情页对市场(平台托管)服务的工具测试复用同一 `BillingService` 流程——3 级定价解析 → 预扣(余额不足/未定价直接拒绝,不调上游)→ 成功 Confirm / 失败 Refund;成败判定与网关一致(上游 `tools/call` 传输层成功即扣费,结果内 `isError` 不退款)。手动测试走会话鉴权无 API Key,`ApiKeyID=0`(仅用户总额度约束,不占 Key 预算,不参与 `request_id` 幂等);管理员默认同样计费(`ChargeAdmin`)。结算结果随手动测试日志落计费列(`api_key_name=tool-test`、`extra.manual_test=true`)。资源/提示测试同样放开(注入平台上游配置后可测)且不计费——与网关 `resources/read`/`prompts/get` 免费口径一致,计费仅发生在 `tools/call`;自有/虚拟服务测试维持免费。
+
 ### 6.2 两段式计费(预扣 → 执行 → 确认/退款)
 
 成本确定(固定单价),故**无估算、无差额结算**:预扣即应扣全额。

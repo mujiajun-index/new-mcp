@@ -50,6 +50,7 @@ var LowQuotaNotifier = func(userID, currentQuota int64) {}
 // PreConsume 预扣(§6.2 插入点 A):校验并原子扣减用户额度 + Key 预算。
 //   - 免费 / 零价:返回零消费会话,不扣费。
 //   - 管理员:默认同样计费(ChargeAdmin=true)。仅当显式关闭 ChargeAdmin 时豁免管理员本人的平台托管服务调用。
+//   - ApiKeyID=0(服务详情页手动测试,会话鉴权无 API Key):跳过 Key 预算全部操作,仅受用户额度约束。
 //   - 信任旁路(用户余额 > TrustQuota 且 Key 余额 > TrustQuota 或无限 Key):Trusted=true,不实际预扣,成功后 Confirm 补扣。
 //   - 预扣额 = Max(实际单价, PreConsumedQuota 下限);高于单价的部分在 Confirm 成功后退还(对齐 new-api PreConsumedQuota)。
 //   - 余额或 Key 预算不足:返回 ErrInsufficientQuota(调用方拒绝本次调用,不禁用 Key)。
@@ -91,16 +92,20 @@ func (s *BillingService) PreConsume(req PreConsumeRequest) (*BillingSession, err
 	if err != nil {
 		return sess, s.handleBillingDBError(sess, err)
 	}
-	key, err := model.GetApiKeyByID(req.ApiKeyID)
-	if err != nil {
-		return sess, s.handleBillingDBError(sess, err)
+	// ApiKeyID=0:无 Key(手动测试),跳过 Key 加载与预算操作;信任旁路视为 Key 侧满足
+	var key *model.ApiKey
+	if req.ApiKeyID > 0 {
+		key, err = model.GetApiKeyByID(req.ApiKeyID)
+		if err != nil {
+			return sess, s.handleBillingDBError(sess, err)
+		}
 	}
 
 	// 信任旁路(对齐 reference/new-api service.PreConsumeQuota):用户余额 > trustQuota
 	// 且 Key 余额 > trustQuota(或无限 Key)→ 不预扣,成功后由 Confirm 补扣。
 	// new-api 对 user 与 token 使用同一 trustQuota 门槛(=10*QuotaPerUnit);
 	// 任一不满足则落入下方正常预扣路径——仅当余额 < 本次消费时才拒绝。
-	keyTrustOK := key.UnlimitedQuota || (key.Quota-key.UsedQuota) > trustQuota
+	keyTrustOK := req.ApiKeyID <= 0 || key.UnlimitedQuota || (key.Quota-key.UsedQuota) > trustQuota
 	if userQuota > trustQuota && keyTrustOK {
 		sess.Trusted = true
 		return sess, nil
@@ -120,8 +125,10 @@ func (s *BillingService) PreConsume(req PreConsumeRequest) (*BillingSession, err
 		return sess, ErrInsufficientQuota // 并发下被扣到不足
 	}
 
-	// 原子占用 Key 预算(预算 Key,按预扣额);无限 Key 仅记账
-	if !key.UnlimitedQuota {
+	// 原子占用 Key 预算(预算 Key,按预扣额);无限 Key 仅记账;无 Key(手动测试)跳过
+	if req.ApiKeyID <= 0 {
+		// 无 Key:仅用户额度约束,无 Key 侧操作
+	} else if !key.UnlimitedQuota {
 		krows, err := model.DecreaseApiKeyQuotaAtomic(req.ApiKeyID, preConsumed)
 		if err != nil {
 			_ = model.IncreaseUserQuota(req.UserID, preConsumed) // 补偿退还用户额度
@@ -158,11 +165,15 @@ func (s *BillingService) Confirm(sess *BillingSession) error {
 	if sess.Trusted {
 		// 信任旁路事后补扣(无守卫,接受有界超支);Key used 此前未记,此处补记
 		_ = model.DecreaseUserQuotaUnguarded(sess.UserID, consumed)
-		_ = model.AdjustApiKeyUsedQuota(sess.ApiKeyID, consumed)
+		if sess.ApiKeyID > 0 {
+			_ = model.AdjustApiKeyUsedQuota(sess.ApiKeyID, consumed)
+		}
 	} else if excess := sess.PreConsumedQuota - consumed; excess > 0 {
 		// 非信任:预扣 > 单价(命中预消耗下限),退还差额到用户余额与 Key 预算
 		_ = model.IncreaseUserQuota(sess.UserID, excess)
-		_ = model.AdjustApiKeyUsedQuota(sess.ApiKeyID, -excess)
+		if sess.ApiKeyID > 0 {
+			_ = model.AdjustApiKeyUsedQuota(sess.ApiKeyID, -excess)
+		}
 	}
 	// 累加用户累计已用额度(实际消费;预扣与信任路径均记)
 	_ = model.AdjustUserUsedQuota(sess.UserID, consumed)
@@ -194,10 +205,12 @@ func (s *BillingService) Refund(sess *BillingSession) error {
 		return nil // 未实际预扣,无需退
 	}
 
-	// 全额退还实际预扣(预消耗下限包含在内);Key 预算同步恢复
+	// 全额退还实际预扣(预消耗下限包含在内);Key 预算同步恢复(无 Key 会话跳过)
 	preConsumed := sess.PreConsumedQuota
 	_ = model.IncreaseUserQuota(sess.UserID, preConsumed)
-	_ = model.AdjustApiKeyUsedQuota(sess.ApiKeyID, -preConsumed)
+	if sess.ApiKeyID > 0 {
+		_ = model.AdjustApiKeyUsedQuota(sess.ApiKeyID, -preConsumed)
+	}
 	return nil
 }
 

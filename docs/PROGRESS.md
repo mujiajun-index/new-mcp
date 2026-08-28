@@ -341,6 +341,7 @@ newmcp/
 | 定价解析 `billing/pricing.go` | ✅ | 工具>服务>全局 3 级 + 分组倍率 + 自用模式门控 + 60s 缓存 + Invalidate* |
 | 计费服务 `billing/billing.go` | ✅ | PreConsume/Confirm/Refund + 信任旁路 + 余额不足拒(不禁Key)+ request_id 幂等 + FailOpen 欠账 + 低额度提醒 |
 | 网关接入 | ✅ | handleToolsCall/routeAndCall/handleExecute 接入计费插入点 A/B(仅 source=marketplace);materializeMarketplaceConfig 注入平台凭证(引用行 config 恒空) |
+| 详情页工具测试计费 | ✅ | 市场服务工具测试放开(原一刀切拒绝),复用 BillingService 同口径:定价解析→预扣→成功确认/失败退款;ApiKeyID=0(无 Key,仅用户额度约束,Key 预算操作全跳过);管理员同计费(ChargeAdmin);余额不足/未定价拒;结算写手动测试日志计费列;资源/提示测试同放开且不计费(网关 read/get 免费口径);`marketplace_call_test.go` 覆盖 charged/refunded/blocked/admin/free/开关关闭/资源/提示 |
 | 引用式安装 | ✅ | POST /marketplace/:id/add(空 config + marketplace 哨兵 transport + 去重) |
 | 自有服务守卫 | ✅ | UserOwnedServicesEnabled=false 时禁 source=user 创建/调用 |
 | 管理员定价/批量/克隆 | ✅ | 非自用模式显式定价门控;PUT /admin/marketplace/pricing/batch;POST /admin/marketplace/clone;config_template 加密落库 |
