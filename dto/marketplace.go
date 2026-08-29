@@ -53,6 +53,21 @@ type CloneMarketplaceReq struct {
 	IsolatedProcess bool `json:"isolated_process"`
 }
 
+// MarketplaceEntryPrice 条目级定价(§5.2 条目维度)。Name 为条目键,与网关计费同口径:
+// 工具=工具名 / 资源=上游原始 URI / 提示=上游提示名(资源模板不可定价)。
+type MarketplaceEntryPrice struct {
+	Kind         string  `json:"kind" binding:"required,oneof=tool resource prompt"`
+	Name         string  `json:"name" binding:"required,max=512"`
+	BillingType  string  `json:"billing_type" binding:"required,oneof=free per_call"`
+	PricePerCall float64 `json:"price_per_call" binding:"gte=0"`
+}
+
+// EntryPricingReq 全量替换某市场项的条目级定价(不在列表中的条目回退:工具→服务价,
+// 资源/提示→免费;空数组=清空全部条目价)。
+type EntryPricingReq struct {
+	Prices []MarketplaceEntryPrice `json:"prices" binding:"omitempty,dive"`
+}
+
 // MarketplaceRefreshResult 市场项快照手动刷新结果(各快照条目数)。
 type MarketplaceRefreshResult struct {
 	ToolsCount     int `json:"tools_count"`
@@ -172,6 +187,9 @@ type MarketplaceDetail struct {
 	// 商业化定价
 	BillingType  string  `json:"billing_type"`
 	PricePerCall float64 `json:"price_per_call"`
+	// 条目级定价(工具/资源/提示;仅 enabled 行)。admin 详情与公开详情共用,
+	// 供管理端编辑回显与用户侧条目价格展示。
+	EntryPrices []MarketplaceEntryPrice `json:"entry_prices"`
 }
 
 // --- User: Install from marketplace ---

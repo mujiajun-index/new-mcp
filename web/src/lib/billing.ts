@@ -86,11 +86,13 @@ export function billingStatusClass(status: string): string {
   }
 }
 
-/** 定价来源层级文本:tool/service/marketplace/global。 */
+/** 定价来源层级文本:tool/entry/service/marketplace/global。 */
 export function priceScopeKey(scope: string): string {
   switch (scope) {
     case 'tool':
       return 'billing.scopeTool'
+    case 'entry':
+      return 'billing.scopeEntry'
     case 'service':
       return 'billing.scopeService'
     case 'marketplace':

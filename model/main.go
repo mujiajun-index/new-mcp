@@ -108,6 +108,15 @@ func migrateDB() error {
 			return fmt.Errorf("drop legacy endpoint_slug unique index: %w", err)
 		}
 	}
+	// 条目级定价:mcp_tool_prices 唯一索引从 (item_id, tool_name) 改为
+	// (item_id, kind, tool_name),否则同名工具与提示(如都叫 search)无法并存。
+	// AutoMigrate 已按 struct tag 建新索引(存量行 kind 默认 'tool',在三元组上仍唯一,
+	// 建索引不会失败),这里删旧索引,幂等。
+	if DB.Migrator().HasIndex(&McpToolPrice{}, "idx_item_tool") {
+		if err := DB.Migrator().DropIndex(&McpToolPrice{}, "idx_item_tool"); err != nil {
+			return fmt.Errorf("drop legacy item_tool unique index: %w", err)
+		}
+	}
 	// 分组删除从软删除改为真删除(见 McpGroup.Delete):物理清理历史软删除的分组
 	// 及其子表残留行,释放 (user_id, name/endpoint_slug) 唯一槽位——否则存量已删
 	// 分组仍占着唯一索引,同用户重建同名分组会继续报唯一冲突。幂等:清空后不再命中。

@@ -1,6 +1,6 @@
 # NewMCP 商业化模块设计文档
 
-> 版本: V1.8 | 状态: 草案 | 更新日期: 2026-07-17
+> 版本: V1.9 | 状态: 草案 | 更新日期: 2026-08-29
 > 关联文档: [PRD.md](./PRD.md) V3 商业化 · [ARCHITECTURE.md](./ARCHITECTURE.md) §7.3 · [DATABASE.md](./DATABASE.md) · [API.md](./API.md)
 >
 > **变更摘要**:
@@ -12,6 +12,7 @@
 > - V1.6(自用模式):⑩ 新增 `SelfUseModeEnabled`(参考 new-api `operation_setting.SelfUseModeEnabled`,默认 `false`):**自用模式**可用全局默认价;**非自用模式(默认)**市场上架/启用**必须显式定价**(`price_per_call>0` 或 `billing_type='free'`),否则拒绝。
 > - V1.7(查漏补缺):⑪ 明确**计费口径**(仅 `tools/call` 与 Smart `mcp.execute` 扣费,握手/发现免费,§6.7);⑫ 市场项**下架/删除与引用生命周期 + 去重**(§11);⑬ 平台凭证**加密存储**(§4.3);⑭ 存量数据**迁移**(§4.3);⑮ 计费**幂等** `request_id` / FailOpen **欠账平账**(§6.3/§6.6);⑯ 调用日志 **payload 留存与脱敏**(§4.5)。
 > - V1.8(虚拟服务约束):⑰ 视觉/摄像头等**虚拟服务**(`transport_type='virtual'`)改为**仅自有配置、自己免费使用**,`source` 恒为自身类型(vision/camera)、永不为 `marketplace`,**不可上架市场**——管理员手动添加 / 从自有服务克隆上架时对 `transport_type='virtual'` 一律拒绝(§5.6/§11/D16)。
+> - **V1.9(条目级定价)**:⑱ 定价粒度扩展为**条目级**(工具/资源/提示,§4.4/§5.2):`mcp_tool_prices` 加 `kind` 列(唯一索引改为 item+kind+name),管理端 `PUT /admin/marketplace/:id/entry-prices` 全量替换设价;**资源/提示默认免费**(不回退服务价),设有条目价才计费——计费口径扩展到 `resources/read`、`prompts/get`、Smart `mcp.read` 与服务详情页测试按钮(§6.7 同口径两段式计费);资源模板不可定价;日志 `price_scope` 新值 `entry`。
 
 ---
 
@@ -70,7 +71,7 @@ NewMCP 当前已完成 V2 核心(MCP 网关、分组、市场、视觉/摄像头
 | 阶段 | 模块 | 目标 |
 |------|------|------|
 | **V1(本文档重点)** | 市场服务 3 级定价 · 引用式安装 · 用量计量(仅市场来源) · 用户额度管理 · 计费链路(分组路径按 source) · 批量定价 · 兑换码 · 管理员调额 · 自有服务免费+开关 · 自用模式(强制定价) | 闭环"市场定价→引用添加→分组调用扣费→额度→兑换" |
-| **V2** | 充值/在线支付 · 订阅套餐 · 用量看板/排行 · 工具级精确定价 UI · 市场工具自动同步 | 资金入口、套餐化、运营数据 |
+| **V2** | 充值/在线支付 · 订阅套餐 · 用量看板/排行 · 市场工具自动同步 | 资金入口、套餐化、运营数据 |
 | **V3** | 多租户/分账 · 成本核算(上游成本) · 推广返利 | 规模化运营 |
 
 > 本文覆盖 V1 全部 + V2 设计(标注 V2),V3 仅占位。
@@ -206,24 +207,25 @@ ALTER TABLE `marketplace_items`
 > - **平台凭证加密(安全)**:`config_template` 含平台上游凭证,**敏感字段加密落库**(参考 `vision_configs.api_key` 加密存储);仅平台侧调上游时解密。管理端详情为支持编辑回传 `config_template`,其中凭证值(headers/env)替换为首尾掩码(如 `sk-A...x9z`,便于比对),保存时掩码原样传回则回填库内明文;用户侧任何接口均不返回,管理员/用户均无法读取明文凭证。
 > - **存量迁移**:开启计费后,存量市场项默认 `billing_type='per_call'`+`price=0` → 非自用模式判为"未定价"无法启用;需经批量定价(§5.5)显式设价后方可启用。
 
-### 4.4 `mcp_tool_prices` 表 — 工具级定价(市场服务,V1可选/V2 UI)
+### 4.4 `mcp_tool_prices` 表 — 条目级定价(工具/资源/提示,V1 已实现)
 
 ```sql
 CREATE TABLE `mcp_tool_prices` (
     `id`                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `marketplace_item_id` BIGINT UNSIGNED NOT NULL COMMENT '市场服务 ID(marketplace_items.id)',
-    `tool_name`           VARCHAR(255)    NOT NULL COMMENT '原始工具名(不含命名空间前缀)',
+    `kind`                VARCHAR(16)     NOT NULL DEFAULT 'tool' COMMENT '条目种类: tool / resource / prompt',
+    `tool_name`           VARCHAR(512)    NOT NULL COMMENT '条目键: 工具名 / 资源上游 URI / 提示名(不含命名空间前缀)',
     `billing_type`        VARCHAR(16)     NOT NULL DEFAULT 'per_call' COMMENT 'free, per_call',
     `price_per_call`      DECIMAL(10,4)   DEFAULT 0.0000,
     `enabled`             TINYINT         DEFAULT 1,
     `created_at`          DATETIME        DEFAULT CURRENT_TIMESTAMP,
     `updated_at`          DATETIME        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `idx_item_tool` (`marketplace_item_id`, `tool_name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='市场服务工具级定价覆盖表';
+    UNIQUE KEY `idx_item_kind_name` (`marketplace_item_id`, `kind`, `tool_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='市场服务条目级定价表';
 ```
 
-> 命中即生效,优先级最高(定价解析第 1 级)。仅 `free`/`per_call`。V1 可先靠服务级 + 全局默认;V2 提供按工具调价 UI。
+> 命中即生效,优先级最高(定价解析第 1 级)。仅 `free`/`per_call`。**资源模板(templates)不可定价**——模板读取按展开后的具体 URI 走资源条目价,模板价无意义。唯一索引含 `kind`:同名工具与提示(如都叫 search)可分别设价;旧二元索引 `idx_item_tool` 由启动迁移自动 DROP(model/main.go,三方言经 GORM Migrator)。`tool_name` 放宽到 512(资源上游 URI 可能超 255;utf8mb4 复合唯一索引 2120B < InnoDB 3072B 上限)。管理端全量替换:`PUT /api/v1/admin/marketplace/:id/entry-prices`(§5.5)。
 
 ### 4.5 `mcp_call_logs` 表 — 扩展计费列(用量计量明细)
 
@@ -393,21 +395,24 @@ mcp_groups (1) ──< (N) mcp_group_services >── mcp_services
 
 > 仅两种类型。**用户自有服务(`source=user`)一律免费**(不走定价)。不存在 per_token。
 
-### 5.2 定价解析(市场来源服务,3 级,D4)
+### 5.2 定价解析(市场来源服务,条目级 + 3 级,D4)
 
 **仅 `source='marketplace'` 服务计费**(在分组调用路径上按 source 触发,§6);`source='user'` 自有服务免费。
 
 ```
-resolveMarketplacePrice(item, toolName, userGroup):
-  1. 工具级: mcp_tool_prices[item.id, toolName]            → 命中即用(最高优先)
-  2. 服务级: marketplace_items.billing_type/price_per_call  → 非 NULL 即用
-  3. 全局默认: options.BillingDefaultPricePerCall + BillingDefaultType(**仅自用模式生效**,§5.6)
+resolveMarketplaceEntryPrice(item, kind, entryName, userGroup):     // kind ∈ tool/resource/prompt
+  1. 条目级: mcp_tool_prices[item.id, kind, entryName]      → 命中即用(最高优先)
+  2. 服务级: marketplace_items.billing_type/price_per_call  → 仅 kind=tool 回退;非 NULL 即用
+  3. 全局默认: options.BillingDefaultPricePerCall + BillingDefaultType(**仅自用模式生效**,§5.6;仅 kind=tool)
   4. 兜底:   BillingEnabled=false 或解析失败 → free(不计费)
+
+kind=resource/prompt 的差异:条目未命中 → **免费**(不回退服务价、不报未配置错);
+条目命中时 price_scope='entry'(工具命中仍为 'tool',存量日志口径不变)。
 
 最终 quota = baseQuota × groupRatio(user.Group)
 ```
 
-> 设计意图:管理员设全局默认价覆盖全站市场服务,再对个别市场服务(服务级)或其中某个工具(工具级)精确调整。
+> 设计意图:管理员设全局默认价覆盖全站市场服务,再对个别市场服务(服务级)或其中某个工具/资源/提示(条目级)精确调整。**资源/提示默认免费**,需显式设条目价才计费(§6.7)。
 >
 > **自用模式门控(D15)**:全局默认(第 3 级)仅在 `SelfUseModeEnabled=true` 时作为兜底;非自用模式下市场上架/启用已强制显式定价(§5.6),解析必命中第 1-2 级,未定价则调用时报错(参考 new-api `relay/helper/price.go:23`)。
 
@@ -439,6 +444,7 @@ groupRatio 配置(Option, JSON):
 | 市场项服务级定价(单个) | `marketplace_items` | `PUT /api/v1/admin/marketplace/:id` | 扩展现有上架编辑 |
 | **市场项服务级定价(批量)** | `marketplace_items` | `PUT /api/v1/admin/marketplace/pricing/batch` | **多选已上架服务批量设价** |
 | 工具级定价 | `mcp_tool_prices` | `PUT /api/v1/admin/marketplace/:id/tools/:tool/pricing`(V2) | 按工具精确调价 |
+| **条目级定价(工具/资源/提示)** | `mcp_tool_prices` | `PUT /api/v1/admin/marketplace/:id/entry-prices`(**V1 已实现**) | **全量替换**该市场项条目价;不在载荷中的条目回退(工具→服务价,资源/提示→免费);条目须存在于快照(模板拒收)、per_call 须 price>0、(kind,name) 去重;事务删旧插新后失效价格缓存 |
 
 **批量定价请求体示例**:
 ```json
@@ -497,7 +503,7 @@ POST /mcp、/smart/mcp、/mcp/group/:slug  (tools/call)
 
 > 此架构比"市场专用端点"更优:市场服务天然融入用户的分组/API Key 工具视图,可在同一分组混用免费自有 + 付费市场服务;计费仅在 resolver 命中 `source=marketplace` 时介入,自有服务路径零改动。
 
-> **服务详情页工具测试同口径计费**(`service/service.go` `callMarketplaceToolTested`):服务详情页对市场(平台托管)服务的工具测试复用同一 `BillingService` 流程——3 级定价解析 → 预扣(余额不足/未定价直接拒绝,不调上游)→ 成功 Confirm / 失败 Refund;成败判定与网关一致(上游 `tools/call` 传输层成功即扣费,结果内 `isError` 不退款)。手动测试走会话鉴权无 API Key,`ApiKeyID=0`(仅用户总额度约束,不占 Key 预算,不参与 `request_id` 幂等);管理员默认同样计费(`ChargeAdmin`)。结算结果随手动测试日志落计费列(`api_key_name=tool-test`、`extra.manual_test=true`)。资源/提示测试同样放开(注入平台上游配置后可测)且不计费——与网关 `resources/read`/`prompts/get` 免费口径一致,计费仅发生在 `tools/call`;自有/虚拟服务测试维持免费。
+> **服务详情页工具测试同口径计费**(`service/service.go` `callMarketplaceToolTested`):服务详情页对市场(平台托管)服务的工具测试复用同一 `BillingService` 流程——条目级定价解析 → 预扣(余额不足/未定价直接拒绝,不调上游)→ 成功 Confirm / 失败 Refund;成败判定与网关一致(上游 `tools/call` 传输层成功即扣费,结果内 `isError` 不退款)。手动测试走会话鉴权无 API Key,`ApiKeyID=0`(仅用户总额度约束,不占 Key 预算,不参与 `request_id` 幂等);管理员默认同样计费(`ChargeAdmin`)。结算结果随手动测试日志落计费列(`api_key_name=tool-test`、`extra.manual_test=true`)。**资源/提示测试同口径**(2026-08 起,`testMarketplaceEntry` 外壳):有**条目价**才扣费(资源条目键=上游 URI,提示=上游提示名),无条目价免费——与网关 `resources/read`/`prompts/get` 完全一致;自有/虚拟服务测试维持免费。
 
 ### 6.2 两段式计费(预扣 → 执行 → 确认/退款)
 
@@ -617,11 +623,15 @@ PreConsume 发现 user.Quota <= 0 或 user.Quota - 预扣 < 0(或 apiKey 预算�
 | `tools/call`(Direct) | ✅ 扣费 | 命中 `source=marketplace` 服务按市场价扣;`source=user` 免费 |
 | `mcp.execute`(Smart) | ✅ 扣费 | 本质转发到上游工具,resolver 解析底层服务后同 `tools/call` 规则(命中 marketplace 才扣) |
 | `mcp.execute_batch`(Smart) | ✅ 扣费 | **逐项**计费:每项独立走插入点 A/B(预扣/确认/退款),幂等键 `request_id` 在哈希部分带批内序号(`tool_id#i`,防止批内相同两项漏扣);某项余额不足只阻塞该项,其余项照常执行 |
+| `resources/read`(Direct) | ✅ 有条目价才扣 | 市场服务按**资源条目价**(`mcp_tool_prices` kind=resource,条目键=上游 URI)扣费;无条目价→免费(不回退服务价)。两段式与 tools/call 同一套(预扣→确认/退款),幂等键写入日志 `request_id` 列 |
+| `prompts/get`(Direct) | ✅ 有条目价才扣 | 市场服务按**提示条目价**(kind=prompt,条目键=上游提示名)扣费;无条目价→免费 |
+| `mcp.read`(Smart) | ✅ 有条目价才扣 | 智能模式读资源/取提示,复用原生上游核心,计费口径与原生完全一致(幂等键复用外层 mcp.read 请求键) |
 | `initialize` | ❌ 免费 | 协议握手 |
 | `tools/list`(Direct/Smart) | ❌ 免费 | 工具发现 |
+| `resources/list` / `resources/templates/list` / `prompts/list` | ❌ 免费 | 聚合枚举,无单条目执行 |
 | `mcp.search` / `mcp.describe`(Smart) | ❌ 免费 | 搜索/描述元工具(只读发现) |
 
-> **判定原则**:只有**实际执行上游工具**(`tools/call`、`mcp.execute`、`mcp.execute_batch` 的每一项)才扣费;握手与发现类一律免费。Smart 模式下 `mcp.execute` / `mcp.execute_batch` 必须解析到目标服务的 `source`,命中 marketplace 才计费。
+> **判定原则**:只有**实际执行上游**(工具调用;以及设有条目价的资源/提示读取)才扣费;握手与发现类一律免费。Smart 模式下 `mcp.execute` / `mcp.execute_batch` / `mcp.read` 必须解析到目标服务的 `source`,命中 marketplace 才计费。**资源/提示默认免费**(§5.2),条目价是唯一计费入口。
 > **虚拟工具**(vision/camera 等,`transport_type='virtual'`)属用户自有,**保持免费**;**永不可上架为市场服务**(D16/§11:手动添加/克隆上架均拒绝 `transport_type='virtual'`),仅自有配置、配置者自己使用。
 
 ---
@@ -937,7 +947,7 @@ features/redemption-codes/
 | 14 | 充值订单 + 支付网关抽象(易支付优先)+ 回调幂等 |
 | 15 | 订阅套餐 + 用户订阅 + 订阅优先计费(简化版) |
 | 16 | `mcp_usage_hourly` 聚合 + 用量看板/排行(引入图表库) |
-| 17 | 工具级精确定价 UI(`mcp_tool_prices` 按工具调价) |
+| ~~17~~ | ~~工具级精确定价 UI~~ → 已提前在 V1 实现(§4.4/§5.2/§5.5 条目级定价,含资源/提示) |
 | 18 | 市场引用服务 tools_cache 自动同步(平台工具变更下发) |
 | 19 | 余额变更通用流水表 `balance_changes`(对账) |
 

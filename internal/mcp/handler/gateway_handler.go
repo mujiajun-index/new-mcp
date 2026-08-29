@@ -49,6 +49,14 @@ type LogContext struct {
 	ExposeMode string // "direct" or "smart"
 }
 
+// 定价条目种类别名(billing.EntryKind*):本包内 billing 常被用作
+// *billingOutcome 变量名而遮蔽包名,统一经别名引用。
+const (
+	priceKindTool     = billing.EntryKindTool
+	priceKindResource = billing.EntryKindResource
+	priceKindPrompt   = billing.EntryKindPrompt
+)
+
 type executeResult struct {
 	Resp        *JSONRPCResponse
 	ToolName    string
@@ -307,10 +315,12 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 		batchLogs = batch.Logs
 	case "mcp.read":
 		// 智能模式读资源/取提示:method 记 mcp.read(日志可区分智能模式调用),
-		// tool_name 记目标 URI/提示名;不参与计费(与原生 resources/read 口径一致)。
+		// tool_name 记目标 URI/提示名;计费与原生 resources/read、prompts/get 同口径
+		// (市场服务且条目有价时扣费,幂等键复用外层 requestID)。
 		originalToolName = "mcp.read"
-		readResult := h.handleMetaRead(ctx, req.ID, logCtx, params.Arguments)
+		readResult := h.handleMetaRead(ctx, req.ID, logCtx, params.Arguments, requestID)
 		resp = readResult.Resp
+		billing = readResult.Billing
 		if readResult.ToolName != "" {
 			params.Name = readResult.ToolName
 		}
@@ -388,9 +398,9 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 		UserAgent:      truncate(logCtx.UserAgent, 512),
 	}
 	applyBillingToLog(callLog, billing)
-	// 智能模式 mcp.read / 非市场 mcp.execute 不走计费(billing==nil),日志缺市场
-	// item 归属,按服务行点查回填(市场条目健康按 marketplace_item_id 聚合,口径
-	// 需完整)。市场直调由计费路径写入、search/describe 无服务归属,均不触发。
+	// 非市场来源调用(billing==nil:自有服务 mcp.read/mcp.execute、无条目价资源/提示
+	// 读取等)日志缺市场 item 归属,按服务行点查回填(市场条目健康按 marketplace_item_id
+	// 聚合,口径需完整)。市场计费路径已写入、search/describe 无服务归属,均不触发。
 	if billing == nil && serviceID != 0 {
 		callLog.MarketplaceItemID = model.GetServiceMarketplaceItemID(serviceID)
 	}
@@ -450,7 +460,7 @@ func (h *GatewayHandler) routeAndCall(ctx context.Context, reqID interface{}, lo
 
 	// 计费插入点 A:预扣(仅 marketplace)。余额不足 → 拒绝本次调用,不调上游。
 	if session.Source == "marketplace" {
-		if !h.preConsumeBilling(ctx, logCtx, session, resolvedTool, requestID, billing) {
+		if !h.preConsumeBilling(ctx, logCtx, session, priceKindTool, resolvedTool, requestID, billing) {
 			return h.errorResponse(reqID, -32603, billing.BlockMsg)
 		}
 	}
@@ -643,7 +653,7 @@ func (h *GatewayHandler) executeOne(ctx context.Context, logCtx *LogContext, too
 	var billing *billingOutcome
 	if session.Source == "marketplace" {
 		billing = &billingOutcome{}
-		if !h.preConsumeBilling(ctx, logCtx, session, toolName, itemRequestID, billing) {
+		if !h.preConsumeBilling(ctx, logCtx, session, priceKindTool, toolName, itemRequestID, billing) {
 			return &callOutcome{
 				Err:         billing.BlockMsg,
 				ErrCode:     -32603,
@@ -1083,10 +1093,11 @@ func (h *GatewayHandler) materializeMarketplaceConfig(svc *model.McpService) err
 	return nil
 }
 
-// preConsumeBilling 计费插入点 A:解析 3 级定价并预扣(§6.2)。
+// preConsumeBilling 计费插入点 A:解析条目级定价并预扣(§6.2)。
+// kind=tool 走"条目→服务→全局默认"三级链;resource/prompt 仅条目级(无价即免费)。
 // 返回 true=放行(含免费/欠账/已预扣),false=拒绝本次调用(余额不足/未定价/计费不可用)。
 // 仅市场来源服务调用(调用方已按 session.Source == "marketplace" 判定)。
-func (h *GatewayHandler) preConsumeBilling(ctx context.Context, logCtx *LogContext, session *bridge.McpSession, toolName, requestID string, out *billingOutcome) bool {
+func (h *GatewayHandler) preConsumeBilling(ctx context.Context, logCtx *LogContext, session *bridge.McpSession, kind, entryName, requestID string, out *billingOutcome) bool {
 	out.ItemID = session.MarketplaceItemID
 	if session.MarketplaceItemID == nil {
 		out.Status = "skipped"
@@ -1098,21 +1109,22 @@ func (h *GatewayHandler) preConsumeBilling(ctx context.Context, logCtx *LogConte
 		return true // 无法取用户信息:FailOpen 放行(免费)
 	}
 
-	price, perr := billing.ResolveMarketplacePrice(*session.MarketplaceItemID, toolName, user.Group)
+	price, perr := billing.ResolveMarketplaceEntryPrice(*session.MarketplaceItemID, kind, entryName, user.Group)
 	out.UnitPrice = price.UnitPriceDecimal
 	out.BillingType = price.BillingType
 	out.PriceScope = price.Scope
 
-	// 免费:放行,记 skipped
-	if price.BillingType == billing.BillingTypeFree || price.UnitPriceQuota <= 0 {
-		out.Status = "skipped"
-		return true
-	}
-	// 价格未配置(非自用模式未显式定价):拒绝
+	// 价格未配置(非自用模式未显式定价):拒绝。须在免费判断之前——该错误返回的
+	// base 是 free,先判免费会把未定价调用放行为免费(顺序 bug,原被上架门控掩盖)。
 	if errors.Is(perr, billing.ErrPriceNotConfigured) {
 		out.Status = "blocked"
 		out.BlockMsg = "marketplace service price not configured"
 		return false
+	}
+	// 免费:放行,记 skipped
+	if price.BillingType == billing.BillingTypeFree || price.UnitPriceQuota <= 0 {
+		out.Status = "skipped"
+		return true
 	}
 	// 价格加载失败:FailOpen 放行
 	if perr != nil {

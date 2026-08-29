@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useRouter } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { adminGetMarketplace, adminUpdateMarketplace, adminRefreshMarketplace, adminGetMarketplaceProcess, adminControlMarketplaceProcess } from '../api'
+import { adminGetMarketplace, adminUpdateMarketplace, adminRefreshMarketplace, adminGetMarketplaceProcess, adminControlMarketplaceProcess, adminSetEntryPrices } from '../api'
+import { EntryPriceControl, EntryPricingBar, useEntryPricingDraft } from './entry-pricing'
 import { adminListMarketplaceGroups, adminListMarketplaceTags } from '@/features/admin/marketplace-categories/api'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import { priceLabel } from '@/lib/billing'
@@ -25,7 +26,7 @@ import {
   ArrowLeft, Save, RefreshCw, Pencil, X, Check, Loader2, ChevronDown, ChevronRight,
   Activity, Power, Play, Square, RotateCw, Layers, MemoryStick, Search, User, Users,
 } from 'lucide-react'
-import type { MarketplaceDetail, AuthType, MarketplaceItemProcess, MarketplaceItemProcessInstance, ProcessControlAction } from '@/types'
+import type { MarketplaceDetail, MarketplaceEntryPrice, AuthType, MarketplaceItemProcess, MarketplaceItemProcessInstance, ProcessControlAction } from '@/types'
 
 // AdminMarketplaceDetailPage 市场项详情 + 编辑(§11)。上半只读概览,下半编辑表单(调 adminUpdateMarketplace)。
 export function AdminMarketplaceDetailPage() {
@@ -60,6 +61,17 @@ export function AdminMarketplaceDetailPage() {
       toast.success(t('common.success'))
       queryClient.invalidateQueries({ queryKey: ['admin-marketplace-detail', id] })
       queryClient.invalidateQueries({ queryKey: ['admin-marketplace'] })
+    },
+  })
+
+  // 条目级定价草稿(工具/资源/提示逐条设价,三个列表共享);item 加载前为空态
+  const entryPricing = useEntryPricingDraft(item)
+  const entryMutation = useMutation({
+    mutationFn: (prices: MarketplaceEntryPrice[]) => adminSetEntryPrices(Number(id), prices),
+    onSuccess: () => {
+      toast.success(t('common.success'))
+      entryPricing.reset()
+      queryClient.invalidateQueries({ queryKey: ['admin-marketplace-detail', id] })
     },
   })
 
@@ -157,14 +169,21 @@ export function AdminMarketplaceDetailPage() {
       <EditForm item={item} groups={groups} tagsLib={tagsLib} notSelfUse={notSelfUse}
         onSave={(body) => updateMutation.mutate({ id: Number(id), body })} pending={updateMutation.isPending} />
 
-      {/* 快照展示(与前台市场/服务详情同款),编辑表单下方 */}
+      {/* 快照展示(与前台市场/服务详情同款)+ 条目级定价(每条右侧),编辑表单下方。
+          保存为全量替换:不在载荷中的条目回退(工具→服务统一价,资源/提示→免费)。 */}
+      <p className="text-xs text-muted-foreground">{t('marketplace.entryPricingHint')}</p>
+
       <SectionCard title={t('marketplace.toolsProvided', { count: tools.length })}>
         {tools.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-6">{t('services.noTools')}</p>
         ) : (
           <div className="space-y-2">
             {tools.map((tool) => (
-              <ToolItem key={tool.name} name={tool.name} description={tool.description} schema={tool.inputSchema} />
+              <ToolItem key={tool.name} name={tool.name} description={tool.description} schema={tool.inputSchema}
+                action={
+                  <EntryPriceControl kind="tool" value={entryPricing.getEntry('tool', tool.name)}
+                    onChange={(v) => entryPricing.setEntry('tool', tool.name, v)} />
+                } />
             ))}
           </div>
         )}
@@ -176,8 +195,13 @@ export function AdminMarketplaceDetailPage() {
         ) : (
           <div className="space-y-2">
             {resources.map((r) => (
-              <ResourceItemCard key={r.uri} name={r.name} uri={r.uri} description={r.description} mimeType={r.mimeType} />
+              <ResourceItemCard key={r.uri} name={r.name} uri={r.uri} description={r.description} mimeType={r.mimeType}
+                action={
+                  <EntryPriceControl kind="resource" value={entryPricing.getEntry('resource', r.uri)}
+                    onChange={(v) => entryPricing.setEntry('resource', r.uri, v)} />
+                } />
             ))}
+            {/* 模板不可定价:读取按展开后的具体 URI 走资源条目价,模板价无意义 */}
             {templates.map((tpl) => (
               <ResourceItemCard key={tpl.uriTemplate} name={tpl.name} uri={tpl.uriTemplate} description={tpl.description} mimeType={tpl.mimeType} isTemplate />
             ))}
@@ -191,11 +215,23 @@ export function AdminMarketplaceDetailPage() {
         ) : (
           <div className="space-y-2">
             {prompts.map((p) => (
-              <PromptItemCard key={p.name} name={p.name} description={p.description} args={p.arguments} />
+              <PromptItemCard key={p.name} name={p.name} description={p.description} args={p.arguments}
+                action={
+                  <EntryPriceControl kind="prompt" value={entryPricing.getEntry('prompt', p.name)}
+                    onChange={(v) => entryPricing.setEntry('prompt', p.name, v)} />
+                } />
             ))}
           </div>
         )}
       </SectionCard>
+
+      <EntryPricingBar dirtyCount={entryPricing.dirtyCount} pending={entryMutation.isPending}
+        onCancel={entryPricing.reset}
+        onSave={() => {
+          const payload = entryPricing.buildPayload()
+          if (payload === null) { toast.error(t('marketplace.entryPriceRequired')); return }
+          entryMutation.mutate(payload)
+        }} />
     </div>
   )
 }

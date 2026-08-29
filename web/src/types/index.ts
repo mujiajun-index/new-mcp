@@ -565,6 +565,19 @@ export interface MarketplaceDetail {
   // 商业化定价
   billing_type: string
   price_per_call: number
+  // 条目级定价(工具/资源/提示);无条目价时:工具回退服务价,资源/提示免费
+  entry_prices?: MarketplaceEntryPrice[]
+}
+
+// 条目级定价(§5.2 条目维度):工具/资源/提示单独设价。
+// name 为条目键,与网关计费同口径:工具=工具名 / 资源=上游原始 URI / 提示=上游提示名。
+export type MarketplaceEntryKind = 'tool' | 'resource' | 'prompt'
+
+export interface MarketplaceEntryPrice {
+  kind: MarketplaceEntryKind
+  name: string
+  billing_type: string   // free / per_call
+  price_per_call: number // 展示货币单价(per_call)
 }
 
 export interface MarketplaceListParams extends ListParams {

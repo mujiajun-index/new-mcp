@@ -422,3 +422,38 @@ XIAOZHI-INTEGRATION(分发 switch)、TEST-GUIDE 同步;smart_gateway.py 测试�
 COMMERCIALIZATION(D17 决策行、§4.3 ALTER+进程模式条目、§6.1 会话键控、§17 风险表)、
 API.md(clone/update 请求体 + 两个 process 端点)、DATABASE(§2.12 列)、
 ARCHITECTURE(§4.2 会话池复合键)同步。
+
+## 11. 市场服务条目级定价(2026-08-29)
+
+> 设计动机:市场服务此前仅服务级统一价;`mcp_tool_prices` 表与三级解析虽已存在
+> (V1 落地)但无管理入口;资源/提示读取完全免费。本次把定价粒度扩展为**条目级**
+> (工具/资源/提示逐条设价),管理端可视化设价,资源/提示**默认免费**、有条目价
+> 才计费(与用户确认:测试按钮同口径扣费;用户侧市场详情页展示条目价)。
+
+### 11.1 后端 ✅ 已完成(build + vet + test 通过)
+
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| 数据模型 | ✅ | `mcp_tool_prices` 加 `kind`(tool/resource/prompt,default:'tool' 为 DDL 必需——Postgres 非空表加 NOT NULL 列需默认值);`tool_name` 255→512(资源上游 URI);唯一索引 `idx_item_tool`→`idx_item_kind_name`(同名工具与提示可并存),旧索引启动迁移 DROP(model/main.go GORM Migrator 三方言);`GetToolPrice`→`GetEntryPrice(itemID,kind,name)` |
+| 定价解析 | ✅ | `billing.ResolveMarketplaceEntryPrice(itemID,kind,name,group)`:`kind=tool` 走原三级链(命中 scope 仍 'tool');`resource/prompt` 仅条目一级,**未命中→免费不回退服务价不报错**,命中 scope='entry'(日志新值);缓存键改 `kind+"\x00"+条目名` |
+| 网关计费 | ✅ | `preConsumeBilling` 加 kind 参数;resources/read(条目键=上游 URI)、prompts/get(条目键=裸提示名)、Smart mcp.read(幂等键复用外层)接入预扣→Confirm/Refund 两段式;**顺手修顺序 bug**:免费判断原遮蔽 ErrPriceNotConfigured 判断(未定价 blocked 为死代码);`recordConsumeLog` 写计费列 + **RequestID 列改写计费幂等键**(HasChargedRequest 防重扣依赖该列) + 归属回填以 nil 守卫 |
+| 管理 API | ✅ | `PUT /admin/marketplace/:id/entry-prices` **全量替换**(SetItemEntryPrices):条目须在快照内(模板拒收)、per_call 须 price>0、(kind,name) 去重、事务删旧插新、失效缓存;admin/公开/克隆详情均暴露 `entry_prices` |
+| 手动测试 | ✅ | service.go 抽出 `manualEntryPreConsume`/`manualEntryFinalize` 公共外壳(callMarketplaceToolTested 重构为调用 helper,行为不变);新增 `testMarketplaceEntry`:ReadResource/GetPrompt 市场分支同口径计费,无条目价免费 |
+| 测试 | ✅ | `billing/pricing_entry_test.go`(包首个测试:工具三级链回归/资源提示命中 scope=entry/未命中免费/服务未定价仅工具报错/同 item 同名工具与提示并存/缓存失效即时生效);`service/marketplace_entry_test.go`(真实 MCP 上游:资源/提示 charged·entry、无价免费、失败退款、余额不足 blocked、工具条目价覆盖服务价、SetItemEntryPrices 校验与全量替换/清空/详情暴露);既有 marketplace_call_test 全量回归通过 |
+
+### 11.2 前端 ✅ 已完成(tsc -b + rsbuild build 双绿)
+
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| 类型与 API | ✅ | `MarketplaceEntryKind/MarketplaceEntryPrice` + `MarketplaceDetail.entry_prices`;`adminSetEntryPrices`(PUT) |
+| 组件插槽 | ✅ | `ResourceItemCard`/`PromptItemCard` 加 `action` prop(名称行右侧,与 ToolItem 同款) |
+| 管理详情页 | ✅ | 新组件 `entry-pricing.tsx`:`useEntryPricingDraft`(本地覆盖仅记改过的条目,未改随服务端数据走)+`EntryPriceControl`(工具三态:继承服务价/免费/自定义价;资源提示两态)+`EntryPricingBar`(待保存 N 项/取消/保存);三列表逐行注入右侧控件,**templates 不给控件**;定价说明 hint |
+| 用户市场详情 | ✅ | 工具行右侧:条目价高亮徽标/未设弱化显示服务统一价(title 提示);资源/提示行:条目价徽标/未设"免费";模板无 |
+| i18n | ✅ | marketplace.entryPricingHint/entryModeInherit/entryModeCustom/entrySave/entryPending/entryPriceRequired/servicePriceHint + billing.scopeEntry 中英 |
+
+### 11.3 文档 ✅
+
+COMMERCIALIZATION V1.9(变更摘要⑱、§4.4 表结构、§5.2 条目级解析、§5.5 入口表、
+§6.7 计费口径扩展、手动测试口径、V2 任务17 标记已提前实现)、
+API.md(entry-prices 端点)、DATABASE(§2.16/ER/索引)同步。
+

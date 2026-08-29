@@ -125,6 +125,22 @@ func AdminBatchUpdateMarketplacePricing(c *gin.Context) {
 	common.Success(c, gin.H{"affected": affected})
 }
 
+// AdminSetMarketplaceEntryPrices 全量替换市场项条目级定价(工具/资源/提示单独设价,
+// §5.2)。不在载荷中的条目回退:工具→服务统一价,资源/提示→免费。
+func AdminSetMarketplaceEntryPrices(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	var req dto.EntryPricingReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	if err := marketplaceService.SetItemEntryPrices(id, req.Prices); err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, nil)
+}
+
 // AdminCloneMarketplaceItem 从自有服务克隆上架(D14)。
 func AdminCloneMarketplaceItem(c *gin.Context) {
 	adminID := c.GetInt64("user_id")

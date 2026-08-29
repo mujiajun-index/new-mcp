@@ -462,9 +462,89 @@ func (s *McpServiceService) CallTool(userID, serviceID int64, req *dto.CallToolR
 	return res, nil
 }
 
+// manualEntryPreConsume 手动测试计费·预扣段(§6.2 与网关同口径):条目价解析 → 预扣。
+// 返回 (sess, abort):abort 非 nil 时调用方直接返回该结果且不再调上游(sess 恒 nil,
+// bill 已更新);sess 非 nil 表示已预扣,调用结束后必须传 manualEntryFinalize 结算。
+// 免费(含计费总开关关闭/资源提示无条目价)/价格加载失败(FailOpen)返回 (nil, nil) 放行。
+// 手动测试走会话鉴权无 API Key,ApiKeyID=0 仅受用户总额度约束;RequestID 进程内唯一,
+// 每次点击都是新请求,不做幂等去重(同 tools/call 手动测试口径)。
+func manualEntryPreConsume(svcID, itemID, userID int64, kind, entryName string, bill *manualTestBilling) (*billing.BillingSession, *dto.CallToolResult) {
+	user, uErr := model.GetUserByID(userID)
+	if uErr != nil {
+		// 无法取用户信息:bill 保持 skipped(放行式失败,同网关 FailOpen 口径)
+		return nil, &dto.CallToolResult{IsError: true, Error: "用户信息获取失败: " + uErr.Error()}
+	}
+
+	price, perr := billing.ResolveMarketplaceEntryPrice(itemID, kind, entryName, user.Group)
+	bill.BillingType = price.BillingType
+	bill.UnitPrice = price.UnitPriceDecimal
+	bill.PriceScope = price.Scope
+
+	switch {
+	case perr == nil && (price.BillingType == billing.BillingTypeFree || price.UnitPriceQuota <= 0):
+		// 免费(含 BillingEnabled=false):放行,不扣费
+		return nil, nil
+	case errors.Is(perr, billing.ErrPriceNotConfigured):
+		bill.Status = "blocked"
+		return nil, &dto.CallToolResult{IsError: true, Error: "市场服务价格未配置,无法测试"}
+	case perr != nil:
+		// 价格加载失败:FailOpen 放行(免费),同网关
+		return nil, nil
+	}
+
+	// 预扣:RequestID 进程内唯一——手动测试每次点击都是新逻辑请求,不做幂等去重。
+	sess, err := manualBillingService.PreConsume(billing.PreConsumeRequest{
+		Price:     price,
+		UserID:    userID,
+		ApiKeyID:  0, // 会话鉴权无 API Key:仅用户额度约束
+		UserRole:  user.Role,
+		RequestID: fmt.Sprintf("manual:%d:%d", svcID, time.Now().UnixNano()),
+	})
+	if errors.Is(err, billing.ErrInsufficientQuota) {
+		bill.Status = "blocked"
+		return nil, &dto.CallToolResult{IsError: true, Error: "用户额度不足,剩余额度不足,请充值或兑换"}
+	}
+	if err != nil {
+		// 计费 DB 异常且非 FailOpen:拒绝;FailOpen 时 PreConsume 返回 nil err + Debt
+		bill.Status = "blocked"
+		return nil, &dto.CallToolResult{IsError: true, Error: "计费服务暂时不可用,请稍后重试"}
+	}
+	if sess.Debt {
+		bill.Status = "debt"
+	} else {
+		bill.Status = "pending"
+	}
+	return sess, nil
+}
+
+// manualEntryFinalize 手动测试计费·结算段(与网关 finalizeBilling 同口径):Debt 保持
+// 欠账标记;成功按实扣记 charged(零消费如管理员豁免记 skipped);失败全额退款记
+// refunded。sess 为 nil 时无操作。
+func manualEntryFinalize(sess *billing.BillingSession, bill *manualTestBilling, callOK bool) {
+	if sess == nil {
+		return
+	}
+	switch {
+	case sess.Debt:
+		bill.Status = "debt"
+		bill.Quota = 0
+	case callOK:
+		_ = manualBillingService.Confirm(sess)
+		if sess.ConsumedQuota > 0 {
+			bill.Status = "charged"
+			bill.Quota = sess.ConsumedQuota
+		} else {
+			bill.Status = "skipped"
+		}
+	default:
+		_ = manualBillingService.Refund(sess)
+		bill.Status = "refunded"
+	}
+}
+
 // callMarketplaceToolTested 市场引用服务(source=marketplace)的工具测试:注入平台上游
 // 配置/凭证后直连上游执行 tools/call,计费与网关调用完全同口径(§6.2):
-// 3 级定价解析(工具级→服务级→全局默认,乘分组倍率)→ 预扣 → 成功 Confirm / 失败 Refund。
+// 条目级定价解析(工具:条目→服务→全局默认,乘分组倍率)→ 预扣 → 成功 Confirm / 失败 Refund。
 // 与网关 preConsumeBilling/finalizeBilling 的策略一致:
 //   - 免费(含计费总开关关闭)/价格加载失败(FailOpen):放行不扣费;
 //   - 未显式定价(非自用模式):拒绝,不调上游;
@@ -495,83 +575,45 @@ func (s *McpServiceService) callMarketplaceToolTested(svc *model.McpService, use
 		return res, nil
 	}
 
-	user, uErr := model.GetUserByID(userID)
-	if uErr != nil {
-		res := &dto.CallToolResult{IsError: true, Error: "用户信息获取失败: " + uErr.Error()}
-		recordManualTestLog(svc, userID, "tools/call", req.Name, res, bill)
-		return res, nil
-	}
-
-	price, perr := billing.ResolveMarketplacePrice(*svc.MarketplaceItemID, req.Name, user.Group)
-	bill.BillingType = price.BillingType
-	bill.UnitPrice = price.UnitPriceDecimal
-	bill.PriceScope = price.Scope
-
-	var sess *billing.BillingSession
-	switch {
-	case perr == nil && (price.BillingType == billing.BillingTypeFree || price.UnitPriceQuota <= 0):
-		// 免费(含 BillingEnabled=false):放行,不扣费
-	case errors.Is(perr, billing.ErrPriceNotConfigured):
-		res := &dto.CallToolResult{IsError: true, Error: "市场服务价格未配置,无法测试"}
-		bill.Status = "blocked"
-		recordManualTestLog(svc, userID, "tools/call", req.Name, res, bill)
-		return res, nil
-	case perr != nil:
-		// 价格加载失败:FailOpen 放行(免费),同网关
-	default:
-		// 预扣:RequestID 为进程内唯一值——手动测试每次点击都是新逻辑请求,不做幂等去重。
-		var err error
-		sess, err = manualBillingService.PreConsume(billing.PreConsumeRequest{
-			Price:     price,
-			UserID:    userID,
-			ApiKeyID:  0, // 会话鉴权无 API Key:仅用户额度约束
-			UserRole:  user.Role,
-			RequestID: fmt.Sprintf("manual:%d:%d", svc.ID, time.Now().UnixNano()),
-		})
-		if errors.Is(err, billing.ErrInsufficientQuota) {
-			res := &dto.CallToolResult{IsError: true, Error: "用户额度不足,剩余额度不足,请充值或兑换"}
-			bill.Status = "blocked"
-			recordManualTestLog(svc, userID, "tools/call", req.Name, res, bill)
-			return res, nil
-		}
-		if err != nil {
-			// 计费 DB 异常且非 FailOpen:拒绝;FailOpen 时 PreConsume 返回 nil err + Debt
-			res := &dto.CallToolResult{IsError: true, Error: "计费服务暂时不可用,请稍后重试"}
-			bill.Status = "blocked"
-			recordManualTestLog(svc, userID, "tools/call", req.Name, res, bill)
-			return res, nil
-		}
-		if sess.Debt {
-			bill.Status = "debt"
-		} else {
-			bill.Status = "pending"
-		}
+	sess, abort := manualEntryPreConsume(svc.ID, *svc.MarketplaceItemID, userID, billing.EntryKindTool, req.Name, bill)
+	if abort != nil {
+		recordManualTestLog(svc, userID, "tools/call", req.Name, abort, bill)
+		return abort, nil
 	}
 
 	res, callOK := callToolTested(svc, userID, req)
+	manualEntryFinalize(sess, bill, callOK)
+	recordManualTestLog(svc, userID, "tools/call", req.Name, res, bill)
+	return res, nil
+}
 
-	// 结算(与网关 finalizeBilling 同口径):Debt 保持欠账标记;成功按实扣记 charged
-	// (零消费如 ChargeAdmin 豁免记 skipped);失败全额退款记 refunded。
-	if sess != nil {
-		switch {
-		case sess.Debt:
-			bill.Status = "debt"
-			bill.Quota = 0
-		case callOK:
-			_ = manualBillingService.Confirm(sess)
-			if sess.ConsumedQuota > 0 {
-				bill.Status = "charged"
-				bill.Quota = sess.ConsumedQuota
-			} else {
-				bill.Status = "skipped"
-			}
-		default:
-			_ = manualBillingService.Refund(sess)
-			bill.Status = "refunded"
-		}
+// testMarketplaceEntry 市场服务资源/提示测试的同口径计费外壳:物化平台配置 → 条目价
+// 解析+预扣 → call() → 结算 → 落手动测试日志(与工具测试/网关 resources/read、
+// prompts/get 完全同口径;资源/提示无条目价→免费)。call 的第二返回值 callOK=传输层
+// 成功(资源/提示读取无结果内 isError 概念,调用成功即扣费,同网关 err==nil 判定)。
+func (s *McpServiceService) testMarketplaceEntry(svc *model.McpService, userID int64, kind, entryName, method, target string, call func() (*dto.CallToolResult, bool)) (*dto.CallToolResult, error) {
+	bill := &manualTestBilling{Status: "skipped", ItemID: svc.MarketplaceItemID}
+
+	if svc.MarketplaceItemID == nil {
+		res := &dto.CallToolResult{IsError: true, Error: "市场服务缺少关联市场项,无法测试"}
+		recordManualTestLog(svc, userID, method, target, res, bill)
+		return res, nil
+	}
+	if mErr := s.materializeMarketplace(svc); mErr != nil {
+		res := &dto.CallToolResult{IsError: true, Error: mErr.Error()}
+		recordManualTestLog(svc, userID, method, target, res, bill)
+		return res, nil
 	}
 
-	recordManualTestLog(svc, userID, "tools/call", req.Name, res, bill)
+	sess, abort := manualEntryPreConsume(svc.ID, *svc.MarketplaceItemID, userID, kind, entryName, bill)
+	if abort != nil {
+		recordManualTestLog(svc, userID, method, target, abort, bill)
+		return abort, nil
+	}
+
+	res, callOK := call()
+	manualEntryFinalize(sess, bill, callOK)
+	recordManualTestLog(svc, userID, method, target, res, bill)
 	return res, nil
 }
 
@@ -629,9 +671,9 @@ func callToolTested(svc *model.McpService, userID int64, req *dto.CallToolReq) (
 }
 
 // ReadResource 服务详情页资源测试:对指定 URI 执行 resources/read。
-// 市场引用服务注入平台上游配置后同样可测(与网关口径一致:resources/read 不计费,
-// 计费仅发生在 tools/call);虚拟服务无资源能力;
-// 结果同样落调用日志(recordManualTestLog,计费恒 skipped)。
+// 市场引用服务注入平台上游配置后同口径计费(与网关 resources/read 一致:按资源
+// 条目价扣费,无条目价免费;2026-08 起资源/提示纳入条目级定价);虚拟服务无资源能力;
+// 结果同样落调用日志(recordManualTestLog,计费结算结果随日志落库)。
 func (s *McpServiceService) ReadResource(userID, serviceID int64, req *dto.ReadResourceReq) (*dto.CallToolResult, error) {
 	svc, err := model.GetServiceByID(userID, serviceID)
 	if err != nil {
@@ -641,37 +683,37 @@ func (s *McpServiceService) ReadResource(userID, serviceID int64, req *dto.ReadR
 		return &dto.CallToolResult{IsError: true, Error: "虚拟服务不支持资源测试"}, nil
 	}
 	if svc.Source == "marketplace" && svc.MarketplaceItemID != nil {
-		if mErr := s.materializeMarketplace(svc); mErr != nil {
-			return &dto.CallToolResult{IsError: true, Error: mErr.Error()}, nil
-		}
+		return s.testMarketplaceEntry(svc, userID, billing.EntryKindResource, req.URI, "resources/read", req.URI,
+			func() (*dto.CallToolResult, bool) { return readResourceTested(svc, req) })
 	}
-	res := readResourceTested(svc, req)
+	res, _ := readResourceTested(svc, req)
 	recordManualTestLog(svc, userID, "resources/read", req.URI, res, nil)
 	return res, nil
 }
 
 // readResourceTested 资源测试的实际调用,全部出口统一返回 CallToolResult 供外层落日志。
-func readResourceTested(svc *model.McpService, req *dto.ReadResourceReq) *dto.CallToolResult {
+// 第二返回值 callOK=上游 resources/read 传输层成功(计费成败判定,同网关 err==nil)。
+func readResourceTested(svc *model.McpService, req *dto.ReadResourceReq) (*dto.CallToolResult, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	start := time.Now()
 	adapter, closeAdapter, fail := acquireTestAdapter(ctx, svc)
 	if fail != nil {
 		fail.DurationMs = time.Since(start).Milliseconds()
-		return fail
+		return fail, false
 	}
 	defer closeAdapter()
 	raw, rErr := adapter.ReadResource(ctx, req.URI)
 	if rErr != nil {
-		return &dto.CallToolResult{IsError: true, Error: rErr.Error(), DurationMs: time.Since(start).Milliseconds()}
+		return &dto.CallToolResult{IsError: true, Error: rErr.Error(), DurationMs: time.Since(start).Milliseconds()}, false
 	}
 	res, _ := parseTestResult(raw, start)
-	return res
+	return res, true
 }
 
 // GetPrompt 服务详情页提示测试:按传入参数渲染提示(prompts/get),市场服务同
-// ReadResource 放开(注入平台上游配置,与网关口径一致:prompts/get 不计费);
-// 结果同样落调用日志(recordManualTestLog,计费恒 skipped)。
+// ReadResource 同口径计费(按提示条目价扣费,无条目价免费);虚拟服务无提示能力;
+// 结果同样落调用日志(recordManualTestLog,计费结算结果随日志落库)。
 func (s *McpServiceService) GetPrompt(userID, serviceID int64, req *dto.GetPromptReq) (*dto.CallToolResult, error) {
 	svc, err := model.GetServiceByID(userID, serviceID)
 	if err != nil {
@@ -681,32 +723,32 @@ func (s *McpServiceService) GetPrompt(userID, serviceID int64, req *dto.GetPromp
 		return &dto.CallToolResult{IsError: true, Error: "虚拟服务不支持提示测试"}, nil
 	}
 	if svc.Source == "marketplace" && svc.MarketplaceItemID != nil {
-		if mErr := s.materializeMarketplace(svc); mErr != nil {
-			return &dto.CallToolResult{IsError: true, Error: mErr.Error()}, nil
-		}
+		return s.testMarketplaceEntry(svc, userID, billing.EntryKindPrompt, req.Name, "prompts/get", req.Name,
+			func() (*dto.CallToolResult, bool) { return getPromptTested(svc, req) })
 	}
-	res := getPromptTested(svc, req)
+	res, _ := getPromptTested(svc, req)
 	recordManualTestLog(svc, userID, "prompts/get", req.Name, res, nil)
 	return res, nil
 }
 
 // getPromptTested 提示测试的实际调用,全部出口统一返回 CallToolResult 供外层落日志。
-func getPromptTested(svc *model.McpService, req *dto.GetPromptReq) *dto.CallToolResult {
+// 第二返回值 callOK=上游 prompts/get 传输层成功(计费成败判定,同网关 err==nil)。
+func getPromptTested(svc *model.McpService, req *dto.GetPromptReq) (*dto.CallToolResult, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	start := time.Now()
 	adapter, closeAdapter, fail := acquireTestAdapter(ctx, svc)
 	if fail != nil {
 		fail.DurationMs = time.Since(start).Milliseconds()
-		return fail
+		return fail, false
 	}
 	defer closeAdapter()
 	raw, gErr := adapter.GetPrompt(ctx, req.Name, req.Arguments)
 	if gErr != nil {
-		return &dto.CallToolResult{IsError: true, Error: gErr.Error(), DurationMs: time.Since(start).Milliseconds()}
+		return &dto.CallToolResult{IsError: true, Error: gErr.Error(), DurationMs: time.Since(start).Milliseconds()}, false
 	}
 	res, _ := parseTestResult(raw, start)
-	return res
+	return res, true
 }
 
 // acquireTestAdapter 获取测试用上游适配器:优先复用会话池连接(stdio 不必每次拉起子进程),

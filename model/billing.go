@@ -22,15 +22,19 @@ const (
 	RedemptionStatusDisabled  = 3 // 已禁用
 )
 
-// McpToolPrice 市场服务工具级定价覆盖表(§4.4)。命中即生效,优先级最高(定价第 1 级)。
+// McpToolPrice 市场服务条目级定价表(§4.4)。命中即生效,优先级最高(定价第 1 级)。
+// Kind=tool 时条目名为工具名;resource 为上游资源 URI;prompt 为上游提示名。
 type McpToolPrice struct {
-	ID               int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	MarketplaceItemID int64     `json:"marketplace_item_id" gorm:"not null;uniqueIndex:idx_item_tool"`
-	ToolName         string    `json:"tool_name" gorm:"size:255;not null;uniqueIndex:idx_item_tool"`
-	BillingType      string    `json:"billing_type" gorm:"size:16;default:per_call"` // free / per_call
-	PricePerCall     float64   `json:"price_per_call" gorm:"type:decimal(10,4);default:0"`
+	ID                int64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	MarketplaceItemID int64  `json:"marketplace_item_id" gorm:"not null;uniqueIndex:idx_item_kind_name"`
+	Kind              string `json:"kind" gorm:"size:16;not null;default:tool;uniqueIndex:idx_item_kind_name"` // tool / resource / prompt
+	// 条目名(工具名/资源上游 URI/提示名)。资源 URI 可能超 255,加宽到 512
+	// (utf8mb4 下复合唯一索引 2120B < InnoDB 3072B 上限;TEXT 建不了唯一索引)。
+	ToolName     string  `json:"tool_name" gorm:"size:512;not null;uniqueIndex:idx_item_kind_name"`
+	BillingType  string  `json:"billing_type" gorm:"size:16;default:per_call"` // free / per_call
+	PricePerCall float64 `json:"price_per_call" gorm:"type:decimal(10,4);default:0"`
 	// 无 default 标签(GORM 对带 default 的 bool 零值 INSERT 时省略该列);
-	// 写入点(工具级定价管理)须显式赋值,避免首次停用工具定价静默失效。
+	// 写入点(SetItemEntryPrices)显式赋 true。
 	Enabled          bool      `json:"enabled"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
@@ -38,17 +42,17 @@ type McpToolPrice struct {
 
 func (McpToolPrice) TableName() string { return "mcp_tool_prices" }
 
-// ListToolPricesByItem 返回某市场项的全部工具级定价覆盖。
+// ListToolPricesByItem 返回某市场项的全部条目级定价(三种 kind)。
 func ListToolPricesByItem(itemID int64) ([]McpToolPrice, error) {
 	var prices []McpToolPrice
 	err := DB.Where("marketplace_item_id = ? AND enabled = ?", itemID, true).Find(&prices).Error
 	return prices, err
 }
 
-// GetToolPrice 取某工具的工具级定价(未启用或不存在返回 nil)。
-func GetToolPrice(itemID int64, toolName string) (*McpToolPrice, error) {
+// GetEntryPrice 取某条目的条目级定价(未启用或不存在返回 nil)。
+func GetEntryPrice(itemID int64, kind, name string) (*McpToolPrice, error) {
 	var p McpToolPrice
-	err := DB.Where("marketplace_item_id = ? AND tool_name = ? AND enabled = ?", itemID, toolName, true).First(&p).Error
+	err := DB.Where("marketplace_item_id = ? AND kind = ? AND tool_name = ? AND enabled = ?", itemID, kind, name, true).First(&p).Error
 	if err != nil {
 		return nil, err
 	}

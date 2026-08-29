@@ -15,14 +15,24 @@ const (
 	BillingTypePerCall = "per_call"
 )
 
+// 条目种类(条目级定价的维度)。工具条目回退服务价;资源/提示条目无价即免费。
+const (
+	EntryKindTool     = "tool"
+	EntryKindResource = "resource"
+	EntryKindPrompt   = "prompt"
+)
+
+// PriceScopeEntry 条目级价格来源:资源/提示条目命中(工具命中沿用存量 "tool" 口径)。
+const PriceScopeEntry = "entry"
+
 // PriceInfo 一次市场服务调用的定价解析结果。
 type PriceInfo struct {
 	BillingType       string  // free / per_call
 	UnitPriceQuota    int64   // 最终单价(已乘分组倍率,整数 quota);free 时为 0
 	UnitPriceDecimal  float64 // 单价快照(展示货币,用于日志展示,未乘倍率)
-	Scope             string  // tool / service / global / free
+	Scope             string  // tool / entry / service / global / free
 	MarketplaceItemID int64
-	ToolName          string
+	ToolName          string // 条目名(工具名/资源上游 URI/提示名)
 }
 
 // ErrPriceNotConfigured 非自用模式下市场项未显式定价、也无法解析到有效价格(参考 new-api "价格未配置")。
@@ -33,7 +43,7 @@ var ErrPriceNotConfigured = errors.New("marketplace service price not configured
 type cachedItemPricing struct {
 	billingType  string
 	pricePerCall float64                       // 服务级单价(展示货币)
-	toolPrices   map[string]model.McpToolPrice // toolName → 工具级覆盖(enabled)
+	entryPrices  map[string]model.McpToolPrice // "kind\x00条目名" → 条目级定价(enabled)
 	loadedAt     time.Time
 }
 
@@ -65,13 +75,13 @@ func loadItemPricing(itemID int64) (*cachedItemPricing, error) {
 	toolPrices, _ := model.ListToolPricesByItem(itemID)
 	tpMap := make(map[string]model.McpToolPrice, len(toolPrices))
 	for i := range toolPrices {
-		tpMap[toolPrices[i].ToolName] = toolPrices[i]
+		tpMap[toolPrices[i].Kind+"\x00"+toolPrices[i].ToolName] = toolPrices[i]
 	}
 
 	c := &cachedItemPricing{
 		billingType:  item.BillingType,
 		pricePerCall: item.PricePerCall,
-		toolPrices:   tpMap,
+		entryPrices:  tpMap,
 		loadedAt:     time.Now(),
 	}
 	pricingCache[itemID] = c
@@ -92,15 +102,18 @@ func InvalidatePricingCacheItem(itemID int64) {
 	pricingCacheMu.Unlock()
 }
 
-// ResolveMarketplacePrice 按 3 级解析市场服务定价(§5.2):
-//  1. 工具级 mcp_tool_prices[item, tool] —— 命中即用(最高优先)
-//  2. 服务级 marketplace_items.billing_type / price_per_call
-//  3. 全局默认 BillingDefaultType / BillingDefaultPricePerCall(**仅自用模式生效**)
-//     再乘 userGroup 的分组倍率。
+// ResolveMarketplaceEntryPrice 条目级定价解析(§5.2 的条目维度扩展):
+//   - kind=tool:按 3 级解析——
+//     1. 条目级 mcp_tool_prices[item, tool, name] —— 命中即用(最高优先,scope=tool)
+//     2. 服务级 marketplace_items.billing_type / price_per_call
+//     3. 全局默认 BillingDefaultType / BillingDefaultPricePerCall(**仅自用模式生效**)
+//     非自用模式且无法解析到有效价 → ErrPriceNotConfigured。
+//   - kind=resource/prompt:条目命中 → 该价(scope=entry);未命中 → 免费
+//     (**不回退服务价**:资源/提示默认免费),恒不返回 ErrPriceNotConfigured。
 //
-// BillingEnabled=false → 免费;非自用模式且无法解析到有效价 → ErrPriceNotConfigured。
-func ResolveMarketplacePrice(itemID int64, toolName, userGroup string) (PriceInfo, error) {
-	base := PriceInfo{BillingType: BillingTypeFree, Scope: "free", MarketplaceItemID: itemID, ToolName: toolName}
+// 结果乘 userGroup 的分组倍率。BillingEnabled=false → 免费。
+func ResolveMarketplaceEntryPrice(itemID int64, kind, entryName, userGroup string) (PriceInfo, error) {
+	base := PriceInfo{BillingType: BillingTypeFree, Scope: "free", MarketplaceItemID: itemID, ToolName: entryName}
 
 	if !model.GetOptionBool("BillingEnabled") {
 		return base, nil // 总开关关闭:市场服务也跳过计费
@@ -115,16 +128,24 @@ func ResolveMarketplacePrice(itemID int64, toolName, userGroup string) (PriceInf
 	ratio := groupRatio(userGroup)
 	quotaPerUnit := model.GetQuotaPerUnit()
 
-	// 第 1 级:工具级
-	if tp, ok := c.toolPrices[toolName]; ok {
-		return priceResult(tp.BillingType, tp.PricePerCall, ratio, quotaPerUnit, "tool", itemID, toolName), nil
+	// 第 1 级:条目级(三种 kind 同表,命中即用)
+	if tp, ok := c.entryPrices[kind+"\x00"+entryName]; ok {
+		if kind == EntryKindTool {
+			return priceResult(tp.BillingType, tp.PricePerCall, ratio, quotaPerUnit, "tool", itemID, entryName), nil
+		}
+		return priceResult(tp.BillingType, tp.PricePerCall, ratio, quotaPerUnit, PriceScopeEntry, itemID, entryName), nil
 	}
-	// 第 2 级:服务级(已显式定价才用)
+	// 资源/提示无条目价 → 免费(默认),不回退服务价
+	if kind != EntryKindTool {
+		return base, nil
+	}
+
+	// 以下仅工具:第 2 级服务级(已显式定价才用)
 	if c.billingType == BillingTypeFree {
-		return priceResult(BillingTypeFree, 0, ratio, quotaPerUnit, "service", itemID, toolName), nil
+		return priceResult(BillingTypeFree, 0, ratio, quotaPerUnit, "service", itemID, entryName), nil
 	}
 	if c.billingType == BillingTypePerCall && c.pricePerCall > 0 {
-		return priceResult(BillingTypePerCall, c.pricePerCall, ratio, quotaPerUnit, "service", itemID, toolName), nil
+		return priceResult(BillingTypePerCall, c.pricePerCall, ratio, quotaPerUnit, "service", itemID, entryName), nil
 	}
 	// 第 3 级:全局默认(仅自用模式生效,§5.6)
 	if model.GetOptionBool("SelfUseModeEnabled") {
@@ -133,10 +154,10 @@ func ResolveMarketplacePrice(itemID int64, toolName, userGroup string) (PriceInf
 			defType = BillingTypePerCall
 		}
 		if defType == BillingTypeFree {
-			return priceResult(BillingTypeFree, 0, ratio, quotaPerUnit, "global", itemID, toolName), nil
+			return priceResult(BillingTypeFree, 0, ratio, quotaPerUnit, "global", itemID, entryName), nil
 		}
 		if defPrice := model.GetOptionFloat("BillingDefaultPricePerCall"); defPrice > 0 {
-			return priceResult(BillingTypePerCall, defPrice, ratio, quotaPerUnit, "global", itemID, toolName), nil
+			return priceResult(BillingTypePerCall, defPrice, ratio, quotaPerUnit, "global", itemID, entryName), nil
 		}
 	}
 

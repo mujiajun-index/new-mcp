@@ -513,24 +513,25 @@ CREATE TABLE `marketplace_reviews` (
 ```
 ```
 
-### 2.16 mcp_tool_prices - 市场服务工具级定价覆盖表(商业化)
+### 2.16 mcp_tool_prices - 市场服务条目级定价表(工具/资源/提示,商业化)
 
 ```sql
 CREATE TABLE `mcp_tool_prices` (
     `id`                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `marketplace_item_id` BIGINT UNSIGNED NOT NULL COMMENT '市场服务 ID(marketplace_items.id)',
-    `tool_name`           VARCHAR(255)    NOT NULL COMMENT '原始工具名(不含命名空间前缀)',
+    `kind`                VARCHAR(16)     NOT NULL DEFAULT 'tool' COMMENT '条目种类: tool / resource / prompt',
+    `tool_name`           VARCHAR(512)    NOT NULL COMMENT '条目键: 工具名 / 资源上游 URI / 提示名(不含命名空间前缀)',
     `billing_type`        VARCHAR(16)     NOT NULL DEFAULT 'per_call' COMMENT 'free, per_call',
-    `price_per_call`      DECIMAL(10,4)   DEFAULT 0.0000 COMMENT '工具级按次单价(展示货币)',
+    `price_per_call`      DECIMAL(10,4)   DEFAULT 0.0000 COMMENT '条目级按次单价(展示货币)',
     `enabled`             TINYINT         DEFAULT 1 COMMENT '是否启用',
     `created_at`          DATETIME        DEFAULT CURRENT_TIMESTAMP,
     `updated_at`          DATETIME        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `idx_item_tool` (`marketplace_item_id`, `tool_name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='市场服务工具级定价覆盖表';
+    UNIQUE KEY `idx_item_kind_name` (`marketplace_item_id`, `kind`, `tool_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='市场服务条目级定价表';
 ```
 
-> **定价第 1 级**(§5.2):命中即生效,优先级最高。仅 `free`/`per_call`。V1 可先靠服务级 + 全局默认;V2 提供按工具调价 UI。
+> **定价第 1 级**(§5.2):命中即生效,优先级最高。仅 `free`/`per_call`。管理端全量替换:`PUT /admin/marketplace/:id/entry-prices`(市场管理详情页工具/资源/提示列表逐条设价)。**资源/提示无条目价即免费**(不回退服务价);资源模板不可定价。`kind` 列带 `DEFAULT 'tool'`(存量行全是工具价);唯一索引从 `(marketplace_item_id, tool_name)` 扩为三元组(同名工具与提示可并存),旧索引 `idx_item_tool` 由启动迁移自动 DROP(model/main.go,GORM Migrator 按方言生成);`tool_name` 放宽到 512(资源 URI 可能超 255,utf8mb4 三元组唯一索引 2120B < InnoDB 3072B 上限)。
 
 ### 2.17 redemptions - 兑换码表(商业化 V1)
 
@@ -590,7 +591,7 @@ users (1) ──< (N) redemptions              (兑换记录)
 users (1) ──< (N) mcp_call_logs            (计费明细, quota_consumed)
 users (1) ──< (N) api_keys                 (Key 级消费上限,手动启停)
 
-marketplace_items (1) ──< (N) mcp_tool_prices   (工具级定价)
+marketplace_items (1) ──< (N) mcp_tool_prices   (条目级定价: 工具/资源/提示)
 marketplace_items (1) ──< (N) mcp_services      (用户添加的市场引用, source=marketplace)
 marketplace_items (1) ──< (N) mcp_call_logs     (市场来源调用明细, marketplace_item_id)
 
@@ -598,7 +599,8 @@ mcp_groups (1) ──< (N) mcp_group_services >── mcp_services
   (一个分组可同时含 source=user 免费服务 与 source=marketplace 付费市场引用)
 
 定价解析(运行时,仅 source=marketplace 服务):
-  mcp_tool_prices(item, tool) > marketplace_items.billing_type/price_per_call > options.BillingDefaultPricePerCall(仅自用模式)
+  mcp_tool_prices(item, kind, 条目名) > marketplace_items.billing_type/price_per_call(仅工具回退) > options.BillingDefaultPricePerCall(仅自用模式)
+  资源/提示条目未命中 → 免费(不回退服务价)
 ```
 
 ---
@@ -616,4 +618,4 @@ mcp_groups (1) ──< (N) mcp_group_services >── mcp_services
 | 计费明细(用户账单) | `mcp_call_logs(marketplace_item_id)` / `(billing_status)` | 按市场服务/计费状态统计 |
 | 用户的引用服务 | `mcp_services(user_id, source, marketplace_item_id)` | 找出用户添加的市场引用 |
 | 兑换码核销 | `redemptions(code)` UNIQUE | O(1) 查找 |
-| 工具级定价 | `mcp_tool_prices(marketplace_item_id, tool_name)` UNIQUE | 命中即用 |
+| 条目级定价 | `mcp_tool_prices(marketplace_item_id, kind, tool_name)` UNIQUE | 命中即用 |

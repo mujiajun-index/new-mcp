@@ -14,6 +14,7 @@ import (
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/internal/mcp/transport"
 	"github.com/mujkjk/newmcp/model"
+	"gorm.io/gorm"
 )
 
 type MarketplaceService struct{}
@@ -469,6 +470,108 @@ func (s *MarketplaceService) BatchUpdatePricing(items []dto.BatchPricingItem) (i
 	return affected, nil
 }
 
+// entryKindLabel 条目种类的中文标签(校验错误文案用)。
+func entryKindLabel(kind string) string {
+	switch kind {
+	case billing.EntryKindResource:
+		return "资源"
+	case billing.EntryKindPrompt:
+		return "提示"
+	default:
+		return "工具"
+	}
+}
+
+// SetItemEntryPrices 全量替换市场项的条目级定价(§5.2 条目维度):prices 为管理员期望
+// 的完整条目价列表,不在其中的条目回退(工具→服务统一价,资源/提示→免费)。
+// 校验:条目必须存在于快照(条目键与网关计费同口径:工具名/资源上游 URI/提示名;
+// 资源模板不在集合中,天然拒绝——按模板展开的具体 URI 读取按资源条目计费,模板价
+// 无意义)、价格非负、per_call 须 price>0(同 explicitlyPriced 口径)、(kind,name) 去重。
+// 事务删旧插新后失效价格缓存。服务级显式定价门控不受影响(非自用模式启用项仍须
+// 服务级显式定价,条目价只是覆盖/补充)。
+func (s *MarketplaceService) SetItemEntryPrices(itemID int64, prices []dto.MarketplaceEntryPrice) error {
+	item, err := model.GetMarketplaceItemByID(itemID)
+	if err != nil {
+		return fmt.Errorf("市场项不存在")
+	}
+
+	// 快照合法键集合(kind+"\x00"+条目名)
+	valid := map[string]bool{}
+	var tools []struct {
+		Name string `json:"name"`
+	}
+	if json.Unmarshal([]byte(item.ToolsSnapshot), &tools) == nil {
+		for _, t := range tools {
+			if t.Name != "" {
+				valid[billing.EntryKindTool+"\x00"+t.Name] = true
+			}
+		}
+	}
+	var res struct {
+		Resources []struct {
+			URI string `json:"uri"`
+		} `json:"resources"`
+	}
+	if json.Unmarshal([]byte(item.ResourcesSnapshot), &res) == nil {
+		for _, r := range res.Resources {
+			if r.URI != "" {
+				valid[billing.EntryKindResource+"\x00"+r.URI] = true
+			}
+		}
+	}
+	var prompts []struct {
+		Name string `json:"name"`
+	}
+	if json.Unmarshal([]byte(item.PromptsSnapshot), &prompts) == nil {
+		for _, p := range prompts {
+			if p.Name != "" {
+				valid[billing.EntryKindPrompt+"\x00"+p.Name] = true
+			}
+		}
+	}
+
+	seen := map[string]bool{}
+	rows := make([]model.McpToolPrice, 0, len(prices))
+	for _, p := range prices {
+		if err := validatePrice(p.PricePerCall); err != nil {
+			return fmt.Errorf("%w: %s %s", err, entryKindLabel(p.Kind), p.Name)
+		}
+		if p.BillingType == billing.BillingTypePerCall && p.PricePerCall <= 0 {
+			return fmt.Errorf("%s %s: 按次计费单价必须大于 0", entryKindLabel(p.Kind), p.Name)
+		}
+		key := p.Kind + "\x00" + p.Name
+		if seen[key] {
+			return fmt.Errorf("重复的条目定价: %s %s", entryKindLabel(p.Kind), p.Name)
+		}
+		if !valid[key] {
+			return fmt.Errorf("条目不存在于服务快照: %s %s(资源模板不可定价)", entryKindLabel(p.Kind), p.Name)
+		}
+		seen[key] = true
+		rows = append(rows, model.McpToolPrice{
+			MarketplaceItemID: itemID,
+			Kind:              p.Kind,
+			ToolName:          p.Name,
+			BillingType:       p.BillingType,
+			PricePerCall:      p.PricePerCall,
+			Enabled:           true, // 无 default 的 bool 显式赋值(§GORM 约定)
+		})
+	}
+
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("marketplace_item_id = ?", itemID).Delete(&model.McpToolPrice{}).Error; err != nil {
+			return err
+		}
+		if len(rows) > 0 {
+			return tx.Create(&rows).Error
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	billing.InvalidatePricingCacheItem(itemID)
+	return nil
+}
+
 // CloneFromService 从**管理员自己账户下**的自有服务克隆上架(D14/§11):深拷贝 transport/config/auth/tools,
 // 与源服务无关联。仅允许克隆 svc.UserID==adminID 的服务(不得上架其他用户的服务);虚拟服务(virtual)拒绝。
 // 保留源凭证但调用方应替换为平台凭证(前端高亮提示)。非自用模式须显式定价。
@@ -725,6 +828,19 @@ func (s *MarketplaceService) toDetail(item *model.MarketplaceItem) *dto.Marketpl
 		}
 	}
 
+	// 条目级定价(仅 enabled 行;查询失败回退空列表,不影响详情主体)
+	entryPrices := []dto.MarketplaceEntryPrice{}
+	if rows, e := model.ListToolPricesByItem(item.ID); e == nil {
+		for _, r := range rows {
+			entryPrices = append(entryPrices, dto.MarketplaceEntryPrice{
+				Kind:         r.Kind,
+				Name:         r.ToolName,
+				BillingType:  r.BillingType,
+				PricePerCall: r.PricePerCall,
+			})
+		}
+	}
+
 	return &dto.MarketplaceDetail{
 		ID:                   item.ID,
 		Name:                 item.Name,
@@ -756,6 +872,7 @@ func (s *MarketplaceService) toDetail(item *model.MarketplaceItem) *dto.Marketpl
 		UpdatedAt:            item.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 		BillingType:          item.BillingType,
 		PricePerCall:         item.PricePerCall,
+		EntryPrices:          entryPrices,
 	}
 }
 

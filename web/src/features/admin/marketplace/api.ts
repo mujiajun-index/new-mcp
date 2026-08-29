@@ -1,6 +1,6 @@
 import { api } from '@/lib/api'
 import type {
-  BatchPricingReq, CloneMarketplaceReq, ProcessControlAction,
+  BatchPricingReq, CloneMarketplaceReq, MarketplaceEntryPrice, ProcessControlAction,
 } from '@/types'
 
 // 管理员市场项列表(全量,含未发布)
@@ -62,6 +62,13 @@ export async function adminControlMarketplaceProcess(
 // 批量定价(§5.5):PUT /admin/marketplace/pricing/batch
 export async function adminBatchPricing(data: BatchPricingReq) {
   const res = await api.put('/admin/marketplace/pricing/batch', data)
+  return res.data
+}
+
+// 条目级定价全量替换(§5.2):PUT /admin/marketplace/:id/entry-prices。
+// 载荷为期望的完整条目价列表,不在其中的条目回退(工具→服务价,资源/提示→免费)。
+export async function adminSetEntryPrices(id: number, prices: MarketplaceEntryPrice[]) {
+  const res = await api.put(`/admin/marketplace/${id}/entry-prices`, { prices })
   return res.data
 }
 

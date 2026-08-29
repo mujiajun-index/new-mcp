@@ -61,7 +61,7 @@ func setupMarketplaceBillingTest(t *testing.T) {
 	}
 	model.DB = db
 	if err := db.AutoMigrate(&model.Option{}, &model.User{}, &model.McpService{},
-		&model.MarketplaceItem{}, &model.McpCallLog{}, &model.ApiKey{}); err != nil {
+		&model.MarketplaceItem{}, &model.McpToolPrice{}, &model.McpCallLog{}, &model.ApiKey{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	model.InitOptionMap()

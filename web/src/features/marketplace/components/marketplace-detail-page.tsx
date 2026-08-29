@@ -10,7 +10,7 @@ import { ToolItem } from '@/components/tool-params'
 import { ResourceItemCard, PromptItemCard } from '@/components/mcp-items'
 import { toast } from 'sonner'
 import { ArrowLeft, Download, Star, Zap, ExternalLink, Plus } from 'lucide-react'
-import type { McpTool, McpResource, McpResourceTemplate, McpPrompt } from '@/types'
+import type { McpTool, McpResource, McpResourceTemplate, McpPrompt, MarketplaceEntryPrice } from '@/types'
 
 export function MarketplaceDetailPage() {
   const { t } = useTranslation()
@@ -40,6 +40,28 @@ export function MarketplaceDetailPage() {
   const resources: McpResource[] = item?.resources_snapshot?.resources || []
   const templates: McpResourceTemplate[] = item?.resources_snapshot?.templates || []
   const prompts: McpPrompt[] = item?.prompts_snapshot || []
+
+  // 条目级价格:命中→高亮徽标;未命中→工具弱化显示服务统一价,资源/提示弱化显示"免费"
+  const entryMap = new Map(
+    ((item?.entry_prices || []) as MarketplaceEntryPrice[]).map((p) => [`${p.kind}:${p.name}`, p] as const),
+  )
+  const entryPriceBadge = (kind: 'tool' | 'resource' | 'prompt', name: string, fallback: string) => {
+    const e = entryMap.get(`${kind}:${name}`)
+    if (e) {
+      return (
+        <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${
+          e.billing_type === 'free' ? 'bg-muted text-muted-foreground' : 'bg-primary/10 text-primary'
+        }`}>
+          {priceLabel(e.billing_type, e.price_per_call, config.displayCurrency)}
+        </span>
+      )
+    }
+    return (
+      <span className="shrink-0 text-xs text-muted-foreground" title={t('marketplace.servicePriceHint')}>
+        {fallback}
+      </span>
+    )
+  }
 
   if (isLoading) return <div className="flex items-center justify-center py-20 text-muted-foreground">{t('common.loading')}</div>
   if (!item) return <div className="flex items-center justify-center py-20 text-muted-foreground">{t('marketplace.notFound')}</div>
@@ -151,27 +173,29 @@ export function MarketplaceDetailPage() {
         )}
       </div>
 
-      {/* Tools snapshot */}
+      {/* Tools snapshot(条目右侧显示各自价格:条目价高亮,未设则弱化显示服务统一价) */}
       <SectionCard title={t('marketplace.toolsProvided', { count: tools.length })}>
         {tools.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-6">{t('services.noTools')}</p>
         ) : (
           <div className="space-y-2">
             {tools.map((tool) => (
-              <ToolItem key={tool.name} name={tool.name} description={tool.description} schema={tool.inputSchema} />
+              <ToolItem key={tool.name} name={tool.name} description={tool.description} schema={tool.inputSchema}
+                action={entryPriceBadge('tool', tool.name, priceText)} />
             ))}
           </div>
         )}
       </SectionCard>
 
-      {/* Resources snapshot */}
+      {/* Resources snapshot(资源未单独设价即免费;模板不可定价) */}
       <SectionCard title={t('marketplace.resourcesProvided', { count: resources.length + templates.length })}>
         {resources.length === 0 && templates.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-6">{t('services.noResources')}</p>
         ) : (
           <div className="space-y-2">
             {resources.map((r) => (
-              <ResourceItemCard key={r.uri} name={r.name} uri={r.uri} description={r.description} mimeType={r.mimeType} />
+              <ResourceItemCard key={r.uri} name={r.name} uri={r.uri} description={r.description} mimeType={r.mimeType}
+                action={entryPriceBadge('resource', r.uri, t('billing.free'))} />
             ))}
             {templates.map((tpl) => (
               <ResourceItemCard key={tpl.uriTemplate} name={tpl.name} uri={tpl.uriTemplate} description={tpl.description} mimeType={tpl.mimeType} isTemplate />
@@ -180,14 +204,15 @@ export function MarketplaceDetailPage() {
         )}
       </SectionCard>
 
-      {/* Prompts snapshot */}
+      {/* Prompts snapshot(提示未单独设价即免费) */}
       <SectionCard title={t('marketplace.promptsProvided', { count: prompts.length })}>
         {prompts.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-6">{t('services.noPrompts')}</p>
         ) : (
           <div className="space-y-2">
             {prompts.map((p) => (
-              <PromptItemCard key={p.name} name={p.name} description={p.description} args={p.arguments} />
+              <PromptItemCard key={p.name} name={p.name} description={p.description} args={p.arguments}
+                action={entryPriceBadge('prompt', p.name, t('billing.free'))} />
             ))}
           </div>
         )}
