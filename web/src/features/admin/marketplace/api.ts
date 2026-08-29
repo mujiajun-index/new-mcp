@@ -36,9 +36,13 @@ export async function adminRefreshMarketplace(id: number) {
   return res.data
 }
 
-// 条目进程视图(仅 stdio 条目):共享=平台唯一进程;独占=按安装用户逐行枚举
-export async function adminGetMarketplaceProcess(id: number) {
-  const res = await api.get(`/admin/marketplace/${id}/process`)
+// 条目进程视图(仅 stdio 条目):共享=平台唯一进程;独占=安装引用行服务端分页
+// (page/page_size/username,username 匹配用户名/服务名;默认每页 18 条)
+export async function adminGetMarketplaceProcess(
+  id: number,
+  params?: { page?: number; page_size?: number; username?: string },
+) {
+  const res = await api.get(`/admin/marketplace/${id}/process`, { params })
   return res.data
 }
 

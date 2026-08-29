@@ -1624,10 +1624,17 @@ wss://api.newmcp.pro/mcp/passive/?token=<PASSIVE_JWT>
 #### PUT /admin/marketplace/:id `(更新市场项)`
 扩展支持 `billing_type` / `price_per_call` / `isolated_process`(指针,可选更新;`isolated_process` 仅 stdio 条目生效,共享↔独占切换会踢掉该条目全部池内会话按新模式重建)。启用状态下非自用模式校验显式定价。`config_template` 平台凭证**加密落库**。管理端详情(GET /admin/marketplace/:id)回传 `config_template` 供编辑:url/command/args 等结构明文,headers/env 的**凭证值替换为首尾掩码**(如 `sk-A...x9z`);保存时掩码值原样传回则回填库内明文(未改动),输入新值则替换。
 
-#### GET /admin/marketplace/:id/process `(stdio 条目进程视图)`
+#### GET /admin/marketplace/:id/process `(stdio 条目进程视图,独占模式服务端分页)`
 仅 stdio 条目有意义(其余传输返回空视图)。共享/独占模式返回不同形态,管理详情页 5s 轮询,只读现状不拉起进程:
 - 共享(`isolated:false`):`{ "isolated": false, "shared": { "running": true, "pid": ..., "command": "...", "process_count": ..., "memory_rss_bytes": ..., "cpu_percent": ..., "uptime_seconds": ... } }`(未运行时 `shared.running=false`,其余字段缺省)
-- 独占(`isolated:true`):`{ "isolated": true, "instances": [ { "service_id": 12, "user_id": 3, "username": "alice", "name": "mem-market", "status": 1, "stat": { "running": false } } ] }`——按安装引用行逐行枚举(含从未连接的安装),一次进程树扫描。
+- 独占(`isolated:true`)**服务端分页**:查询参数 `page`(默认 1)/ `page_size`(默认 18,上限 100)/ `username`(LIKE 匹配用户名或服务名/显示名,匹配在服务端执行——万级安装时一次只回一页,用户名只对当前页反查,不构造全量用户 IN 列表)。响应:
+```json
+{ "isolated": true,
+  "running_instances": 3, "total_processes": 9, "memory_bytes": 524288000, "cpu_percent_total": 12.4,
+  "total": 10000, "page": 1, "page_size": 18, "total_pages": 556,
+  "instances": [ { "service_id": 12, "user_id": 3, "username": "alice", "name": "mem-market", "status": 1, "stat": { "running": false } } ] }
+```
+  `instances` 为当前页(含从未连接的安装);`running_instances/total_processes/memory_bytes/cpu_percent_total` 为**全部运行实例**的资源概述(来自会话池现状 + 一次进程树扫描,不随分页/筛选变化,CPU 为各实例之和、多核可超 100%);`total` 为筛选后的安装总数。
 
 #### POST /admin/marketplace/:id/process/control `(stdio 条目进程启停)`
 - 请求:`{ "action": "start|stop|restart", "service_id": 0 }`

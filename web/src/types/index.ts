@@ -762,11 +762,20 @@ export interface CloneMarketplaceReq {
   isolated_process?: boolean
 }
 
-// 市场条目(stdio)进程视图:共享=平台唯一进程;独占=按安装用户逐行枚举
+// 市场条目(stdio)进程视图:共享=平台唯一进程;独占=安装引用行服务端分页枚举
+// (instances 为当前页)+ 全量运行实例的资源概述(不随分页/筛选变化)
 export interface MarketplaceItemProcess {
   isolated: boolean
   shared?: ServiceProcessStat
   instances?: MarketplaceItemProcessInstance[]
+  running_instances?: number
+  total_processes?: number
+  memory_bytes?: number
+  cpu_percent_total?: number
+  total?: number
+  page?: number
+  page_size?: number
+  total_pages?: number
 }
 
 // 独占条目下某个安装用户的进程实例(引用行粒度);stat.running=false 为未运行固定形态

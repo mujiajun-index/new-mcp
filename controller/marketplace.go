@@ -35,10 +35,13 @@ func AdminGetMarketplaceHealth(c *gin.Context) {
 }
 
 // AdminGetMarketplaceItemProcess 市场详情(stdio 条目):进程视图——共享=平台唯一
-// 进程;独占=按安装用户逐行枚举(详情页 5s 轮询)。
+// 进程;独占=安装引用行分页枚举(?page=&page_size=&username=,默认每页 18 条,
+// username 匹配用户名/服务名),另附全量运行实例的资源概述(详情页 5s 轮询)。
 func AdminGetMarketplaceItemProcess(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
-	resp, err := marketplaceService.GetProcessStat(id)
+	page, _ := strconv.Atoi(c.Query("page"))
+	pageSize, _ := strconv.Atoi(c.Query("page_size"))
+	resp, err := marketplaceService.GetProcessStat(id, page, pageSize, c.Query("username"))
 	if err != nil {
 		common.Error(c, http.StatusNotFound, "市场项不存在")
 		return

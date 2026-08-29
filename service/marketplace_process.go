@@ -7,7 +7,6 @@ import (
 
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
-	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/internal/mcp/transport"
 	"github.com/mujkjk/newmcp/model"
 )
@@ -18,10 +17,12 @@ import (
 // GetProcessStat/ControlProcess 一致(整棵进程树、完整终止序列),但目标是其他用户的
 // 引用行,不做行归属校验(管理员运维视角,路由已在 admin 组)。
 
-// GetProcessStat 条目进程视图:共享=Shared 单进程快照;独占=Instances 按安装引用行
-// 逐行枚举(DB 为准,含从未连接的安装,未运行恒 Running:false 固定形态渲染)。
-// 只读池内现状,绝不触发连接(看详情不拉起进程);全部实例合并为一次系统进程扫描。
-func (s *MarketplaceService) GetProcessStat(itemID int64) (*dto.MarketplaceItemProcess, error) {
+// GetProcessStat 条目进程视图:共享=Shared 单进程快照;独占=Instances 安装引用行
+// **分页**枚举(keyword 匹配用户名/服务名,含从未连接的安装,未运行恒 Running:false
+// 固定形态)+ 全量运行实例的资源概述(RunningInstances/TotalProcesses/MemoryBytes/
+// CPUPercentTotal,来自会话池现状,不随分页/筛选变化)。只读池内现状,绝不触发连接
+// (看详情不拉起进程);运行实例合并为一次系统进程扫描,用户名只对当前页反查。
+func (s *MarketplaceService) GetProcessStat(itemID int64, page, pageSize int, keyword string) (*dto.MarketplaceItemProcess, error) {
 	item, err := model.GetMarketplaceItemByID(itemID)
 	if err != nil {
 		return nil, err
@@ -43,28 +44,45 @@ func (s *MarketplaceService) GetProcessStat(itemID int64) (*dto.MarketplaceItemP
 		return out, nil
 	}
 
-	// 独占:枚举该条目全部安装引用行,池内会话按行 ID 对齐
-	rows, err := model.ListServiceRowsByMarketplaceItem(itemID)
-	if err != nil {
-		return nil, err
-	}
-	sessions := map[int64]*bridge.McpSession{}
-	for _, sess := range SessionPool.GetSessionsByItem(itemID) {
-		sessions[sess.ServiceID] = sess
-	}
+	// 独占:会话池现状聚合全量概述(运行实例),再分页枚举安装引用行
+	sessions := SessionPool.GetSessionsByItem(itemID)
 	var roots []transport.ProcessRoot
-	for i := range rows {
-		sess := sessions[rows[i].ID]
-		if sess == nil || !sess.Adapter.IsConnected() {
+	for _, sess := range sessions {
+		if !sess.Adapter.IsConnected() {
 			continue
 		}
 		if proc := sess.Adapter.GetStdioProcess(); proc != nil {
-			roots = append(roots, transport.ProcessRoot{Key: rows[i].ID, RootPID: proc.PID, Command: proc.Command})
+			roots = append(roots, transport.ProcessRoot{Key: sess.ServiceID, RootPID: proc.PID, Command: proc.Command})
 		}
 	}
 	treeStats := transport.CollectProcessTreesStat(roots)
+	for _, r := range roots {
+		if tree := treeStats[r.Key]; tree != nil && tree.Running {
+			out.RunningInstances++
+			out.TotalProcesses += tree.ProcessCount
+			out.MemoryBytes += int64(tree.RSSBytes)
+			out.CPUPercentTotal += tree.CPUPercent
+		}
+	}
 
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 18
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	rows, total, err := model.QueryServiceRowsByMarketplaceItem(itemID, keyword, (page-1)*pageSize, pageSize)
+	if err != nil {
+		return nil, err
+	}
 	usernames := usernamesOfRows(rows)
+	out.Total = total
+	out.Page = page
+	out.PageSize = pageSize
+	out.TotalPages = int((total + int64(pageSize) - 1) / int64(pageSize))
 	out.Instances = make([]dto.MarketplaceItemProcessInstance, 0, len(rows))
 	for i := range rows {
 		inst := dto.MarketplaceItemProcessInstance{
@@ -118,7 +136,7 @@ func (s *MarketplaceService) ControlProcess(itemID int64, req *dto.MarketplacePr
 			SessionPool.RemoveByMarketplaceItem(itemID)
 		}
 		if req.Action == "stop" {
-			return s.GetProcessStat(itemID)
+			return s.GetProcessStat(itemID, 0, 0, "")
 		}
 	}
 
@@ -145,7 +163,7 @@ func (s *MarketplaceService) ControlProcess(itemID int64, req *dto.MarketplacePr
 			return nil, cErr
 		}
 	}
-	return s.GetProcessStat(itemID)
+	return s.GetProcessStat(itemID, 0, 0, "")
 }
 
 // itemRefService 校验 serviceID 是 itemID 的安装引用行并返回该行(管理员操作的是

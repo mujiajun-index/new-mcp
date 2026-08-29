@@ -780,7 +780,6 @@ function MarketplaceProcessCard({ item, queryId }: { item: MarketplaceDetail; qu
   })
   const proc: MarketplaceItemProcess | undefined = procData?.data
   const isolated = proc?.isolated ?? item.isolated_process ?? false
-  const instances = proc?.instances ?? []
 
   return (
     <SectionCard
@@ -836,16 +835,16 @@ function MarketplaceProcessCard({ item, queryId }: { item: MarketplaceDetail; qu
             </div>
           )
         })()
-      ) : instances.length === 0 ? (
+      ) : (proc?.total ?? 0) === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">{t('marketplace.noInstalledInstances')}</p>
       ) : (
         <div className="flex flex-col gap-3 pt-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-muted-foreground">
-            {t('services.overview.runningSub', { count: instances.filter((i) => i.stat.running).length })}
+            {t('services.overview.runningSub', { count: proc?.running_instances ?? 0 })}
             {' · '}
-            {t('services.overview.count', { shown: instances.length, total: instances.length })}
+            {t('common.total')} {proc?.total} {t('common.items')}
           </p>
-          <InstancesDialog item={item} queryId={queryId} instances={instances} />
+          <InstancesDialog item={item} queryId={queryId} count={proc?.total ?? 0} />
         </div>
       )}
     </SectionCard>
@@ -853,43 +852,49 @@ function MarketplaceProcessCard({ item, queryId }: { item: MarketplaceDetail; qu
 }
 
 // InstancesDialog 独占条目的安装实例弹窗:总览风格——顶部 总进程/内存占用/CPU 三张
-// 概述卡(运行实例合计,CPU 为各实例之和、多核可超 100%),下方用户名筛选 + 总览
-// stdio 卡同款实例卡网格(名称+用户名+启停+CPU/内存进度条,内存条按本条目运行
-// 实例合计占比)。数据直接吃详情页 5s 轮询结果,弹窗开着也会刷新;启停失效同键查询。
+// 概述卡(服务端按全部运行实例合计,CPU 为各实例之和、多核可超 100%),下方总览
+// 同款工具栏(左标题/右用户名筛选+条数)+ 实例卡网格。列表为**服务端分页**
+// (每页 18 条,万级安装也只拉一页;username 筛选在服务端执行),弹窗开着时随
+// 5s 轮询刷新;启停失效同键前缀,当前页/筛选保持。
 function InstancesDialog({
-  item, queryId, instances,
+  item, queryId, count,
 }: {
   item: MarketplaceDetail
   queryId: string
-  instances: MarketplaceItemProcessInstance[]
+  count: number
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
-  // 客户端本地分页:默认每页 18 条;筛选变化即回第 1 页
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 18
 
-  const running = instances.filter((i) => i.stat.running)
-  const totalProcesses = running.reduce((s, i) => s + (i.stat.process_count || 1), 0)
-  const totalMem = running.reduce((s, i) => s + (i.stat.memory_rss_bytes ?? 0), 0)
-  const totalCpu = running.reduce((s, i) => s + (i.stat.cpu_percent ?? 0), 0)
+  // 子键挂在父查询键下:启停/模式切换失效 ['admin-marketplace-process', queryId]
+  // 前缀即同时刷新本弹窗;弹窗关闭时停轮询
+  const { data: procData } = useQuery({
+    queryKey: ['admin-marketplace-process', queryId, 'instances', page, search],
+    queryFn: () => adminGetMarketplaceProcess(item.id, {
+      page, page_size: PAGE_SIZE, username: search.trim() || undefined,
+    }),
+    refetchInterval: 5000,
+    enabled: open,
+  })
+  const proc: MarketplaceItemProcess | undefined = procData?.data
+  const instances = proc?.instances ?? []
+  const total = proc?.total ?? 0
+  const totalPages = proc?.total_pages ?? 1
 
-  // 用户名筛选为前端本地过滤(匹配用户名或服务名,便于同名定位)
-  const kw = search.trim().toLowerCase()
-  const filtered = kw
-    ? instances.filter((i) =>
-        (i.username || '').toLowerCase().includes(kw) || i.name.toLowerCase().includes(kw))
-    : instances
-  // 本地分页:轮询刷新使条数变化时夹紧当前页
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const safePage = Math.min(page, totalPages)
-  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+  // 数据刷新后当前页越界(如筛选后总页数变少)时夹紧到最后一页
+  useEffect(() => {
+    if (proc && (proc.total ?? 0) > 0 && page > totalPages && totalPages >= 1) {
+      setPage(totalPages)
+    }
+  }, [proc, page, totalPages])
 
   const tiles = [
-    { label: t('services.overview.processes'), value: String(totalProcesses), sub: t('services.overview.runningSub', { count: running.length }), icon: Layers, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-    { label: t('services.overview.memoryUsage'), value: formatBytes(totalMem), sub: null, icon: MemoryStick, color: 'text-amber-500', bg: 'bg-amber-500/10' },
-    { label: t('services.overview.cpuUsage'), value: `${totalCpu.toFixed(1)}%`, sub: t('services.overview.cpuHint'), icon: Activity, color: 'text-rose-500', bg: 'bg-rose-500/10' },
+    { label: t('services.overview.processes'), value: String(proc?.total_processes ?? 0), sub: t('services.overview.runningSub', { count: proc?.running_instances ?? 0 }), icon: Layers, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+    { label: t('services.overview.memoryUsage'), value: formatBytes(proc?.memory_bytes ?? 0), sub: null, icon: MemoryStick, color: 'text-amber-500', bg: 'bg-amber-500/10' },
+    { label: t('services.overview.cpuUsage'), value: `${(proc?.cpu_percent_total ?? 0).toFixed(1)}%`, sub: t('services.overview.cpuHint'), icon: Activity, color: 'text-rose-500', bg: 'bg-rose-500/10' },
   ]
 
   return (
@@ -897,16 +902,17 @@ function InstancesDialog({
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-1.5">
           <Users className="h-3.5 w-3.5" />
-          {t('marketplace.viewInstances', { count: instances.length })}
+          {t('marketplace.viewInstances', { count })}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-4xl">
+      {/* 大屏弹窗:内容宽约 1472px,230px 最小卡宽 + 12px 间距正好容 6 列×3 行=18 卡 */}
+      <DialogContent className="max-w-[95rem]">
         <DialogHeader>
           <DialogTitle>{t('marketplace.installedInstancesTitle')}</DialogTitle>
           <DialogDescription>{t('marketplace.installedInstancesDesc')}</DialogDescription>
         </DialogHeader>
 
-        {/* 概述三卡:运行实例合计 */}
+        {/* 概述三卡:服务端按全部运行实例合计 */}
         <div className="grid gap-3 sm:grid-cols-3">
           {tiles.map((tile) => (
             <div key={tile.label} className="rounded-xl border bg-card p-4" title={tile.sub ?? undefined}>
@@ -936,35 +942,35 @@ function InstancesDialog({
                 className="h-9 pl-9"
               />
             </div>
-            {instances.length > 0 && (
-              <span className="text-xs text-muted-foreground">
-                {t('services.overview.count', { shown: filtered.length, total: instances.length })}
-              </span>
-            )}
+            <span className="text-xs text-muted-foreground">
+              {t('common.total')} {total} {t('common.items')}
+            </span>
           </div>
         </div>
 
-        {/* 实例卡网格:auto-fill 自适应,与总览卡同口径(每卡至少 230px);本地分页每页 18 条 */}
-        {filtered.length === 0 ? (
+        {/* 实例卡网格(服务端分页,每页 18 条);未安装与筛选无结果区分提示 */}
+        {total === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-xl border bg-card py-10 text-center">
             <Users className="mb-2 h-8 w-8 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">{t('marketplace.noMatchInstances')}</p>
+            <p className="text-sm text-muted-foreground">
+              {search ? t('marketplace.noMatchInstances') : t('marketplace.noInstalledInstances')}
+            </p>
           </div>
         ) : (
           <>
             <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(min(230px,100%),1fr))]">
-              {paged.map((inst) => (
+              {instances.map((inst) => (
                 <InstanceProcessCard
                   key={inst.service_id}
                   inst={inst}
                   item={item}
                   queryId={queryId}
-                  totalMem={totalMem}
+                  totalMem={proc?.memory_bytes ?? 0}
                 />
               ))}
             </div>
-            {filtered.length > PAGE_SIZE && (
-              <LocalPager total={filtered.length} page={safePage} totalPages={totalPages} onPage={setPage} />
+            {totalPages > 1 && (
+              <LocalPager total={total} page={proc?.page ?? page} totalPages={totalPages} onPage={setPage} />
             )}
           </>
         )}

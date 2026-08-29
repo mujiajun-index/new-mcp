@@ -73,11 +73,24 @@ type MarketplaceItemHealth struct {
 }
 
 // MarketplaceItemProcess 管理端市场详情(stdio 条目)的进程视图:共享条目=平台唯一
-// 子进程(Shared);独占条目=每个安装用户一个实例(Instances,含未运行行的固定形态)。
+// 子进程(Shared);独占条目=安装引用行**分页**枚举(Instances 为当前页,含未运行行
+// 的固定形态)+ 全量运行实例的资源概述(不随分页/筛选变化)。万级安装时一次只回
+// 一页,用户名只对当前页反查。
 type MarketplaceItemProcess struct {
-	Isolated  bool                              `json:"isolated"`
-	Shared    *ServiceProcessStat               `json:"shared,omitempty"`
-	Instances []MarketplaceItemProcessInstance  `json:"instances,omitempty"`
+	Isolated bool                             `json:"isolated"`
+	Shared   *ServiceProcessStat              `json:"shared,omitempty"`
+	// 独占模式:当前页实例
+	Instances []MarketplaceItemProcessInstance `json:"instances,omitempty"`
+	// 独占模式:全部运行实例的资源概述(运行数/进程合计/RSS 合计/CPU 合计,多核可超 100%)
+	RunningInstances int     `json:"running_instances"`
+	TotalProcesses   int     `json:"total_processes"`
+	MemoryBytes      int64   `json:"memory_bytes"`
+	CPUPercentTotal  float64 `json:"cpu_percent_total"`
+	// 独占模式:分页元数据(筛选后的安装引用行总数与当前页)
+	Total      int64 `json:"total"`
+	Page       int   `json:"page"`
+	PageSize   int   `json:"page_size"`
+	TotalPages int   `json:"total_pages"`
 }
 
 // MarketplaceItemProcessInstance 独占条目下某个安装用户的进程实例(引用行粒度)。

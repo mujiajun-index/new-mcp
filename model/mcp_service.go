@@ -1,6 +1,7 @@
 package model
 
 import (
+	"strings"
 	"time"
 )
 
@@ -97,15 +98,25 @@ type ServiceRowRef struct {
 	Status      int
 }
 
-// ListServiceRowsByMarketplaceItem 某市场条目全部安装引用行(独占进程模式按用户
-// 逐行枚举用),窄列查询;含从未连接过的安装,未运行状态由调用方结合会话池判定。
-func ListServiceRowsByMarketplaceItem(itemID int64) ([]ServiceRowRef, error) {
+// QueryServiceRowsByMarketplaceItem 某市场条目安装引用行的分页查询(独占进程模式
+// 逐行枚举用):keyword 匹配用户名(users 子查询)或服务名/显示名,返回当前页窄行
+// 与筛选后总数。分页 + 用户名只对当前页(≤page_size 个 ID)反查,万级安装时不
+// 一次性带回全部行,也不构造全量用户 IN 列表(SQLite 32766 参数悬崖)。
+func QueryServiceRowsByMarketplaceItem(itemID int64, keyword string, offset, limit int) ([]ServiceRowRef, int64, error) {
+	q := DB.Model(&McpService{}).
+		Where("marketplace_item_id = ? AND source = ?", itemID, "marketplace")
+	if kw := strings.TrimSpace(keyword); kw != "" {
+		like := "%" + kw + "%"
+		q = q.Where("(user_id IN (SELECT id FROM users WHERE username LIKE ?) OR name LIKE ? OR display_name LIKE ?)", like, like, like)
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 	var rows []ServiceRowRef
-	err := DB.Model(&McpService{}).
-		Where("marketplace_item_id = ? AND source = ?", itemID, "marketplace").
-		Select("id, user_id, name, display_name, status").
-		Order("id ASC").Find(&rows).Error
-	return rows, err
+	err := q.Select("id, user_id, name, display_name, status").
+		Order("id ASC").Offset(offset).Limit(limit).Find(&rows).Error
+	return rows, total, err
 }
 
 func GetServiceByID(userID, serviceID int64) (*McpService, error) {

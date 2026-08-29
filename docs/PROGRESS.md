@@ -404,7 +404,7 @@ XIAOZHI-INTEGRATION(分发 switch)、TEST-GUIDE 同步;smart_gateway.py 测试�
 | 数据模型 | ✅ | `marketplace_items.isolated_process` 反向命名(false=共享/true=独占),无 DB default(bool 规范),存量行零值=共享零回填;仅 stdio 条目消费,非 stdio 克隆强制 false |
 | 会话池复合键 | ✅ | `sessions map[sessionKey]*McpSession`(行键/条目键);`svc.SharedProcess` 内存态标记(gorm:"-")由两处 materialize 从条目反算,市场行必先物化再入池;卸载 Remove(行键)不误杀共享进程;并发首连沿用双检锁 |
 | 模式切换 | ✅ | UpdateItem 的 isolated_process 变更并入 ConfigTemplate 同路径 `RemoveByMarketplaceItem` 踢会话,按新模式重建 |
-| 进程视图/启停 | ✅ | `service/marketplace_process.go` + `GET/POST /admin/marketplace/:id/process(/control)`:共享=条目键控单快照+预热(start 用 ID=0 内存行,不落库);独占=引用行窄行枚举+一次进程树扫描+用户名批量查,按行启停(itemRefService 校验归属,用户禁用行拒绝拉起) |
+| 进程视图/启停 | ✅ | `service/marketplace_process.go` + `GET/POST /admin/marketplace/:id/process(/control)`:共享=条目键控单快照+预热(start 用 ID=0 内存行,不落库);独占=**服务端分页**枚举(默认每页 18 条/上限 100,`username` 参数 LIKE 匹配用户名/服务名)+ 全量运行实例资源概述(一次进程树扫描)+用户名仅对当前页反查——万级安装不整表返回、不构造全量用户 IN 列表(SQLite 32766 参数悬崖);按行启停(itemRefService 校验归属,用户禁用行拒绝拉起) |
 | 归属不受影响 | ✅ | 日志/计费恒按调用者引用行 + marketplace_item_id 落账;条目平台健康(connectedItems 按会话 item 归属)两种模式同口径 |
 
 ### 10.2 前端 ✅ 已完成(tsc -b + rsbuild build 双绿)
@@ -412,7 +412,7 @@ XIAOZHI-INTEGRATION(分发 switch)、TEST-GUIDE 同步;smart_gateway.py 测试�
 | 模块 | 状态 | 说明 |
 |------|------|------|
 | 克隆上架对话框 | ✅ | 源服务为 stdio 才显示「进程模式」段选(默认共享)+ 场景提示文案 |
-| 市场管理详情页 | ✅ | stdio 平台托管项新增「进程管理」卡:共享=服务详情同款 4 格资源快照+电源弹框启停;独占=「查看安装实例」弹窗(总览风格:总进程/内存/CPU 三概述卡 + 总览同款工具栏(左标题/右用户名筛选+条数)+ 总览 stdio 同款实例卡网格,本地分页每页 18 条);段选切换模式(confirm 确认);5s 轮询 |
+| 市场管理详情页 | ✅ | stdio 平台托管项新增「进程管理」卡:共享=服务详情同款 4 格资源快照+电源弹框启停;独占=「查看安装实例」弹窗(总览风格:总进程/内存/CPU 三概述卡(服务端全量运行实例合计)+ 总览同款工具栏(左标题/右用户名筛选+条数)+ 总览 stdio 同款实例卡网格,**服务端分页**每页 18 条,弹窗开着时随 5s 轮询刷新、页码越界自动夹紧);段选切换模式(confirm 确认) |
 | 总览视图分页 | ✅ | /services/overview 卡片网格客户端本地分页(每页 18 条,LocalPager 共享控件):筛选/搜索变化回第 1 页,轮询刷新夹紧当前页;仅一页时不显示翻页条 |
 | 用户侧市场详情 | ✅ | 平台托管卡内展示进程模式一行(stdio 才显示),安装记忆类服务前可知是否独占 |
 | i18n | ✅ | marketplace.processMode/modeShared/modeIsolated 等中英;启停文案复用 services.process* |
