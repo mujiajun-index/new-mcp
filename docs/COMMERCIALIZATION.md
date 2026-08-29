@@ -96,7 +96,8 @@ NewMCP 当前已完成 V2 核心(MCP 网关、分组、市场、视觉/摄像头
 | D13 | 管理员调额 | 在**用户管理**内增/减/设额度(参考 new-api `POST /api/user/manage` `add_quota`) | 运营手动调控用户余额 |
 | D14 | 市场上架方式 | **克隆**(从自有服务深拷贝,无关联,凭证保留并提示替换)/ **手动添加**,均生成自包含 `marketplace_items` | 多管理员共享管理;市场用平台凭证承担上游成本 |
 | D15 | 自用模式 | `SelfUseModeEnabled`:**自用模式**可用全局默认价;**非自用(默认)**市场上架/启用必须显式定价 | 参考 new-api `operation_setting.SelfUseModeEnabled`;防止商业部署下服务误用默认价/免费上架 |
-| D16 | 虚拟服务 | 视觉/摄像头等**虚拟服务**(`transport_type='virtual'`,`source`∈{vision,camera})**仅自有配置、自己免费使用**,`source` 恒不为 `marketplace`,**不可上架市场**(手动添加/从自有服务克隆均拒绝 `transport_type='virtual'`) | 虚拟服务的 config/凭证绑定配置者私有资源(如 `vision_configs.ref_id`),无平台可托管的上游连接;属内置 handler,不应进入计费/市场流通 |
+| D16 | 虚拟服务 | 视觉/摄像头等**虚拟服务**(`transport_type='virtual'`,`source`∈{vision,camera})**仅自有配置、自己免费使用**,**不可上架市场**(手动添加/从自有服务克隆均拒绝 `transport_type='virtual'`) | 虚拟服务的 config/凭证绑定配置者私有资源(如 `vision_configs.ref_id`),无平台可托管的上游连接;属内置 handler,不应进入计费/市场流通 |
+| D17 | 市场 stdio 进程模式 | `marketplace_items.isolated_process`(仅 stdio 条目有意义,**反向命名**):`false`=**共享**(默认,全部安装用户共用平台侧一个 stdio 子进程)/`true`=**独占**(每个安装用户的引用行各一个进程)。无 DB default(bool 规范,克隆显式赋值),存量行零值 false=共享零回填;切换模式即踢掉该条目全部会话按新模式重建 | 共享防内存随安装数线性增长(无状态工具);独占保状态隔离(记忆存储类);共享暴露同套 env/文件系统视图,仅适合无状态服务,用户侧市场详情可见该标志 |
 
 ---
 
@@ -185,8 +186,16 @@ ALTER TABLE `marketplace_items`
     ADD COLUMN `price_per_call` DECIMAL(10,4) NOT NULL DEFAULT 0.0000
         COMMENT '服务级按次单价(展示货币);free 时忽略',
     ADD COLUMN `subscription_only` TINYINT DEFAULT 0
-        COMMENT '0=按次计费, 1=仅订阅用户可用(V2);V1固定0';
+        COMMENT '0=按次计费, 1=仅订阅用户可用(V2);V1固定0',
+    ADD COLUMN `isolated_process` TINYINT DEFAULT 0
+        COMMENT '独占进程(仅 stdio 条目): 0=共享(全部安装用户共用平台一个子进程), 1=独占(每安装用户引用行各一进程)';
 ```
+
+> **市场 stdio 进程模式(D17)**:仅 `transport_type='stdio'` 的条目消费该字段,其余传输读写两侧均忽略(克隆非 stdio 源强制 0)。
+> - **共享(默认)**:会话池按**条目键**(`sessionKey{itemID}`)复用同一会话与子进程,全部安装用户的调用走同一平台进程——内存不随安装数增长,管理员可预热(`POST /admin/marketplace/:id/process/control` start)。仅适合**无状态工具型**服务:共享同一套 env/凭证/文件系统视图,一个用户打爆进程全体受影响。
+> - **独占**:按**引用行键**各起一个子进程,相互隔离,适合记忆存储等有状态服务;管理端按安装用户逐行查看/启停(`GET /admin/marketplace/:id/process`)。
+> - **切换即踢**:上架后可改(管理详情页段选),变更会踢掉该条目全部池内会话,下次调用按新模式重建;存量行零值即共享,迁移零回填。
+> - 计费/日志归属不受影响:始终按调用者的引用行 + `marketplace_item_id` 落账,与进程键控方式无关;条目平台健康(`GET /admin/marketplace/health`)两种模式同口径。
 
 > **服务市场商业化(D3)——平台托管 + 引用式安装**:
 > - 管理员上架时配置上游连接(`transport_type` + `config_template`,**平台统一持有连接、维护 session 与工具缓存,凭证不暴露给用户**)。
@@ -473,13 +482,14 @@ POST /mcp、/smart/mcp、/mcp/group/:slug  (tools/call)
        source='user'/'admin'   → 读 service.config,用户 session      → 【免费,不扣费】
        source='marketplace'    → 读 marketplace_items.config_template,平台 session → 【按 3 级定价计费】
   → 【插入点 A:预扣】 仅 source='marketplace' 时
-  → :549 routeOrConnect() 转发上游(市场服务用平台 session,按 marketplace_item_id 复用)
+  → :549 routeOrConnect() 转发上游(平台凭证;stdio 共享条目按 marketplace_item_id 复用同一子进程,独占/非 stdio 按引用行)
   → 【插入点 B:确认/退款】 仅 source='marketplace' 时;recordLog 写计费列
 ```
 
 **resolver 改造点**(`routeOrConnect`):
 - `source=user/admin`:沿用现状(读 `service.config`,session 按 `service.id`)。
-- `source=marketplace`:不读用户 config(为空),改读 `marketplace_items[service.marketplace_item_id].config_template + transport_type`,session **按 `marketplace_item_id` 复用平台连接**(同一市场项所有用户共享平台 session,使用平台凭证)。
+- `source=marketplace`:不读用户 config(为空),改读 `marketplace_items[service.marketplace_item_id].config_template + transport_type`,使用平台凭证连接。
+- **会话键控(D17 后)**:会话池键为复合键 `sessionKey{serviceID|itemID}`——非 stdio(sse/http,无本地进程、连接轻量)与 **stdio 独占条目**按**引用行键**各持会话;**stdio 共享条目**(`isolated_process=false`,物化时置内存态 `svc.SharedProcess`)按**条目键**复用同一平台子进程(同一市场项所有安装用户共享,见 §4.3 进程模式)。
 
 **两个计费插入点**(仅 `source=marketplace` 触发):
 - **A. 预扣**(`gateway_handler.go:223` 前):解析 3 级价格 → 原子扣额度。余额不足 → 拒绝本次调用 + 返回错误(不禁用 Key),不调上游。
@@ -941,7 +951,7 @@ features/redemption-codes/
 | **精度** | 浮点价格 × QuotaPerUnit 换算 | 落库 decimal,内存换算 `round` 成整数后只动整数 |
 | **退款一致性** | 预扣成功但退款失败导致少退/多扣 | 退款幂等 + `billing_status` 状态机 + 对账任务(V2) |
 | **引用服务一致性** | 用户添加的市场引用 tools_cache 与平台项脱节 | V1 添加时快照 + 手动同步;V2 自动下发(任务 18) |
-| **平台 session 共享** | 同一市场项多用户共享平台 session | session 按 marketplace_item_id 复用;平台统一健康检查/熔断 |
+| **平台 session 共享** | 同一 stdio 市场项多用户共享平台子进程(共享模式) | 会话池按条目键复用(D17);共享仅适合无状态工具,有状态服务用独占模式;条目平台健康按日志 `marketplace_item_id` 聚合,与键控无关 |
 | **批量定价并发** | 批量改价期间正在调用的请求价格快照 | 改价后 `InvalidatePricingCache` 刷新;单次调用内价格已快照到 log |
 | **三库兼容** | 保留字 `group`/`key`、布尔默认值差异 | GORM map 条件 + `code` 替代 `key` + 布尔默认走代码而非 `default:1`([memory: db-reserved-words]) |
 | **计费阻塞主链路** | DB 扣减失败影响调用 | 默认 **FailOpen**(放行+记欠账),可配关闭 |

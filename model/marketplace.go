@@ -18,6 +18,11 @@ type MarketplaceItem struct {
 	Tags                 string         `json:"tags" gorm:"size:512"`
 	Version              string         `json:"version" gorm:"size:32;default:1.0.0"`
 	TransportType        string         `json:"transport_type" gorm:"size:32"`
+	// 独占进程(仅 stdio 条目有意义):false=共享——全部安装用户共用平台侧一个 stdio
+	// 子进程;true=独占——每个安装用户的引用行各一个进程(记忆存储等有状态服务)。
+	// bool 不设 default(GORM 规范),CloneFromService 显式赋值,存量行零值 false=共享;
+	// 非 stdio 条目读写两侧均忽略该字段。
+	IsolatedProcess      bool           `json:"isolated_process"`
 	ConfigTemplate       string         `json:"config_template" gorm:"type:varchar(4096);default:'{}'"`
 	AuthInstructions     string         `json:"auth_instructions" gorm:"type:text"`
 	RepoURL              string         `json:"repo_url" gorm:"size:1024"`

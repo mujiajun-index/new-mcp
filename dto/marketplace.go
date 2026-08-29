@@ -23,6 +23,8 @@ type UpdateMarketplaceItemReq struct {
 	PromptsSnapshot      *[]interface{}         `json:"prompts_snapshot"`
 	Status               *int                   `json:"status"`
 	SortOrder            *int                   `json:"sort_order"`
+	// 独占进程(仅 stdio 条目生效):切换共享↔独占会踢掉该条目全部池内会话按新模式重建
+	IsolatedProcess *bool `json:"isolated_process"`
 	// 商业化定价:启用/上架时非自用模式须显式定价(§5.6)
 	BillingType  *string  `json:"billing_type" binding:"omitempty,oneof=free per_call"`
 	PricePerCall *float64 `json:"price_per_call" binding:"omitempty,gte=0"`
@@ -47,6 +49,8 @@ type CloneMarketplaceReq struct {
 	Description   string  `json:"description"`
 	BillingType   string  `json:"billing_type" binding:"omitempty,oneof=free per_call"`
 	PricePerCall  float64 `json:"price_per_call" binding:"gte=0"`
+	// 独占进程:仅源服务为 stdio 时生效(其余传输忽略置 false);默认 false=共享
+	IsolatedProcess bool `json:"isolated_process"`
 }
 
 // MarketplaceRefreshResult 市场项快照手动刷新结果(各快照条目数)。
@@ -66,6 +70,32 @@ type MarketplaceItemHealth struct {
 	LastCallAt       int64          `json:"last_call_at"`
 	LastErrorMessage string         `json:"last_error_message"`
 	LastErrorAt      int64          `json:"last_error_at"`
+}
+
+// MarketplaceItemProcess 管理端市场详情(stdio 条目)的进程视图:共享条目=平台唯一
+// 子进程(Shared);独占条目=每个安装用户一个实例(Instances,含未运行行的固定形态)。
+type MarketplaceItemProcess struct {
+	Isolated  bool                              `json:"isolated"`
+	Shared    *ServiceProcessStat               `json:"shared,omitempty"`
+	Instances []MarketplaceItemProcessInstance  `json:"instances,omitempty"`
+}
+
+// MarketplaceItemProcessInstance 独占条目下某个安装用户的进程实例(引用行粒度)。
+type MarketplaceItemProcessInstance struct {
+	ServiceID int64              `json:"service_id"`
+	UserID    int64              `json:"user_id"`
+	Username  string             `json:"username"`
+	Name      string             `json:"name"`
+	// 引用行启用状态(禁用行不可拉起进程)
+	Status int                `json:"status"`
+	Stat   ServiceProcessStat `json:"stat"`
+}
+
+// MarketplaceProcessControlReq 条目进程操作:共享模式忽略 ServiceID(操作平台唯一
+// 进程);独占模式必填(目标安装用户的引用行)。
+type MarketplaceProcessControlReq struct {
+	Action    string `json:"action" binding:"required,oneof=start stop restart"`
+	ServiceID int64  `json:"service_id"`
 }
 
 type MarketplaceListItem struct {
@@ -103,6 +133,8 @@ type MarketplaceDetail struct {
 	Tags                 []string               `json:"tags"`
 	Version              string                 `json:"version"`
 	TransportType        string                 `json:"transport_type"`
+	// 独占进程(仅 stdio 条目有意义):false=共享(全部安装用户共用平台子进程)
+	IsolatedProcess      bool                   `json:"isolated_process"`
 	// 平台上游连接配置(config_template 解密):url/command/args 等结构明文,headers/env 的凭证值
 	// 为首尾掩码(如 sk-A...x9z),明文凭证不离开服务端。仅 admin 详情(GetItemByID)回传供编辑,
 	// 保存时掩码原样传回由后端回填明文;公开浏览(GetPublished)绝不携带。

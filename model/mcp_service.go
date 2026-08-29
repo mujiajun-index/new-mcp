@@ -31,7 +31,11 @@ type McpService struct {
 	// 平台健康按日志表 marketplace_item_id 聚合,不枚举本表引用行;此索引供
 	// 按 item 定位引用行/回填 item 归属的点查(如按条目踢会话、启停市场服务)
 	MarketplaceItemID *int64     `json:"marketplace_item_id" gorm:"index"`
-	SortOrder         int        `json:"sort_order" gorm:"default:0"`
+	// SharedProcess 内存态标记(gorm:"-"):市场共享 stdio 条目(isolated_process=false)
+	// 物化时置 true,会话池据此把会话键从服务行 ID 换成条目 ID——全部安装用户共用
+	// 同一个平台子进程。不落库;引用行落库值恒为 false,真实配置在 marketplace_items。
+	SharedProcess bool       `json:"-" gorm:"-"`
+	SortOrder     int        `json:"sort_order" gorm:"default:0"`
 	Status            int        `json:"status" gorm:"default:1"`
 	CreatedAt         time.Time  `json:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at"`
@@ -82,6 +86,26 @@ func GetServiceMarketplaceItemID(serviceID int64) *int64 {
 		return nil
 	}
 	return svc.MarketplaceItemID
+}
+
+// ServiceRowRef 市场条目安装引用行的窄视图(条目进程枚举用):不取 config 等大列。
+type ServiceRowRef struct {
+	ID          int64
+	UserID      int64
+	Name        string
+	DisplayName string
+	Status      int
+}
+
+// ListServiceRowsByMarketplaceItem 某市场条目全部安装引用行(独占进程模式按用户
+// 逐行枚举用),窄列查询;含从未连接过的安装,未运行状态由调用方结合会话池判定。
+func ListServiceRowsByMarketplaceItem(itemID int64) ([]ServiceRowRef, error) {
+	var rows []ServiceRowRef
+	err := DB.Model(&McpService{}).
+		Where("marketplace_item_id = ? AND source = ?", itemID, "marketplace").
+		Select("id, user_id, name, display_name, status").
+		Order("id ASC").Find(&rows).Error
+	return rows, err
 }
 
 func GetServiceByID(userID, serviceID int64) (*McpService, error) {

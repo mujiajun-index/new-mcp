@@ -1,6 +1,6 @@
 import { api } from '@/lib/api'
 import type {
-  BatchPricingReq, CloneMarketplaceReq,
+  BatchPricingReq, CloneMarketplaceReq, ProcessControlAction,
 } from '@/types'
 
 // 管理员市场项列表(全量,含未发布)
@@ -33,6 +33,25 @@ export async function adminDeleteMarketplace(id: number) {
 // 手动刷新快照(仅平台托管项):POST /admin/marketplace/:id/refresh
 export async function adminRefreshMarketplace(id: number) {
   const res = await api.post(`/admin/marketplace/${id}/refresh`)
+  return res.data
+}
+
+// 条目进程视图(仅 stdio 条目):共享=平台唯一进程;独占=按安装用户逐行枚举
+export async function adminGetMarketplaceProcess(id: number) {
+  const res = await api.get(`/admin/marketplace/${id}/process`)
+  return res.data
+}
+
+// 条目进程启停:共享模式忽略 serviceId(start=预热);独占模式指定目标安装引用行
+export async function adminControlMarketplaceProcess(
+  id: number,
+  action: ProcessControlAction,
+  serviceId?: number,
+) {
+  const res = await api.post(`/admin/marketplace/${id}/process/control`, {
+    action,
+    service_id: serviceId ?? 0,
+  })
   return res.data
 }
 

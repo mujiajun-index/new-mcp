@@ -360,9 +360,17 @@ const (
 // SessionPool 管理到上游 MCP 服务器的连接池
 type SessionPool struct {
     mu          sync.RWMutex
-    sessions    map[int64]*McpSession  // key: service_id
-    idleTimeout time.Duration          // 空闲超时，默认 10 分钟
-    maxRetries  int                    // 最大重连次数，默认 5
+    sessions    map[sessionKey]*McpSession  // 复合键:默认服务行键;共享市场 stdio 条目按条目键
+    idleTimeout time.Duration               // 空闲超时，默认 10 分钟
+    maxRetries  int                         // 最大重连次数，默认 5
+}
+
+// sessionKey 会话池键:自有服务/独占市场引用/非 stdio 市场引用按服务行键控
+// (一行一会话);共享市场 stdio 条目(isolated_process=false,物化时置内存态
+// svc.SharedProcess)按条目 ID 键控——全部安装用户复用同一平台子进程(D17)
+type sessionKey struct {
+    serviceID int64
+    itemID    int64
 }
 
 // McpSession 代表一个到上游 MCP 服务器的活跃连接
@@ -376,8 +384,9 @@ type McpSession struct {
     failCount   int                   // 连续失败计数（用于熔断）
 }
 
-// GetOrConnect 获取已有 session 或按需创建新连接
-func (p *SessionPool) GetOrConnect(ctx context.Context, serviceID int64) (*McpSession, error)
+// GetOrConnect 获取已有 session 或按需创建新连接(按 sessionKeyFor(svc) 键控;
+// 共享条目管理员"启动"用 ID=0 的内存行预热,不落库)
+func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (*McpSession, error)
 ```
 
 > **Session 生命周期管理**:
@@ -386,6 +395,7 @@ func (p *SessionPool) GetOrConnect(ctx context.Context, serviceID int64) (*McpSe
 > - **自动重连**: unhealthy session 按指数退避重连（1s, 2s, 4s, ..., 最大 30s），连续失败 5 次后标记为 dead
 > - **熔断机制**: 连续 3 次 `Call()` 失败的 session 自动熔断，路由绕过该 session
 > - **线程安全**: TransportAdapter 的 `Call()` 方法必须支持并发调用
+> - **进程模式切换**: 市场 stdio 条目共享↔独占切换(或平台上游配置变更)调用 `RemoveByMarketplaceItem` 踢掉该条目全部会话,下次调用按新键控/新配置重建
 
 ### 4.3 Smart 模式搜索引擎
 

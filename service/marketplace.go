@@ -12,6 +12,7 @@ import (
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
+	"github.com/mujkjk/newmcp/internal/mcp/transport"
 	"github.com/mujkjk/newmcp/model"
 )
 
@@ -313,6 +314,13 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 	if req.SortOrder != nil {
 		item.SortOrder = *req.SortOrder
 	}
+	// 独占进程切换(仅 stdio 条目):会话池键控方式改变(行键↔条目键),旧会话必须
+	// 踢掉按新模式重建,否则共享→独占后旧共享进程仍被全体复用、反向则旧行进程残留。
+	kickSessions := req.ConfigTemplate != nil
+	if req.IsolatedProcess != nil && item.TransportType == string(transport.TypeStdio) && item.IsolatedProcess != *req.IsolatedProcess {
+		item.IsolatedProcess = *req.IsolatedProcess
+		kickSessions = true
+	}
 	// 商业化定价
 	if req.BillingType != nil {
 		item.BillingType = *req.BillingType
@@ -334,7 +342,8 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 	}
 	// 平台上游配置变更后,该市场项全部引用服务的池内会话仍带旧配置/旧凭证,
 	// 踢掉待下次调用按新配置重连(引用服务众多,不做预连,按需重连即可)。
-	if req.ConfigTemplate != nil && SessionPool != nil {
+	// 进程模式切换(共享↔独占)同理并入同一次踢除。
+	if kickSessions && SessionPool != nil {
 		SessionPool.RemoveByMarketplaceItem(item.ID)
 	}
 	billing.InvalidatePricingCacheItem(item.ID)
@@ -501,7 +510,9 @@ func (s *MarketplaceService) CloneFromService(adminID int64, req *dto.CloneMarke
 		Category:      "instant",
 		Version:       "1.0.0",
 		TransportType: svc.TransportType,
-		ConfigTemplate: encryptConfigTemplate(svc.Config), // 克隆源凭证并加密;前端提示替换为平台凭证
+		// 独占进程开关仅对 stdio 源生效:其余传输无平台子进程概念,恒共享语义
+		IsolatedProcess: req.IsolatedProcess && svc.TransportType == string(transport.TypeStdio),
+		ConfigTemplate:  encryptConfigTemplate(svc.Config), // 克隆源凭证并加密;前端提示替换为平台凭证
 		AuthInstructions: svc.AuthType,
 		ConfigTemplateSource: svc.AuthConfig,
 		RequiredEnv:   "[]",
@@ -726,6 +737,7 @@ func (s *MarketplaceService) toDetail(item *model.MarketplaceItem) *dto.Marketpl
 		Tags:                 tags,
 		Version:              item.Version,
 		TransportType:        item.TransportType,
+		IsolatedProcess:      item.IsolatedProcess,
 		ConfigTemplateSource: configSource,
 		AuthInstructions:     item.AuthInstructions,
 		RepoURL:              item.RepoURL,

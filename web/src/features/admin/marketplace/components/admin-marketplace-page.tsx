@@ -362,6 +362,7 @@ function CloneDialog({
   const [form, setForm] = useState({
     from_service_id: '', name: '', display_name: '', description: '',
     billing_type: 'per_call', price_per_call: '0',
+    isolated_process: false,
   })
   const { data: servicesData } = useQuery({
     queryKey: ['marketplace-clone-sources'],
@@ -369,6 +370,9 @@ function CloneDialog({
     enabled: open,
   })
   const services: any[] = servicesData?.data ?? []
+  // 进程模式开关仅对 stdio 源有意义(其余传输无平台子进程,后端也会忽略)
+  const srcSvc = services.find((s) => String(s.id) === form.from_service_id)
+  const srcIsStdio = srcSvc?.transport_type === 'stdio'
 
   // 每次打开重置表单,避免残留上次的选择
   useEffect(() => {
@@ -376,6 +380,7 @@ function CloneDialog({
       setForm({
         from_service_id: '', name: '', display_name: '', description: '',
         billing_type: 'per_call', price_per_call: '0',
+        isolated_process: false,
       })
     }
   }, [open])
@@ -410,6 +415,7 @@ function CloneDialog({
       description: form.description || undefined,
       billing_type: billingType,
       price_per_call: billingType === 'free' ? 0 : price,
+      isolated_process: srcIsStdio ? form.isolated_process : false,
     })
   }
 
@@ -463,6 +469,29 @@ function CloneDialog({
                 value={form.price_per_call} onChange={(e) => setForm({ ...form, price_per_call: e.target.value })} />
             </div>
           </div>
+          {/* 进程模式(仅 stdio 源显示):默认共享;上架后可在详情页切换(会重启进程) */}
+          {srcIsStdio && (
+            <div className="space-y-2">
+              <Label>{t('marketplace.processMode')}</Label>
+              <div className="flex flex-wrap gap-2">
+                {([false, true] as const).map((isolated) => (
+                  <button
+                    key={String(isolated)}
+                    type="button"
+                    onClick={() => setForm({ ...form, isolated_process: isolated })}
+                    className={`rounded-lg border px-3 py-1.5 text-sm transition-all ${
+                      form.isolated_process === isolated ? 'border-primary bg-primary/5' : 'hover:border-primary/30'
+                    }`}
+                  >
+                    {isolated ? t('marketplace.modeIsolated') : t('marketplace.modeShared')}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {form.isolated_process ? t('marketplace.modeIsolatedHint') : t('marketplace.modeSharedHint')}
+              </p>
+            </div>
+          )}
           <p className="flex items-start gap-2 rounded-lg bg-amber-500/5 p-2.5 text-xs text-amber-700 dark:text-amber-300">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {t('marketplace.credentialReplaceHint')}

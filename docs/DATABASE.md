@@ -411,7 +411,8 @@ CREATE TABLE `marketplace_items` (
 
     -- 即用型配置 (category=instant)
     -- 平台托管模型:管理员配置上游 transport/凭证,平台统一持有连接;用户"添加到我的服务"=建立引用(config 留空,不复制凭证)
-    `transport_type`   VARCHAR(32)     DEFAULT '' COMMENT '传输类型: streamable-http, sse, websocket (即用型)',
+    `transport_type`   VARCHAR(32)     DEFAULT '' COMMENT '传输类型: streamable-http, sse, websocket, stdio (即用型)',
+    `isolated_process` TINYINT        DEFAULT 0 COMMENT '独占进程(仅 stdio 条目): 0=共享(全部安装用户共用平台侧一个子进程), 1=独占(每安装用户引用行各一进程);切换即踢会话重建',
     `config_template`  TEXT            DEFAULT '{}' COMMENT '连接配置模板 JSON(含平台上游凭证,加密落库;API 不返回明文)',
     `auth_instructions` TEXT           DEFAULT '' COMMENT '认证说明 (即用型，如"需要 Exa API Key")',
 

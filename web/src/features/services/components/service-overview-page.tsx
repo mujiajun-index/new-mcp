@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
+import { LocalPager } from '@/components/local-pager'
 import {
   Select,
   SelectContent,
@@ -151,6 +152,9 @@ export function ServiceOverviewPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [search, setSearch] = useState('')
+  // 客户端本地分页(接口返回全量):默认每页 18 条;筛选/搜索变化即回第 1 页
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 18
 
   const { data, isPending, isFetching, refetch } = useQuery({
     queryKey: ['services-overview'],
@@ -177,6 +181,11 @@ export function ServiceOverviewPage() {
       return s.name.toLowerCase().includes(kw) || s.display_name.toLowerCase().includes(kw)
     })
   }, [services, statusFilter, typeFilter, search])
+
+  // 本地分页:轮询刷新使条数变化时夹紧当前页,不越界也不跳回
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
   const hostTotal = summary?.host_memory_total_bytes ?? 0
   const healthRate = summary && summary.total_services > 0
@@ -247,11 +256,11 @@ export function ServiceOverviewPage() {
               <Input
                 placeholder={t('services.overview.searchPlaceholder')}
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => { setSearch(e.target.value); setPage(1) }}
                 className="pl-9"
               />
             </div>
-            <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as TypeFilter)}>
+            <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v as TypeFilter); setPage(1) }}>
               <SelectTrigger className="w-36">
                 <SelectValue />
               </SelectTrigger>
@@ -269,7 +278,7 @@ export function ServiceOverviewPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v as StatusFilter); setPage(1) }}>
               <SelectTrigger className="w-28">
                 <SelectValue />
               </SelectTrigger>
@@ -323,12 +332,17 @@ export function ServiceOverviewPage() {
           </div>
         ) : (
           <div className="grid gap-4 max-w-[1775px] grid-cols-[repeat(auto-fill,minmax(min(240px,100%),1fr))]">
-            {filtered.map((s) => (
+            {paged.map((s) => (
               <ServiceCard key={s.id} s={s} hostTotal={hostTotal} />
             ))}
           </div>
         )}
       </div>
+
+      {/* 本地分页:仅一页时不显示 */}
+      {filtered.length > PAGE_SIZE && (
+        <LocalPager total={filtered.length} page={safePage} totalPages={totalPages} onPage={setPage} />
+      )}
     </div>
   )
 }

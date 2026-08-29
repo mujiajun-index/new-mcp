@@ -382,6 +382,9 @@ func (s *McpServiceService) materializeMarketplace(svc *model.McpService) error 
 	if svc.TransportType == "" || svc.TransportType == "marketplace" {
 		svc.TransportType = item.TransportType
 	}
+	// 共享 stdio 条目:会话池按条目键控(全部安装用户复用一个平台子进程);
+	// 非 stdio/独占条目保持行键控。仅此处与网关 materializeMarketplaceConfig 设置。
+	svc.SharedProcess = item.TransportType == string(transport.TypeStdio) && !item.IsolatedProcess
 	return nil
 }
 

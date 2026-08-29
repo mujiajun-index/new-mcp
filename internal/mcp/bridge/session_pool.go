@@ -29,22 +29,39 @@ type McpSession struct {
 
 type SessionPool struct {
 	mu          sync.RWMutex
-	sessions    map[int64]*McpSession
+	sessions    map[sessionKey]*McpSession
 	idleTimeout time.Duration
 	maxRetries  int
 }
 
+// sessionKey 会话池键:默认按服务行键控(自有服务/独占市场引用一行一会话);
+// 共享市场 stdio 条目按条目键控(itemID≠0,serviceID 恒 0),全部安装用户复用
+// 同一条目会话与子进程。svc.SharedProcess 由 materialize 从条目 isolated_process
+// 反算(仅市场 stdio 条目会置 true),市场行必先 materialize 再入池,键控可靠。
+type sessionKey struct {
+	serviceID int64
+	itemID    int64
+}
+
+func sessionKeyFor(svc *model.McpService) sessionKey {
+	if svc.SharedProcess && svc.MarketplaceItemID != nil {
+		return sessionKey{itemID: *svc.MarketplaceItemID}
+	}
+	return sessionKey{serviceID: svc.ID}
+}
+
 func NewSessionPool() *SessionPool {
 	return &SessionPool{
-		sessions:    make(map[int64]*McpSession),
+		sessions:    make(map[sessionKey]*McpSession),
 		idleTimeout: 10 * time.Minute,
 		maxRetries:  5,
 	}
 }
 
 func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (*McpSession, error) {
+	key := sessionKeyFor(svc)
 	p.mu.RLock()
-	if session, ok := p.sessions[svc.ID]; ok && session.Adapter.IsConnected() {
+	if session, ok := p.sessions[key]; ok && session.Adapter.IsConnected() {
 		session.LastUsed = time.Now()
 		p.mu.RUnlock()
 		return session, nil
@@ -55,7 +72,7 @@ func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (
 	defer p.mu.Unlock()
 
 	// Double check after acquiring write lock
-	if session, ok := p.sessions[svc.ID]; ok && session.Adapter.IsConnected() {
+	if session, ok := p.sessions[key]; ok && session.Adapter.IsConnected() {
 		session.LastUsed = time.Now()
 		return session, nil
 	}
@@ -82,9 +99,20 @@ func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (
 		Health:            "healthy",
 	}
 
-	p.sessions[svc.ID] = session
+	p.sessions[key] = session
 
-	// Update tools cache + handshake info in database
+	// 共享条目预热用的是内存行(ID=0,不落库):跳过 DB 回写与缓存预热,
+	// 引用行的 tools/握手信息由真实调用路径或刷新补齐。
+	if svc.ID != 0 {
+		updateSessionRow(session, adapter)
+		go p.RefreshItemCaches(context.Background(), session)
+	}
+
+	return session, nil
+}
+
+// updateSessionRow 连接成功后把 tools 缓存 + 上游握手信息回写服务行。
+func updateSessionRow(session *McpSession, adapter transport.TransportAdapter) {
 	now := time.Now()
 	updates := map[string]interface{}{
 		"tools_updated_at": now,
@@ -102,13 +130,7 @@ func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (
 			updates["server_info"] = string(b)
 		}
 	}
-	model.DB.Model(&model.McpService{}).Where("id = ?", svc.ID).Updates(updates)
-
-	// 资源/提示缓存异步预热:不阻塞连接路径(tools/call 热路径不为列表枚举多等两次上游往返),
-	// 失败静默(缓存留空,由"刷新"或下次重连补齐)。
-	go p.RefreshItemCaches(context.Background(), session)
-
-	return session, nil
+	model.DB.Model(&model.McpService{}).Where("id = ?", session.ServiceID).Updates(updates)
 }
 
 // RefreshItemCaches 拉取上游 resources/templates/prompts 并回写 mcp_services 缓存列。
@@ -175,7 +197,30 @@ func FetchAdapterCaches(ctx context.Context, adapter transport.TransportAdapter)
 func (p *SessionPool) Get(serviceID int64) *McpSession {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.sessions[serviceID]
+	return p.sessions[sessionKey{serviceID: serviceID}]
+}
+
+// GetByItem 共享市场条目的平台会话(条目键控);共享条目在池内至多一条。
+// 不校验连接状态,调用方自行判定(与 Get 同口径)。
+func (p *SessionPool) GetByItem(itemID int64) *McpSession {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.sessions[sessionKey{itemID: itemID}]
+}
+
+// GetSessionsByItem 某市场条目在池内的全部会话(按会话携带的 item 归属过滤,
+// 与键控方式无关):独占条目=各安装用户的行会话,共享条目=至多一条条目会话。
+// 供条目级进程视图/健康判定枚举。
+func (p *SessionPool) GetSessionsByItem(itemID int64) []*McpSession {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	var out []*McpSession
+	for _, s := range p.sessions {
+		if s.MarketplaceItemID != nil && *s.MarketplaceItemID == itemID {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func (p *SessionPool) GetByName(serviceName string) *McpSession {
@@ -203,9 +248,10 @@ func (p *SessionPool) GetByNameForUser(serviceName string, userID int64) *McpSes
 func (p *SessionPool) Remove(serviceID int64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if s, ok := p.sessions[serviceID]; ok {
+	key := sessionKey{serviceID: serviceID}
+	if s, ok := p.sessions[key]; ok {
 		s.Adapter.Close()
-		delete(p.sessions, serviceID)
+		delete(p.sessions, key)
 	}
 }
 

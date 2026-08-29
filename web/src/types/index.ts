@@ -538,6 +538,8 @@ export interface MarketplaceDetail {
   tags: string[]
   version: string
   transport_type: TransportType
+  // 独占进程(仅 stdio 条目有意义):false=共享(全部安装用户共用平台子进程)
+  isolated_process?: boolean
   // 平台上游连接配置(解密;headers/env 的凭证值为首尾掩码,明文不出服务端);仅 admin 详情接口回传
   config_template?: Record<string, unknown>
   config_template_source: Record<string, unknown>
@@ -756,6 +758,25 @@ export interface CloneMarketplaceReq {
   description?: string
   billing_type?: string
   price_per_call?: number
+  // 独占进程(仅源服务为 stdio 时生效);默认 false=共享
+  isolated_process?: boolean
+}
+
+// 市场条目(stdio)进程视图:共享=平台唯一进程;独占=按安装用户逐行枚举
+export interface MarketplaceItemProcess {
+  isolated: boolean
+  shared?: ServiceProcessStat
+  instances?: MarketplaceItemProcessInstance[]
+}
+
+// 独占条目下某个安装用户的进程实例(引用行粒度);stat.running=false 为未运行固定形态
+export interface MarketplaceItemProcessInstance {
+  service_id: number
+  user_id: number
+  username: string
+  name: string
+  status: number
+  stat: ServiceProcessStat
 }
 
 // --- 商业化:管理员调额(POST /admin/users/:id/quota) ---

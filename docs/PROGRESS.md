@@ -390,3 +390,35 @@ MCP-PROTOCOL.md(§3.5 新小节,原 3.5 mcp.read 顺延 3.6)、API.md、README �
 PRD、ARCHITECTURE、COMMERCIALIZATION(计费口径表)、DATABASE(逐项日志)、
 XIAOZHI-INTEGRATION(分发 switch)、TEST-GUIDE 同步;smart_gateway.py 测试实例
 补 mcp_execute_batch(asyncio.gather 并发)。
+
+## 10. 市场 stdio 共享/独占进程(2026-08-29)
+
+> 设计动机:市场 stdio 条目原实现按引用行键控会话,N 个安装用户即 N 个平台子
+> 进程,内存随安装数线性增长。拆出共享/独占二分(D17):无状态工具默认共享
+> (全平台一个进程),记忆存储类有状态服务选独占。
+
+### 10.1 后端 ✅ 已完成(build + vet + test 通过)
+
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| 数据模型 | ✅ | `marketplace_items.isolated_process` 反向命名(false=共享/true=独占),无 DB default(bool 规范),存量行零值=共享零回填;仅 stdio 条目消费,非 stdio 克隆强制 false |
+| 会话池复合键 | ✅ | `sessions map[sessionKey]*McpSession`(行键/条目键);`svc.SharedProcess` 内存态标记(gorm:"-")由两处 materialize 从条目反算,市场行必先物化再入池;卸载 Remove(行键)不误杀共享进程;并发首连沿用双检锁 |
+| 模式切换 | ✅ | UpdateItem 的 isolated_process 变更并入 ConfigTemplate 同路径 `RemoveByMarketplaceItem` 踢会话,按新模式重建 |
+| 进程视图/启停 | ✅ | `service/marketplace_process.go` + `GET/POST /admin/marketplace/:id/process(/control)`:共享=条目键控单快照+预热(start 用 ID=0 内存行,不落库);独占=引用行窄行枚举+一次进程树扫描+用户名批量查,按行启停(itemRefService 校验归属,用户禁用行拒绝拉起) |
+| 归属不受影响 | ✅ | 日志/计费恒按调用者引用行 + marketplace_item_id 落账;条目平台健康(connectedItems 按会话 item 归属)两种模式同口径 |
+
+### 10.2 前端 ✅ 已完成(tsc -b + rsbuild build 双绿)
+
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| 克隆上架对话框 | ✅ | 源服务为 stdio 才显示「进程模式」段选(默认共享)+ 场景提示文案 |
+| 市场管理详情页 | ✅ | stdio 平台托管项新增「进程管理」卡:共享=服务详情同款 4 格资源快照+电源弹框启停;独占=「查看安装实例」弹窗(总览风格:总进程/内存/CPU 三概述卡 + 总览同款工具栏(左标题/右用户名筛选+条数)+ 总览 stdio 同款实例卡网格,本地分页每页 18 条);段选切换模式(confirm 确认);5s 轮询 |
+| 总览视图分页 | ✅ | /services/overview 卡片网格客户端本地分页(每页 18 条,LocalPager 共享控件):筛选/搜索变化回第 1 页,轮询刷新夹紧当前页;仅一页时不显示翻页条 |
+| 用户侧市场详情 | ✅ | 平台托管卡内展示进程模式一行(stdio 才显示),安装记忆类服务前可知是否独占 |
+| i18n | ✅ | marketplace.processMode/modeShared/modeIsolated 等中英;启停文案复用 services.process* |
+
+### 10.3 文档 ✅
+
+COMMERCIALIZATION(D17 决策行、§4.3 ALTER+进程模式条目、§6.1 会话键控、§17 风险表)、
+API.md(clone/update 请求体 + 两个 process 端点)、DATABASE(§2.12 列)、
+ARCHITECTURE(§4.2 会话池复合键)同步。

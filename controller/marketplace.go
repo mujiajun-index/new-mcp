@@ -34,6 +34,35 @@ func AdminGetMarketplaceHealth(c *gin.Context) {
 	common.Success(c, health)
 }
 
+// AdminGetMarketplaceItemProcess 市场详情(stdio 条目):进程视图——共享=平台唯一
+// 进程;独占=按安装用户逐行枚举(详情页 5s 轮询)。
+func AdminGetMarketplaceItemProcess(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	resp, err := marketplaceService.GetProcessStat(id)
+	if err != nil {
+		common.Error(c, http.StatusNotFound, "市场项不存在")
+		return
+	}
+	common.Success(c, resp)
+}
+
+// AdminControlMarketplaceItemProcess 条目进程启停:共享模式操作平台唯一进程
+// (start=预热);独占模式 body.service_id 指定目标安装引用行。
+func AdminControlMarketplaceItemProcess(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	var req dto.MarketplaceProcessControlReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	resp, err := marketplaceService.ControlProcess(id, &req)
+	if err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, resp)
+}
+
 func AdminGetMarketplaceItem(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 	resp, err := marketplaceService.GetItemByID(id)

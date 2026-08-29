@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { adminGetMarketplace, adminUpdateMarketplace, adminRefreshMarketplace } from '../api'
+import { adminGetMarketplace, adminUpdateMarketplace, adminRefreshMarketplace, adminGetMarketplaceProcess, adminControlMarketplaceProcess } from '../api'
 import { adminListMarketplaceGroups, adminListMarketplaceTags } from '@/features/admin/marketplace-categories/api'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import { priceLabel } from '@/lib/billing'
@@ -12,14 +12,20 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Progress } from '@/components/ui/progress'
+import { LocalPager } from '@/components/local-pager'
+import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
+} from '@/components/ui/dialog'
 import { SectionCard } from '@/components/section-card'
 import { ToolItem } from '@/components/tool-params'
 import { ResourceItemCard, PromptItemCard } from '@/components/mcp-items'
 import { toast } from 'sonner'
 import {
   ArrowLeft, Save, RefreshCw, Pencil, X, Check, Loader2, ChevronDown, ChevronRight,
+  Activity, Power, Play, Square, RotateCw, Layers, MemoryStick, Search, User, Users,
 } from 'lucide-react'
-import type { MarketplaceDetail, AuthType } from '@/types'
+import type { MarketplaceDetail, AuthType, MarketplaceItemProcess, MarketplaceItemProcessInstance, ProcessControlAction } from '@/types'
 
 // AdminMarketplaceDetailPage 市场项详情 + 编辑(§11)。上半只读概览,下半编辑表单(调 adminUpdateMarketplace)。
 export function AdminMarketplaceDetailPage() {
@@ -136,6 +142,11 @@ export function AdminMarketplaceDetailPage() {
 
       {/* 平台上游配置编辑(仅平台托管项):折叠区,展开后可改 URL/鉴权等,与服务详情同款 */}
       {item.category === 'instant' && <UpstreamConfigCard item={item} queryId={id} />}
+
+      {/* stdio 平台托管项的进程视图与启停:共享=平台唯一进程;独占=按安装用户逐行 */}
+      {item.category === 'instant' && item.transport_type === 'stdio' && (
+        <MarketplaceProcessCard item={item} queryId={id} />
+      )}
 
       {/* 编辑表单 */}
       <EditForm item={item} groups={groups} tagsLib={tagsLib} notSelfUse={notSelfUse}
@@ -597,6 +608,433 @@ function UpstreamConfigCard({ item, queryId }: { item: MarketplaceDetail; queryI
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// --- stdio 条目进程(共享=平台唯一进程 / 独占=按安装用户逐行) ---
+
+function formatBytes(bytes?: number): string {
+  if (!bytes || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+}
+
+function formatUptime(seconds?: number): string {
+  if (!seconds || seconds <= 0) return '0s'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
+}
+
+// 条目级进程启停:与自有服务 StdioProcessControl 同款电源弹框,但调市场条目端点。
+// serviceId>0 = 独占模式操作该安装引用行;共享模式忽略 serviceId(操作平台唯一进程)。
+// colored:独占实例卡传入,按钮按进程实际状态着色(绿=运行中/红=已停止),对齐总览卡。
+function MarketplaceProcessControl({
+  itemId, queryId, running, serviceId, colored,
+}: {
+  itemId: number
+  queryId: string
+  running: boolean
+  serviceId?: number
+  colored?: boolean
+}) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const [open, setOpen] = useState(false)
+
+  const controlMutation = useMutation({
+    mutationFn: (action: ProcessControlAction) => adminControlMarketplaceProcess(itemId, action, serviceId),
+    onSuccess: (_res, action) => {
+      const successKey: Record<ProcessControlAction, string> = {
+        start: 'services.processStartSuccess',
+        stop: 'services.processStopSuccess',
+        restart: 'services.processRestartSuccess',
+      }
+      toast.success(t(successKey[action]))
+      setOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['admin-marketplace-process', queryId] })
+    },
+  })
+
+  const actions: Array<{
+    key: ProcessControlAction
+    label: string
+    icon: React.ComponentType<{ className?: string }>
+    disabled: boolean
+    danger?: boolean
+    positive?: boolean
+  }> = [
+    { key: 'start', label: t('services.processStart'), icon: Play, disabled: running, positive: true },
+    { key: 'stop', label: t('services.processStop'), icon: Square, disabled: !running, danger: true },
+    { key: 'restart', label: t('services.processRestart'), icon: RotateCw, disabled: !running },
+  ]
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!controlMutation.isPending) setOpen(v) }}>
+      <DialogTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`h-7 w-7 shrink-0 ${
+            !colored
+              ? 'text-muted-foreground'
+              : running
+                ? 'text-emerald-500 hover:bg-emerald-500/10 hover:text-emerald-600'
+                : 'text-destructive hover:bg-destructive/10 hover:text-destructive'
+          }`}
+          title={t('services.processControl')}
+          aria-label={t('services.processControl')}
+        >
+          <Power className="h-4 w-4" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-xs">
+        <DialogHeader>
+          <DialogTitle>{t('services.processControl')}</DialogTitle>
+          <DialogDescription>{t('services.processControlHint')}</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-2">
+          {actions.map(({ key, label, icon: Icon, disabled, danger, positive }) => (
+            <Button
+              key={key}
+              variant="outline"
+              className={`w-full justify-start gap-2 ${danger ? 'text-destructive hover:text-destructive' : ''} ${
+                positive ? 'text-emerald-600 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-400' : ''
+              }`}
+              disabled={disabled || controlMutation.isPending}
+              onClick={() => controlMutation.mutate(key)}
+            >
+              {controlMutation.isPending && controlMutation.variables === key
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <Icon className="h-4 w-4" />}
+              {label}
+            </Button>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// 进程模式段选(共享↔独占):切换调 adminUpdateMarketplace({isolated_process}),
+// 后端踢掉该条目全部池内会话按新模式重建(共享进程收敛为 1 或裂解为每用户 1)。
+function ProcessModeSegment({ item, queryId }: { item: MarketplaceDetail; queryId: string }) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const current = item.isolated_process ?? false
+
+  const updateMutation = useMutation({
+    mutationFn: (isolated: boolean) => adminUpdateMarketplace(item.id, { isolated_process: isolated }),
+    onSuccess: () => {
+      toast.success(t('common.success'))
+      queryClient.invalidateQueries({ queryKey: ['admin-marketplace-detail', queryId] })
+      queryClient.invalidateQueries({ queryKey: ['admin-marketplace-process', queryId] })
+    },
+  })
+
+  const switchTo = (isolated: boolean) => {
+    if (isolated === current) return
+    if (!confirm(t('marketplace.processModeSwitchConfirm'))) return
+    updateMutation.mutate(isolated)
+  }
+
+  return (
+    <div className="space-y-2 border-b pb-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium">{t('marketplace.processMode')}</span>
+        {([false, true] as const).map((isolated) => (
+          <button
+            key={String(isolated)}
+            type="button"
+            onClick={() => switchTo(isolated)}
+            disabled={updateMutation.isPending}
+            className={`rounded-lg border px-3 py-1 text-xs transition-all ${
+              current === isolated ? 'border-primary bg-primary/5' : 'hover:border-primary/30'
+            }`}
+          >
+            {isolated ? t('marketplace.modeIsolated') : t('marketplace.modeShared')}
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {current ? t('marketplace.modeIsolatedHint') : t('marketplace.modeSharedHint')}
+      </p>
+    </div>
+  )
+}
+
+// MarketplaceProcessCard stdio 平台托管项的进程卡片:共享模式=平台唯一进程(与服务
+// 详情同款 4 格资源快照 + 启停);独占模式=按安装用户逐行枚举(参考总览 stdio 卡,
+// 含未安装连接的行,未运行固定形态)。5s 轮询,只读现状不拉起进程。
+function MarketplaceProcessCard({ item, queryId }: { item: MarketplaceDetail; queryId: string }) {
+  const { t } = useTranslation()
+  const { data: procData } = useQuery({
+    queryKey: ['admin-marketplace-process', queryId],
+    queryFn: () => adminGetMarketplaceProcess(item.id),
+    refetchInterval: 5000,
+  })
+  const proc: MarketplaceItemProcess | undefined = procData?.data
+  const isolated = proc?.isolated ?? item.isolated_process ?? false
+  const instances = proc?.instances ?? []
+
+  return (
+    <SectionCard
+      title={t('marketplace.processCardTitle')}
+      actions={
+        isolated ? (
+          <Badge variant="secondary">{t('marketplace.modeIsolated')}</Badge>
+        ) : (
+          <div className="flex items-center gap-1.5">
+            {item.status === 1 && (
+              <MarketplaceProcessControl itemId={item.id} queryId={queryId} running={!!proc?.shared?.running} />
+            )}
+            <Badge variant={proc?.shared?.running ? 'success' : 'secondary'}>
+              {proc?.shared?.running ? t('services.processRunning') : t('services.processStopped')}
+            </Badge>
+            <Badge variant="secondary">{t('marketplace.modeShared')}</Badge>
+          </div>
+        )
+      }
+    >
+      <ProcessModeSegment item={item} queryId={queryId} />
+
+      {!isolated ? (
+        (() => {
+          const shared = proc?.shared
+          return shared?.running ? (
+            <div className="space-y-3 pt-4">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  { label: t('services.memoryUsage'), value: formatBytes(shared.memory_rss_bytes), sub: t('services.processCount', { count: shared.process_count || 1 }) },
+                  { label: t('services.cpuUsage'), value: `${(shared.cpu_percent ?? 0).toFixed(1)}%`, sub: null },
+                  { label: t('services.uptime'), value: formatUptime(shared.uptime_seconds), sub: null },
+                  { label: 'PID', value: String(shared.pid ?? '-'), sub: null },
+                ].map((tile) => (
+                  <div key={tile.label} className="rounded-xl border bg-card p-4">
+                    <p className="text-xs text-muted-foreground">{tile.label}</p>
+                    <p className="mt-1 text-lg font-semibold tabular-nums">{tile.value}</p>
+                    {tile.sub && <p className="mt-0.5 text-xs text-muted-foreground">{tile.sub}</p>}
+                  </div>
+                ))}
+              </div>
+              {shared.command && (
+                <p className="truncate font-mono text-xs text-muted-foreground" title={shared.command}>
+                  {shared.command}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center py-8 text-center">
+              <Activity className="h-8 w-8 text-muted-foreground/30 mb-2" />
+              <p className="text-sm text-muted-foreground">{t('services.processStopped')}</p>
+              <p className="mt-1 text-xs text-muted-foreground/60">{t('services.processNotRunningHint')}</p>
+            </div>
+          )
+        })()
+      ) : instances.length === 0 ? (
+        <p className="py-6 text-center text-sm text-muted-foreground">{t('marketplace.noInstalledInstances')}</p>
+      ) : (
+        <div className="flex flex-col gap-3 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-muted-foreground">
+            {t('services.overview.runningSub', { count: instances.filter((i) => i.stat.running).length })}
+            {' · '}
+            {t('services.overview.count', { shown: instances.length, total: instances.length })}
+          </p>
+          <InstancesDialog item={item} queryId={queryId} instances={instances} />
+        </div>
+      )}
+    </SectionCard>
+  )
+}
+
+// InstancesDialog 独占条目的安装实例弹窗:总览风格——顶部 总进程/内存占用/CPU 三张
+// 概述卡(运行实例合计,CPU 为各实例之和、多核可超 100%),下方用户名筛选 + 总览
+// stdio 卡同款实例卡网格(名称+用户名+启停+CPU/内存进度条,内存条按本条目运行
+// 实例合计占比)。数据直接吃详情页 5s 轮询结果,弹窗开着也会刷新;启停失效同键查询。
+function InstancesDialog({
+  item, queryId, instances,
+}: {
+  item: MarketplaceDetail
+  queryId: string
+  instances: MarketplaceItemProcessInstance[]
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  // 客户端本地分页:默认每页 18 条;筛选变化即回第 1 页
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 18
+
+  const running = instances.filter((i) => i.stat.running)
+  const totalProcesses = running.reduce((s, i) => s + (i.stat.process_count || 1), 0)
+  const totalMem = running.reduce((s, i) => s + (i.stat.memory_rss_bytes ?? 0), 0)
+  const totalCpu = running.reduce((s, i) => s + (i.stat.cpu_percent ?? 0), 0)
+
+  // 用户名筛选为前端本地过滤(匹配用户名或服务名,便于同名定位)
+  const kw = search.trim().toLowerCase()
+  const filtered = kw
+    ? instances.filter((i) =>
+        (i.username || '').toLowerCase().includes(kw) || i.name.toLowerCase().includes(kw))
+    : instances
+  // 本地分页:轮询刷新使条数变化时夹紧当前页
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
+  const tiles = [
+    { label: t('services.overview.processes'), value: String(totalProcesses), sub: t('services.overview.runningSub', { count: running.length }), icon: Layers, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+    { label: t('services.overview.memoryUsage'), value: formatBytes(totalMem), sub: null, icon: MemoryStick, color: 'text-amber-500', bg: 'bg-amber-500/10' },
+    { label: t('services.overview.cpuUsage'), value: `${totalCpu.toFixed(1)}%`, sub: t('services.overview.cpuHint'), icon: Activity, color: 'text-rose-500', bg: 'bg-rose-500/10' },
+  ]
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-1.5">
+          <Users className="h-3.5 w-3.5" />
+          {t('marketplace.viewInstances', { count: instances.length })}
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>{t('marketplace.installedInstancesTitle')}</DialogTitle>
+          <DialogDescription>{t('marketplace.installedInstancesDesc')}</DialogDescription>
+        </DialogHeader>
+
+        {/* 概述三卡:运行实例合计 */}
+        <div className="grid gap-3 sm:grid-cols-3">
+          {tiles.map((tile) => (
+            <div key={tile.label} className="rounded-xl border bg-card p-4" title={tile.sub ?? undefined}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">{tile.label}</p>
+                  <p className="mt-1 text-2xl font-semibold tabular-nums">{tile.value}</p>
+                </div>
+                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tile.bg}`}>
+                  <tile.icon className={`h-4 w-4 ${tile.color}`} />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* 实例工具栏:总览同款——左侧列表标题,右侧搜索框 + 条数 */}
+        <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h3 className="text-sm font-semibold">{t('marketplace.instanceListTitle')}</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative w-full sm:w-56">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder={t('marketplace.filterByUsername')}
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+                className="h-9 pl-9"
+              />
+            </div>
+            {instances.length > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {t('services.overview.count', { shown: filtered.length, total: instances.length })}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* 实例卡网格:auto-fill 自适应,与总览卡同口径(每卡至少 230px);本地分页每页 18 条 */}
+        {filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-xl border bg-card py-10 text-center">
+            <Users className="mb-2 h-8 w-8 text-muted-foreground/30" />
+            <p className="text-sm text-muted-foreground">{t('marketplace.noMatchInstances')}</p>
+          </div>
+        ) : (
+          <>
+            <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(min(230px,100%),1fr))]">
+              {paged.map((inst) => (
+                <InstanceProcessCard
+                  key={inst.service_id}
+                  inst={inst}
+                  item={item}
+                  queryId={queryId}
+                  totalMem={totalMem}
+                />
+              ))}
+            </div>
+            {filtered.length > PAGE_SIZE && (
+              <LocalPager total={filtered.length} page={safePage} totalPages={totalPages} onPage={setPage} />
+            )}
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// InstanceProcessCard 独占条目下单个安装用户(引用行)的实例卡:总览 stdio 卡同款——
+// 状态圆点(引用行启用/禁用)+ 名称 + 电源启停(colored)、用户名行 + 运行徽章、
+// CPU/内存两行进度条(内存条按本条目运行实例合计占比,无全局内存分母)。
+// 名称不做链接(他人引用行无管理详情页可跳)。用户自行禁用的行不可拉起。
+function InstanceProcessCard({
+  inst, item, queryId, totalMem,
+}: {
+  inst: MarketplaceItemProcessInstance
+  item: MarketplaceDetail
+  queryId: string
+  totalMem: number
+}) {
+  const { t } = useTranslation()
+  const running = inst.stat.running
+  const cpu = running ? (inst.stat.cpu_percent ?? 0) : 0
+  const mem = running ? (inst.stat.memory_rss_bytes ?? 0) : 0
+  const memPct = totalMem > 0 ? (mem / totalMem) * 100 : 0
+
+  return (
+    <div className="space-y-3 rounded-xl border bg-card p-4 transition-all duration-200 hover:border-ring/20 hover:shadow-md hover:shadow-black/[0.03]">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className={`h-2 w-2 shrink-0 rounded-full ${inst.status === 1 ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-600'}`}
+            title={inst.status === 1 ? t('common.enabled') : t('common.disabled')}
+          />
+          <span className="min-w-0 truncate text-sm font-medium" title={inst.name}>{inst.name}</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {item.status === 1 && inst.status === 1 && (
+            <MarketplaceProcessControl itemId={item.id} queryId={queryId} running={running} serviceId={inst.service_id} colored />
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+        <span className="inline-flex min-w-0 items-center gap-1 truncate">
+          <User className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">{inst.username || `UID ${inst.user_id}`}</span>
+        </span>
+        <Badge variant={running ? 'success' : 'secondary'} className="shrink-0 text-[10px]">
+          {running ? t('services.processRunning') : t('services.processStopped')}
+        </Badge>
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-muted-foreground">{t('services.overview.cpuRow')}</span>
+          <span className="tabular-nums">{running && inst.stat.cpu_percent != null ? `${inst.stat.cpu_percent.toFixed(1)}%` : '—'}</span>
+        </div>
+        <Progress value={cpu} className="h-1 bg-sky-500/15 [&_[data-slot=progress-indicator]]:bg-sky-500" />
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-muted-foreground">{t('services.overview.memRow')}</span>
+          <span className="tabular-nums">
+            {running && inst.stat.memory_rss_bytes != null ? formatBytes(inst.stat.memory_rss_bytes) : '—'}
+          </span>
+        </div>
+        <Progress value={memPct} className="h-1 bg-emerald-500/15 [&_[data-slot=progress-indicator]]:bg-emerald-500" />
+      </div>
     </div>
   )
 }

@@ -1616,12 +1616,24 @@ wss://api.newmcp.pro/mcp/passive/?token=<PASSIVE_JWT>
 
 #### POST /admin/marketplace/clone
 **从自有服务克隆上架**(D14,唯一上架入口,已移除手动创建):深拷贝 transport/config/auth/tools,与源服务无关联。克隆保留源凭证并加密落库,前端提示替换为平台凭证。非自用模式须显式定价。前端选择服务后自动回显 `name`/`display_name`/`description`,一般无需修改直接提交。
-- 请求:`{ "from_service_id": 5, "name": "exa-market", "display_name": "...", "billing_type": "per_call", "price_per_call": 0.05 }`
+- 请求:`{ "from_service_id": 5, "name": "exa-market", "display_name": "...", "billing_type": "per_call", "price_per_call": 0.05, "isolated_process": false }`
 - 响应:市场项详情(含价格)。
 - `name` 全局唯一,重复返回 400(提示修改服务标识)。
+- `isolated_process`(D17,仅源服务为 stdio 时生效,其余传输忽略置 false):`false`=共享进程(默认,全部安装用户共用平台一个子进程)/`true`=独占(每安装用户各一进程);上架后可在管理详情页切换。
 
 #### PUT /admin/marketplace/:id `(更新市场项)`
-扩展支持 `billing_type` / `price_per_call`(指针,可选更新)。启用状态下非自用模式校验显式定价。`config_template` 平台凭证**加密落库**。管理端详情(GET /admin/marketplace/:id)回传 `config_template` 供编辑:url/command/args 等结构明文,headers/env 的**凭证值替换为首尾掩码**(如 `sk-A...x9z`);保存时掩码值原样传回则回填库内明文(未改动),输入新值则替换。
+扩展支持 `billing_type` / `price_per_call` / `isolated_process`(指针,可选更新;`isolated_process` 仅 stdio 条目生效,共享↔独占切换会踢掉该条目全部池内会话按新模式重建)。启用状态下非自用模式校验显式定价。`config_template` 平台凭证**加密落库**。管理端详情(GET /admin/marketplace/:id)回传 `config_template` 供编辑:url/command/args 等结构明文,headers/env 的**凭证值替换为首尾掩码**(如 `sk-A...x9z`);保存时掩码值原样传回则回填库内明文(未改动),输入新值则替换。
+
+#### GET /admin/marketplace/:id/process `(stdio 条目进程视图)`
+仅 stdio 条目有意义(其余传输返回空视图)。共享/独占模式返回不同形态,管理详情页 5s 轮询,只读现状不拉起进程:
+- 共享(`isolated:false`):`{ "isolated": false, "shared": { "running": true, "pid": ..., "command": "...", "process_count": ..., "memory_rss_bytes": ..., "cpu_percent": ..., "uptime_seconds": ... } }`(未运行时 `shared.running=false`,其余字段缺省)
+- 独占(`isolated:true`):`{ "isolated": true, "instances": [ { "service_id": 12, "user_id": 3, "username": "alice", "name": "mem-market", "status": 1, "stat": { "running": false } } ] }`——按安装引用行逐行枚举(含从未连接的安装),一次进程树扫描。
+
+#### POST /admin/marketplace/:id/process/control `(stdio 条目进程启停)`
+- 请求:`{ "action": "start|stop|restart", "service_id": 0 }`
+- 共享模式忽略 `service_id`:`start`=**预热**(不等首个用户调用即拉起平台唯一进程),`stop`/`restart` 操作该进程。
+- 独占模式 `service_id` 必填且须为该条目的安装引用行;用户已禁用的引用行拒绝拉起(400)。
+- 响应:操作后的最新进程视图(同 GET)。停止后下一个调用会自动重拉进程(与自有 stdio 服务同语义);真停需下架条目。
 
 #### GET /admin/redemptions `(列表)` / POST /admin/redemptions `(批量生成)`
 - POST 批量生成:`{ "name": "活动码", "quota": 5000000, "count": 10, "expired_at": 0 }`(`count` 上限 100,`expired_at` 0=永久)。返回含明文 `code` 的条目(仅此一次可见)。

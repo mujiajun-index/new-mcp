@@ -187,6 +187,8 @@ func SetApiRouter(engine *gin.Engine) {
 		admin.GET("/marketplace/:id", controller.AdminGetMarketplaceItem)
 		admin.PUT("/marketplace/:id", controller.AdminUpdateMarketplaceItem)
 		admin.POST("/marketplace/:id/refresh", controller.AdminRefreshMarketplaceItem) // 手动刷新快照(平台托管项)
+		admin.GET("/marketplace/:id/process", controller.AdminGetMarketplaceItemProcess)         // 进程视图(stdio:共享/独占)
+		admin.POST("/marketplace/:id/process/control", controller.AdminControlMarketplaceItemProcess) // 进程启停(共享=预热/独占=按安装行)
 		admin.DELETE("/marketplace/:id", controller.AdminDeleteMarketplaceItem)
 
 		// Admin: marketplace groups(业务分类) + tags(标签字典)
