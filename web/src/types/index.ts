@@ -95,6 +95,8 @@ export interface ServiceDetail {
   created_at: string
   passive_url: string
   passive_connected: boolean
+  /** 市场引用服务的条目 ID(跳转市场详情用;其余来源不返回) */
+  marketplace_item_id?: number
 }
 
 export interface McpTool {

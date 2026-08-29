@@ -1160,24 +1160,29 @@ func (s *McpServiceService) toDetail(svc *model.McpService) *dto.ServiceDetail {
 		tags = []string{}
 	}
 
-	return &dto.ServiceDetail{
-		ID:               svc.ID,
-		Name:             svc.Name,
-		DisplayName:      svc.DisplayName,
-		Description:      svc.Description,
-		TransportType:    svc.TransportType,
-		Source:           svc.Source,
-		Config:           config,
-		AuthType:         svc.AuthType,
-		HealthStatus:     svc.HealthStatus,
-		LastHealthCheck:  lastHealthCheck,
-		ToolsCache:       toolsCache,
-		ToolsUpdatedAt:   toolsUpdatedAt,
-		ServerInfo:       serverInfo,
-		ProtocolVersion:  svc.ProtocolVersion,
-		Tags:             tags,
-		Status:           svc.Status,
-		CreatedAt:        svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
+	d := &dto.ServiceDetail{
+		ID:              svc.ID,
+		Name:            svc.Name,
+		DisplayName:     svc.DisplayName,
+		Description:     svc.Description,
+		TransportType:   svc.TransportType,
+		Source:          svc.Source,
+		Config:          config,
+		AuthType:        svc.AuthType,
+		HealthStatus:    svc.HealthStatus,
+		LastHealthCheck: lastHealthCheck,
+		ToolsCache:      toolsCache,
+		ToolsUpdatedAt:  toolsUpdatedAt,
+		ServerInfo:      serverInfo,
+		ProtocolVersion: svc.ProtocolVersion,
+		Tags:            tags,
+		Status:          svc.Status,
+		CreatedAt:       svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		PassiveConnected: svc.PassiveConnected,
 	}
+	// 市场引用服务带上条目 ID(前端跳转市场详情用)
+	if svc.Source == "marketplace" {
+		d.MarketplaceItemID = svc.MarketplaceItemID
+	}
+	return d
 }

@@ -54,6 +54,8 @@ type ServiceDetail struct {
 	CreatedAt        string                 `json:"created_at"`
 	PassiveURL       string                 `json:"passive_url,omitempty"`
 	PassiveConnected bool                   `json:"passive_connected,omitempty"`
+	// 市场引用服务(source=marketplace)的条目 ID,前端跳转市场详情页用;其余来源不返回
+	MarketplaceItemID *int64 `json:"marketplace_item_id,omitempty"`
 }
 
 // ServiceProcessStat 是 stdio 服务子进程(整棵进程树)的资源占用快照。

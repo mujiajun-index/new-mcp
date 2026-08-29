@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams, useRouter } from '@tanstack/react-router'
+import { Link, useNavigate, useParams, useRouter } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { getService, updateService, deleteService, testService, refreshTools, getServiceResources, getServicePrompts, getServiceProcessStat } from '../api'
 import { StdioProcessControl } from './stdio-process-control'
@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import {
   ArrowLeft, Trash2, Zap, RefreshCw, Server, Activity,
-  Pencil, X, Check, Loader2, ChevronDown, ChevronRight, FlaskConical, Ban, Play,
+  Pencil, X, Check, Loader2, ChevronDown, ChevronRight, FlaskConical, Ban, Play, ExternalLink,
 } from 'lucide-react'
 import type { McpTool, McpResource, McpResourceTemplate, McpPrompt, AuthType, UpdateServiceReq, ServiceProcessStat } from '@/types'
 
@@ -409,9 +409,20 @@ export function ServiceDetailPage() {
       </div>
 
       {service.source === 'marketplace' && (
-        <div className="flex items-start gap-2 rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-primary">
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-primary">
           <span className="font-medium">{t('marketplace.platformHosted')}</span>
           <span className="text-primary/80">{t('marketplace.platformHostedDesc')}</span>
+          {/* 跳转市场详情(价格/快照等以市场页为准);条目缺 ID 时不渲染 */}
+          {service.marketplace_item_id != null && (
+            <Link
+              to="/marketplace/$id"
+              params={{ id: String(service.marketplace_item_id) }}
+              className="ml-auto inline-flex items-center gap-1 font-medium underline-offset-2 hover:underline"
+            >
+              {t('marketplace.viewMarketDetail')}
+              <ExternalLink className="h-3 w-3" />
+            </Link>
+          )}
         </div>
       )}
 

@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { useNavigate, useParams } from '@tanstack/react-router'
+import { useNavigate, useParams, useRouter } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { getMarketplaceItem, addToMyServices } from '../api'
 import { useSystemConfigStore } from '@/stores/system-config-store'
@@ -15,6 +15,7 @@ import type { McpTool, McpResource, McpResourceTemplate, McpPrompt } from '@/typ
 export function MarketplaceDetailPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const router = useRouter()
   const { id } = useParams({ strict: false }) as { id: string }
   const { config } = useSystemConfigStore()
 
@@ -45,8 +46,12 @@ export function MarketplaceDetailPage() {
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
-      <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => navigate({ to: '/marketplace' })}>
-        <ArrowLeft className="h-4 w-4" />{t('marketplace.backToMarketplace')}
+      <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => {
+        // 真回退:从服务详情等入口进详情回到来路;新标签直开无历史时兜底回广场
+        if (router.history.canGoBack()) router.history.back()
+        else navigate({ to: '/marketplace' })
+      }}>
+        <ArrowLeft className="h-4 w-4" />{t('common.back')}
       </Button>
 
       {/* Header */}

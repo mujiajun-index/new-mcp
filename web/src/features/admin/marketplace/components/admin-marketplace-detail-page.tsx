@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from '@tanstack/react-router'
+import { useParams, useNavigate, useRouter } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { adminGetMarketplace, adminUpdateMarketplace, adminRefreshMarketplace, adminGetMarketplaceProcess, adminControlMarketplaceProcess } from '../api'
@@ -31,6 +31,7 @@ import type { MarketplaceDetail, AuthType, MarketplaceItemProcess, MarketplaceIt
 export function AdminMarketplaceDetailPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const router = useRouter()
   const { id } = useParams({ from: '/_authenticated/admin/marketplace/$id' })
   const queryClient = useQueryClient()
   const { config } = useSystemConfigStore()
@@ -95,8 +96,12 @@ export function AdminMarketplaceDetailPage() {
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-      <Button variant="ghost" size="sm" className="gap-1.5 w-fit" onClick={() => navigate({ to: '/admin/marketplace' })}>
-        <ArrowLeft className="h-4 w-4" />{t('marketplace.backToMarketplace')}
+      <Button variant="ghost" size="sm" className="gap-1.5 w-fit" onClick={() => {
+        // 真回退:回到来路(市场管理列表/健康页等);新标签直开无历史时兜底回市场管理
+        if (router.history.canGoBack()) router.history.back()
+        else navigate({ to: '/admin/marketplace' })
+      }}>
+        <ArrowLeft className="h-4 w-4" />{t('common.back')}
       </Button>
 
       {/* 概览(只读);右上角为快照手动刷新(仅平台托管项) */}
