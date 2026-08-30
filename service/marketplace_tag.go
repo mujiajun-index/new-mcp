@@ -2,6 +2,8 @@ package service
 
 import (
 	"errors"
+	"regexp"
+	"strings"
 
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
@@ -13,6 +15,21 @@ type MarketplaceTagService struct{}
 
 // ErrTagNameExists 标签已存在。
 var ErrTagNameExists = errors.New("标签已存在")
+
+// tagColorRe 标签颜色格式:#RRGGBB。
+var tagColorRe = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+// normalizeTagColor 规范化标签颜色(空=默认灰;非法格式报错)。
+func normalizeTagColor(color string) (string, error) {
+	color = strings.TrimSpace(color)
+	if color == "" {
+		return "", nil
+	}
+	if !tagColorRe.MatchString(color) {
+		return "", errors.New("颜色格式须为 #RRGGBB")
+	}
+	return strings.ToLower(color), nil
+}
 
 func (s *MarketplaceTagService) List(status, page, pageSize int) ([]dto.MarketplaceTagItem, int64, error) {
 	offset := common.GetOffset(page, pageSize)
@@ -48,9 +65,14 @@ func (s *MarketplaceTagService) Create(req *dto.CreateMarketplaceTagReq) (*dto.M
 	if exists {
 		return nil, ErrTagNameExists
 	}
+	color, err := normalizeTagColor(req.Color)
+	if err != nil {
+		return nil, err
+	}
 	t := &model.MarketplaceTag{
 		Name:        req.Name,
 		Description: req.Description,
+		Color:       color,
 		SortOrder:   req.SortOrder,
 		Status:      common.StatusEnabled,
 	}
@@ -80,6 +102,13 @@ func (s *MarketplaceTagService) Update(id int64, req *dto.UpdateMarketplaceTagRe
 	}
 	if req.Description != nil {
 		t.Description = *req.Description
+	}
+	if req.Color != nil {
+		color, err := normalizeTagColor(*req.Color)
+		if err != nil {
+			return err
+		}
+		t.Color = color
 	}
 	if req.SortOrder != nil {
 		t.SortOrder = *req.SortOrder
@@ -111,6 +140,7 @@ func (s *MarketplaceTagService) toItem(t *model.MarketplaceTag) *dto.Marketplace
 		ID:          t.ID,
 		Name:        t.Name,
 		Description: t.Description,
+		Color:       t.Color,
 		SortOrder:   t.SortOrder,
 		Status:      t.Status,
 		CreatedAt:   t.CreatedAt.Format("2006-01-02T15:04:05Z"),

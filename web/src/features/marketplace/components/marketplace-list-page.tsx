@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { getMarketplaceItems, getMarketplaceGroups } from '../api'
+import { useTagColors, tagStyle } from '../tag-colors'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import { priceLabel } from '@/lib/billing'
 import { Input } from '@/components/ui/input'
@@ -23,6 +24,7 @@ export function MarketplaceListPage() {
 
   const { data: groupsData } = useQuery({ queryKey: ['marketplace-groups'], queryFn: getMarketplaceGroups })
   const groups: any[] = groupsData?.data ?? []
+  const tagColors = useTagColors()
 
   const { data, isLoading } = useQuery({
     queryKey: ['marketplace', keyword, category, groupId, page],
@@ -132,6 +134,13 @@ export function MarketplaceListPage() {
                         <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${item.category === 'instant' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'}`}>
                           {item.category === 'instant' ? t('marketplace.ready') : t('marketplace.source')}
                         </span>
+                        {item.tags?.slice(0, 2).map((tag) => (
+                          <span key={tag} style={tagStyle(tagColors[tag])}
+                            className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${tagColors[tag] ? '' : 'bg-muted text-muted-foreground'}`}>
+                            {tag}
+                          </span>
+                        ))}
+                        {item.tags?.length > 2 && <span className="text-[10px] text-muted-foreground">+{item.tags.length - 2}</span>}
                         {item.version && <span className="text-[10px] text-muted-foreground">v{item.version}</span>}
                       </div>
                     </div>
@@ -144,11 +153,6 @@ export function MarketplaceListPage() {
                       {item.rating_count > 0 && <span className="flex items-center gap-1"><Star className="h-3 w-3" />{item.rating_avg.toFixed(1)}</span>}
                     </div>
                   </div>
-                  {item.tags?.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {item.tags.slice(0, 2).map((tag) => <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[10px]">{tag}</span>)}
-                    </div>
-                  )}
                 </div>
               </Link>
             ))}

@@ -17,6 +17,12 @@ export async function getMarketplaceGroups() {
   return res.data
 }
 
+// 启用标签(公开端点,含颜色配置,供卡片/详情渲染标签颜色)
+export async function getMarketplaceTags() {
+  const res = await api.get('/marketplace-tags')
+  return res.data
+}
+
 // 引用式安装(D3/§11):把市场项添加为用户的引用服务(source=marketplace,空 config,平台托管)。
 // 旧 POST /marketplace/install(复制配置)已废弃,改为 POST /marketplace/:id/add。
 export async function addToMyServices(itemId: number) {

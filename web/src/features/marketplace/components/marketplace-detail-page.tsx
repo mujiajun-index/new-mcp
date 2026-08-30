@@ -2,6 +2,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { useNavigate, useParams, useRouter } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { getMarketplaceItem, addToMyServices } from '../api'
+import { useTagColors, tagStyle } from '../tag-colors'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import { priceLabel } from '@/lib/billing'
 import { Button } from '@/components/ui/button'
@@ -23,6 +24,7 @@ export function MarketplaceDetailPage() {
     queryKey: ['marketplace-item', id],
     queryFn: () => getMarketplaceItem(Number(id)),
   })
+  const tagColors = useTagColors()
 
   const installMutation = useMutation({
     mutationFn: () => addToMyServices(Number(id)),
@@ -214,7 +216,10 @@ export function MarketplaceDetailPage() {
       {item.tags && item.tags.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {item.tags.map((tag: string) => (
-            <span key={tag} className="rounded-full bg-muted px-3 py-1 text-xs">{tag}</span>
+            <span key={tag} style={tagStyle(tagColors[tag])}
+              className={`rounded-full px-3 py-1 text-xs font-medium ${tagColors[tag] ? '' : 'bg-muted text-muted-foreground'}`}>
+              {tag}
+            </span>
           ))}
         </div>
       )}

@@ -1089,6 +1089,10 @@
     "colName": "Name",
     "colDisplayName": "Display Name",
     "colSortOrder": "Sort Order",
+    "color": "Color",
+    "colorDefault": "Default",
+    "colorCustom": "Custom color",
+    "colorPreview": "Tag preview",
     "groupDesc": "Marketplace business group; an item belongs to one group",
     "tagDesc": "Tag dictionary; items pick tags from here"
   },

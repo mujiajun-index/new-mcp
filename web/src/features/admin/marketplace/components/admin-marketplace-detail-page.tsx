@@ -361,7 +361,8 @@ function EditForm({ item, groups, tagsLib, notSelfUse, onSave, pending }: {
             const selected = selectedTags.includes(tag.name)
             return (
               <button key={tag.id} type="button" onClick={() => toggleTag(tag.name)}
-                className={`rounded-full border px-3 py-1 text-xs transition-colors ${selected ? 'border-primary bg-primary text-primary-foreground' : 'bg-muted/40 hover:bg-muted'}`}>
+                className={`rounded-full border px-3 py-1 text-xs transition-colors ${selected ? 'border-primary bg-primary text-primary-foreground' : 'bg-muted/40 hover:bg-muted'}`}
+                style={!selected && tag.color ? { color: tag.color, backgroundColor: `${tag.color}1A`, borderColor: `${tag.color}55` } : undefined}>
                 {tag.name}
               </button>
             )

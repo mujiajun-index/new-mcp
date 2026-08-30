@@ -61,3 +61,15 @@ func AdminDeleteMarketplaceTag(c *gin.Context) {
 	}
 	common.Success(c, nil)
 }
+
+// --- Public ---
+
+// BrowseMarketplaceTags 公开:返回启用标签(供广场渲染标签颜色)。
+func BrowseMarketplaceTags(c *gin.Context) {
+	items, err := marketplaceTagService.ListEnabled()
+	if err != nil {
+		common.Error(c, http.StatusInternalServerError, "获取标签失败")
+		return
+	}
+	common.Success(c, items)
+}

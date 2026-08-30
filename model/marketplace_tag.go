@@ -13,6 +13,7 @@ type MarketplaceTag struct {
 	ID          int64          `json:"id" gorm:"primaryKey;autoIncrement"`
 	Name        string         `json:"name" gorm:"size:64;not null;uniqueIndex"`
 	Description string         `json:"description" gorm:"type:text"`
+	Color       string         `json:"color" gorm:"size:16"` // 标签颜色(#RRGGBB;空=默认灰)
 	SortOrder   int            `json:"sort_order" gorm:"default:0"`
 	Status      int            `json:"status" gorm:"default:1;index"`
 	CreatedAt   time.Time      `json:"created_at"`

@@ -21,6 +21,7 @@ func SetApiRouter(engine *gin.Engine) {
 	api.GET("/marketplace", controller.BrowseMarketplace)
 	api.GET("/marketplace/:id", controller.GetMarketplaceItem)
 	api.GET("/marketplace-groups", controller.BrowseMarketplaceGroups) // 启用分组(广场左侧筛选)
+	api.GET("/marketplace-tags", controller.BrowseMarketplaceTags)     // 启用标签(广场卡片/详情渲染颜色)
 
 	// Public settings (system name, footer, etc.)
 	api.GET("/settings/public", controller.GetPublicSettings)

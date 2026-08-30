@@ -17,7 +17,10 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { MobileListCard } from '@/components/ui/mobile-list-card'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, FolderTree, Tags } from 'lucide-react'
+import { Plus, Pencil, Trash2, FolderTree, Tags, Ban } from 'lucide-react'
+
+// 标签预设色板(''=默认灰,不配置);自定义色由原生取色器补充
+const TAG_COLOR_PRESETS = ['', '#3b82f6', '#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#10b981', '#14b8a6', '#64748b']
 
 // AdminCategoriesPage 市场分类管理:分组(业务分类) + 标签(字典)两个 Tab(§11)。
 export function AdminCategoriesPage() {
@@ -253,7 +256,7 @@ function TagsTab() {
             {tags.map((tag) => (
               <MobileListCard
                 key={tag.id}
-                title={<span className="truncate">{tag.name}</span>}
+                title={<span className="inline-flex items-center gap-1.5 truncate">{tag.color && <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: tag.color }} />}{tag.name}</span>}
                 badge={
                   <Badge variant={tag.status === 1 ? 'outline' : 'secondary'}
                     className={tag.status === 1 ? 'text-emerald-600 border-emerald-300' : ''}>
@@ -290,7 +293,12 @@ function TagsTab() {
           <TableBody>
             {tags.map((tag) => (
               <TableRow key={tag.id}>
-                <TableCell className="px-4 font-medium">{tag.name}</TableCell>
+                <TableCell className="px-4 font-medium">
+                  <span className="inline-flex items-center gap-1.5">
+                    {tag.color && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />}
+                    {tag.name}
+                  </span>
+                </TableCell>
                 <TableCell className="px-4 text-muted-foreground">{tag.description || '-'}</TableCell>
                 <TableCell className="px-4 text-muted-foreground">{tag.sort_order}</TableCell>
                 <TableCell className="px-4">
@@ -334,6 +342,7 @@ function TagDialog({ open, onOpenChange, onConfirm, pending, initial }: {
   const [form, setForm] = useState({
     name: initial?.name ?? '',
     description: initial?.description ?? '',
+    color: initial?.color ?? '',
     sort_order: String(initial?.sort_order ?? 0),
     status: initial ? String(initial.status) : '1',
   })
@@ -344,6 +353,7 @@ function TagDialog({ open, onOpenChange, onConfirm, pending, initial }: {
     onConfirm({
       name: form.name.trim(),
       description: form.description || undefined,
+      color: form.color,
       sort_order: parseInt(form.sort_order) || 0,
       status: parseInt(form.status),
     })
@@ -364,6 +374,30 @@ function TagDialog({ open, onOpenChange, onConfirm, pending, initial }: {
           <div className="space-y-2">
             <Label>{t('common.description')}</Label>
             <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          </div>
+          <div className="space-y-2">
+            <Label>{t('categories.color')}</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              {TAG_COLOR_PRESETS.map((c) => (
+                <button key={c || 'default'} type="button" onClick={() => setForm({ ...form, color: c })}
+                  title={c || t('categories.colorDefault')}
+                  className={`flex h-6 w-6 items-center justify-center rounded-full border transition-transform ${form.color === c ? 'ring-2 ring-primary ring-offset-2' : 'hover:scale-110'}`}
+                  style={c ? { backgroundColor: c } : undefined}>
+                  {!c && <Ban className="h-3.5 w-3.5 text-muted-foreground" />}
+                </button>
+              ))}
+              <input type="color" value={form.color || '#64748b'} title={t('categories.colorCustom')}
+                onChange={(e) => setForm({ ...form, color: e.target.value })}
+                className="h-6 w-6 cursor-pointer rounded-full border border-input bg-transparent p-0" />
+            </div>
+            {/* 实时预览:配置色在广场卡片上的展示形态 */}
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span style={form.color ? { backgroundColor: `${form.color}1A`, color: form.color } : undefined}
+                className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${form.color ? '' : 'bg-muted'}`}>
+                {form.name.trim() || 'Tag'}
+              </span>
+              {t('categories.colorPreview')}
+            </p>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
