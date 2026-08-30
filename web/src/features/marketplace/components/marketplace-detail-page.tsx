@@ -126,15 +126,6 @@ export function MarketplaceDetailPage() {
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">{t('marketplace.platformHostedDesc')}</p>
-              {/* stdio 条目暴露进程模式:记忆存储类服务是否独占进程,用户安装前有权知道 */}
-              {item.transport_type === 'stdio' && (
-                <p className="text-xs text-muted-foreground">
-                  {t('marketplace.processMode')}: {item.isolated_process ? t('marketplace.modeIsolated') : t('marketplace.modeShared')}
-                  <span className="ml-1">
-                    — {item.isolated_process ? t('marketplace.modeIsolatedHint') : t('marketplace.modeSharedHint')}
-                  </span>
-                </p>
-              )}
             </div>
             <Button className="gap-2" onClick={() => installMutation.mutate()} disabled={installMutation.isPending}>
               {installMutation.isPending ? <Zap className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
