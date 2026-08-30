@@ -31,7 +31,7 @@ type McpToolPrice struct {
 	// 条目名(工具名/资源上游 URI/提示名)。资源 URI 可能超 255,加宽到 512
 	// (utf8mb4 下复合唯一索引 2120B < InnoDB 3072B 上限;TEXT 建不了唯一索引)。
 	ToolName     string  `json:"tool_name" gorm:"size:512;not null;uniqueIndex:idx_item_kind_name"`
-	BillingType  string  `json:"billing_type" gorm:"size:16;default:per_call"` // free / per_call
+	BillingType  string  `json:"billing_type" gorm:"size:16;default:per_call"` // free / per_call / inherit(条目显式继承服务价,价格恒 0)
 	PricePerCall float64 `json:"price_per_call" gorm:"type:decimal(10,4);default:0"`
 	// 无 default 标签(GORM 对带 default 的 bool 零值 INSERT 时省略该列);
 	// 写入点(SetItemEntryPrices)显式赋 true。

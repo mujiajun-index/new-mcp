@@ -565,7 +565,7 @@ export interface MarketplaceDetail {
   // 商业化定价
   billing_type: string
   price_per_call: number
-  // 条目级定价(工具/资源/提示);无条目价时:工具回退服务价,资源/提示免费
+  // 条目级定价(工具/资源/提示);无条目价时按缺省:工具回退服务价,资源/提示免费
   entry_prices?: MarketplaceEntryPrice[]
 }
 
@@ -576,7 +576,7 @@ export type MarketplaceEntryKind = 'tool' | 'resource' | 'prompt'
 export interface MarketplaceEntryPrice {
   kind: MarketplaceEntryKind
   name: string
-  billing_type: string   // free / per_call
+  billing_type: string   // free / per_call / inherit(显式继承服务价)
   price_per_call: number // 展示货币单价(per_call)
 }
 

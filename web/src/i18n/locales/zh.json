@@ -1039,7 +1039,7 @@
     "billingPerCall": "按次计费",
     "billingFree": "免费",
     "pricePerCall": "按次单价",
-    "entryPricingHint": "条目级定价：工具未单独设价时按服务统一价计费；资源/提示未单独设价时免费。资源模板不可定价。",
+    "entryPricingHint": "条目级定价：未单独设价的条目按缺省计费——工具继承服务统一价，资源/提示免费；资源/提示也可显式选择「继承服务价」。资源模板不可定价。",
     "entryModeInherit": "继承服务价",
     "entryModeCustom": "自定义价",
     "entrySave": "保存定价",

@@ -163,6 +163,30 @@ func TestMarketplaceEntryPricingBilling(t *testing.T) {
 		}
 	})
 
+	t.Run("resource_inherits_service_price", func(t *testing.T) {
+		// 资源显式继承(billing_type=inherit)→ 按服务统一价计费(scope=service)
+		user, svc, item := createMarketplaceFixture(t, "e-inh", "user", 20000, url, "per_call", 0.01)
+		enrichItemSnapshots(t, item.ID)
+		setPrices(t, item.ID, dto.MarketplaceEntryPrice{Kind: billing.EntryKindResource, Name: "memo://overview", BillingType: "inherit", PricePerCall: 0})
+
+		svcSvc := &McpServiceService{}
+		res, err := svcSvc.ReadResource(user.ID, svc.ID, &dto.ReadResourceReq{URI: "memo://overview"})
+		if err != nil {
+			t.Fatalf("ReadResource: %v", err)
+		}
+		if res.IsError {
+			t.Fatalf("unexpected error: %s", res.Error)
+		}
+		// 服务级 0.01 × 500000 = 5000(而非条目价/免费)
+		log := lastManualTestLog(t)
+		if log.BillingStatus != "charged" || log.QuotaConsumed != 5000 || log.PriceScope != "service" || log.UnitPrice != 0.01 {
+			t.Fatalf("log status=%s quota=%d scope=%s unit=%v, want charged/5000/service/0.01", log.BillingStatus, log.QuotaConsumed, log.PriceScope, log.UnitPrice)
+		}
+		if quota, used := userQuota(t, user.ID); quota != 20000-5000 || used != 5000 {
+			t.Fatalf("quota=%d used=%d, want %d/%d", quota, used, 20000-5000, 5000)
+		}
+	})
+
 	t.Run("tool_entry_price_overrides_service", func(t *testing.T) {
 		user, svc, item := createMarketplaceFixture(t, "e-tool", "user", 50000, url, "per_call", 0.01)
 		setPrices(t, item.ID, dto.MarketplaceEntryPrice{Kind: billing.EntryKindTool, Name: "echo", BillingType: "per_call", PricePerCall: 0.05})
@@ -230,6 +254,13 @@ func TestMarketplaceEntryPricingBilling(t *testing.T) {
 		setPrices(t, item.ID)
 		if got := entryPricesOf(t, item.ID); len(got) != 0 {
 			t.Fatalf("after clear, entry prices = %+v, want empty", got)
+		}
+
+		// inherit 行合法:价格强制归零存储(解析时回退服务级链)
+		setPrices(t, item.ID, dto.MarketplaceEntryPrice{Kind: billing.EntryKindPrompt, Name: "review", BillingType: "inherit", PricePerCall: 0.05})
+		got = entryPricesOf(t, item.ID)
+		if len(got) != 1 || got[0].BillingType != "inherit" || got[0].PricePerCall != 0 {
+			t.Fatalf("inherit row = %+v, want billing_type=inherit price=0", got)
 		}
 
 		// 公开详情(启用态)同样暴露条目价

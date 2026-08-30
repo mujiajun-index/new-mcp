@@ -531,7 +531,7 @@ CREATE TABLE `mcp_tool_prices` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='市场服务条目级定价表';
 ```
 
-> **定价第 1 级**(§5.2):命中即生效,优先级最高。仅 `free`/`per_call`。管理端全量替换:`PUT /admin/marketplace/:id/entry-prices`(市场管理详情页工具/资源/提示列表逐条设价)。**资源/提示无条目价即免费**(不回退服务价);资源模板不可定价。`kind` 列带 `DEFAULT 'tool'`(存量行全是工具价);唯一索引从 `(marketplace_item_id, tool_name)` 扩为三元组(同名工具与提示可并存),旧索引 `idx_item_tool` 由启动迁移自动 DROP(model/main.go,GORM Migrator 按方言生成);`tool_name` 放宽到 512(资源 URI 可能超 255,utf8mb4 三元组唯一索引 2120B < InnoDB 3072B 上限)。
+> **定价第 1 级**(§5.2):命中即生效,优先级最高。`free`/`per_call`/`inherit`(显式继承服务统一价,价格恒 0,解析时回退服务级)。管理端全量替换:`PUT /admin/marketplace/:id/entry-prices`(市场管理详情页工具/资源/提示列表逐条设价)。**资源/提示无条目价即免费**(不回退服务价;显式 `inherit` 行则继承服务价);资源模板不可定价。`kind` 列带 `DEFAULT 'tool'`(存量行全是工具价);唯一索引从 `(marketplace_item_id, tool_name)` 扩为三元组(同名工具与提示可并存),旧索引 `idx_item_tool` 由启动迁移自动 DROP(model/main.go,GORM Migrator 按方言生成);`tool_name` 放宽到 512(资源 URI 可能超 255,utf8mb4 三元组唯一索引 2120B < InnoDB 3072B 上限)。
 
 ### 2.17 redemptions - 兑换码表(商业化 V1)
 
@@ -599,8 +599,8 @@ mcp_groups (1) ──< (N) mcp_group_services >── mcp_services
   (一个分组可同时含 source=user 免费服务 与 source=marketplace 付费市场引用)
 
 定价解析(运行时,仅 source=marketplace 服务):
-  mcp_tool_prices(item, kind, 条目名) > marketplace_items.billing_type/price_per_call(仅工具回退) > options.BillingDefaultPricePerCall(仅自用模式)
-  资源/提示条目未命中 → 免费(不回退服务价)
+  mcp_tool_prices(item, kind, 条目名) > marketplace_items.billing_type/price_per_call > options.BillingDefaultPricePerCall(仅自用模式)
+  服务级回退条件:工具缺省 / 条目 billing_type=inherit(显式继承);资源/提示缺省 → 免费(不回退服务价)
 ```
 
 ---

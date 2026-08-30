@@ -170,7 +170,8 @@ export function AdminMarketplaceDetailPage() {
         onSave={(body) => updateMutation.mutate({ id: Number(id), body })} pending={updateMutation.isPending} />
 
       {/* 快照展示(与前台市场/服务详情同款)+ 条目级定价(每条右侧),编辑表单下方。
-          保存为全量替换:不在载荷中的条目回退(工具→服务统一价,资源/提示→免费)。 */}
+          保存为全量替换:不在载荷中的条目按缺省回退(工具→服务统一价,资源/提示→免费);
+          资源/提示显式继承服务价以 inherit 行入载荷。 */}
       <p className="text-xs text-muted-foreground">{t('marketplace.entryPricingHint')}</p>
 
       <SectionCard title={t('marketplace.toolsProvided', { count: tools.length })}>
@@ -181,7 +182,7 @@ export function AdminMarketplaceDetailPage() {
             {tools.map((tool) => (
               <ToolItem key={tool.name} name={tool.name} description={tool.description} schema={tool.inputSchema}
                 action={
-                  <EntryPriceControl kind="tool" value={entryPricing.getEntry('tool', tool.name)}
+                  <EntryPriceControl value={entryPricing.getEntry('tool', tool.name)}
                     onChange={(v) => entryPricing.setEntry('tool', tool.name, v)} />
                 } />
             ))}
@@ -197,7 +198,7 @@ export function AdminMarketplaceDetailPage() {
             {resources.map((r) => (
               <ResourceItemCard key={r.uri} name={r.name} uri={r.uri} description={r.description} mimeType={r.mimeType}
                 action={
-                  <EntryPriceControl kind="resource" value={entryPricing.getEntry('resource', r.uri)}
+                  <EntryPriceControl value={entryPricing.getEntry('resource', r.uri)}
                     onChange={(v) => entryPricing.setEntry('resource', r.uri, v)} />
                 } />
             ))}
@@ -217,7 +218,7 @@ export function AdminMarketplaceDetailPage() {
             {prompts.map((p) => (
               <PromptItemCard key={p.name} name={p.name} description={p.description} args={p.arguments}
                 action={
-                  <EntryPriceControl kind="prompt" value={entryPricing.getEntry('prompt', p.name)}
+                  <EntryPriceControl value={entryPricing.getEntry('prompt', p.name)}
                     onChange={(v) => entryPricing.setEntry('prompt', p.name, v)} />
                 } />
             ))}

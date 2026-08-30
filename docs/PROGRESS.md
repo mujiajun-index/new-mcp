@@ -457,3 +457,55 @@ COMMERCIALIZATION V1.9(变更摘要⑱、§4.4 表结构、§5.2 条目级解析
 §6.7 计费口径扩展、手动测试口径、V2 任务17 标记已提前实现)、
 API.md(entry-prices 端点)、DATABASE(§2.16/ER/索引)同步。
 
+## 12. 条目定价三态统一:资源/提示支持继承服务价(2026-08-30)
+
+> 设计动机:§11 落地时资源/提示只有"免费/自定义价"两态,与工具三态不一致;
+> 市场管理详情页资源/提示卡片的展开箭头也在名称行末尾(工具在名称前)。本次
+> 全部与工具统一——三态(继承服务价/免费/自定义价)、卡片样式(箭头名称前+
+> 固定宽占位+action 右侧),仅**缺省不同:工具缺省继承服务价,资源/提示缺省
+> 免费**(与用户确认)。
+
+### 12.1 后端 ✅ 已完成(build + vet + test 通过)
+
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| 定价解析 | ✅ | `mcp_tool_prices.billing_type` 新值 `inherit`(价格恒 0,无 DDL 变更,size:16 容纳):条目命中 inherit 行 → 三种 kind 都回退服务级链(与缺省工具同款);资源/提示**缺省**(无行)仍免费不回退;`ResolveMarketplaceEntryPrice` 显式继承后非自用模式服务级未定价同报 ErrPriceNotConfigured |
+| 管理 API | ✅ | dto `MarketplaceEntryPrice.BillingType` 放开 `oneof=free per_call inherit`;`SetItemEntryPrices` 接受 inherit 行(价格强制归零存储),其余校验不变 |
+| 测试 | ✅ | `billing/pricing_entry_test.go` 新增 `TestResolveEntryInherit`(三 kind 显式继承→服务价 scope=service/免费服务继承→免费/未定价服务继承→报错·缺省资源放行);`service/marketplace_entry_test.go` 新增 `resource_inherits_service_price` 全链路(真实上游 charged·service·5000 quota)+ inherit 行归零存储校验 |
+
+### 12.2 前端 ✅ 已完成(tsc -b 通过)
+
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| 条目卡片 | ✅ | `mcp-items.tsx` ResourceItemCard/PromptItemCard 重排为 ToolItem 同款:展开箭头名称前(固定宽占位保持无描述条目对齐)、action 名称行右侧、描述点击展开 |
+| 定价控件 | ✅ | `EntryPriceControl` 三 kind 统一三态下拉(去掉工具才显示"继承服务价"的条件,`kind` prop 移除);`buildServerDraft` 识别 inherit 行回填;`buildPayload`:工具继承不落行(缺省即继承),资源/提示继承落 `inherit` 行(其缺省是免费,须持久化) |
+| 用户市场详情 | ✅ | `entryPriceBadge`:inherit 行与未设价同款弱化展示**服务统一价**(资源/提示缺省仍弱化"免费") |
+| i18n | ✅ | `entryPricingHint` 中英更新(说明缺省规则+显式继承) |
+
+### 12.3 文档 ✅
+
+COMMERCIALIZATION(§4.4/§5.2/§5.5/§6.7/手动测试口径)、API.md(entry-prices 端点)、
+DATABASE(§2.16/定价解析 ER)同步。
+
+
+## 13. 失败计费策略:客户端错误计费开关接线修复(2026-08-30)
+
+> Bug:计费设置内「客户端错误计费」开关关闭时,调用失败仍被计费(上游 key
+> 错误、上游余额不足等)。根因:结算成败判定是 `err == nil`——这类失败经
+> MCP 工具层结果上报(`isError=true`,传输层成功),被当成成功 Confirm 扣费;
+> 且 `ChargeOnClientError`/`ChargeOnTimeout` 两个选项定义了却从未接线。
+
+### 13.1 后端 ✅ 已完成(build + vet + test 通过)
+
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| 失败计费策略 | ✅ | 新增 `billing/charge_policy.go`:`CallFailure{Failed, ClientError, Timeout}` 分类(err / 结果内 isError / context 截止 / JSON-RPC 客户端码 -32700/-32600/-32601/-32602)+ `Charge()` 应用选项 + `ShouldChargeCall`/`ToolResultIsError` 便捷入口 |
+| 结算判定 | ✅ | 网关 4 处(tools/call 直连与 Smart execute、resources/read、prompts/get)+ 手动测试工具路径,`err == nil` 判定全部改为 `ShouldChargeCall`(经 priceKind* 同款包名遮蔽别名 `shouldChargeCall`/`toolResultIsError`);`finalizeBilling` 形参更名 `charge` |
+| 语义 | ✅ | 成功恒计费;失败默认退款;`ChargeOnClientError=true` → 客户端侧错误(JSON-RPC 客户端码 + 结果内 isError 工具层失败)计费;`ChargeOnTimeout=true` → 超时计费;平台侧失败(上游内部错误/密钥失效/上游余额不足/传输故障)恒退款 |
+| 测试 | ✅ | `billing/charge_policy_test.go`(4 个:isError 默认退款·开关计费、JSON-RPC 客户端码/内部错误、超时开关、isError 解析);`service/marketplace_call_test.go` 新增 `startFailingToolMCPServer`(上游 echo 恒返回 isError=true)+ `refunded_on_tool_level_error` / `charged_on_tool_level_error_when_option_on` 全链路子测试 |
+
+### 13.2 文档 ✅
+
+COMMERCIALIZATION §6.6 失败边界表(新增"工具层失败 isError"行,明确两类开关的
+实际分类口径)、§6.2 手动测试同口径说明、选项表 ChargeOnClientError/ChargeOnTimeout
+说明更新。

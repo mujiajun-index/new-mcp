@@ -225,7 +225,7 @@ CREATE TABLE `mcp_tool_prices` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='市场服务条目级定价表';
 ```
 
-> 命中即生效,优先级最高(定价解析第 1 级)。仅 `free`/`per_call`。**资源模板(templates)不可定价**——模板读取按展开后的具体 URI 走资源条目价,模板价无意义。唯一索引含 `kind`:同名工具与提示(如都叫 search)可分别设价;旧二元索引 `idx_item_tool` 由启动迁移自动 DROP(model/main.go,三方言经 GORM Migrator)。`tool_name` 放宽到 512(资源上游 URI 可能超 255;utf8mb4 复合唯一索引 2120B < InnoDB 3072B 上限)。管理端全量替换:`PUT /api/v1/admin/marketplace/:id/entry-prices`(§5.5)。
+> 命中即生效,优先级最高(定价解析第 1 级)。`free`/`per_call`/`inherit`(显式继承服务统一价,价格恒 0,解析时回退服务级)。**资源模板(templates)不可定价**——模板读取按展开后的具体 URI 走资源条目价,模板价无意义。唯一索引含 `kind`:同名工具与提示(如都叫 search)可分别设价;旧二元索引 `idx_item_tool` 由启动迁移自动 DROP(model/main.go,三方言经 GORM Migrator)。`tool_name` 放宽到 512(资源上游 URI 可能超 255;utf8mb4 复合唯一索引 2120B < InnoDB 3072B 上限)。管理端全量替换:`PUT /api/v1/admin/marketplace/:id/entry-prices`(§5.5)。
 
 ### 4.5 `mcp_call_logs` 表 — 扩展计费列(用量计量明细)
 
@@ -401,18 +401,19 @@ mcp_groups (1) ──< (N) mcp_group_services >── mcp_services
 
 ```
 resolveMarketplaceEntryPrice(item, kind, entryName, userGroup):     // kind ∈ tool/resource/prompt
-  1. 条目级: mcp_tool_prices[item.id, kind, entryName]      → 命中即用(最高优先)
-  2. 服务级: marketplace_items.billing_type/price_per_call  → 仅 kind=tool 回退;非 NULL 即用
-  3. 全局默认: options.BillingDefaultPricePerCall + BillingDefaultType(**仅自用模式生效**,§5.6;仅 kind=tool)
+  1. 条目级: mcp_tool_prices[item.id, kind, entryName]      → 命中即用(最高优先;billing_type=inherit 行回退第 2 级)
+  2. 服务级: marketplace_items.billing_type/price_per_call  → 工具缺省/条目显式 inherit 回退;非 NULL 即用
+  3. 全局默认: options.BillingDefaultPricePerCall + BillingDefaultType(**仅自用模式生效**,§5.6;同第 2 级的回退条件)
   4. 兜底:   BillingEnabled=false 或解析失败 → free(不计费)
 
 kind=resource/prompt 的差异:条目未命中 → **免费**(不回退服务价、不报未配置错);
-条目命中时 price_scope='entry'(工具命中仍为 'tool',存量日志口径不变)。
+显式 inherit 行 → 与工具同走第 2-3 级服务链。条目命中时 price_scope='entry'
+(工具命中仍为 'tool',存量日志口径不变)。
 
 最终 quota = baseQuota × groupRatio(user.Group)
 ```
 
-> 设计意图:管理员设全局默认价覆盖全站市场服务,再对个别市场服务(服务级)或其中某个工具/资源/提示(条目级)精确调整。**资源/提示默认免费**,需显式设条目价才计费(§6.7)。
+> 设计意图:管理员设全局默认价覆盖全站市场服务,再对个别市场服务(服务级)或其中某个工具/资源/提示(条目级)精确调整。**资源/提示默认免费**,需显式设条目价才计费(§6.7);也可对资源/提示显式选"继承服务价"(billing_type=inherit)按服务统一价计费。
 >
 > **自用模式门控(D15)**:全局默认(第 3 级)仅在 `SelfUseModeEnabled=true` 时作为兜底;非自用模式下市场上架/启用已强制显式定价(§5.6),解析必命中第 1-2 级,未定价则调用时报错(参考 new-api `relay/helper/price.go:23`)。
 
@@ -444,7 +445,7 @@ groupRatio 配置(Option, JSON):
 | 市场项服务级定价(单个) | `marketplace_items` | `PUT /api/v1/admin/marketplace/:id` | 扩展现有上架编辑 |
 | **市场项服务级定价(批量)** | `marketplace_items` | `PUT /api/v1/admin/marketplace/pricing/batch` | **多选已上架服务批量设价** |
 | 工具级定价 | `mcp_tool_prices` | `PUT /api/v1/admin/marketplace/:id/tools/:tool/pricing`(V2) | 按工具精确调价 |
-| **条目级定价(工具/资源/提示)** | `mcp_tool_prices` | `PUT /api/v1/admin/marketplace/:id/entry-prices`(**V1 已实现**) | **全量替换**该市场项条目价;不在载荷中的条目回退(工具→服务价,资源/提示→免费);条目须存在于快照(模板拒收)、per_call 须 price>0、(kind,name) 去重;事务删旧插新后失效价格缓存 |
+| **条目级定价(工具/资源/提示)** | `mcp_tool_prices` | `PUT /api/v1/admin/marketplace/:id/entry-prices`(**V1 已实现**) | **全量替换**该市场项条目价;不在载荷中的条目按缺省回退(工具→服务价,资源/提示→免费),资源/提示显式继承用 `inherit` 行;条目须存在于快照(模板拒收)、per_call 须 price>0、(kind,name) 去重;事务删旧插新后失效价格缓存 |
 
 **批量定价请求体示例**:
 ```json
@@ -503,7 +504,7 @@ POST /mcp、/smart/mcp、/mcp/group/:slug  (tools/call)
 
 > 此架构比"市场专用端点"更优:市场服务天然融入用户的分组/API Key 工具视图,可在同一分组混用免费自有 + 付费市场服务;计费仅在 resolver 命中 `source=marketplace` 时介入,自有服务路径零改动。
 
-> **服务详情页工具测试同口径计费**(`service/service.go` `callMarketplaceToolTested`):服务详情页对市场(平台托管)服务的工具测试复用同一 `BillingService` 流程——条目级定价解析 → 预扣(余额不足/未定价直接拒绝,不调上游)→ 成功 Confirm / 失败 Refund;成败判定与网关一致(上游 `tools/call` 传输层成功即扣费,结果内 `isError` 不退款)。手动测试走会话鉴权无 API Key,`ApiKeyID=0`(仅用户总额度约束,不占 Key 预算,不参与 `request_id` 幂等);管理员默认同样计费(`ChargeAdmin`)。结算结果随手动测试日志落计费列(`api_key_name=tool-test`、`extra.manual_test=true`)。**资源/提示测试同口径**(2026-08 起,`testMarketplaceEntry` 外壳):有**条目价**才扣费(资源条目键=上游 URI,提示=上游提示名),无条目价免费——与网关 `resources/read`/`prompts/get` 完全一致;自有/虚拟服务测试维持免费。
+> **服务详情页工具测试同口径计费**(`service/service.go` `callMarketplaceToolTested`):服务详情页对市场(平台托管)服务的工具测试复用同一 `BillingService` 流程——条目级定价解析 → 预扣(余额不足/未定价直接拒绝,不调上游)→ 成功 Confirm / 失败 Refund;成败判定与网关一致(统一走 `billing.ShouldChargeCall`:结果内 `isError=true` 的工具层失败默认退款,`ChargeOnClientError=true` 才计费,§6.6)。手动测试走会话鉴权无 API Key,`ApiKeyID=0`(仅用户总额度约束,不占 Key 预算,不参与 `request_id` 幂等);管理员默认同样计费(`ChargeAdmin`)。结算结果随手动测试日志落计费列(`api_key_name=tool-test`、`extra.manual_test=true`)。**资源/提示测试同口径**(2026-08 起,`testMarketplaceEntry` 外壳):有**条目价**才扣费(资源条目键=上游 URI,提示=上游提示名;显式 `inherit` 行按服务统一价),无条目价免费——与网关 `resources/read`/`prompts/get` 完全一致;自有/虚拟服务测试维持免费。
 
 ### 6.2 两段式计费(预扣 → 执行 → 确认/退款)
 
@@ -609,9 +610,10 @@ PreConsume 发现 user.Quota <= 0 或 user.Quota - 预扣 < 0(或 apiKey 预算�
 |------|------|
 | 自有服务(`source=user`)调用 | 免费,`billing_status='skipped'`,`quota_consumed=0` |
 | 市场服务(`source=marketplace`)余额不足 | 拒绝本次调用(§6.5),返回错误,**不调上游**;不禁用 Key |
-| 上游 MCP 返回错误 | `Refund()` 全额退,`billing_status='refunded'`,`quota_consumed=0` |
-| 客户端参数错误(上游 4xx) | 默认同上不收费;可配 `ChargeOnClientError` |
-| 工具超时 | 视为失败退款(或可配 `ChargeOnTimeout`) |
+| 上游 MCP 返回错误 | `Refund()` 全额退,`billing_status='refunded'`,`quota_consumed=0`。含 JSON-RPC 错误响应与传输/连接失败(上游密钥失效、上游余额不足、进程崩溃等平台侧原因恒退款) |
+| 工具层失败(结果内 `isError=true`) | 传输层成功但结果带 `isError=true`(上游 key 错误、余额不足等多经此形态上报):视为失败退款;`ChargeOnClientError=true` 时计费(成败判定统一走 `billing.ShouldChargeCall`) |
+| 客户端侧错误(上游 JSON-RPC 解析/请求/方法/参数错误码) | 默认退款;`ChargeOnClientError=true` 时计费 |
+| 工具超时(context 截止/连接超时) | 默认退款;`ChargeOnTimeout=true` 时计费 |
 | `BillingEnabled=false` | 市场服务也跳过计费,`billing_status='skipped'` |
 | 管理员用户(`role=admin/super_admin`) | 默认免计费(`skipped`),可配 |
 | 计费 DB 异常 | 默认 **FailOpen**:放行调用并记欠账(`billing_status='debt'` + 欠账计数),不阻断;可配 `BillingFailOpen=false` 拒绝。**欠账平账**:下次调用预扣时补扣 / 定时对账任务 `BillingDebtReconcile`(V2) |
@@ -623,15 +625,15 @@ PreConsume 发现 user.Quota <= 0 或 user.Quota - 预扣 < 0(或 apiKey 预算�
 | `tools/call`(Direct) | ✅ 扣费 | 命中 `source=marketplace` 服务按市场价扣;`source=user` 免费 |
 | `mcp.execute`(Smart) | ✅ 扣费 | 本质转发到上游工具,resolver 解析底层服务后同 `tools/call` 规则(命中 marketplace 才扣) |
 | `mcp.execute_batch`(Smart) | ✅ 扣费 | **逐项**计费:每项独立走插入点 A/B(预扣/确认/退款),幂等键 `request_id` 在哈希部分带批内序号(`tool_id#i`,防止批内相同两项漏扣);某项余额不足只阻塞该项,其余项照常执行 |
-| `resources/read`(Direct) | ✅ 有条目价才扣 | 市场服务按**资源条目价**(`mcp_tool_prices` kind=resource,条目键=上游 URI)扣费;无条目价→免费(不回退服务价)。两段式与 tools/call 同一套(预扣→确认/退款),幂等键写入日志 `request_id` 列 |
-| `prompts/get`(Direct) | ✅ 有条目价才扣 | 市场服务按**提示条目价**(kind=prompt,条目键=上游提示名)扣费;无条目价→免费 |
+| `resources/read`(Direct) | ✅ 有条目价才扣 | 市场服务按**资源条目价**(`mcp_tool_prices` kind=resource,条目键=上游 URI)扣费;显式 `inherit` 行按服务统一价;无条目价→免费(不回退服务价)。两段式与 tools/call 同一套(预扣→确认/退款),幂等键写入日志 `request_id` 列 |
+| `prompts/get`(Direct) | ✅ 有条目价才扣 | 市场服务按**提示条目价**(kind=prompt,条目键=上游提示名)扣费;显式 `inherit` 行按服务统一价;无条目价→免费 |
 | `mcp.read`(Smart) | ✅ 有条目价才扣 | 智能模式读资源/取提示,复用原生上游核心,计费口径与原生完全一致(幂等键复用外层 mcp.read 请求键) |
 | `initialize` | ❌ 免费 | 协议握手 |
 | `tools/list`(Direct/Smart) | ❌ 免费 | 工具发现 |
 | `resources/list` / `resources/templates/list` / `prompts/list` | ❌ 免费 | 聚合枚举,无单条目执行 |
 | `mcp.search` / `mcp.describe`(Smart) | ❌ 免费 | 搜索/描述元工具(只读发现) |
 
-> **判定原则**:只有**实际执行上游**(工具调用;以及设有条目价的资源/提示读取)才扣费;握手与发现类一律免费。Smart 模式下 `mcp.execute` / `mcp.execute_batch` / `mcp.read` 必须解析到目标服务的 `source`,命中 marketplace 才计费。**资源/提示默认免费**(§5.2),条目价是唯一计费入口。
+> **判定原则**:只有**实际执行上游**(工具调用;以及设有条目价或显式继承服务价的资源/提示读取)才扣费;握手与发现类一律免费。Smart 模式下 `mcp.execute` / `mcp.execute_batch` / `mcp.read` 必须解析到目标服务的 `source`,命中 marketplace 才计费。**资源/提示默认免费**(§5.2),条目价(含 `inherit`)是其唯一计费入口。
 > **虚拟工具**(vision/camera 等,`transport_type='virtual'`)属用户自有,**保持免费**;**永不可上架为市场服务**(D16/§11:手动添加/克隆上架均拒绝 `transport_type='virtual'`),仅自有配置、配置者自己使用。
 
 ---
@@ -904,8 +906,8 @@ features/redemption-codes/
 | 计费 | `GroupRatio` | string(JSON) | {"default":1,"vip":1,"svip":1} | 分组倍率 |
 | 计费 | `TrustQuota` | int | 5000000 | 信任额度旁路阈值(默认 10 元) |
 | 计费 | `ChargeAdmin` | bool | false | 是否对管理员计费 |
-| 计费 | `ChargeOnClientError` | bool | false | 客户端参数错误是否收费 |
-| 计费 | `ChargeOnTimeout` | bool | false | 超时是否收费 |
+| 计费 | `ChargeOnClientError` | bool | false | 客户端侧错误是否收费:上游 JSON-RPC 解析/请求/方法/参数错误码,或 tools/call 结果内 `isError=true` 的工具层失败(MCP 协议不区分 4xx/5xx,统一归此类管控) |
+| 计费 | `ChargeOnTimeout` | bool | false | 超时(context 截止/连接超时)是否收费 |
 | 计费 | `BillingFailOpen` | bool | true | 计费 DB 异常时是否放行(记欠账) |
 | 额度 | `QuotaForNewUser` | int | 0 | 新用户赠送额度 |
 | 额度 | `QuotaRemindThreshold` | int | 0 | 低额度邮件提醒阈值(0=不提醒) |

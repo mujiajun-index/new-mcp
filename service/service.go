@@ -549,7 +549,8 @@ func manualEntryFinalize(sess *billing.BillingSession, bill *manualTestBilling, 
 //   - 免费(含计费总开关关闭)/价格加载失败(FailOpen):放行不扣费;
 //   - 未显式定价(非自用模式):拒绝,不调上游;
 //   - 余额不足:拒绝本次调用,不调上游(不禁用、不影响已有余额);
-//   - 成败判定=上游 tools/call 是否成功(结果内 isError 属工具层错误,同样扣费,同网关);
+//   - 成败判定=上游 tools/call 是否成功且结果无 isError(工具层失败默认退款,
+//     ChargeOnClientError=true 才计费,同网关 §6.6);
 //   - 手动测试走会话鉴权无 API Key,ApiKeyID=0:仅受用户总额度约束,不占任何 Key 预算;
 //   - 管理员默认同样计费(ChargeAdmin=true),仅显式关闭时豁免。
 //
@@ -582,15 +583,18 @@ func (s *McpServiceService) callMarketplaceToolTested(svc *model.McpService, use
 	}
 
 	res, callOK := callToolTested(svc, userID, req)
-	manualEntryFinalize(sess, bill, callOK)
+	// 成败判定同网关(§6.6):传输层失败(callOK=false)退款;结果内 isError(工具层
+	// 失败,如上游 key 错误/余额不足)默认退款,ChargeOnClientError=true 才计费。
+	manualEntryFinalize(sess, bill, callOK && billing.ShouldChargeCall(nil, res.IsError))
 	recordManualTestLog(svc, userID, "tools/call", req.Name, res, bill)
 	return res, nil
 }
 
 // testMarketplaceEntry 市场服务资源/提示测试的同口径计费外壳:物化平台配置 → 条目价
 // 解析+预扣 → call() → 结算 → 落手动测试日志(与工具测试/网关 resources/read、
-// prompts/get 完全同口径;资源/提示无条目价→免费)。call 的第二返回值 callOK=传输层
-// 成功(资源/提示读取无结果内 isError 概念,调用成功即扣费,同网关 err==nil 判定)。
+// prompts/get 完全同口径;资源/提示无条目价缺省免费,显式继承按服务价)。call 的第二
+// 返回值 callOK=传输层成功(资源/提示读取无结果内 isError 概念,调用成功即扣费,同网关
+// err==nil 判定)。
 func (s *McpServiceService) testMarketplaceEntry(svc *model.McpService, userID int64, kind, entryName, method, target string, call func() (*dto.CallToolResult, bool)) (*dto.CallToolResult, error) {
 	bill := &manualTestBilling{Status: "skipped", ItemID: svc.MarketplaceItemID}
 
@@ -619,8 +623,8 @@ func (s *McpServiceService) testMarketplaceEntry(svc *model.McpService, userID i
 
 // callToolTested 工具测试的实际调用:虚拟服务分发或上游 tools/call,全部出口
 // (连接失败/工具不存在/调用失败/结果解析)统一返回 CallToolResult 供外层落日志。
-// 第二返回值 callOK=上游调用在传输层成功(含结果内 isError 的工具层错误)——市场服务
-// 计费成败判定与网关一致(err == nil 即 Confirm),结果级错误不退款。
+// 第二返回值 callOK=上游调用在传输层成功(结果内 isError 的工具层错误由外层结合
+// ChargeOnClientError 判定,传输失败恒退款,同网关 §6.6)。
 func callToolTested(svc *model.McpService, userID int64, req *dto.CallToolReq) (*dto.CallToolResult, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()

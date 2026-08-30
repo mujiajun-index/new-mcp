@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mujkjk/newmcp/billing"
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/model"
 )
@@ -21,8 +22,8 @@ import (
 //     resources/read、prompts/get 拒绝禁用条目(否则隐藏但仍可直读,勾选形同虚设)。
 //     模板禁用只隐藏 templates/list 条目;按模板展开出的 URI 读取不做前缀匹配拦截。
 //   - resources/read、prompts/get 会真实调用上游,计入调用日志;市场来源服务按
-//     条目级定价计费(工具走三级链,资源/提示仅条目价、无价免费,与 tools/call
-//     同一套预扣→确认/退款链路)。list 聚合仍不计费。
+//     条目级定价计费(条目价命中即用;资源/提示缺省免费,显式 inherit 继承服务价,
+//     与 tools/call 同一套预扣→确认/退款链路)。list 聚合仍不计费。
 //   - 仅直连模式开放原生 list/能力声明;智能模式下资源/提示经元工具发现(见上
 //     nativeItemsAllowed),list 返回空、initialize 不声明 resources/prompts。
 const gatewayURIScheme = "newmcp"
@@ -411,7 +412,7 @@ func (h *GatewayHandler) readUpstreamResource(ctx context.Context, reqID interfa
 	}
 
 	// 计费插入点 A:市场来源按条目价预扣(条目键=上游原始 URI,与管理端快照一致;
-	// 无条目价→免费放行)。余额不足/未定价 → 拒绝,不调上游。
+	// 无条目价缺省免费放行,显式 inherit 按服务价)。余额不足/未定价 → 拒绝,不调上游。
 	var bill *billingOutcome
 	if session.Source == "marketplace" {
 		bill = &billingOutcome{}
@@ -421,9 +422,9 @@ func (h *GatewayHandler) readUpstreamResource(ctx context.Context, reqID interfa
 	}
 
 	raw, err := session.Adapter.ReadResource(ctx, upstreamURI)
-	// 计费插入点 B:成功确认 / 失败退款
+	// 计费插入点 B:成功确认 / 失败退款(资源结果无 isError 概念,仅看 err;超时归 ChargeOnTimeout)
 	if bill != nil {
-		h.finalizeBilling(bill, err == nil)
+		h.finalizeBilling(bill, billing.ShouldChargeCall(err, false))
 	}
 	if err != nil {
 		return h.errorResponse(reqID, -32603, "Failed to read resource: "+err.Error()), session.ServiceID, session.ServiceName, bill
@@ -499,9 +500,9 @@ func (h *GatewayHandler) getUpstreamPrompt(ctx context.Context, reqID interface{
 	}
 
 	raw, err := session.Adapter.GetPrompt(ctx, promptName, arguments)
-	// 计费插入点 B:成功确认 / 失败退款
+	// 计费插入点 B:成功确认 / 失败退款(提示结果无 isError 概念,仅看 err;超时归 ChargeOnTimeout)
 	if bill != nil {
-		h.finalizeBilling(bill, err == nil)
+		h.finalizeBilling(bill, billing.ShouldChargeCall(err, false))
 	}
 	if err != nil {
 		return h.errorResponse(reqID, -32603, "Failed to get prompt: "+err.Error()), session.ServiceID, session.ServiceName, bill

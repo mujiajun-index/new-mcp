@@ -1039,7 +1039,7 @@
     "billingPerCall": "Per-call",
     "billingFree": "Free",
     "pricePerCall": "Price per call",
-    "entryPricingHint": "Entry-level pricing: tools without an entry price fall back to the service price; resources and prompts without one are free. Resource templates cannot be priced.",
+    "entryPricingHint": "Entry-level pricing: entries without an individual price use the default — tools inherit the service price, resources and prompts are free; resources and prompts can also explicitly inherit the service price. Resource templates cannot be priced.",
     "entryModeInherit": "Inherit service price",
     "entryModeCustom": "Custom price",
     "entrySave": "Save pricing",

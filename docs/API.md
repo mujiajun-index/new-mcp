@@ -1615,21 +1615,22 @@ wss://api.newmcp.pro/mcp/passive/?token=<PASSIVE_JWT>
 - 响应:`{ "success": true, "data": { "affected": 2 } }`
 
 #### PUT /admin/marketplace/:id/entry-prices `(条目级定价,全量替换)`
-**市场项条目级定价**(§5.2/§5.5):对工具/资源/提示逐条设价。载荷为该市场项期望的**完整**条目价列表(全量替换,事务删旧插新);不在载荷中的条目回退——**工具→服务统一价,资源/提示→免费**。
+**市场项条目级定价**(§5.2/§5.5):对工具/资源/提示逐条设价。载荷为该市场项期望的**完整**条目价列表(全量替换,事务删旧插新);不在载荷中的条目按缺省回退——**工具→服务统一价,资源/提示→免费**。
 - 请求:
 ```json
 { "prices": [
     { "kind": "tool",     "name": "search",          "billing_type": "free",     "price_per_call": 0 },
     { "kind": "tool",     "name": "fetch",           "billing_type": "per_call", "price_per_call": 0.05 },
-    { "kind": "resource", "name": "memo://overview", "billing_type": "per_call", "price_per_call": 0.02 },
+    { "kind": "resource", "name": "memo://overview", "billing_type": "inherit",  "price_per_call": 0 },
     { "kind": "prompt",   "name": "review",          "billing_type": "per_call", "price_per_call": 0.01 }
 ] }
 ```
 - `kind`: `tool` / `resource` / `prompt`;`name` 为条目键(工具名 / 资源**上游 URI** / 上游提示名,与计费解析同口径)。
+- `billing_type`: `free` / `per_call` / `inherit`(显式继承服务统一价,`price_per_call` 强制归零存储)。工具缺省即继承无需落 `inherit` 行;资源/提示缺省是免费,要继承服务价须显式落 `inherit` 行。
 - 校验(400):条目不存在于服务快照(资源模板不可定价——模板读取按展开后的具体 URI 走资源条目价)、`per_call` 须 `price_per_call > 0`、`(kind, name)` 重复、价格负数。
 - 响应:`{ "success": true, "data": null }`。保存后价格缓存即时失效。
 - 详情暴露:管理端与公开市场详情(`GET /admin/marketplace/:id` / `GET /marketplace/:id`)均返回 `entry_prices` 数组(同上结构),用户侧市场详情页据此在条目右侧展示价格。
-- 计费口径:工具走"条目→服务→全局默认"三级链;**资源/提示仅有条目价一级**(无价即免费,不回退服务价),命中时日志 `price_scope='entry'`。
+- 计费口径:三种 kind 命中条目价即用(工具日志 `price_scope='tool'`,资源/提示 `price_scope='entry'`);未命中或缺省——工具(及显式 `inherit` 的资源/提示)走"服务→全局默认"链,**缺省资源/提示免费**(不回退服务价)。
 
 #### POST /admin/marketplace/clone
 **从自有服务克隆上架**(D14,唯一上架入口,已移除手动创建):深拷贝 transport/config/auth/tools,与源服务无关联。克隆保留源凭证并加密落库,前端提示替换为平台凭证。非自用模式须显式定价。前端选择服务后自动回显 `name`/`display_name`/`description`,一般无需修改直接提交。

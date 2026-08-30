@@ -483,7 +483,8 @@ func entryKindLabel(kind string) string {
 }
 
 // SetItemEntryPrices 全量替换市场项的条目级定价(§5.2 条目维度):prices 为管理员期望
-// 的完整条目价列表,不在其中的条目回退(工具→服务统一价,资源/提示→免费)。
+// 的完整条目价列表,不在其中的条目按缺省回退(工具→服务统一价,资源/提示→免费);
+// 资源/提示显式继承服务价用 billing_type=inherit 行表达(价格强制归零存储)。
 // 校验:条目必须存在于快照(条目键与网关计费同口径:工具名/资源上游 URI/提示名;
 // 资源模板不在集合中,天然拒绝——按模板展开的具体 URI 读取按资源条目计费,模板价
 // 无意义)、价格非负、per_call 须 price>0(同 explicitlyPriced 口径)、(kind,name) 去重。
@@ -547,12 +548,17 @@ func (s *MarketplaceService) SetItemEntryPrices(itemID int64, prices []dto.Marke
 			return fmt.Errorf("条目不存在于服务快照: %s %s(资源模板不可定价)", entryKindLabel(p.Kind), p.Name)
 		}
 		seen[key] = true
+		// inherit 行不带价(解析时回退服务级链),价格强制归零
+		price := p.PricePerCall
+		if p.BillingType == billing.BillingTypeInherit {
+			price = 0
+		}
 		rows = append(rows, model.McpToolPrice{
 			MarketplaceItemID: itemID,
 			Kind:              p.Kind,
 			ToolName:          p.Name,
 			BillingType:       p.BillingType,
-			PricePerCall:      p.PricePerCall,
+			PricePerCall:      price,
 			Enabled:           true, // 无 default 的 bool 显式赋值(§GORM 约定)
 		})
 	}

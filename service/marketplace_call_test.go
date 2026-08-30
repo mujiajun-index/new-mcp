@@ -51,6 +51,29 @@ func startEchoMCPServer(t *testing.T) (url string, shutdown func()) {
 	return httpSrv.URL, httpSrv.Close
 }
 
+// startFailingToolMCPServer 起一个 echo 工具恒以结果内 isError=true 失败的 MCP 服务
+// (模拟上游 key 错误/上游余额不足等经工具层结果上报的失败,传输层本身成功)。
+func startFailingToolMCPServer(t *testing.T) (url string, shutdown func()) {
+	t.Helper()
+	server := mcp.NewServer(&mcp.Implementation{Name: "upstream-failing", Version: "v0.0.1"}, nil)
+	server.AddTool(&mcp.Tool{
+		Name:        "echo",
+		Description: "echo back",
+		InputSchema: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{"msg": map[string]any{"type": "string"}},
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: "upstream api key invalid"}},
+		}, nil
+	})
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
+	httpSrv := httptest.NewServer(handler)
+	return httpSrv.URL, httpSrv.Close
+}
+
 // setupMarketplaceBillingTest 初始化计费测试环境:内存级 sqlite + 选项(BillingEnabled=true,
 // 其余取默认:ChargeAdmin=true、PreConsumedQuota=500、QuotaPerUnit=500000)。
 func setupMarketplaceBillingTest(t *testing.T) {
@@ -181,6 +204,52 @@ func TestCallToolMarketplaceBilling(t *testing.T) {
 		}
 		if quota, used := userQuota(t, user.ID); quota != 20000 || used != 0 {
 			t.Fatalf("quota=%d used=%d, want refunded to 20000/0", quota, used)
+		}
+	})
+
+	// 上游经工具层结果报错(结果内 isError=true,如上游 key 错误/余额不足):
+	// 传输层成功但调用失败——ChargeOnClientError=false(默认)退款,打开后计费。
+	t.Run("refunded_on_tool_level_error", func(t *testing.T) {
+		failURL, failShutdown := startFailingToolMCPServer(t)
+		defer failShutdown()
+		user, svc, _ := createMarketplaceFixture(t, "u-iso", "user", 20000, failURL, "per_call", 0.01)
+		res, err := s.CallTool(user.ID, svc.ID, req)
+		if err != nil {
+			t.Fatalf("CallTool: %v", err)
+		}
+		if !res.IsError {
+			t.Fatalf("expected tool-level error result")
+		}
+		log := lastManualTestLog(t)
+		if log.BillingStatus != "refunded" || log.QuotaConsumed != 0 {
+			t.Fatalf("billing status=%s quota=%d, want refunded/0", log.BillingStatus, log.QuotaConsumed)
+		}
+		if quota, used := userQuota(t, user.ID); quota != 20000 || used != 0 {
+			t.Fatalf("quota=%d used=%d, want refunded to 20000/0", quota, used)
+		}
+	})
+
+	t.Run("charged_on_tool_level_error_when_option_on", func(t *testing.T) {
+		if err := model.UpdateOption("ChargeOnClientError", "true"); err != nil {
+			t.Fatalf("enable ChargeOnClientError: %v", err)
+		}
+		defer func() { _ = model.UpdateOption("ChargeOnClientError", "false") }()
+
+		failURL, failShutdown := startFailingToolMCPServer(t)
+		defer failShutdown()
+		user, svc, _ := createMarketplaceFixture(t, "u-iso-on", "user", 20000, failURL, "per_call", 0.01)
+		res, err := s.CallTool(user.ID, svc.ID, req)
+		if err != nil {
+			t.Fatalf("CallTool: %v", err)
+		}
+		if !res.IsError {
+			t.Fatalf("expected tool-level error result")
+		}
+		if log := lastManualTestLog(t); log.BillingStatus != "charged" || log.QuotaConsumed != priceQuota {
+			t.Fatalf("billing status=%s quota=%d, want charged/%d", log.BillingStatus, log.QuotaConsumed, priceQuota)
+		}
+		if quota, used := userQuota(t, user.ID); quota != 20000-priceQuota || used != priceQuota {
+			t.Fatalf("quota=%d used=%d, want %d/%d", quota, used, 20000-priceQuota, priceQuota)
 		}
 	})
 

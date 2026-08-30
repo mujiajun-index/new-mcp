@@ -57,6 +57,12 @@ const (
 	priceKindPrompt   = billing.EntryKindPrompt
 )
 
+// 失败计费判定(§6.6)同因遮蔽经别名引用。
+var (
+	shouldChargeCall  = billing.ShouldChargeCall
+	toolResultIsError = billing.ToolResultIsError
+)
+
 type executeResult struct {
 	Resp        *JSONRPCResponse
 	ToolName    string
@@ -472,9 +478,11 @@ func (h *GatewayHandler) routeAndCall(ctx context.Context, reqID interface{}, lo
 
 	result, err := session.Adapter.Call(ctx, "tools/call", callParams)
 
-	// 计费插入点 B:成功确认 / 失败退款(仅已启动计费的市场调用)
+	// 计费插入点 B:成功确认 / 失败退款(仅已启动计费的市场调用)。
+	// 成败含结果内 isError(工具层失败,如上游 key 错误/余额不足):默认退款,
+	// ChargeOnClientError/ChargeOnTimeout 打开时对应失败形态才计费(§6.6)。
 	if session.Source == "marketplace" {
-		h.finalizeBilling(billing, err == nil)
+		h.finalizeBilling(billing, shouldChargeCall(err, toolResultIsError(result)))
 	}
 
 	if err != nil {
@@ -680,9 +688,9 @@ func (h *GatewayHandler) executeOne(ctx context.Context, logCtx *LogContext, too
 
 	result, err := session.Adapter.Call(ctx, "tools/call", callParams)
 
-	// 计费插入点 B:成功确认 / 失败退款
+	// 计费插入点 B:成功确认 / 失败退款(成败含结果内 isError,§6.6,同 routeAndCall)
 	if billing != nil {
-		h.finalizeBilling(billing, err == nil)
+		h.finalizeBilling(billing, shouldChargeCall(err, toolResultIsError(result)))
 	}
 
 	oc := &callOutcome{
@@ -1094,7 +1102,8 @@ func (h *GatewayHandler) materializeMarketplaceConfig(svc *model.McpService) err
 }
 
 // preConsumeBilling 计费插入点 A:解析条目级定价并预扣(§6.2)。
-// kind=tool 走"条目→服务→全局默认"三级链;resource/prompt 仅条目级(无价即免费)。
+// 条目价命中即用;工具缺省/条目显式 inherit 走"服务→全局默认"链,
+// 资源/提示缺省免费(显式 inherit 同工具回退服务价)。
 // 返回 true=放行(含免费/欠账/已预扣),false=拒绝本次调用(余额不足/未定价/计费不可用)。
 // 仅市场来源服务调用(调用方已按 session.Source == "marketplace" 判定)。
 func (h *GatewayHandler) preConsumeBilling(ctx context.Context, logCtx *LogContext, session *bridge.McpSession, kind, entryName, requestID string, out *billingOutcome) bool {
@@ -1160,7 +1169,9 @@ func (h *GatewayHandler) preConsumeBilling(ctx context.Context, logCtx *LogConte
 }
 
 // finalizeBilling 计费插入点 B:成功确认 / 失败退款(§6.2)。仅对已启动计费的会话结算。
-func (h *GatewayHandler) finalizeBilling(out *billingOutcome, success bool) {
+// charge=是否计费:调用方以 billing.ShouldChargeCall 判定(成败含结果内 isError,
+// 客户端错误/超时受 ChargeOnClientError/ChargeOnTimeout 开关控制,§6.6)。
+func (h *GatewayHandler) finalizeBilling(out *billingOutcome, charge bool) {
 	if out == nil || out.sess == nil {
 		return
 	}
@@ -1169,7 +1180,7 @@ func (h *GatewayHandler) finalizeBilling(out *billingOutcome, success bool) {
 		out.Quota = 0
 		return
 	}
-	if success {
+	if charge {
 		_ = h.billing.Confirm(out.sess)
 		// 仅在真正扣费(ConsumedQuota>0)时记 charged;幂等重试等零消费记 skipped,
 		// 避免"未实扣却显示已扣费"误导日志,并防止 HasChargedRequest 误命中零额度行。

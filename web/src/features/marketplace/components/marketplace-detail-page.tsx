@@ -41,13 +41,14 @@ export function MarketplaceDetailPage() {
   const templates: McpResourceTemplate[] = item?.resources_snapshot?.templates || []
   const prompts: McpPrompt[] = item?.prompts_snapshot || []
 
-  // 条目级价格:命中→高亮徽标;未命中→工具弱化显示服务统一价,资源/提示弱化显示"免费"
+  // 条目级价格:命中 free/per_call → 高亮徽标;未命中或显式继承(inherit)→ 弱化显示
+  // 回退价(工具/显式继承条目=服务统一价,资源/提示缺省=免费)
   const entryMap = new Map(
     ((item?.entry_prices || []) as MarketplaceEntryPrice[]).map((p) => [`${p.kind}:${p.name}`, p] as const),
   )
   const entryPriceBadge = (kind: 'tool' | 'resource' | 'prompt', name: string, fallback: string) => {
     const e = entryMap.get(`${kind}:${name}`)
-    if (e) {
+    if (e && e.billing_type !== 'inherit') {
       return (
         <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${
           e.billing_type === 'free' ? 'bg-muted text-muted-foreground' : 'bg-primary/10 text-primary'
@@ -58,7 +59,7 @@ export function MarketplaceDetailPage() {
     }
     return (
       <span className="shrink-0 text-xs text-muted-foreground" title={t('marketplace.servicePriceHint')}>
-        {fallback}
+        {e ? priceText : fallback}
       </span>
     )
   }
@@ -187,7 +188,7 @@ export function MarketplaceDetailPage() {
         )}
       </SectionCard>
 
-      {/* Resources snapshot(资源未单独设价即免费;模板不可定价) */}
+      {/* Resources snapshot(资源缺省免费,可显式继承服务价;模板不可定价) */}
       <SectionCard title={t('marketplace.resourcesProvided', { count: resources.length + templates.length })}>
         {resources.length === 0 && templates.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-6">{t('services.noResources')}</p>
@@ -204,7 +205,7 @@ export function MarketplaceDetailPage() {
         )}
       </SectionCard>
 
-      {/* Prompts snapshot(提示未单独设价即免费) */}
+      {/* Prompts snapshot(提示缺省免费,可显式继承服务价) */}
       <SectionCard title={t('marketplace.promptsProvided', { count: prompts.length })}>
         {prompts.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-6">{t('services.noPrompts')}</p>

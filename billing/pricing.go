@@ -15,12 +15,17 @@ const (
 	BillingTypePerCall = "per_call"
 )
 
-// 条目种类(条目级定价的维度)。工具条目回退服务价;资源/提示条目无价即免费。
+// 条目种类(条目级定价的维度)。三种 kind 条目未设价时的缺省:工具继承服务价,
+// 资源/提示免费;资源/提示要继承服务价须显式存 inherit 行。
 const (
 	EntryKindTool     = "tool"
 	EntryKindResource = "resource"
 	EntryKindPrompt   = "prompt"
 )
+
+// BillingTypeInherit 条目价标记:显式继承服务统一价(仅 mcp_tool_prices 条目行使用,
+// 服务级定价恒为 free/per_call)。效果与"未设条目价的工具"一致(回退服务级链)。
+const BillingTypeInherit = "inherit"
 
 // PriceScopeEntry 条目级价格来源:资源/提示条目命中(工具命中沿用存量 "tool" 口径)。
 const PriceScopeEntry = "entry"
@@ -103,13 +108,13 @@ func InvalidatePricingCacheItem(itemID int64) {
 }
 
 // ResolveMarketplaceEntryPrice 条目级定价解析(§5.2 的条目维度扩展):
-//   - kind=tool:按 3 级解析——
-//     1. 条目级 mcp_tool_prices[item, tool, name] —— 命中即用(最高优先,scope=tool)
-//     2. 服务级 marketplace_items.billing_type / price_per_call
-//     3. 全局默认 BillingDefaultType / BillingDefaultPricePerCall(**仅自用模式生效**)
-//     非自用模式且无法解析到有效价 → ErrPriceNotConfigured。
-//   - kind=resource/prompt:条目命中 → 该价(scope=entry);未命中 → 免费
-//     (**不回退服务价**:资源/提示默认免费),恒不返回 ErrPriceNotConfigured。
+//   - 第 1 级条目级 mcp_tool_prices[item, kind, name] —— 命中即用(最高优先;
+//     工具 scope=tool,资源/提示 scope=entry);billing_type=inherit 行回退第 2 级。
+//   - 未命中条目价的缺省:工具继承服务级,资源/提示免费(**不回退服务价**,
+//     恒不返回 ErrPriceNotConfigured);三种 kind 显式 inherit 后都走服务级链——
+//     1. 服务级 marketplace_items.billing_type / price_per_call(已显式定价才用)
+//     2. 全局默认 BillingDefaultType / BillingDefaultPricePerCall(**仅自用模式生效**)
+//     非自用模式且无法解析到有效价 → ErrPriceNotConfigured(仅走服务级链的条目)。
 //
 // 结果乘 userGroup 的分组倍率。BillingEnabled=false → 免费。
 func ResolveMarketplaceEntryPrice(itemID int64, kind, entryName, userGroup string) (PriceInfo, error) {
@@ -128,19 +133,23 @@ func ResolveMarketplaceEntryPrice(itemID int64, kind, entryName, userGroup strin
 	ratio := groupRatio(userGroup)
 	quotaPerUnit := model.GetQuotaPerUnit()
 
-	// 第 1 级:条目级(三种 kind 同表,命中即用)
+	// 第 1 级:条目级(三种 kind 同表,命中即用;inherit 行回退服务级链)
+	explicitInherit := false
 	if tp, ok := c.entryPrices[kind+"\x00"+entryName]; ok {
-		if kind == EntryKindTool {
+		if tp.BillingType == BillingTypeInherit {
+			explicitInherit = true
+		} else if kind == EntryKindTool {
 			return priceResult(tp.BillingType, tp.PricePerCall, ratio, quotaPerUnit, "tool", itemID, entryName), nil
+		} else {
+			return priceResult(tp.BillingType, tp.PricePerCall, ratio, quotaPerUnit, PriceScopeEntry, itemID, entryName), nil
 		}
-		return priceResult(tp.BillingType, tp.PricePerCall, ratio, quotaPerUnit, PriceScopeEntry, itemID, entryName), nil
 	}
-	// 资源/提示无条目价 → 免费(默认),不回退服务价
-	if kind != EntryKindTool {
+	// 资源/提示无条目价且非显式继承 → 免费(缺省),不回退服务价
+	if kind != EntryKindTool && !explicitInherit {
 		return base, nil
 	}
 
-	// 以下仅工具:第 2 级服务级(已显式定价才用)
+	// 第 2 级服务级(工具缺省/条目显式继承都走这里;已显式定价才用)
 	if c.billingType == BillingTypeFree {
 		return priceResult(BillingTypeFree, 0, ratio, quotaPerUnit, "service", itemID, entryName), nil
 	}

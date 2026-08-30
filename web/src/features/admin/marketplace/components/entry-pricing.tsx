@@ -6,8 +6,10 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 // 条目级定价(§5.2):市场管理详情页对工具/资源/提示逐条设价。
-// 模式:inherit=回退(工具→服务统一价,资源/提示→免费)/ free=免费 / custom=自定义按次价。
-// 保存为全量替换(PUT /admin/marketplace/:id/entry-prices),不在载荷中的条目回退。
+// 模式:inherit=回退服务统一价 / free=免费 / custom=自定义按次价。
+// 三种 kind 同一套三态,仅缺省不同——工具缺省继承服务价,资源/提示缺省免费
+// (故资源/提示显式继承需落 inherit 行,工具继承不落行=缺省)。
+// 保存为全量替换(PUT /admin/marketplace/:id/entry-prices),不在载荷中的条目按缺省回退。
 
 export type EntryPriceMode = 'inherit' | 'free' | 'custom'
 
@@ -24,8 +26,8 @@ function defaultMode(kind: MarketplaceEntryKind): EntryPriceMode {
   return kind === 'tool' ? 'inherit' : 'free'
 }
 
-// buildServerDraft 服务端当前态:entry_prices 命中 → free/custom(回填价格);
-// 未命中 → 工具 inherit / 资源提示 free。
+// buildServerDraft 服务端当前态:entry_prices 命中 → inherit/free/custom(回填价格);
+// 未命中 → 工具 inherit / 资源提示 free(缺省)。
 function buildServerDraft(item?: MarketplaceDetail): Record<string, EntryDraftValue> {
   const out: Record<string, EntryDraftValue> = {}
   if (!item) return out
@@ -34,7 +36,9 @@ function buildServerDraft(item?: MarketplaceDetail): Record<string, EntryDraftVa
     out[entryKey(kind, name)] = saved
       ? saved.billing_type === 'free'
         ? { mode: 'free', price: '0' }
-        : { mode: 'custom', price: String(saved.price_per_call) }
+        : saved.billing_type === 'inherit'
+          ? { mode: 'inherit', price: '' }
+          : { mode: 'custom', price: String(saved.price_per_call) }
       : { mode: defaultMode(kind), price: '' }
   }
   ;(item.tools_snapshot || []).forEach((tool) => set('tool', tool.name))
@@ -69,7 +73,9 @@ export function useEntryPricingDraft(item?: MarketplaceDetail) {
     [overrides, serverDraft],
   )
 
-  // buildPayload 导出完整条目价列表(非 inherit 项)。custom 价 <=0 时返回 null,调用方提示并阻断提交。
+  // buildPayload 导出完整条目价列表。inherit:工具不落行(缺省即继承),
+  // 资源/提示落 inherit 行(其缺省是免费,显式继承须持久化)。custom 价 <=0 时返回
+  // null,调用方提示并阻断提交。
   const buildPayload = (): MarketplaceEntryPrice[] | null => {
     if (!item) return []
     const entries: Array<[MarketplaceEntryKind, string]> = [
@@ -80,7 +86,10 @@ export function useEntryPricingDraft(item?: MarketplaceDetail) {
     const out: MarketplaceEntryPrice[] = []
     for (const [kind, name] of entries) {
       const v = getEntry(kind, name)
-      if (v.mode === 'inherit') continue
+      if (v.mode === 'inherit') {
+        if (kind !== 'tool') out.push({ kind, name, billing_type: 'inherit', price_per_call: 0 })
+        continue
+      }
       if (v.mode === 'free') {
         out.push({ kind, name, billing_type: 'free', price_per_call: 0 })
         continue
@@ -96,9 +105,8 @@ export function useEntryPricingDraft(item?: MarketplaceDetail) {
 }
 
 // EntryPriceControl 单条目定价控件(名称行右侧):模式小下拉 + custom 时单价输入。
-// 工具三态(含"继承服务价"),资源/提示两态(默认免费,无继承态)。
-export function EntryPriceControl({ kind, value, onChange }: {
-  kind: MarketplaceEntryKind
+// 工具/资源/提示统一三态(继承服务价/免费/自定义价),仅缺省值不同(见 defaultMode)。
+export function EntryPriceControl({ value, onChange }: {
   value: EntryDraftValue
   onChange: (v: EntryDraftValue) => void
 }) {
@@ -114,7 +122,7 @@ export function EntryPriceControl({ kind, value, onChange }: {
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {kind === 'tool' && <SelectItem value="inherit">{t('marketplace.entryModeInherit')}</SelectItem>}
+          <SelectItem value="inherit">{t('marketplace.entryModeInherit')}</SelectItem>
           <SelectItem value="free">{t('billing.free')}</SelectItem>
           <SelectItem value="custom">{t('marketplace.entryModeCustom')}</SelectItem>
         </SelectContent>

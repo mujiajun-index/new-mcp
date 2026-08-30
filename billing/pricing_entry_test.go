@@ -144,6 +144,55 @@ func TestResolveResourcePromptPricing(t *testing.T) {
 	}
 }
 
+// TestResolveEntryInherit 显式继承行(billing_type=inherit):三种 kind 都回退服务级链
+// (与缺省工具同款);资源/提示缺省(无行)仍免费不回退。
+func TestResolveEntryInherit(t *testing.T) {
+	setupPricingTest(t)
+	createPricingItem(t, 1, "per_call", 0.01)
+	insertEntryPrice(t, 1, EntryKindResource, "memo://overview", BillingTypeInherit, 0)
+	insertEntryPrice(t, 1, EntryKindPrompt, "review", BillingTypeInherit, 0)
+	insertEntryPrice(t, 1, EntryKindTool, "search", BillingTypeInherit, 0)
+
+	// 资源显式继承→服务价 0.01(scope=service)
+	pi, err := ResolveMarketplaceEntryPrice(1, EntryKindResource, "memo://overview", "default")
+	if err != nil || pi.Scope != "service" || pi.UnitPriceQuota != 5000 || pi.BillingType != BillingTypePerCall {
+		t.Fatalf("resource inherit: %+v err=%v, want scope=service quota=5000", pi, err)
+	}
+	// 提示显式继承→服务价
+	pi, err = ResolveMarketplaceEntryPrice(1, EntryKindPrompt, "review", "default")
+	if err != nil || pi.Scope != "service" || pi.UnitPriceQuota != 5000 {
+		t.Fatalf("prompt inherit: %+v err=%v, want scope=service quota=5000", pi, err)
+	}
+	// 工具显式继承行=缺省:同样走服务级
+	pi, err = ResolveMarketplaceEntryPrice(1, EntryKindTool, "search", "default")
+	if err != nil || pi.Scope != "service" || pi.UnitPriceQuota != 5000 {
+		t.Fatalf("tool inherit row: %+v err=%v, want scope=service quota=5000", pi, err)
+	}
+	// 缺省(无行)资源仍免费,不受其他条目显式继承影响
+	pi, err = ResolveMarketplaceEntryPrice(1, EntryKindResource, "memo://other", "default")
+	if err != nil || pi.Scope != "free" || pi.UnitPriceQuota != 0 {
+		t.Fatalf("resource default: %+v err=%v, want free", pi, err)
+	}
+
+	// 免费服务 + 资源显式继承 → 免费(scope=service)
+	createPricingItem(t, 2, "free", 0)
+	insertEntryPrice(t, 2, EntryKindResource, "memo://a", BillingTypeInherit, 0)
+	pi, err = ResolveMarketplaceEntryPrice(2, EntryKindResource, "memo://a", "default")
+	if err != nil || pi.Scope != "service" || pi.BillingType != BillingTypeFree || pi.UnitPriceQuota != 0 {
+		t.Fatalf("inherit on free service: %+v err=%v, want scope=service free", pi, err)
+	}
+
+	// 服务级未定价(非自用):显式继承的资源与工具同报未配置;缺省资源仍免费放行
+	createPricingItem(t, 3, "per_call", 0)
+	insertEntryPrice(t, 3, EntryKindResource, "memo://b", BillingTypeInherit, 0)
+	if _, err := ResolveMarketplaceEntryPrice(3, EntryKindResource, "memo://b", "default"); err != ErrPriceNotConfigured {
+		t.Fatalf("inherit on unpriced service: err=%v, want ErrPriceNotConfigured", err)
+	}
+	if _, err := ResolveMarketplaceEntryPrice(3, EntryKindResource, "memo://c", "default"); err != nil {
+		t.Fatalf("default resource on unpriced service: err=%v, want nil", err)
+	}
+}
+
 // TestEntryKindCoexist 同一市场项下同名工具与提示("x")分别命中各自条目价——
 // 守护 (item_id, kind, tool_name) 复合唯一索引语义。
 func TestEntryKindCoexist(t *testing.T) {

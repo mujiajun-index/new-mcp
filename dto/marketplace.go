@@ -55,15 +55,16 @@ type CloneMarketplaceReq struct {
 
 // MarketplaceEntryPrice 条目级定价(§5.2 条目维度)。Name 为条目键,与网关计费同口径:
 // 工具=工具名 / 资源=上游原始 URI / 提示=上游提示名(资源模板不可定价)。
+// BillingType=inherit 为显式继承服务统一价(价格须为 0,解析时回退服务级链)。
 type MarketplaceEntryPrice struct {
 	Kind         string  `json:"kind" binding:"required,oneof=tool resource prompt"`
 	Name         string  `json:"name" binding:"required,max=512"`
-	BillingType  string  `json:"billing_type" binding:"required,oneof=free per_call"`
+	BillingType  string  `json:"billing_type" binding:"required,oneof=free per_call inherit"`
 	PricePerCall float64 `json:"price_per_call" binding:"gte=0"`
 }
 
-// EntryPricingReq 全量替换某市场项的条目级定价(不在列表中的条目回退:工具→服务价,
-// 资源/提示→免费;空数组=清空全部条目价)。
+// EntryPricingReq 全量替换某市场项的条目级定价(不在列表中的条目按缺省回退:工具→服务价,
+// 资源/提示→免费;显式继承用 billing_type=inherit 行表达;空数组=清空全部条目价)。
 type EntryPricingReq struct {
 	Prices []MarketplaceEntryPrice `json:"prices" binding:"omitempty,dive"`
 }

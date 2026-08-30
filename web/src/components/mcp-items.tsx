@@ -2,10 +2,9 @@ import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 
-// 资源/资源模板/提示条目卡片:与服务详情页同一交互——
-// 名称点击展开/收起描述(默认收起),标签 chips 常显在下方。
-// 市场详情页(快照数据)使用;服务详情页为同结构的内联实现。
-// action 渲染在名称行最右(与 ToolItem 同款,市场详情页的条目价格徽标/定价控件用)。
+// 资源/资源模板/提示条目卡片:与 ToolItem 同一交互——展开箭头在名称前(固定宽占位
+// 保持无描述条目名称对齐),名称点击展开/收起描述(默认收起),标签 chips 常显在下方,
+// action 渲染在名称行最右(市场详情页的条目价格徽标/市场管理详情页的定价控件用)。
 
 export function ResourceItemCard({
   name,
@@ -26,19 +25,23 @@ export function ResourceItemCard({
   const [open, setOpen] = useState(false)
   return (
     <div className={`rounded-lg border p-3${isTemplate ? ' border-dashed' : ''}`}>
-      <div className="flex items-start gap-1">
+      <div className="flex items-center gap-1">
         <button
           type="button"
           disabled={!description}
           onClick={() => setOpen((v) => !v)}
-          className={`min-w-0 flex-1 text-left text-sm font-medium font-mono break-all ${description ? 'cursor-pointer' : 'cursor-default'}`}
+          title={name || uri}
+          className={`flex min-w-0 flex-1 items-center gap-1 text-left text-sm font-medium font-mono ${description ? 'cursor-pointer' : 'cursor-default'}`}
         >
-          {name || uri}
+          {/* 展开箭头放名称前(与 ToolItem 同款);固定宽占位保持无描述条目名称对齐 */}
+          <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center text-muted-foreground">
+            {description && (open
+              ? <ChevronDown className="h-3.5 w-3.5" />
+              : <ChevronRight className="h-3.5 w-3.5" />)}
+          </span>
+          <span className="truncate">{name || uri}</span>
         </button>
         {action && <div className="shrink-0">{action}</div>}
-        {description && (open
-          ? <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          : <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />)}
       </div>
       {name && <p className="mt-0.5 text-xs font-mono text-muted-foreground break-all">{uri}</p>}
       {open && description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
@@ -71,14 +74,18 @@ export function PromptItemCard({
           type="button"
           disabled={!description}
           onClick={() => setOpen((v) => !v)}
-          className={`min-w-0 flex-1 text-left text-sm font-medium font-mono ${description ? 'cursor-pointer' : 'cursor-default'}`}
+          title={name}
+          className={`flex min-w-0 flex-1 items-center gap-1 text-left text-sm font-medium font-mono ${description ? 'cursor-pointer' : 'cursor-default'}`}
         >
-          {name}
+          {/* 展开箭头放名称前(与 ToolItem 同款);固定宽占位保持无描述条目名称对齐 */}
+          <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center text-muted-foreground">
+            {description && (open
+              ? <ChevronDown className="h-3.5 w-3.5" />
+              : <ChevronRight className="h-3.5 w-3.5" />)}
+          </span>
+          <span className="truncate">{name}</span>
         </button>
         {action && <div className="shrink-0">{action}</div>}
-        {description && (open
-          ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />)}
       </div>
       {open && description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
       {args && args.length > 0 && (
