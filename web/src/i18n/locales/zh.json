@@ -1031,7 +1031,6 @@
     "refreshSegResources": "资源 {{num}}",
     "refreshSegTemplates": "模板 {{num}}",
     "refreshSegPrompts": "提示 {{num}}",
-    "listingVersion": "上架版本",
     "onlyInstantRefresh": "仅开箱即用(平台托管)市场项支持刷新",
     "price": "价格",
     "free": "免费",

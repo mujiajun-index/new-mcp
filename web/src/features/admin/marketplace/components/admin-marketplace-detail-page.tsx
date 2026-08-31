@@ -24,7 +24,7 @@ import { ResourceItemCard, PromptItemCard } from '@/components/mcp-items'
 import { toast } from 'sonner'
 import {
   ArrowLeft, Save, RefreshCw, Pencil, X, Check, Loader2, ChevronDown, ChevronRight,
-  Activity, Power, Play, Ban, Square, RotateCw, Layers, MemoryStick, Search, User, Users,
+  Activity, Power, Play, Ban, Square, RotateCw, Layers, MemoryStick, Search, User, Users, Download,
 } from 'lucide-react'
 import type { MarketplaceDetail, MarketplaceEntryPrice, AuthType, MarketplaceItemProcess, MarketplaceItemProcessInstance, ProcessControlAction } from '@/types'
 
@@ -116,7 +116,7 @@ export function AdminMarketplaceDetailPage() {
   const resources = item.resources_snapshot?.resources || []
   const templates = item.resources_snapshot?.templates || []
   const prompts = item.prompts_snapshot || []
-  // 上游握手拿到的真实服务版本(优先于手填的上架版本展示)
+  // 上游握手拿到的真实服务版本(名称下方标识行展示;名称行跟手填的上架版本)
   const serverName = typeof item.server_info?.name === 'string' ? item.server_info.name : ''
   const serverVersion = typeof item.server_info?.version === 'string' ? item.server_info.version : ''
 
@@ -133,13 +133,31 @@ export function AdminMarketplaceDetailPage() {
       {/* 概览(只读);右上角为快照手动刷新(仅平台托管项) */}
       <div className="rounded-xl border bg-card p-5">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-xl font-semibold">{item.display_name || item.name}</h2>
-            <p className="mt-1 break-words text-sm text-muted-foreground">
-              {item.name} · {serverVersion
-                ? <>{serverName && <span>{serverName} · </span>}v{serverVersion}</>
-                : <>v{item.version}</>}
-            </p>
+          {/* 头部与广场卡片/前台详情同布局:图标 + 名称行(部署形态标识、版本号紧跟名称) */}
+          <div className="flex min-w-0 items-start gap-4">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              {item.icon_url ? (
+                <img src={item.icon_url} alt="" className="h-8 w-8" />
+              ) : (
+                <span className="text-2xl font-bold">{(item.display_name || item.name).charAt(0)}</span>
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-xl font-semibold">{item.display_name || item.name}</h2>
+                <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${
+                  item.category === 'instant' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                }`}>
+                  {item.category === 'instant' ? t('marketplace.ready') : t('marketplace.source')}
+                </span>
+                {/* 版本号跟手填上架版本(与前台详情一致);上游真实版本在统计格展示 */}
+                {item.version && <span className="shrink-0 text-xs text-muted-foreground">v{item.version}</span>}
+              </div>
+              {/* 标识行:英文标识(内部名)· 服务端名 · 真实版本(上游握手所得) */}
+              <p className="mt-1 break-words text-sm text-muted-foreground">
+                {item.name}{serverName && <> · {serverName}</>}{serverVersion && <> · v{serverVersion}</>}
+              </p>
+            </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Button
@@ -166,29 +184,24 @@ export function AdminMarketplaceDetailPage() {
             )}
           </div>
         </div>
-        <div className="mt-3 flex flex-wrap gap-2 text-xs">
-          <Badge variant="outline">{item.category === 'instant' ? t('marketplace.ready') : t('marketplace.source')}</Badge>
+        {/* 徽标行只剩分组/标签 + 安装数(图标形式,与前台详情头部一致);价格下沉统计格,
+            启用/禁用状态右上角按钮已表达,不再重复出徽标 */}
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
           {item.group_names?.map((name) => <Badge key={name} variant="secondary">{name}</Badge>)}
           {item.tags?.map((tag) => {
             const color = tagsLib.find((t) => t.name === tag)?.color
             return <Badge key={tag} variant="outline" className="font-normal"
               style={color ? { color, backgroundColor: `${color}1A`, borderColor: `${color}55` } : undefined}>{tag}</Badge>
           })}
-          <Badge variant={item.billing_type === 'free' ? 'secondary' : 'outline'}>
-            {priceLabel(item.billing_type, item.price_per_call, config.displayCurrency)}
-          </Badge>
-          <Badge variant={item.status === 1 ? 'outline' : 'secondary'}
-            className={item.status === 1 ? 'text-emerald-600 border-emerald-300' : ''}>
-            {item.status === 1 ? t('common.enabled') : t('common.disabled')}
-          </Badge>
+          <span className="flex items-center gap-1 text-muted-foreground">
+            <Download className="h-3 w-3" />{item.install_count}
+          </span>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-          <div><span className="text-muted-foreground">{t('marketplace.installCount')}</span>: {item.install_count}</div>
-          <div><span className="text-muted-foreground">{t('marketplace.rating')}</span>: {item.rating_count > 0 ? item.rating_avg.toFixed(1) : '-'}</div>
+          <div><span className="text-muted-foreground">{t('marketplace.price')}</span>: {priceLabel(item.billing_type, item.price_per_call, config.displayCurrency)}</div>
           <div><span className="text-muted-foreground">{t('services.transportType')}</span>: {item.transport_type}</div>
           <div><span className="text-muted-foreground">{t('common.createdAt')}</span>: {item.created_at.slice(0, 10)}</div>
           <div><span className="text-muted-foreground">{t('services.protocolVersion')}</span>: {item.protocol_version || '-'}</div>
-          <div><span className="text-muted-foreground">{t('marketplace.listingVersion')}</span>: v{item.version}</div>
         </div>
         {item.description && <p className="mt-3 text-sm text-muted-foreground">{item.description}</p>}
       </div>

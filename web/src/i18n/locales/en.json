@@ -1031,7 +1031,6 @@
     "refreshSegResources": "Resources {{num}}",
     "refreshSegTemplates": "Templates {{num}}",
     "refreshSegPrompts": "Prompts {{num}}",
-    "listingVersion": "Listing version",
     "onlyInstantRefresh": "Only platform-hosted (ready-to-use) items support refresh",
     "price": "Price",
     "free": "Free",

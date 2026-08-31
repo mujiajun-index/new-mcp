@@ -45,6 +45,8 @@ export function MarketplaceListPage() {
   const items: MarketplaceListItem[] = data?.data || []
   const pagination = data?.pagination
   const totalPages = pagination?.total_pages ?? 1
+  // 仅分组/标签查询时显示统计条(与筛选 chip 一块);关键词、服务类型查询不触发
+  const hasQuery = Boolean(tag || typeof groupId === 'number')
 
   return (
     <div className="flex gap-6 p-4 sm:p-6 lg:p-8">
@@ -123,8 +125,8 @@ export function MarketplaceListPage() {
           </div>
         )}
 
-        {/* 结果统计条:总数 + 当前生效筛选 chip(点 chip 取消对应查询) */}
-        {!isLoading && pagination && (
+        {/* 结果统计条:仅分组/标签查询时显示,总数 + 当前生效筛选 chip(点 chip 取消对应查询) */}
+        {!isLoading && pagination && hasQuery && (
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm text-muted-foreground">{t('marketplace.foundResults', { count: pagination.total })}</p>
             {activeGroup && (
@@ -276,6 +278,8 @@ export function MarketplaceListPage() {
 // 的自绘悬停气泡;弹层与 chip 之间不留 margin 缝隙(缝隙不属于容器,鼠标穿过即触发
 // mouseleave 提前收起——上一版 bug),留白改用弹层自身 pt;另加 150ms 延迟关闭,
 // 斜向移入弹层也稳,重新进入容器即取消。
+// 外层 div 必须 flex:block div 内的 inline button 会带基于父级字号的 strut 行框,
+// 把包裹层撑得比普通 chip(button 直接作 flex 子项)高,基线也不齐。
 function OverflowChip({ summary, summaryClassName, summaryStyle, children }: {
   summary: string
   summaryClassName: string
@@ -292,7 +296,7 @@ function OverflowChip({ summary, summaryClassName, summaryStyle, children }: {
   }
   return (
     <div
-      className="relative"
+      className="relative flex"
       onMouseEnter={() => { cancelClose(); setOpen(true) }}
       onMouseLeave={() => {
         cancelClose()

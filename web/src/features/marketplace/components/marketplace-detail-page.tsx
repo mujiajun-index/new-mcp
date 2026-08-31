@@ -88,25 +88,28 @@ export function MarketplaceDetailPage() {
             <span className="text-2xl font-bold">{(item.display_name || item.name).charAt(0)}</span>
           )}
         </div>
-        <div className="flex-1">
-          <h1 className="text-xl font-semibold">{item.display_name || item.name}</h1>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className={`rounded px-2 py-0.5 text-xs font-medium ${
-              item.category === 'instant' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600'
+        <div className="min-w-0 flex-1">
+          {/* 名称行与广场卡片同布局:部署形态标识、版本号紧跟名称 */}
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-semibold">{item.display_name || item.name}</h1>
+            <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${
+              item.category === 'instant' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
             }`}>
               {item.category === 'instant' ? t('marketplace.ready') : t('marketplace.source')}
             </span>
+            {item.version && <span className="shrink-0 text-xs text-muted-foreground">v{item.version}</span>}
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
             {item.group_names?.map((name: string) => (
               <span key={name} className="rounded bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400">{name}</span>
             ))}
-            {/* 标签与元信息同排(与列表卡片同序:类目/分组 → 标签 → 版本);原先沉在工具/资源/提示列表之后 */}
+            {/* 标签与元信息同排(与列表卡片同序:分组 → 标签 → 元信息);原先沉在工具/资源/提示列表之后 */}
             {item.tags?.map((tag: string) => (
               <span key={tag} style={tagStyle(tagColors[tag])}
                 className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${tagColors[tag] ? '' : 'bg-muted text-muted-foreground'}`}>
                 {tag}
               </span>
             ))}
-            {item.version && <span className="text-xs text-muted-foreground">v{item.version}</span>}
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <Download className="h-3 w-3" />{t('marketplace.installs', { count: item.install_count })}
             </span>
