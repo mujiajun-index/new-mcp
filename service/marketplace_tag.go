@@ -8,6 +8,7 @@ import (
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
 	"github.com/mujkjk/newmcp/model"
+	"gorm.io/gorm"
 )
 
 // MarketplaceTagService 市场标签字典管理(§11)。市场项 tags 字段值须存在于本库启用记录。
@@ -90,6 +91,7 @@ func (s *MarketplaceTagService) Update(id int64, req *dto.UpdateMarketplaceTagRe
 	if err != nil {
 		return err
 	}
+	oldName, wasEnabled := t.Name, t.Status == common.StatusEnabled
 	if req.Name != nil {
 		exists, err := model.CheckMarketplaceTagNameExists(*req.Name, id)
 		if err != nil {
@@ -116,7 +118,22 @@ func (s *MarketplaceTagService) Update(id int64, req *dto.UpdateMarketplaceTagRe
 	if req.Status != nil {
 		t.Status = *req.Status
 	}
-	return t.Update()
+	// 引用同步(与字典更新同事务):市场项 tags 按名引用本字典,改名须整词替换、
+	// 改禁用须摘除,否则存量引用项再次保存时报"标签不在标签库中"。
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(t).Error; err != nil {
+			return err
+		}
+		if t.Name != oldName {
+			if err := model.ReplaceMarketplaceTagName(tx, oldName, t.Name); err != nil {
+				return err
+			}
+		}
+		if wasEnabled && t.Status != common.StatusEnabled {
+			return model.RemoveMarketplaceTagName(tx, t.Name)
+		}
+		return nil
+	})
 }
 
 func (s *MarketplaceTagService) Delete(id int64) error {
@@ -124,7 +141,14 @@ func (s *MarketplaceTagService) Delete(id int64) error {
 	if err != nil {
 		return err
 	}
-	return t.Delete()
+	// 硬删:name 唯一索引含软删行,软删后同名重建会撞唯一键;标签无 ID 级引用
+	// (市场项按名引用,同事务摘除),硬删安全。摘除维持"市场项 tags ⊆ 启用字典"不变量。
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Unscoped().Delete(t).Error; err != nil {
+			return err
+		}
+		return model.RemoveMarketplaceTagName(tx, t.Name)
+	})
 }
 
 func (s *MarketplaceTagService) toList(tags []model.MarketplaceTag) []dto.MarketplaceTagItem {

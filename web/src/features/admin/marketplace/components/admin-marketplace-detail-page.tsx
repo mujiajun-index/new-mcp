@@ -51,7 +51,8 @@ export function AdminMarketplaceDetailPage() {
   const groups: any[] = groupsData?.data ?? []
   const { data: tagsData } = useQuery({
     queryKey: ['admin-marketplace-tags'],
-    queryFn: () => adminListMarketplaceTags({ page: 1, page_size: 200 }),
+    // 仅启用标签:禁用标签不在启用字典,选中后保存会被后端 validateTags 拒绝
+    queryFn: () => adminListMarketplaceTags({ page: 1, page_size: 200, status: 1 }),
   })
   const tagsLib: any[] = tagsData?.data ?? []
 
@@ -137,7 +138,11 @@ export function AdminMarketplaceDetailPage() {
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           <Badge variant="outline">{item.category === 'instant' ? t('marketplace.ready') : t('marketplace.source')}</Badge>
           {item.group_name && <Badge variant="secondary">{item.group_name}</Badge>}
-          {item.tags?.map((tag) => <Badge key={tag} variant="outline" className="font-normal">{tag}</Badge>)}
+          {item.tags?.map((tag) => {
+            const color = tagsLib.find((t) => t.name === tag)?.color
+            return <Badge key={tag} variant="outline" className="font-normal"
+              style={color ? { color, backgroundColor: `${color}1A`, borderColor: `${color}55` } : undefined}>{tag}</Badge>
+          })}
           <Badge variant={item.billing_type === 'free' ? 'secondary' : 'outline'}>
             {priceLabel(item.billing_type, item.price_per_call, config.displayCurrency)}
           </Badge>
@@ -276,7 +281,8 @@ function EditForm({ item, groups, tagsLib, notSelfUse, onSave, pending }: {
       category: form.category,
       version: form.version,
       group_id: form.group_id ? Number(form.group_id) : null,
-      tags: selectedTags,
+      // 只提交字典内(启用)的标签:历史遗留的失效名(标签曾被改名/删除)静默丢弃,顺带修复存量行
+      tags: selectedTags.filter((name) => tagsLib.some((tag) => tag.name === name)),
       repo_url: form.repo_url,
       install_guide: form.install_guide,
       billing_type: billingType,
@@ -361,8 +367,18 @@ function EditForm({ item, groups, tagsLib, notSelfUse, onSave, pending }: {
             const selected = selectedTags.includes(tag.name)
             return (
               <button key={tag.id} type="button" onClick={() => toggleTag(tag.name)}
-                className={`rounded-full border px-3 py-1 text-xs transition-colors ${selected ? 'border-primary bg-primary text-primary-foreground' : 'bg-muted/40 hover:bg-muted'}`}
-                style={!selected && tag.color ? { color: tag.color, backgroundColor: `${tag.color}1A`, borderColor: `${tag.color}55` } : undefined}>
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                  selected
+                    ? tag.color ? 'shadow-sm' : 'border-primary bg-primary text-primary-foreground'
+                    : tag.color ? 'hover:opacity-80' : 'bg-muted/40 hover:bg-muted'}`}
+                style={selected && tag.color
+                  ? { color: tag.color, backgroundColor: `${tag.color}33`, borderColor: tag.color }
+                  : !selected && tag.color
+                    ? { color: tag.color, backgroundColor: `${tag.color}1A`, borderColor: `${tag.color}55` }
+                    : undefined}>
+                {selected
+                  ? <Check className="h-3 w-3 shrink-0" />
+                  : tag.color && <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: tag.color }} />}
                 {tag.name}
               </button>
             )

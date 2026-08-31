@@ -52,14 +52,16 @@ func validatePrice(price float64) error {
 	return nil
 }
 
-// validateTags 校验标签均存在于启用标签库(去重后匹配,§11)。
-func validateTags(tags []string) error {
+// cleanAndValidateTags 去空/去重/去首尾空格后校验均存在于启用标签库(§11),
+// 返回干净列表;调用方须以返回值而非原始入参落库(否则空串/重复名会进 tags 串)。
+func cleanAndValidateTags(tags []string) ([]string, error) {
 	if len(tags) == 0 {
-		return nil
+		return nil, nil
 	}
 	seen := make(map[string]bool)
 	unique := make([]string, 0, len(tags))
 	for _, t := range tags {
+		t = strings.TrimSpace(t)
 		if t == "" || seen[t] {
 			continue
 		}
@@ -67,16 +69,16 @@ func validateTags(tags []string) error {
 		unique = append(unique, t)
 	}
 	if len(unique) == 0 {
-		return nil
+		return nil, nil
 	}
 	count, err := model.CountEnabledTagsByNames(unique)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if int64(len(unique)) != count {
-		return ErrTagNotInDictionary
+		return nil, ErrTagNotInDictionary
 	}
-	return nil
+	return unique, nil
 }
 
 // validateGroupID 校验分组存在且启用;groupID 为 nil 或 <=0 视为未分组(允许)。
@@ -233,8 +235,10 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 			return err
 		}
 	}
+	var cleanTags []string
 	if req.Tags != nil {
-		if err := validateTags(req.Tags); err != nil {
+		cleanTags, err = cleanAndValidateTags(req.Tags)
+		if err != nil {
 			return err
 		}
 	}
@@ -259,7 +263,7 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 		item.GroupID = req.GroupID
 	}
 	if req.Tags != nil {
-		item.Tags = strings.Join(req.Tags, ",")
+		item.Tags = strings.Join(cleanTags, ",") // 干净列表:去空/去重,勿用原始入参
 	}
 	if req.Version != nil {
 		item.Version = *req.Version

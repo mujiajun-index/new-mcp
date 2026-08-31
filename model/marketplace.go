@@ -1,6 +1,7 @@
 package model
 
 import (
+	"strings"
 	"time"
 
 	"github.com/mujkjk/newmcp/common"
@@ -208,6 +209,82 @@ func GetMarketplaceItemsByIDs(ids []int64) ([]MarketplaceItem, error) {
 	}
 	err := DB.Where("id IN ?", ids).Find(&items).Error
 	return items, err
+}
+
+// --- 市场项 tags 串同步(标签字典改名/禁用/删除时维护引用) ---
+// 市场项 Tags 存的是逗号拼接的标签名:LIKE 仅作候选预筛(通配符只会放宽不会漏),
+// Go 侧按逗号整词精确匹配,避免"AI"误伤"AI助手"。
+
+func marketplaceItemsContainingTag(tx *gorm.DB, name string) ([]MarketplaceItem, error) {
+	var items []MarketplaceItem
+	err := tx.Where("tags LIKE ?", "%"+name+"%").Find(&items).Error
+	return items, err
+}
+
+// ReplaceMarketplaceTagName 标签字典改名后同步市场项 tags(整词替换 old→new;
+// 同行去重,避免项上原有新名时替换后出现 "new,new")。
+func ReplaceMarketplaceTagName(tx *gorm.DB, oldName, newName string) error {
+	items, err := marketplaceItemsContainingTag(tx, oldName)
+	if err != nil {
+		return err
+	}
+	for _, it := range items {
+		parts := strings.Split(it.Tags, ",")
+		kept := make([]string, 0, len(parts))
+		seen := make(map[string]bool, len(parts))
+		replaced := false
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == oldName {
+				p = newName
+				replaced = true
+			}
+			if p != "" && !seen[p] {
+				seen[p] = true
+				kept = append(kept, p)
+			}
+		}
+		if !replaced {
+			continue
+		}
+		if err := tx.Model(&MarketplaceItem{}).Where("id = ?", it.ID).
+			Update("tags", strings.Join(kept, ",")).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RemoveMarketplaceTagName 标签禁用/删除后从市场项 tags 摘除该词,维持
+// "市场项 tags ⊆ 启用标签字典"不变量(否则存量引用项再次保存会因校验失败)。
+func RemoveMarketplaceTagName(tx *gorm.DB, name string) error {
+	items, err := marketplaceItemsContainingTag(tx, name)
+	if err != nil {
+		return err
+	}
+	for _, it := range items {
+		parts := strings.Split(it.Tags, ",")
+		kept := make([]string, 0, len(parts))
+		removed := false
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == name {
+				removed = true
+				continue
+			}
+			if p != "" {
+				kept = append(kept, p)
+			}
+		}
+		if !removed {
+			continue
+		}
+		if err := tx.Model(&MarketplaceItem{}).Where("id = ?", it.ID).
+			Update("tags", strings.Join(kept, ",")).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // --- MarketplaceReview queries ---
