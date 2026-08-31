@@ -24,7 +24,7 @@ import { ResourceItemCard, PromptItemCard } from '@/components/mcp-items'
 import { toast } from 'sonner'
 import {
   ArrowLeft, Save, RefreshCw, Pencil, X, Check, Loader2, ChevronDown, ChevronRight,
-  Activity, Power, Play, Square, RotateCw, Layers, MemoryStick, Search, User, Users,
+  Activity, Power, Play, Ban, Square, RotateCw, Layers, MemoryStick, Search, User, Users,
 } from 'lucide-react'
 import type { MarketplaceDetail, MarketplaceEntryPrice, AuthType, MarketplaceItemProcess, MarketplaceItemProcessInstance, ProcessControlAction } from '@/types'
 
@@ -48,7 +48,9 @@ export function AdminMarketplaceDetailPage() {
     queryKey: ['admin-marketplace-groups'],
     queryFn: () => adminListMarketplaceGroups(),
   })
-  const groups: any[] = groupsData?.data ?? []
+  // 仅启用分组:禁用分组不在启用字典,选中后保存会被后端 cleanAndValidateGroupIDs 拒绝
+  const allGroups: any[] = groupsData?.data ?? []
+  const groups = allGroups.filter((g) => g.status === 1)
   const { data: tagsData } = useQuery({
     queryKey: ['admin-marketplace-tags'],
     // 仅启用标签:禁用标签不在启用字典,选中后保存会被后端 validateTags 拒绝
@@ -58,6 +60,17 @@ export function AdminMarketplaceDetailPage() {
 
   const updateMutation = useMutation({
     mutationFn: ({ id, body }: { id: number; body: Record<string, unknown> }) => adminUpdateMarketplace(id, body),
+    onSuccess: () => {
+      toast.success(t('common.success'))
+      queryClient.invalidateQueries({ queryKey: ['admin-marketplace-detail', id] })
+      queryClient.invalidateQueries({ queryKey: ['admin-marketplace'] })
+    },
+  })
+
+  // 右上角启用/禁用(与列表页行内开关同口径):复用 adminUpdateMarketplace({status})。
+  // 非自用模式下启用未定价项会被后端 requireExplicitPricingIfNotSelfUse 拒绝,错误经全局拦截器 toast。
+  const statusMutation = useMutation({
+    mutationFn: (status: number) => adminUpdateMarketplace(Number(id), { status }),
     onSuccess: () => {
       toast.success(t('common.success'))
       queryClient.invalidateQueries({ queryKey: ['admin-marketplace-detail', id] })
@@ -128,16 +141,34 @@ export function AdminMarketplaceDetailPage() {
                 : <>v{item.version}</>}
             </p>
           </div>
-          {item.category === 'instant' && (
-            <Button variant="outline" size="sm" className="shrink-0 gap-1.5" disabled={refreshMutation.isPending} onClick={() => refreshMutation.mutate()}>
-              <RefreshCw className={`h-3.5 w-3.5 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
-              {t('marketplace.refreshSnapshots')}
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              variant="outline" size="sm" className="gap-1.5" disabled={statusMutation.isPending}
+              onClick={() => {
+                if (item.status === 1) {
+                  if (confirm(t('marketplace.disableConfirm', { name: item.display_name || item.name }))) {
+                    statusMutation.mutate(2)
+                  }
+                } else {
+                  statusMutation.mutate(1)
+                }
+              }}
+            >
+              {item.status === 1
+                ? <><Ban className="h-3.5 w-3.5" />{t('marketplace.disable')}</>
+                : <><Play className="h-3.5 w-3.5" />{t('marketplace.enable')}</>}
             </Button>
-          )}
+            {item.category === 'instant' && (
+              <Button variant="outline" size="sm" className="gap-1.5" disabled={refreshMutation.isPending} onClick={() => refreshMutation.mutate()}>
+                <RefreshCw className={`h-3.5 w-3.5 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
+                {t('marketplace.refreshSnapshots')}
+              </Button>
+            )}
+          </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           <Badge variant="outline">{item.category === 'instant' ? t('marketplace.ready') : t('marketplace.source')}</Badge>
-          {item.group_name && <Badge variant="secondary">{item.group_name}</Badge>}
+          {item.group_names?.map((name) => <Badge key={name} variant="secondary">{name}</Badge>)}
           {item.tags?.map((tag) => {
             const color = tagsLib.find((t) => t.name === tag)?.color
             return <Badge key={tag} variant="outline" className="font-normal"
@@ -257,17 +288,19 @@ function EditForm({ item, groups, tagsLib, notSelfUse, onSave, pending }: {
     icon_url: item.icon_url,
     category: item.category,
     version: item.version,
-    group_id: item.group_id ? String(item.group_id) : '',
     repo_url: item.repo_url,
     install_guide: item.install_guide,
     billing_type: item.billing_type,
     price_per_call: String(item.price_per_call),
-    status: String(item.status),
   })
   const [selectedTags, setSelectedTags] = useState<string[]>(item.tags ?? [])
+  const [selectedGroups, setSelectedGroups] = useState<number[]>(item.group_ids ?? [])
 
   const toggleTag = (name: string) =>
     setSelectedTags((prev) => (prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]))
+
+  const toggleGroup = (id: number) =>
+    setSelectedGroups((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
 
   const submit = () => {
     const billingType = form.billing_type
@@ -280,14 +313,14 @@ function EditForm({ item, groups, tagsLib, notSelfUse, onSave, pending }: {
       icon_url: form.icon_url,
       category: form.category,
       version: form.version,
-      group_id: form.group_id ? Number(form.group_id) : null,
+      // 只提交字典内(启用)的分组:历史遗留的失效绑定(分组曾被禁用/删除)静默丢弃,顺带修复存量行
+      group_ids: selectedGroups.filter((id) => groups.some((g) => g.id === id)),
       // 只提交字典内(启用)的标签:历史遗留的失效名(标签曾被改名/删除)静默丢弃,顺带修复存量行
       tags: selectedTags.filter((name) => tagsLib.some((tag) => tag.name === name)),
       repo_url: form.repo_url,
       install_guide: form.install_guide,
       billing_type: billingType,
       price_per_call: billingType === 'free' ? 0 : price,
-      status: Number(form.status),
     })
   }
 
@@ -326,24 +359,36 @@ function EditForm({ item, groups, tagsLib, notSelfUse, onSave, pending }: {
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>{t('categories.groups')}</Label>
-          <Select value={form.group_id || '__none__'} onValueChange={(v) => setForm({ ...form, group_id: v === '__none__' ? '' : v })}>
-            <SelectTrigger><SelectValue placeholder={t('marketplace.noGroup')} /></SelectTrigger>
+          <Label>{t('marketplace.billingType')}</Label>
+          <Select value={form.billing_type} onValueChange={(v) => setForm({ ...form, billing_type: v, price_per_call: v === 'free' ? '0' : form.price_per_call })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="__none__">{t('marketplace.noGroup')}</SelectItem>
-              {groups.map((g) => <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>)}
+              <SelectItem value="per_call">{t('marketplace.billingPerCall')}</SelectItem>
+              <SelectItem value="free">{t('marketplace.billingFree')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
         <div className="space-y-2">
-          <Label>{t('common.status')}</Label>
-          <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="1">{t('common.enabled')}</SelectItem>
-              <SelectItem value="2">{t('common.disabled')}</SelectItem>
-            </SelectContent>
-          </Select>
+          <Label>{t('marketplace.pricePerCall')}</Label>
+          <Input type="number" min="0" step="0.0001" disabled={form.billing_type === 'free'}
+            value={form.price_per_call} onChange={(e) => setForm({ ...form, price_per_call: e.target.value })} />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label>{t('categories.groups')}</Label>
+        <div className="flex flex-wrap gap-2">
+          {groups.length === 0 && <p className="text-xs text-muted-foreground">{t('marketplace.noGroupsHint')}</p>}
+          {groups.map((g) => {
+            const selected = selectedGroups.includes(g.id)
+            return (
+              <button key={g.id} type="button" onClick={() => toggleGroup(g.id)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                  selected ? 'border-primary bg-primary text-primary-foreground shadow-sm' : 'bg-muted/40 hover:bg-muted'}`}>
+                {selected && <Check className="h-3 w-3 shrink-0" />}
+                {g.name}
+              </button>
+            )
+          })}
         </div>
       </div>
       {form.category === 'source' && (
@@ -383,23 +428,6 @@ function EditForm({ item, groups, tagsLib, notSelfUse, onSave, pending }: {
               </button>
             )
           })}
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-4 border-t pt-4">
-        <div className="space-y-2">
-          <Label>{t('marketplace.billingType')}</Label>
-          <Select value={form.billing_type} onValueChange={(v) => setForm({ ...form, billing_type: v, price_per_call: v === 'free' ? '0' : form.price_per_call })}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="per_call">{t('marketplace.billingPerCall')}</SelectItem>
-              <SelectItem value="free">{t('marketplace.billingFree')}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>{t('marketplace.pricePerCall')}</Label>
-          <Input type="number" min="0" step="0.0001" disabled={form.billing_type === 'free'}
-            value={form.price_per_call} onChange={(e) => setForm({ ...form, price_per_call: e.target.value })} />
         </div>
       </div>
       <div className="flex justify-end">

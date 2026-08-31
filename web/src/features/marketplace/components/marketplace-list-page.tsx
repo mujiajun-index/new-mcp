@@ -130,7 +130,9 @@ export function MarketplaceListPage() {
                     <div className="min-w-0 flex-1">
                       <h3 className="truncate font-semibold transition-colors group-hover:text-primary">{item.display_name || item.name}</h3>
                       <div className="mt-0.5 flex flex-wrap items-center gap-2">
-                        {item.group_name && <span className="rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400">{item.group_name}</span>}
+                        {item.group_names?.map((name) => (
+                          <span key={name} className="rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400">{name}</span>
+                        ))}
                         <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${item.category === 'instant' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'}`}>
                           {item.category === 'instant' ? t('marketplace.ready') : t('marketplace.source')}
                         </span>

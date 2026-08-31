@@ -59,14 +59,7 @@ func GetMarketplaceGroupByID(id int64) (*MarketplaceGroup, error) {
 	return &group, err
 }
 
-// GetEnabledMarketplaceGroupByID 取启用分组;未启用/不存在返回错误(供市场项 group_id 校验)。
-func GetEnabledMarketplaceGroupByID(id int64) (*MarketplaceGroup, error) {
-	var group MarketplaceGroup
-	err := DB.Where("id = ? AND status = ?", id, common.StatusEnabled).First(&group).Error
-	return &group, err
-}
-
-// GetMarketplaceGroupsByIDs 批量取分组(供市场项列表填充 group_name,避免 N+1)。
+// GetMarketplaceGroupsByIDs 批量取分组(供市场项列表填充分组名,避免 N+1)。
 func GetMarketplaceGroupsByIDs(ids []int64) ([]MarketplaceGroup, error) {
 	var groups []MarketplaceGroup
 	if len(ids) == 0 {
@@ -74,6 +67,18 @@ func GetMarketplaceGroupsByIDs(ids []int64) ([]MarketplaceGroup, error) {
 	}
 	err := DB.Where("id IN ?", ids).Find(&groups).Error
 	return groups, err
+}
+
+// CountEnabledMarketplaceGroupsByIDs 返回 ids 中存在且启用的分组数量(供市场项分组绑定校验)。
+func CountEnabledMarketplaceGroupsByIDs(ids []int64) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	var count int64
+	err := DB.Model(&MarketplaceGroup{}).
+		Where("id IN ? AND status = ?", ids, common.StatusEnabled).
+		Count(&count).Error
+	return count, err
 }
 
 func CheckMarketplaceGroupNameExists(name string, excludeID int64) (bool, error) {
@@ -89,5 +94,3 @@ func CheckMarketplaceGroupNameExists(name string, excludeID int64) (bool, error)
 func (g *MarketplaceGroup) Insert() error { return DB.Create(g).Error }
 
 func (g *MarketplaceGroup) Update() error { return DB.Save(g).Error }
-
-func (g *MarketplaceGroup) Delete() error { return DB.Delete(g).Error }

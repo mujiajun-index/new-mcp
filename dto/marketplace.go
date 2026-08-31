@@ -8,7 +8,8 @@ type UpdateMarketplaceItemReq struct {
 	Description          *string                `json:"description"`
 	IconURL              *string                `json:"icon_url"`
 	Category             *string                `json:"category"`
-	GroupID              *int64                 `json:"group_id"`
+	// 分组绑定(多对多):nil/缺省=不动;[]=清空;[...]=全量替换(同 Tags 语义)
+	GroupIDs             []int64                `json:"group_ids"`
 	Tags                 []string               `json:"tags"`
 	Version              *string                `json:"version"`
 	TransportType        *string                `json:"transport_type"`
@@ -134,8 +135,8 @@ type MarketplaceListItem struct {
 	Description   string   `json:"description"`
 	IconURL       string   `json:"icon_url"`
 	Category      string   `json:"category"`
-	GroupID       *int64   `json:"group_id"`
-	GroupName     string   `json:"group_name"`
+	GroupIDs      []int64  `json:"group_ids"`
+	GroupNames    []string `json:"group_names"`
 	Tags          []string `json:"tags"`
 	Version       string   `json:"version"`
 	TransportType string   `json:"transport_type"`
@@ -157,8 +158,8 @@ type MarketplaceDetail struct {
 	Description          string                 `json:"description"`
 	IconURL              string                 `json:"icon_url"`
 	Category             string                 `json:"category"`
-	GroupID              *int64                 `json:"group_id"`
-	GroupName            string                 `json:"group_name"`
+	GroupIDs             []int64                `json:"group_ids"`
+	GroupNames           []string               `json:"group_names"`
 	Tags                 []string               `json:"tags"`
 	Version              string                 `json:"version"`
 	TransportType        string                 `json:"transport_type"`

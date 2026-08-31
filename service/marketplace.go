@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -81,15 +82,32 @@ func cleanAndValidateTags(tags []string) ([]string, error) {
 	return unique, nil
 }
 
-// validateGroupID 校验分组存在且启用;groupID 为 nil 或 <=0 视为未分组(允许)。
-func validateGroupID(groupID *int64) error {
-	if groupID == nil || *groupID <= 0 {
-		return nil
+// cleanAndValidateGroupIDs 去非正/去重(保序)后校验分组均存在且启用(§11),返回干净
+// 列表;调用方须以返回值而非原始入参落库。空列表合法=未分组。
+func cleanAndValidateGroupIDs(groupIDs []int64) ([]int64, error) {
+	if len(groupIDs) == 0 {
+		return nil, nil
 	}
-	if _, err := model.GetEnabledMarketplaceGroupByID(*groupID); err != nil {
-		return ErrGroupNotFound
+	seen := make(map[int64]bool, len(groupIDs))
+	unique := make([]int64, 0, len(groupIDs))
+	for _, id := range groupIDs {
+		if id <= 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		unique = append(unique, id)
 	}
-	return nil
+	if len(unique) == 0 {
+		return nil, nil
+	}
+	count, err := model.CountEnabledMarketplaceGroupsByIDs(unique)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(unique)) != count {
+		return nil, ErrGroupNotFound
+	}
+	return unique, nil
 }
 
 // explicitlyPriced 判断是否"已显式定价":free 或 (per_call 且 price>0)。
@@ -242,8 +260,10 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 			return err
 		}
 	}
-	if req.GroupID != nil {
-		if err := validateGroupID(req.GroupID); err != nil {
+	var cleanGroupIDs []int64
+	if req.GroupIDs != nil {
+		cleanGroupIDs, err = cleanAndValidateGroupIDs(req.GroupIDs)
+		if err != nil {
 			return err
 		}
 	}
@@ -258,9 +278,6 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 	}
 	if req.Category != nil {
 		item.Category = *req.Category
-	}
-	if req.GroupID != nil {
-		item.GroupID = req.GroupID
 	}
 	if req.Tags != nil {
 		item.Tags = strings.Join(cleanTags, ",") // 干净列表:去空/去重,勿用原始入参
@@ -342,7 +359,16 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 			return err
 		}
 	}
-	if err := item.Update(); err != nil {
+	// 分组绑定与条目本体同事务落库;踢会话与计费缓存失效留在事务外(非事务副作用,回滚不应执行)
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(item).Error; err != nil {
+			return err
+		}
+		if req.GroupIDs != nil {
+			return model.ReplaceMarketplaceItemGroups(tx, item.ID, cleanGroupIDs)
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 	// 平台上游配置变更后,该市场项全部引用服务的池内会话仍带旧配置/旧凭证,
@@ -360,7 +386,13 @@ func (s *MarketplaceService) DeleteItem(itemID int64) error {
 	if err != nil {
 		return err
 	}
-	if err := item.Delete(); err != nil {
+	// 软删条目 + 同事务清掉分组绑定行(避免悬空引用)
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(item).Error; err != nil {
+			return err
+		}
+		return model.DeleteMarketplaceItemGroupsByItemID(tx, itemID)
+	}); err != nil {
 		return err
 	}
 	// 硬删除(软删):已添加引用的 mcp_services 行保留(resolver 调用时会因 item 不可用而失败退款)。
@@ -810,6 +842,59 @@ func (s *MarketplaceService) CreateReview(userID int64, req *dto.CreateReviewReq
 
 // --- Helpers ---
 
+// itemGroupsOf 批量解析市场项的分组绑定:join 行 → 批量取分组行 → 按分组 sort_order,id
+// 建序,每项的 GroupIDs/GroupNames 按该序输出。查询失败回退空 map,不阻断列表/详情主体。
+func (s *MarketplaceService) itemGroupsOf(itemIDs []int64) (map[int64][]int64, map[int64][]string) {
+	idsByID := make(map[int64][]int64, len(itemIDs))
+	namesByID := make(map[int64][]string, len(itemIDs))
+	rows, err := model.GetMarketplaceItemGroupsByItemIDs(itemIDs)
+	if err != nil || len(rows) == 0 {
+		return idsByID, namesByID
+	}
+	uniq := make([]int64, 0, len(rows))
+	seen := make(map[int64]bool, len(rows))
+	for _, r := range rows {
+		if !seen[r.GroupID] {
+			seen[r.GroupID] = true
+			uniq = append(uniq, r.GroupID)
+		}
+	}
+	groups, err := model.GetMarketplaceGroupsByIDs(uniq)
+	if err != nil {
+		return idsByID, namesByID
+	}
+	sort.Slice(groups, func(i, j int) bool { // 分组展示顺序 = sort_order,同序按 id
+		if groups[i].SortOrder != groups[j].SortOrder {
+			return groups[i].SortOrder < groups[j].SortOrder
+		}
+		return groups[i].ID < groups[j].ID
+	})
+	rank := make(map[int64]int, len(groups))
+	nameByID := make(map[int64]string, len(groups))
+	for i, g := range groups {
+		rank[g.ID] = i
+		nameByID[g.ID] = g.Name
+	}
+	for _, r := range rows {
+		if _, ok := rank[r.GroupID]; !ok {
+			continue // 分组行缺失(理论不会):静默跳过
+		}
+		idsByID[r.ItemID] = append(idsByID[r.ItemID], r.GroupID)
+		namesByID[r.ItemID] = append(namesByID[r.ItemID], nameByID[r.GroupID])
+	}
+	// join 行按 (item_id,id) 序,逐项重排为分组 sort_order 序,名称随位重写
+	for itemID := range idsByID {
+		gids := idsByID[itemID]
+		sort.Slice(gids, func(i, j int) bool { return rank[gids[i]] < rank[gids[j]] })
+		idsByID[itemID] = gids
+		names := namesByID[itemID]
+		for i, gid := range gids {
+			names[i] = nameByID[gid]
+		}
+	}
+	return idsByID, namesByID
+}
+
 func (s *MarketplaceService) toDetail(item *model.MarketplaceItem) *dto.MarketplaceDetail {
 	var configSource map[string]interface{}
 	_ = json.Unmarshal([]byte(item.ConfigTemplateSource), &configSource)
@@ -831,11 +916,14 @@ func (s *MarketplaceService) toDetail(item *model.MarketplaceItem) *dto.Marketpl
 		tags = []string{}
 	}
 
-	groupName := ""
-	if item.GroupID != nil {
-		if g, e := model.GetMarketplaceGroupByID(*item.GroupID); e == nil {
-			groupName = g.Name
-		}
+	groupIDsByID, groupNamesByID := s.itemGroupsOf([]int64{item.ID})
+	groupIDs := groupIDsByID[item.ID]
+	if groupIDs == nil {
+		groupIDs = []int64{} // JSON 出 [] 而非 null
+	}
+	groupNames := groupNamesByID[item.ID]
+	if groupNames == nil {
+		groupNames = []string{}
 	}
 
 	// 条目级定价(仅 enabled 行;查询失败回退空列表,不影响详情主体)
@@ -858,8 +946,8 @@ func (s *MarketplaceService) toDetail(item *model.MarketplaceItem) *dto.Marketpl
 		Description:          item.Description,
 		IconURL:              item.IconURL,
 		Category:             item.Category,
-		GroupID:              item.GroupID,
-		GroupName:            groupName,
+		GroupIDs:             groupIDs,
+		GroupNames:           groupNames,
 		Tags:                 tags,
 		Version:              item.Version,
 		TransportType:        item.TransportType,
@@ -887,21 +975,12 @@ func (s *MarketplaceService) toDetail(item *model.MarketplaceItem) *dto.Marketpl
 }
 
 func (s *MarketplaceService) toListItems(items []model.MarketplaceItem) []dto.MarketplaceListItem {
-	// 批量取分组名(避免 N+1)
-	groupIDs := make([]int64, 0, len(items))
+	// 批量取分组绑定(避免 N+1)
+	itemIDs := make([]int64, 0, len(items))
 	for _, it := range items {
-		if it.GroupID != nil {
-			groupIDs = append(groupIDs, *it.GroupID)
-		}
+		itemIDs = append(itemIDs, it.ID)
 	}
-	groupNameByID := make(map[int64]string)
-	if len(groupIDs) > 0 {
-		if groups, e := model.GetMarketplaceGroupsByIDs(groupIDs); e == nil {
-			for _, g := range groups {
-				groupNameByID[g.ID] = g.Name
-			}
-		}
-	}
+	groupIDsByID, groupNamesByID := s.itemGroupsOf(itemIDs)
 
 	result := make([]dto.MarketplaceListItem, len(items))
 	for i, item := range items {
@@ -911,9 +990,13 @@ func (s *MarketplaceService) toListItems(items []model.MarketplaceItem) []dto.Ma
 		} else {
 			tags = []string{}
 		}
-		var groupName string
-		if item.GroupID != nil {
-			groupName = groupNameByID[*item.GroupID]
+		itemGroupIDs := groupIDsByID[item.ID]
+		if itemGroupIDs == nil {
+			itemGroupIDs = []int64{} // JSON 出 [] 而非 null
+		}
+		itemGroupNames := groupNamesByID[item.ID]
+		if itemGroupNames == nil {
+			itemGroupNames = []string{}
 		}
 		result[i] = dto.MarketplaceListItem{
 			ID:            item.ID,
@@ -922,8 +1005,8 @@ func (s *MarketplaceService) toListItems(items []model.MarketplaceItem) []dto.Ma
 			Description:   item.Description,
 			IconURL:       item.IconURL,
 			Category:      item.Category,
-			GroupID:       item.GroupID,
-			GroupName:     groupName,
+			GroupIDs:      itemGroupIDs,
+			GroupNames:    itemGroupNames,
 			Tags:          tags,
 			Version:       item.Version,
 			TransportType: item.TransportType,

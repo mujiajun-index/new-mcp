@@ -80,6 +80,7 @@ func migrateDB() error {
 		&McpCallLog{},
 		&MarketplaceItem{},
 		&MarketplaceGroup{},
+		&MarketplaceItemGroup{},
 		&MarketplaceTag{},
 		&MarketplaceReview{},
 		&McpToolPrice{},
@@ -116,6 +117,26 @@ func migrateDB() error {
 		if err := DB.Migrator().DropIndex(&McpToolPrice{}, "idx_item_tool"); err != nil {
 			return fmt.Errorf("drop legacy item_tool unique index: %w", err)
 		}
+	}
+	// 市场项分组从单列(marketplace_items.group_id)改为多对多绑定表 marketplace_item_groups。
+	// SQLite 的 DROP COLUMN 不允许删除带索引的列,须先 drop GORM 默认索引
+	// idx_marketplace_items_group_id 再 drop 列(MySQL/PG 两种顺序均可,先删索引无害)。
+	// 存量单分组绑定不回填(约定):管理员在市场分类中重新分配。幂等:清空后不再命中。
+	if DB.Migrator().HasIndex(&MarketplaceItem{}, "idx_marketplace_items_group_id") {
+		if err := DB.Migrator().DropIndex(&MarketplaceItem{}, "idx_marketplace_items_group_id"); err != nil {
+			return fmt.Errorf("drop legacy marketplace_items group_id index: %w", err)
+		}
+	}
+	if DB.Migrator().HasColumn(&MarketplaceItem{}, "group_id") {
+		if err := DB.Migrator().DropColumn(&MarketplaceItem{}, "group_id"); err != nil {
+			return fmt.Errorf("drop legacy marketplace_items.group_id column: %w", err)
+		}
+	}
+	// 市场分组删除从软删除改为真删除(见 MarketplaceGroupService.Delete):物理清理历史
+	// 软删除的分组行,释放 name 唯一索引槽位——否则存量已删分组仍占着唯一索引,同名
+	// 分组建不回。绑定表为新建表无残留。幂等:清空后不再命中。
+	if err := DB.Unscoped().Where("deleted_at IS NOT NULL").Delete(&MarketplaceGroup{}).Error; err != nil {
+		return fmt.Errorf("purge soft-deleted marketplace groups: %w", err)
 	}
 	// 分组删除从软删除改为真删除(见 McpGroup.Delete):物理清理历史软删除的分组
 	// 及其子表残留行,释放 (user_id, name/endpoint_slug) 唯一槽位——否则存量已删

@@ -6,6 +6,7 @@ import (
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
 	"github.com/mujkjk/newmcp/model"
+	"gorm.io/gorm"
 )
 
 // MarketplaceGroupService 市场分组(业务分类)管理,管理员全局范围(§11)。
@@ -78,6 +79,7 @@ func (s *MarketplaceGroupService) Update(id int64, req *dto.UpdateMarketplaceGro
 	if err != nil {
 		return err
 	}
+	wasEnabled := g.Status == common.StatusEnabled
 	if req.Name != nil {
 		exists, err := model.CheckMarketplaceGroupNameExists(*req.Name, id)
 		if err != nil {
@@ -100,7 +102,18 @@ func (s *MarketplaceGroupService) Update(id int64, req *dto.UpdateMarketplaceGro
 	if req.Status != nil {
 		g.Status = *req.Status
 	}
-	return g.Update()
+	// 引用同步(与分组更新同事务):绑定行按 ID 引用,改名无需同步;禁用须摘除,
+	// 维持"市场项绑定 ⊆ 启用分组"不变量(否则存量绑定项再次保存时报 ErrGroupNotFound)。
+	// 重新启用不恢复已摘除的绑定,由管理员重新勾选。
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(g).Error; err != nil {
+			return err
+		}
+		if wasEnabled && g.Status != common.StatusEnabled {
+			return model.DeleteMarketplaceItemGroupsByGroupID(tx, g.ID)
+		}
+		return nil
+	})
 }
 
 func (s *MarketplaceGroupService) Delete(id int64) error {
@@ -108,7 +121,13 @@ func (s *MarketplaceGroupService) Delete(id int64) error {
 	if err != nil {
 		return err
 	}
-	return g.Delete()
+	// 硬删:name 唯一索引含软删行,软删后同名重建会撞唯一键;绑定表按 ID 引用,同事务摘除。
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := model.DeleteMarketplaceItemGroupsByGroupID(tx, g.ID); err != nil {
+			return err
+		}
+		return tx.Unscoped().Delete(g).Error
+	})
 }
 
 func (s *MarketplaceGroupService) toList(groups []model.MarketplaceGroup) []dto.MarketplaceGroupItem {

@@ -96,6 +96,16 @@ export function MarketplaceDetailPage() {
             }`}>
               {item.category === 'instant' ? t('marketplace.ready') : t('marketplace.source')}
             </span>
+            {item.group_names?.map((name: string) => (
+              <span key={name} className="rounded bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400">{name}</span>
+            ))}
+            {/* 标签与元信息同排(与列表卡片同序:类目/分组 → 标签 → 版本);原先沉在工具/资源/提示列表之后 */}
+            {item.tags?.map((tag: string) => (
+              <span key={tag} style={tagStyle(tagColors[tag])}
+                className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${tagColors[tag] ? '' : 'bg-muted text-muted-foreground'}`}>
+                {tag}
+              </span>
+            ))}
             {item.version && <span className="text-xs text-muted-foreground">v{item.version}</span>}
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <Download className="h-3 w-3" />{t('marketplace.installs', { count: item.install_count })}
@@ -211,18 +221,6 @@ export function MarketplaceDetailPage() {
           </div>
         )}
       </SectionCard>
-
-      {/* Tags */}
-      {item.tags && item.tags.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {item.tags.map((tag: string) => (
-            <span key={tag} style={tagStyle(tagColors[tag])}
-              className={`rounded-full px-3 py-1 text-xs font-medium ${tagColors[tag] ? '' : 'bg-muted text-muted-foreground'}`}>
-              {tag}
-            </span>
-          ))}
-        </div>
-      )}
     </div>
   )
 }
