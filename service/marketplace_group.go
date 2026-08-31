@@ -21,7 +21,7 @@ func (s *MarketplaceGroupService) List(status, page, pageSize int) ([]dto.Market
 	if err != nil {
 		return nil, 0, err
 	}
-	return s.toList(groups), total, nil
+	return s.fillItemCounts(s.toList(groups)), total, nil
 }
 
 // ListAllForAdmin 返回所有分组（不分页，仅供管理 UI 用，避免 MaxPageSize 截断丢失新条目）。
@@ -30,7 +30,7 @@ func (s *MarketplaceGroupService) ListAllForAdmin() ([]dto.MarketplaceGroupItem,
 	if err != nil {
 		return nil, err
 	}
-	return s.toList(groups), nil
+	return s.fillItemCounts(s.toList(groups)), nil
 }
 
 // ListEnabled 返回启用分组(供广场公开端点 / 左侧筛选)。
@@ -39,7 +39,20 @@ func (s *MarketplaceGroupService) ListEnabled() ([]dto.MarketplaceGroupItem, err
 	if err != nil {
 		return nil, err
 	}
-	return s.toList(groups), nil
+	return s.fillItemCounts(s.toList(groups)), nil
+}
+
+// fillItemCounts 填充分组下的已上架市场项数量(广场分组列表计数)。计数查询失败时
+// 静默降级为 0,不阻断分组列表主体。
+func (s *MarketplaceGroupService) fillItemCounts(items []dto.MarketplaceGroupItem) []dto.MarketplaceGroupItem {
+	counts, err := model.CountPublishedItemsPerGroup()
+	if err != nil {
+		return items
+	}
+	for i := range items {
+		items[i].ItemCount = counts[items[i].ID]
+	}
+	return items
 }
 
 func (s *MarketplaceGroupService) Get(id int64) (*dto.MarketplaceGroupItem, error) {

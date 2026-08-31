@@ -25,5 +25,7 @@ type MarketplaceGroupItem struct {
 	IconURL     string `json:"icon_url"`
 	SortOrder   int    `json:"sort_order"`
 	Status      int    `json:"status"`
-	CreatedAt   string `json:"created_at"`
+	// 该分组下已上架市场项数量(与广场按组筛选口径一致)
+	ItemCount int64  `json:"item_count"`
+	CreatedAt string `json:"created_at"`
 }

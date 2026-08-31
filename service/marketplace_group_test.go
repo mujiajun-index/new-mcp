@@ -246,14 +246,14 @@ func TestMarketplaceItemGroups(t *testing.T) {
 			slices.Sort(out)
 			return out
 		}
-		items, total, err := s.ListPublished(1, 20, "", "", 0)
+		items, total, err := s.ListPublished(1, 20, "", "", 0, "")
 		if err != nil {
 			t.Fatalf("list all: %v", err)
 		}
 		if total != 3 || len(items) != 3 {
 			t.Fatalf("no filter: total=%d items=%v", total, names(items))
 		}
-		items, total, err = s.ListPublished(1, 20, "", "", g2.ID)
+		items, total, err = s.ListPublished(1, 20, "", "", g2.ID, "")
 		if err != nil {
 			t.Fatalf("list g2: %v", err)
 		}
@@ -261,7 +261,7 @@ func TestMarketplaceItemGroups(t *testing.T) {
 		if total != 2 || len(items) != 2 || !slices.Equal(names(items), []string{"x", "y"}) {
 			t.Fatalf("filter g2: total=%d items=%v", total, names(items))
 		}
-		items, total, err = s.ListPublished(1, 20, "", "", g1.ID)
+		items, total, err = s.ListPublished(1, 20, "", "", g1.ID, "")
 		if err != nil {
 			t.Fatalf("list g1: %v", err)
 		}
@@ -270,7 +270,7 @@ func TestMarketplaceItemGroups(t *testing.T) {
 		}
 		// 无任何绑定的组过滤结果为空
 		g3 := newMarketGroup(t, "G3", common.StatusEnabled)
-		_, total, err = s.ListPublished(1, 20, "", "", g3.ID)
+		_, total, err = s.ListPublished(1, 20, "", "", g3.ID, "")
 		if err != nil {
 			t.Fatalf("list g3: %v", err)
 		}
@@ -278,6 +278,50 @@ func TestMarketplaceItemGroups(t *testing.T) {
 			t.Fatalf("filter empty group: total=%d", total)
 		}
 		_ = z // z 未绑定,仅参与无过滤计数
+	})
+
+	t.Run("published_filter_by_tag", func(t *testing.T) {
+		setupMarketplaceGroupTest(t)
+		a, b, c := newMarketItem(t, "a"), newMarketItem(t, "b"), newMarketItem(t, "c")
+		// 直接落 tags 逗号串(绕开标签字典,筛选只看串本身):a=web,search;b=webgl;c 无
+		for _, it := range []*model.MarketplaceItem{a, b} {
+			tags := "web,search"
+			if it == b {
+				tags = "webgl"
+			}
+			if err := model.DB.Model(it).Update("tags", tags).Error; err != nil {
+				t.Fatalf("set tags of %s: %v", it.Name, err)
+			}
+		}
+
+		s := &MarketplaceService{}
+		names := func(items []dto.MarketplaceListItem) []string {
+			out := make([]string, len(items))
+			for i, it := range items {
+				out[i] = it.Name
+			}
+			slices.Sort(out)
+			return out
+		}
+		// "web" 不得误配 "webgl"(精确词元,非子串)
+		items, total, err := s.ListPublished(1, 20, "", "", 0, "web")
+		if err != nil {
+			t.Fatalf("filter web: %v", err)
+		}
+		if total != 1 || len(items) != 1 || items[0].Name != "a" {
+			t.Fatalf("filter web: total=%d items=%v", total, names(items))
+		}
+		// 首词 / 尾词 / 中间词与无标签项
+		if _, total, err = s.ListPublished(1, 20, "", "", 0, "search"); err != nil || total != 1 {
+			t.Fatalf("filter search: total=%d err=%v", total, err)
+		}
+		if _, total, err = s.ListPublished(1, 20, "", "", 0, "webgl"); err != nil || total != 1 {
+			t.Fatalf("filter webgl: total=%d err=%v", total, err)
+		}
+		if _, total, err = s.ListPublished(1, 20, "", "", 0, "不存在"); err != nil || total != 0 {
+			t.Fatalf("filter missing: total=%d err=%v", total, err)
+		}
+		_ = c
 	})
 
 	t.Run("list_fill_group_names_sorted", func(t *testing.T) {
@@ -299,7 +343,7 @@ func TestMarketplaceItemGroups(t *testing.T) {
 		}
 
 		s := &MarketplaceService{}
-		items, _, err := s.ListPublished(1, 20, "", "", 0)
+		items, _, err := s.ListPublished(1, 20, "", "", 0, "")
 		if err != nil {
 			t.Fatalf("list: %v", err)
 		}
@@ -347,6 +391,42 @@ func TestMarketplaceItemGroups(t *testing.T) {
 		}
 		if got := bindsOf(t, item.ID); len(got) != 0 {
 			t.Fatalf("binds after item delete: got %v", got)
+		}
+	})
+
+	t.Run("group_item_counts_published_only", func(t *testing.T) {
+		setupMarketplaceGroupTest(t)
+		g1, g2 := newMarketGroup(t, "G1", common.StatusEnabled), newMarketGroup(t, "G2", common.StatusEnabled)
+		newMarketGroup(t, "EMPTY", common.StatusEnabled)
+		x, y := newMarketItem(t, "x"), newMarketItem(t, "y")
+		// 未上架(禁用)市场项的绑定不计入计数,与广场筛选口径一致
+		off := &model.MarketplaceItem{
+			AdminID: 1, Name: "off", Category: "instant",
+			BillingType: "free", Status: common.StatusDisabled,
+		}
+		if err := model.DB.Create(off).Error; err != nil {
+			t.Fatalf("create off: %v", err)
+		}
+		for _, c := range []struct {
+			item *model.MarketplaceItem
+			ids  []int64
+		}{{x, []int64{g1.ID, g2.ID}}, {y, []int64{g2.ID}}, {off, []int64{g1.ID}}} {
+			if err := updateItemGroups(t, c.item.ID, c.ids); err != nil {
+				t.Fatalf("bind %s: %v", c.item.Name, err)
+			}
+		}
+
+		gs := &MarketplaceGroupService{}
+		items, err := gs.ListEnabled()
+		if err != nil {
+			t.Fatalf("list enabled: %v", err)
+		}
+		got := map[string]int64{}
+		for _, it := range items {
+			got[it.Name] = it.ItemCount
+		}
+		if got["G1"] != 1 || got["G2"] != 2 || got["EMPTY"] != 0 {
+			t.Fatalf("want G1=1 G2=2 EMPTY=0, got %v", got)
 		}
 	})
 }

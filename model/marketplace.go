@@ -84,7 +84,7 @@ func GetMarketplaceItemByID(id int64) (*MarketplaceItem, error) {
 	return &item, err
 }
 
-func ListPublishedMarketplaceItems(offset, limit int, category, keyword string, groupID int64) ([]MarketplaceItem, int64, error) {
+func ListPublishedMarketplaceItems(offset, limit int, category, keyword string, groupID int64, tag string) ([]MarketplaceItem, int64, error) {
 	query := DB.Where("status = ?", common.StatusEnabled)
 	if category != "" {
 		query = query.Where("category = ?", category)
@@ -94,6 +94,12 @@ func ListPublishedMarketplaceItems(offset, limit int, category, keyword string, 
 		// IN 子查询无行翻倍、无 GORM Count-after-Joins 坑,三方言同构
 		sub := DB.Model(&MarketplaceItemGroup{}).Select("item_id").Where("group_id = ?", groupID)
 		query = query.Where("id IN (?)", sub)
+	}
+	if tag != "" {
+		// tags 是逗号串,四段 LIKE 做精确词元匹配(整串= / 首词 / 尾词 / 中间词):
+		// 只用标准 LIKE 无方言拼接函数,且避免 '%tag%' 把 "web" 误配 "webgl"
+		query = query.Where("tags = ? OR tags LIKE ? OR tags LIKE ? OR tags LIKE ?",
+			tag, tag+",%", "%,"+tag, "%,"+tag+",%")
 	}
 	if keyword != "" {
 		query = query.Where("name LIKE ? OR display_name LIKE ? OR description LIKE ?",

@@ -3,6 +3,7 @@ package model
 import (
 	"time"
 
+	"github.com/mujkjk/newmcp/common"
 	"gorm.io/gorm"
 )
 
@@ -54,4 +55,29 @@ func DeleteMarketplaceItemGroupsByGroupID(tx *gorm.DB, groupID int64) error {
 // DeleteMarketplaceItemGroupsByItemID 摘除某市场项的全部绑定(市场项删除时清理悬空引用)。
 func DeleteMarketplaceItemGroupsByItemID(tx *gorm.DB, itemID int64) error {
 	return tx.Where("item_id = ?", itemID).Delete(&MarketplaceItemGroup{}).Error
+}
+
+// CountPublishedItemsPerGroup 统计每个分组下已上架(status=启用且未软删)市场项的数量,
+// 返回 group_id → 数量(不在 map 的分组计 0)。口径与 ListPublishedMarketplaceItems 的
+// 组筛选一致(同一"已上架项 id"子查询),保证计数=点击该分组筛出的条数。
+func CountPublishedItemsPerGroup() (map[int64]int64, error) {
+	type row struct {
+		GroupID int64
+		Cnt     int64
+	}
+	var rows []row
+	sub := DB.Model(&MarketplaceItem{}).Select("id").Where("status = ?", common.StatusEnabled)
+	err := DB.Model(&MarketplaceItemGroup{}).
+		Select("group_id, COUNT(*) AS cnt").
+		Where("item_id IN (?)", sub).
+		Group("group_id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	counts := make(map[int64]int64, len(rows))
+	for _, r := range rows {
+		counts[r.GroupID] = r.Cnt
+	}
+	return counts, nil
 }

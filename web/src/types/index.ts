@@ -583,6 +583,7 @@ export interface MarketplaceEntryPrice {
 export interface MarketplaceListParams extends ListParams {
   category?: 'instant' | 'source'
   group_id?: number
+  tag?: string
 }
 
 export interface MarketplaceGroup {
@@ -593,6 +594,8 @@ export interface MarketplaceGroup {
   icon_url: string
   sort_order: number
   status: number
+  /** 该分组下已上架市场项数量(与广场按组筛选口径一致) */
+  item_count: number
   created_at: string
 }
 

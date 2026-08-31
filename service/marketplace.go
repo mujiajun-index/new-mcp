@@ -697,9 +697,9 @@ func (s *MarketplaceService) ListItemsAdmin(page, pageSize int) ([]dto.Marketpla
 
 // --- Public/User browsing ---
 
-func (s *MarketplaceService) ListPublished(page, pageSize int, category, keyword string, groupID int64) ([]dto.MarketplaceListItem, int64, error) {
+func (s *MarketplaceService) ListPublished(page, pageSize int, category, keyword string, groupID int64, tag string) ([]dto.MarketplaceListItem, int64, error) {
 	offset := common.GetOffset(page, pageSize)
-	items, total, err := model.ListPublishedMarketplaceItems(offset, pageSize, category, keyword, groupID)
+	items, total, err := model.ListPublishedMarketplaceItems(offset, pageSize, category, keyword, groupID, tag)
 	if err != nil {
 		return nil, 0, err
 	}

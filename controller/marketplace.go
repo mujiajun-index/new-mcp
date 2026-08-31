@@ -177,7 +177,8 @@ func BrowseMarketplace(c *gin.Context) {
 	category := c.Query("category")
 	keyword := c.Query("keyword")
 	groupID, _ := strconv.ParseInt(c.Query("group_id"), 10, 64)
-	items, total, err := marketplaceService.ListPublished(page, pageSize, category, keyword, groupID)
+	tag := c.Query("tag")
+	items, total, err := marketplaceService.ListPublished(page, pageSize, category, keyword, groupID, tag)
 	if err != nil {
 		common.Error(c, http.StatusInternalServerError, "获取市场失败")
 		return
