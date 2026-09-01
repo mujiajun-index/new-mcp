@@ -70,6 +70,22 @@ function SmartBadge({ log }: { log: any }) {
   )
 }
 
+// 多秘钥调用所用秘钥的池内序号(#N,对应服务详情「秘钥管理」的序号列),展示在
+// 服务列(仅管理员);0/缺省(单秘钥服务)不显示。悬停说明含义。
+function KeyIndexBadge({ log }: { log: any }) {
+  const { t } = useTranslation()
+  const idx: number = log?.key_index ?? 0
+  if (idx <= 0) return null
+  return (
+    <span
+      title={t('logs.keyIndexTip', { index: idx })}
+      className="shrink-0 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400"
+    >
+      #{idx}
+    </span>
+  )
+}
+
 // 从 extra JSON 解析管理日志的操作者(管理员)展示文本"。
 // 普通用户视图的 extra 已在后端剥离 operator,故仅管理员可见。
 function getOperatorDisplay(extra?: string): string | null {
@@ -510,7 +526,15 @@ function LogMobileCard({ log, isAdmin, showBilling, fmtMoney, formatTime, format
         { label: 'IP', value: <span className="font-mono">{log.client_ip}</span> },
         { label: t('logs.time'), value: formatTime(log.created_at) },
         ...(isAdmin ? [
-          { label: t('logs.serviceName'), value: log.service_name || '-' },
+          {
+            label: t('logs.serviceName'),
+            value: (
+              <span className="flex items-center gap-1.5">
+                <span className="truncate">{log.service_name || '-'}</span>
+                <KeyIndexBadge log={log} />
+              </span>
+            ),
+          },
         ] : []),
       ]}
       note={
@@ -616,7 +640,14 @@ function LogRow({ log, isAdmin, showBilling, fmtMoney, formatTime, formatDuratio
         </span>
       </TableCell>
       <TableCell className="text-sm truncate" title={log.group_name}>{log.group_name || '-'}</TableCell>
-      {isAdmin && <TableCell className="text-sm truncate" title={log.service_name}>{log.service_name || '-'}</TableCell>}
+      {isAdmin && (
+        <TableCell className="text-sm truncate" title={log.service_name}>
+          <span className="flex items-center gap-1.5">
+            <span className="truncate">{log.service_name || '-'}</span>
+            <KeyIndexBadge log={log} />
+          </span>
+        </TableCell>
+      )}
       <TableCell>
         <Badge variant={isSuccess ? 'success' : 'destructive'}>
           {isSuccess ? t('logs.success') : t('logs.error')}

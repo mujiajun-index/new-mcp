@@ -232,6 +232,11 @@ export function ServiceListPage() {
                         <span className="inline-flex items-center gap-1.5">
                           <Icon className="h-3.5 w-3.5" />
                           {transportLabel(s.transport_type)}
+                          {s.key_mode && (
+                            <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                              {t('services.keys.multiKeyShort', { mode: s.key_mode === 'random' ? t('services.keys.modeRandom') : t('services.keys.modePolling') })}
+                            </span>
+                          )}
                         </span>
                       ),
                     },
@@ -331,6 +336,11 @@ export function ServiceListPage() {
                         <span className="inline-flex items-center gap-1.5 text-xs">
                           <Icon className="h-3.5 w-3.5" />
                           {transportLabel(s.transport_type)}
+                          {s.key_mode && (
+                            <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                              {t('services.keys.multiKeyShort', { mode: s.key_mode === 'random' ? t('services.keys.modeRandom') : t('services.keys.modePolling') })}
+                            </span>
+                          )}
                         </span>
                       </td>
                       <td className="px-4 py-3"><HealthBadge status={s.health_status} /></td>

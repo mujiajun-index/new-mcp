@@ -509,3 +509,32 @@ DATABASE(§2.16/定价解析 ER)同步。
 COMMERCIALIZATION §6.6 失败边界表(新增"工具层失败 isError"行,明确两类开关的
 实际分类口径)、§6.2 手动测试同口径说明、选项表 ChargeOnClientError/ChargeOnTimeout
 说明更新。
+
+## 14. MCP 服务多秘钥(单/多模式,随机/轮询策略,2026-09-01)
+
+> 范围仅 streamable-http / SSE(stdio 不做:env 进程 spawn
+> 时固定);单秘钥服务保持 `config.headers` 现状,零兼容代码。
+
+### 14.1 后端 ✅ 已完成(build + vet + test 通过)
+
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| 数据模型 | ✅ | 新表 `mcp_service_keys`(service_id+sort_order 唯一,序号 1 起=日志 key_index;状态挂行:1 启用/2 手动禁用/3 自动禁用);模式与注入头存 `auth_config` JSON(主表零新增列);`mcp_call_logs.key_index` 归因列 |
+| 运行时 | ✅ | `bridge.KeySelector` 进程级注册表(纯内存选 key,零 DB 访问)实现 `transport.DynamicAuth`;`headerRoundTripper` 动态槽位:ctx 指定优先(CallWithMeta 每逻辑调用 Pick 一次,POST/GET 全程同 key)、后台 POST 现选、GET 沿用最近值;401/403 → OnAuthFailure 落库+系统日志(锁外),会话不断下一请求自动换 key;GetOrConnect 建连失败换 key 重试一次 |
+| 管理 API | ✅ | `/services/:id/keys` GET/PUT(append 去重保状态 \| replace 整池重排)/`:keyID` 启禁删/batch(enable_all\|delete_disabled)/config 模式切换(单→多收编现有认证头,多→单首选 key 写回清池);池/模式/AuthType 变更联动 Invalidate+踢会话+异步预热;删服务清池+失效选择器 |
+| 网关归因 | ✅ | tools/call 直连、Smart execute/execute_batch、手动测试均走 `CallWithMeta`,`KeyIndex` 写进 `mcp_call_logs` |
+| 市场 | ✅ | CloneFromService 遇多秘钥源降级为单秘钥模板(首选启用 key)+系统日志;条目级池留二期 |
+| 测试 | ✅ | `dynamic_auth_test.go`(RoundTripper 行为)、`dynamic_auth_integration_test.go`(真实 go-sdk 握手:坏 key 401 熔断→换 key 重连→归因 KeyIndex=2)、`key_selector_test.go`(策略/前缀/空池) |
+
+### 14.2 前端 ✅ 已完成(tsc + build 双绿)
+
+创建页第 3 步秘钥模式选择 + 批量粘贴 + 第 4 步逐把测试;详情页「秘钥管理」卡片
+(池表格/添加对话框/批量操作/全部禁用横幅/自动禁用原因);列表与详情「多秘钥·策略」
+徽章;日志页 `#N` 秘钥索引徽章;i18n zh/en 双文件。
+
+### 14.3 文档 ✅
+
+`docs/MULTI-KEY.md`(专篇:设计 + 性能分析——游标/禁用集纯内存,选 key 零 DB 访问,
+无需 Redis);
+DATABASE.md(2.18 新表 + key_index 列 + ER/索引)、API.md(§4 六个 keys 端点 +
+创建参数)、ARCHITECTURE.md(4.12 KeySelector)。

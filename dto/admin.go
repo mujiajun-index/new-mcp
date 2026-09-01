@@ -103,6 +103,8 @@ type LogItem struct {
 	QuotaConsumed     int64   `json:"quota_consumed"`
 	PriceScope        string  `json:"price_scope"`
 	MarketplaceItemID *int64  `json:"marketplace_item_id"`
+	// 多秘钥调用所用秘钥的池内序号;0 = 单秘钥/不适用(见服务详情「秘钥管理」)
+	KeyIndex int `json:"key_index"`
 	// 统一日志扩展
 	Type    int    `json:"type"`    // 日志类型(LogType*)
 	Content string `json:"content"` // 非消费类日志的人类可读描述

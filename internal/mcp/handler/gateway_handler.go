@@ -15,6 +15,7 @@ import (
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/internal/mcp/smart"
+	"github.com/mujkjk/newmcp/internal/mcp/transport"
 	"github.com/mujkjk/newmcp/internal/mcp/virtual"
 	"github.com/mujkjk/newmcp/model"
 )
@@ -71,6 +72,7 @@ type executeResult struct {
 	GroupID     int64
 	GroupName   string
 	Billing     *billingOutcome // 市场来源服务计费结果(供日志记录);nil=自有/免费
+	KeyIndex    int             // 多秘钥调用所用秘钥池内序号;0=单秘钥/不适用
 }
 
 // billingOutcome 一次调用的计费结算结果,写入 mcp_call_logs 计费列。
@@ -275,6 +277,7 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 	var serviceName string
 	var billing *billingOutcome
 	var batchLogs []*model.McpCallLog
+	var keyIndex int // 多秘钥调用所用秘钥池内序号(写日志 key_index)
 	originalToolName := "" // records meta-tool name for smart mode
 	// request_id:计费幂等键 = JSON-RPC id + 工具与参数短哈希。纯 id 在不同客户端/会话复用同一 id 时
 	// 会把新逻辑请求误判为重试而漏扣;加入 tool/args 哈希后,仅真正的同请求重试(id/工具/参数全同)才命中跳过。
@@ -312,6 +315,7 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 			groupID = result.GroupID
 			groupName = result.GroupName
 		}
+		keyIndex = result.KeyIndex
 	case "mcp.execute_batch":
 		// 批量执行:每项一条日志(method=mcp.execute_batch、计费按项结算),不走
 		// 下方单条汇总;请求参数校验失败时 Logs 为空,回落单条日志路径。
@@ -334,6 +338,7 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 			serviceID = readResult.ServiceID
 			serviceName = readResult.ServiceName
 		}
+		keyIndex = readResult.KeyIndex
 	default:
 		// Verify group access for group-scoped requests
 		if logCtx.GroupSlug != "" {
@@ -352,7 +357,7 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 
 		if resp == nil {
 			billing = &billingOutcome{}
-			resp = h.routeAndCall(ctx, req.ID, logCtx, params.Name, params.Arguments, &serviceID, &serviceName, requestID, billing)
+			resp = h.routeAndCall(ctx, req.ID, logCtx, params.Name, params.Arguments, &serviceID, &serviceName, requestID, billing, &keyIndex)
 		}
 	}
 
@@ -400,6 +405,7 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 		ResponseStatus: status,
 		DurationMs:     int(duration.Milliseconds()),
 		ErrorMessage:   truncate(errMsg, 65535),
+		KeyIndex:       keyIndex,
 		ClientIP:       logCtx.ClientIP,
 		UserAgent:      truncate(logCtx.UserAgent, 512),
 	}
@@ -432,7 +438,7 @@ func applyBillingToLog(log *model.McpCallLog, b *billingOutcome) {
 
 // routeAndCall handles virtual tool check, session routing, and tool execution.
 // 仅当解析到的服务为市场来源(source=marketplace)时触发计费(§6);自有/虚拟工具免费。
-func (h *GatewayHandler) routeAndCall(ctx context.Context, reqID interface{}, logCtx *LogContext, toolName string, args json.RawMessage, svcID *int64, svcName *string, requestID string, billing *billingOutcome) *JSONRPCResponse {
+func (h *GatewayHandler) routeAndCall(ctx context.Context, reqID interface{}, logCtx *LogContext, toolName string, args json.RawMessage, svcID *int64, svcName *string, requestID string, billing *billingOutcome, keyIndex *int) *JSONRPCResponse {
 	parsedSvc, parsedTool := bridge.ParseNamespacedName(toolName)
 
 	// Check virtual tools first (vision/camera 等属自有性质,免费). upload_image is
@@ -476,13 +482,16 @@ func (h *GatewayHandler) routeAndCall(ctx context.Context, reqID interface{}, lo
 		"arguments": args,
 	}
 
-	result, err := session.Adapter.Call(ctx, "tools/call", callParams)
+	result, kIdx, err := callTool(ctx, session.Adapter, callParams)
 
 	// 计费插入点 B:成功确认 / 失败退款(仅已启动计费的市场调用)。
 	// 成败含结果内 isError(工具层失败,如上游 key 错误/余额不足):默认退款,
 	// ChargeOnClientError/ChargeOnTimeout 打开时对应失败形态才计费(§6.6)。
 	if session.Source == "marketplace" {
 		h.finalizeBilling(billing, shouldChargeCall(err, toolResultIsError(result)))
+	}
+	if keyIndex != nil {
+		*keyIndex = kIdx
 	}
 
 	if err != nil {
@@ -598,6 +607,18 @@ type callOutcome struct {
 	GroupID     int64
 	GroupName   string
 	Billing     *billingOutcome // 市场来源服务计费结果(供日志记录);nil=自有/免费
+	KeyIndex    int             // 多秘钥调用所用秘钥池内序号;0=单秘钥/不适用(写日志 key_index)
+}
+
+// callTool 经可选的 MetaCaller 执行 tools/call,带回本次调用实际使用的秘钥序号
+// (非多秘钥 adapter 恒 0),供调用日志 key_index 归因。
+func callTool(ctx context.Context, adapter transport.TransportAdapter, params map[string]interface{}) (json.RawMessage, int, error) {
+	if mc, ok := adapter.(transport.MetaCaller); ok {
+		raw, meta, err := mc.CallWithMeta(ctx, "tools/call", params)
+		return raw, meta.KeyIndex, err
+	}
+	raw, err := adapter.Call(ctx, "tools/call", params)
+	return raw, 0, err
 }
 
 // executeOne 执行一次工具调用:作用域校验 → 虚拟工具 → 路由 → 计费 A/B → 上游调用。
@@ -686,7 +707,7 @@ func (h *GatewayHandler) executeOne(ctx context.Context, logCtx *LogContext, too
 		"arguments": arguments,
 	}
 
-	result, err := session.Adapter.Call(ctx, "tools/call", callParams)
+	result, keyIndex, err := callTool(ctx, session.Adapter, callParams)
 
 	// 计费插入点 B:成功确认 / 失败退款(成败含结果内 isError,§6.6,同 routeAndCall)
 	if billing != nil {
@@ -700,6 +721,7 @@ func (h *GatewayHandler) executeOne(ctx context.Context, logCtx *LogContext, too
 		GroupID:     gID,
 		GroupName:   gName,
 		Billing:     billing,
+		KeyIndex:    keyIndex,
 	}
 	if err != nil {
 		oc.Err = "Execution failed: " + err.Error()
@@ -728,6 +750,7 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 			GroupID:     oc.GroupID,
 			GroupName:   oc.GroupName,
 			Billing:     oc.Billing,
+			KeyIndex:    oc.KeyIndex,
 		}
 	}
 	return &executeResult{
@@ -742,6 +765,7 @@ func (h *GatewayHandler) handleExecute(ctx context.Context, reqID interface{}, l
 		GroupID:     oc.GroupID,
 		GroupName:   oc.GroupName,
 		Billing:     oc.Billing,
+		KeyIndex:    oc.KeyIndex,
 	}
 }
 
@@ -879,6 +903,7 @@ func (h *GatewayHandler) handleExecuteBatch(ctx context.Context, reqID interface
 			ResponseStatus: status,
 			DurationMs:     int(durations[i].Milliseconds()),
 			ErrorMessage:   truncate(errMsg, 65535),
+			KeyIndex:       oc.KeyIndex,
 			ClientIP:       logCtx.ClientIP,
 			UserAgent:      truncate(logCtx.UserAgent, 512),
 		}

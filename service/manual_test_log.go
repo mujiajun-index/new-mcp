@@ -28,8 +28,9 @@ type manualTestBilling struct {
 // 可见、健康状态条与健康回写(model.ApplyHealthWriteBack)同样吃到手动测试数据。
 // Extra 标记 manual_test 便于区分真实网关流量。bill 为 nil(自有服务/资源/提示测试)
 // 时计费恒为 skipped;市场服务工具测试传入实际结算结果(charged/refunded/blocked...)。
-// 不递增用户请求次数(非网关请求);同步写入,手动测试非热路径。
-func recordManualTestLog(svc *model.McpService, userID int64, method, target string, res *dto.CallToolResult, bill *manualTestBilling) {
+// keyIndex=多秘钥服务本次实际使用的池内序号(落 key_index 列;0=单秘钥/本地失败
+// 未调上游)。不递增用户请求次数(非网关请求);同步写入,手动测试非热路径。
+func recordManualTestLog(svc *model.McpService, userID int64, method, target string, res *dto.CallToolResult, bill *manualTestBilling, keyIndex int) {
 	if res == nil {
 		return
 	}
@@ -60,6 +61,7 @@ func recordManualTestLog(svc *model.McpService, userID int64, method, target str
 		ServiceName:    svc.Name,
 		ToolName:       target,
 		Method:         method,
+		KeyIndex:       keyIndex,
 		ResponseStatus: status,
 		DurationMs:     int(res.DurationMs),
 		ErrorMessage:   errMsg,

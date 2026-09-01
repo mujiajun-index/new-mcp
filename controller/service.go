@@ -287,3 +287,96 @@ func GetServicesOverview(c *gin.Context) {
 	}
 	common.Success(c, resp)
 }
+
+// --- 多秘钥管理(/services/:id/keys) ---
+
+// GetServiceKeys 秘钥池视图(掩码值 + 模式 + 统计)。
+func GetServiceKeys(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	resp, err := mcpServiceService.ListKeys(userID, id)
+	if err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, resp)
+}
+
+// UpdateServiceKeys 更新秘钥:追加(去重保状态)/ 替换全部。
+func UpdateServiceKeys(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	var req dto.UpdateServiceKeysReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	resp, err := mcpServiceService.UpdateKeys(userID, id, &req)
+	if err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, resp)
+}
+
+// SetServiceKeyStatus 启用/禁用单把秘钥。
+func SetServiceKeyStatus(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	keyID, _ := strconv.ParseInt(c.Param("keyID"), 10, 64)
+	var req dto.SetServiceKeyStatusReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	if err := mcpServiceService.SetKeyStatus(userID, id, keyID, &req); err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, nil)
+}
+
+// DeleteServiceKey 删除单把秘钥。
+func DeleteServiceKey(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	keyID, _ := strconv.ParseInt(c.Param("keyID"), 10, 64)
+	if err := mcpServiceService.DeleteKey(userID, id, keyID); err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, nil)
+}
+
+// BatchServiceKeys 批量操作:全部启用 / 删除已禁用。
+func BatchServiceKeys(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	var req dto.BatchServiceKeysReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	if err := mcpServiceService.BatchKeys(userID, id, req.Action); err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, nil)
+}
+
+// UpdateServiceKeyConfig 模式切换:单↔多、随机↔轮询。
+func UpdateServiceKeyConfig(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	var req dto.UpdateServiceKeyConfigReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	resp, err := mcpServiceService.UpdateKeyConfig(userID, id, &req)
+	if err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, resp)
+}

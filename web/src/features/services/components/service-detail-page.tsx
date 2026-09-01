@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams, useRouter } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { getService, updateService, deleteService, testService, refreshTools, getServiceResources, getServicePrompts, getServiceProcessStat } from '../api'
 import { StdioProcessControl } from './stdio-process-control'
+import { ServiceKeysCard } from './service-keys-card'
 import { ToolTestDialog } from './tool-test-dialog'
 import { ResourceTestDialog, type ResourceTarget } from './resource-test-dialog'
 import { PromptTestDialog } from './prompt-test-dialog'
@@ -191,11 +192,14 @@ export function ServiceDetailPage() {
         config: buildConfig(),
       }
       const authConfig = buildAuthConfig()
-      if (form.auth_type === 'none') {
+      // 多秘钥服务:认证由秘钥池承载,不提交认证字段(避免覆盖 AuthConfig 里的
+      // key_mode/header_name;切换认证类型须先在秘钥管理切回单秘钥)
+      const multiKey = service?.key_mode === 'random' || service?.key_mode === 'polling'
+      if (!multiKey && form.auth_type === 'none') {
         // 切换为无需认证时，显式清空已保存的认证类型与凭据
         payload.auth_type = 'none'
         payload.auth_config = {}
-      } else if (Object.keys(authConfig).length > 0) {
+      } else if (!multiKey && Object.keys(authConfig).length > 0) {
         // 仅在填写了认证凭据时才更新认证，避免清空已有配置
         payload.auth_type = form.auth_type
         payload.auth_config = authConfig
@@ -219,13 +223,18 @@ export function ServiceDetailPage() {
     if (service && !editing) {
       const cfg = (service.config || {}) as Record<string, unknown>
       const headers = ((cfg.headers as Record<string, string>) || {})
+      // 多秘钥:认证头不在 headers 里(由秘钥池注入),直接用服务行存的认证类型,
+      // 凭据字段留空(编辑态隐藏凭据输入、锁定认证类型)。
+      const isMulti = service.key_mode === 'random' || service.key_mode === 'polling'
 
       let authType: AuthType = 'none'
       let apiKey = ''
       let bearerToken = ''
       let customKey = ''
       let customValue = ''
-      if (headers['X-API-Key']) {
+      if (isMulti) {
+        authType = service.auth_type
+      } else if (headers['X-API-Key']) {
         authType = 'api_key'
         apiKey = headers['X-API-Key']
       } else if (headers['Authorization']?.startsWith('Bearer ')) {
@@ -257,15 +266,20 @@ export function ServiceDetailPage() {
   function buildConfig(): Record<string, unknown> {
     const cfg = (service?.config || {}) as Record<string, unknown>
     const originalHeaders = ((cfg.headers as Record<string, string>) || {})
+    // 多秘钥:认证头由秘钥池注入,不做认证重建(凭据输入在多秘钥下隐藏)
+    const isMultiSvc = service?.key_mode === 'random' || service?.key_mode === 'polling'
 
     // 判断本次是否提交了新的认证凭据
     const hasNewAuth =
-      (form.auth_type === 'api_key' && !!form.api_key) ||
+      !isMultiSvc &&
+      ((form.auth_type === 'api_key' && !!form.api_key) ||
       (form.auth_type === 'bearer' && !!form.bearer_token) ||
-      (form.auth_type === 'custom' && !!form.custom_header_key)
+      (form.auth_type === 'custom' && !!form.custom_header_key))
 
     let headers: Record<string, string>
-    if (form.auth_type === 'none') {
+    if (isMultiSvc) {
+      headers = { ...originalHeaders }
+    } else if (form.auth_type === 'none') {
       // 切换为无需认证时，清除已保存的认证 headers
       headers = {}
     } else if (hasNewAuth) {
@@ -301,6 +315,11 @@ export function ServiceDetailPage() {
     switch (form.auth_type) {
       case 'api_key': return { key: form.api_key }
       case 'bearer': return { token: form.bearer_token }
+      case 'custom':
+        // header_name 必须带上:auth_type 只有在 authConfig 非空时才随保存提交,
+        // custom 返回空对象会导致改成自定义后库里残留旧 auth_type(单→多秘钥时
+        // 按旧类型推导注入头而报"未找到认证头");同时作为之后切换多秘钥的默认注入头。
+        return form.custom_header_key ? { header_name: form.custom_header_key } : {}
       default: return {}
     }
   }
@@ -325,6 +344,13 @@ export function ServiceDetailPage() {
   const prompts: McpPrompt[] = promptsData?.data || []
   const isVirtual = service.transport_type === 'virtual'
   const isStdio = service.transport_type === 'stdio'
+  const isMultiKeyService = service.key_mode === 'random' || service.key_mode === 'polling'
+  // 秘钥管理卡片:自有 HTTP 类(sse/streamable-http)且有认证的服务
+  const keysCardVisible =
+    service.source !== 'marketplace' &&
+    !isVirtual &&
+    (service.transport_type === 'sse' || service.transport_type === 'streamable-http') &&
+    service.auth_type !== 'none'
   const stdioConfig = ((service.config as Record<string, unknown>) || {})
   const virtualSource = isVirtual ? sourceLabels[service.source] : null
 
@@ -352,6 +378,14 @@ export function ServiceDetailPage() {
               {service.source === 'marketplace' && (
                 <span className="inline-flex items-center rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
                   {t('marketplace.platformHosted')}
+                </span>
+              )}
+              {isMultiKeyService && (
+                <span className="inline-flex items-center rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                  {t('services.keys.multiKeyBadge', {
+                    mode: service.key_mode === 'random' ? t('services.keys.modeRandom') : t('services.keys.modePolling'),
+                    count: service.key_count ?? 0,
+                  })}
                 </span>
               )}
               {virtualSource && (
@@ -529,25 +563,58 @@ export function ServiceDetailPage() {
             <div className="space-y-1.5 sm:col-span-2">
               <Label className="text-xs text-muted-foreground">{t('services.authMethod')}</Label>
               {editing ? (
-                <div className="flex flex-wrap gap-2 pt-1">
-                  {authOptions.map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setForm({ ...form, auth_type: opt.value })}
-                      className={`rounded-lg border px-3 py-1.5 text-sm transition-all ${
-                        form.auth_type === opt.value ? 'border-primary bg-primary/5' : 'hover:border-primary/30'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
+                isMultiKeyService ? (
+                  /* 多秘钥:认证类型由秘钥池承载,锁定切换(改类型请先切回单秘钥) */
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    {authOptions.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        disabled={opt.value !== form.auth_type}
+                        className={`rounded-lg border px-3 py-1.5 text-sm transition-all ${
+                          form.auth_type === opt.value
+                            ? 'border-primary bg-primary/5'
+                            : 'cursor-not-allowed text-muted-foreground/40'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                    <span className="text-xs text-muted-foreground">{t('services.keys.authLockedInMulti')}</span>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {authOptions.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setForm({ ...form, auth_type: opt.value })}
+                        className={`rounded-lg border px-3 py-1.5 text-sm transition-all ${
+                          form.auth_type === opt.value ? 'border-primary bg-primary/5' : 'hover:border-primary/30'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )
               ) : (
-                <p className="text-sm">{authOptions.find((o) => o.value === form.auth_type)?.label || t('services.noAuth')}</p>
+                <p className="text-sm">
+                  {authOptions.find((o) => o.value === form.auth_type)?.label || t('services.noAuth')}
+                  {isMultiKeyService && (
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      {t('services.keys.providedByPool', { count: service.key_count ?? 0 })}
+                    </span>
+                  )}
+                </p>
               )}
             </div>
 
+            {editing && isMultiKeyService ? (
+              /* 多秘钥:凭据由秘钥池提供,不在此编辑 */
+              <p className="text-xs text-muted-foreground sm:col-span-2">{t('services.keys.manageInCardBelow')}</p>
+            ) : (
+              <>
             {editing && form.auth_type === 'api_key' && (
               <div className="space-y-1.5 sm:col-span-2">
                 <Label className="text-xs text-muted-foreground">API Key</Label>
@@ -572,6 +639,8 @@ export function ServiceDetailPage() {
             {editing && form.auth_type !== 'none' && (
               <p className="text-xs text-muted-foreground sm:col-span-2">{t('services.headerKeepUnchanged')}</p>
             )}
+              </>
+            )}
           </div>
 
           {/* Edit actions */}
@@ -591,6 +660,15 @@ export function ServiceDetailPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* 秘钥管理(多秘钥池):Basic config 与 Raw config 之间 */}
+      {!editing && keysCardVisible && (
+        <ServiceKeysCard
+          serviceId={serviceId}
+          authType={service.auth_type}
+          onModeChanged={() => queryClient.invalidateQueries({ queryKey: ['service', id] })}
+        />
       )}
 
       {/* Raw config (read-only) */}

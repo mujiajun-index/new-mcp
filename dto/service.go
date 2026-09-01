@@ -8,7 +8,11 @@ type CreateServiceReq struct {
 	Config        map[string]interface{} `json:"config"`
 	AuthType      string                 `json:"auth_type" binding:"omitempty,oneof=none api_key bearer custom"`
 	AuthConfig    map[string]interface{} `json:"auth_config"`
-	Tags          []string               `json:"tags"`
+	// 多秘钥(仅 streamable-http/sse):KeyMode 为 random/polling 时 AuthKeys 必填,
+	// 认证头值不再写入 config.headers,由秘钥池按策略注入。
+	KeyMode  string   `json:"key_mode" binding:"omitempty,oneof=random polling"`
+	AuthKeys []string `json:"auth_keys" binding:"omitempty,max=100"`
+	Tags     []string `json:"tags"`
 }
 
 type UpdateServiceReq struct {
@@ -28,10 +32,12 @@ type ServiceListItem struct {
 	Description   string `json:"description"`
 	TransportType string `json:"transport_type"`
 	Source        string `json:"source"`
-	HealthStatus  string `json:"health_status"`
-	ToolsCount    int    `json:"tools_count"`
-	Status        int    `json:"status"`
-	CreatedAt     string `json:"created_at"`
+	// 多秘钥模式(random/polling);空 = 单秘钥。列表徽章用。
+	KeyMode      string `json:"key_mode,omitempty"`
+	HealthStatus string `json:"health_status"`
+	ToolsCount   int    `json:"tools_count"`
+	Status       int    `json:"status"`
+	CreatedAt    string `json:"created_at"`
 }
 
 type ServiceDetail struct {
@@ -43,6 +49,11 @@ type ServiceDetail struct {
 	Source           string                 `json:"source"`
 	Config           map[string]interface{} `json:"config"`
 	AuthType         string                 `json:"auth_type"`
+	// 多秘钥:key_mode 为 random/polling 时认证头由秘钥池按策略注入,
+	// KeyCount/KeyEnabled 为池内总数与启用数。
+	KeyMode    string `json:"key_mode"`            // ""=单秘钥;random|polling
+	KeyCount   int    `json:"key_count,omitempty"` // 多秘钥模式下的池内秘钥总数
+	KeyEnabled int    `json:"key_enabled,omitempty"`
 	HealthStatus     string                 `json:"health_status"`
 	LastHealthCheck  string                 `json:"last_health_check"`
 	ToolsCache       []interface{}          `json:"tools_cache"`
@@ -56,6 +67,60 @@ type ServiceDetail struct {
 	PassiveConnected bool                   `json:"passive_connected,omitempty"`
 	// 市场引用服务(source=marketplace)的条目 ID,前端跳转市场详情页用;其余来源不返回
 	MarketplaceItemID *int64 `json:"marketplace_item_id,omitempty"`
+}
+
+// --- 多秘钥管理(/services/:id/keys) ---
+
+// ServiceKeyItem 秘钥池单行(列表永不回明文,仅掩码值)。
+type ServiceKeyItem struct {
+	ID             int64  `json:"id"`
+	SortOrder      int    `json:"sort_order"` // 池内序号(1 起)= 调用日志 key_index
+	MaskedValue    string `json:"masked_value"`
+	Status         int    `json:"status"` // 1启用 2手动禁用 3自动禁用
+	DisabledReason string `json:"disabled_reason,omitempty"`
+	DisabledAt     string `json:"disabled_at,omitempty"`
+}
+
+// ServiceKeysResp 秘钥池视图:配置 + 池列表 + 启用统计。
+type ServiceKeysResp struct {
+	KeyMode        string           `json:"key_mode"`    // ""=单秘钥;random|polling
+	HeaderName     string           `json:"header_name"` // 多秘钥注入目标头
+	AuthType       string           `json:"auth_type"`
+	TransportType  string           `json:"transport_type"`
+	Total          int              `json:"total"`
+	Enabled        int              `json:"enabled"`
+	Keys           []ServiceKeyItem `json:"keys"`
+}
+
+// UpdateServiceKeysReq 更新秘钥:追加(去重保状态)/ 替换全部(状态清零)。
+type UpdateServiceKeysReq struct {
+	Mode   string   `json:"mode" binding:"required,oneof=append replace"`
+	Values []string `json:"values" binding:"required,min=1,max=100"`
+}
+
+// UpdateServiceKeysResult 更新结果:新增数与去重跳过数。
+type UpdateServiceKeysResult struct {
+	Added   int `json:"added"`
+	Skipped int `json:"skipped"`
+}
+
+// SetServiceKeyStatusReq 启用/禁用单把秘钥。
+type SetServiceKeyStatusReq struct {
+	Status string `json:"status" binding:"required,oneof=enabled disabled"`
+}
+
+// BatchServiceKeysReq 批量操作:全部启用 / 删除已禁用。
+type BatchServiceKeysReq struct {
+	Action string `json:"action" binding:"required,oneof=enable_all delete_disabled"`
+}
+
+// UpdateServiceKeyConfigReq 模式切换:单↔多、随机↔轮询。
+// single→multi:HeaderName 为注入目标头(api_key/bearer 自动推导,custom 必填),
+// 现有 config.headers 中的认证值收编为首把秘钥;multi→single:首选启用秘钥写回
+// config.headers 并清空秘钥池。
+type UpdateServiceKeyConfigReq struct {
+	KeyMode    string `json:"key_mode" binding:"required,oneof=single random polling"`
+	HeaderName string `json:"header_name" binding:"omitempty,max=255"`
 }
 
 // ServiceProcessStat 是 stdio 服务子进程(整棵进程树)的资源占用快照。

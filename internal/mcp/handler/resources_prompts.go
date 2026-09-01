@@ -10,6 +10,7 @@ import (
 
 	"github.com/mujkjk/newmcp/billing"
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
+	"github.com/mujkjk/newmcp/internal/mcp/transport"
 	"github.com/mujkjk/newmcp/model"
 )
 
@@ -391,24 +392,24 @@ func (h *GatewayHandler) handleResourcesRead(ctx context.Context, req *JSONRPCRe
 	// 计费幂等键(id+URI 哈希):仅同请求重试命中,不同 URI 各自计费。
 	requestID := billingRequestID(req.ID, params.URI, nil)
 	start := time.Now()
-	resp, serviceID, resolvedName, bill := h.readUpstreamResource(ctx, req.ID, logCtx, serviceName, upstreamURI, requestID)
-	h.recordConsumeLog(logCtx, serviceID, resolvedName, "resources/read", params.URI, requestID, resp, bill, start)
+	resp, serviceID, resolvedName, bill, keyIndex := h.readUpstreamResource(ctx, req.ID, logCtx, serviceName, upstreamURI, requestID)
+	h.recordConsumeLog(logCtx, serviceID, resolvedName, "resources/read", params.URI, requestID, resp, bill, keyIndex, start)
 	return resp
 }
 
-func (h *GatewayHandler) readUpstreamResource(ctx context.Context, reqID interface{}, logCtx *LogContext, serviceName, upstreamURI, requestID string) (*JSONRPCResponse, int64, string, *billingOutcome) {
+func (h *GatewayHandler) readUpstreamResource(ctx context.Context, reqID interface{}, logCtx *LogContext, serviceName, upstreamURI, requestID string) (*JSONRPCResponse, int64, string, *billingOutcome, int) {
 	if !h.isServiceInApiKeyScope(serviceName, logCtx) {
 		resp := h.errorResponse(reqID, -32602, fmt.Sprintf("service '%s' is not accessible with this API key", serviceName))
-		return resp, 0, serviceName, nil
+		return resp, 0, serviceName, nil, 0
 	}
 
 	session, err := h.connectServiceByName(ctx, serviceName, logCtx.UserID)
 	if err != nil {
-		return h.errorResponse(reqID, -32602, err.Error()), 0, serviceName, nil
+		return h.errorResponse(reqID, -32602, err.Error()), 0, serviceName, nil, 0
 	}
 
 	if h.itemDisabledInOwningGroup(logCtx, session.ServiceID, itemKindResource, upstreamURI) {
-		return h.errorResponse(reqID, -32602, "resource is disabled in its group"), session.ServiceID, session.ServiceName, nil
+		return h.errorResponse(reqID, -32602, "resource is disabled in its group"), session.ServiceID, session.ServiceName, nil, 0
 	}
 
 	// 计费插入点 A:市场来源按条目价预扣(条目键=上游原始 URI,与管理端快照一致;
@@ -417,17 +418,17 @@ func (h *GatewayHandler) readUpstreamResource(ctx context.Context, reqID interfa
 	if session.Source == "marketplace" {
 		bill = &billingOutcome{}
 		if !h.preConsumeBilling(ctx, logCtx, session, priceKindResource, upstreamURI, requestID, bill) {
-			return h.errorResponse(reqID, -32603, bill.BlockMsg), session.ServiceID, session.ServiceName, bill
+			return h.errorResponse(reqID, -32603, bill.BlockMsg), session.ServiceID, session.ServiceName, bill, 0
 		}
 	}
 
-	raw, err := session.Adapter.ReadResource(ctx, upstreamURI)
+	raw, keyIndex, err := readResourceWithMeta(ctx, session.Adapter, upstreamURI)
 	// 计费插入点 B:成功确认 / 失败退款(资源结果无 isError 概念,仅看 err;超时归 ChargeOnTimeout)
 	if bill != nil {
 		h.finalizeBilling(bill, billing.ShouldChargeCall(err, false))
 	}
 	if err != nil {
-		return h.errorResponse(reqID, -32603, "Failed to read resource: "+err.Error()), session.ServiceID, session.ServiceName, bill
+		return h.errorResponse(reqID, -32603, "Failed to read resource: "+err.Error()), session.ServiceID, session.ServiceName, bill, keyIndex
 	}
 
 	// 回写网关命名空间 URI,让 contents[].uri 与 resources/list 暴露给客户端的一致。
@@ -446,7 +447,7 @@ func (h *GatewayHandler) readUpstreamResource(ctx context.Context, reqID interfa
 		JSONRPC: "2.0",
 		ID:      reqID,
 		Result:  json.RawMessage(raw),
-	}, session.ServiceID, session.ServiceName, bill
+	}, session.ServiceID, session.ServiceName, bill, keyIndex
 }
 
 func (h *GatewayHandler) handlePromptsGet(ctx context.Context, req *JSONRPCRequest, logCtx *LogContext) *JSONRPCResponse {
@@ -465,29 +466,29 @@ func (h *GatewayHandler) handlePromptsGet(ctx context.Context, req *JSONRPCReque
 	serviceName, promptName := bridge.ParseNamespacedName(params.Name)
 	if serviceName == "" {
 		resp := h.errorResponse(req.ID, -32602, "Invalid prompt name, expected '<service>__<prompt>'")
-		h.recordConsumeLog(logCtx, 0, "", "prompts/get", params.Name, requestID, resp, nil, start)
+		h.recordConsumeLog(logCtx, 0, "", "prompts/get", params.Name, requestID, resp, nil, 0, start)
 		return resp
 	}
 
-	resp, serviceID, resolvedName, bill := h.getUpstreamPrompt(ctx, req.ID, logCtx, serviceName, promptName, params.Arguments, requestID)
-	h.recordConsumeLog(logCtx, serviceID, resolvedName, "prompts/get", params.Name, requestID, resp, bill, start)
+	resp, serviceID, resolvedName, bill, keyIndex := h.getUpstreamPrompt(ctx, req.ID, logCtx, serviceName, promptName, params.Arguments, requestID)
+	h.recordConsumeLog(logCtx, serviceID, resolvedName, "prompts/get", params.Name, requestID, resp, bill, keyIndex, start)
 	return resp
 }
 
 // getUpstreamPrompt 提示读取核心(API key 范围校验/分组禁用拒绝/市场条目价计费/真实
 // 调用上游),供原生 prompts/get 与智能模式元工具 mcp.read 共用;日志由调用方各自记录。
-func (h *GatewayHandler) getUpstreamPrompt(ctx context.Context, reqID interface{}, logCtx *LogContext, serviceName, promptName string, arguments map[string]string, requestID string) (*JSONRPCResponse, int64, string, *billingOutcome) {
+func (h *GatewayHandler) getUpstreamPrompt(ctx context.Context, reqID interface{}, logCtx *LogContext, serviceName, promptName string, arguments map[string]string, requestID string) (*JSONRPCResponse, int64, string, *billingOutcome, int) {
 	if !h.isServiceInApiKeyScope(serviceName, logCtx) {
-		return h.errorResponse(reqID, -32602, fmt.Sprintf("service '%s' is not accessible with this API key", serviceName)), 0, serviceName, nil
+		return h.errorResponse(reqID, -32602, fmt.Sprintf("service '%s' is not accessible with this API key", serviceName)), 0, serviceName, nil, 0
 	}
 
 	session, err := h.connectServiceByName(ctx, serviceName, logCtx.UserID)
 	if err != nil {
-		return h.errorResponse(reqID, -32602, err.Error()), 0, serviceName, nil
+		return h.errorResponse(reqID, -32602, err.Error()), 0, serviceName, nil, 0
 	}
 
 	if h.itemDisabledInOwningGroup(logCtx, session.ServiceID, itemKindPrompt, promptName) {
-		return h.errorResponse(reqID, -32602, "prompt is disabled in its group"), session.ServiceID, session.ServiceName, nil
+		return h.errorResponse(reqID, -32602, "prompt is disabled in its group"), session.ServiceID, session.ServiceName, nil, 0
 	}
 
 	// 计费插入点 A:市场来源按条目价预扣(条目键=拆命名空间后的上游提示名)。
@@ -495,23 +496,44 @@ func (h *GatewayHandler) getUpstreamPrompt(ctx context.Context, reqID interface{
 	if session.Source == "marketplace" {
 		bill = &billingOutcome{}
 		if !h.preConsumeBilling(ctx, logCtx, session, priceKindPrompt, promptName, requestID, bill) {
-			return h.errorResponse(reqID, -32603, bill.BlockMsg), session.ServiceID, session.ServiceName, bill
+			return h.errorResponse(reqID, -32603, bill.BlockMsg), session.ServiceID, session.ServiceName, bill, 0
 		}
 	}
 
-	raw, err := session.Adapter.GetPrompt(ctx, promptName, arguments)
+	raw, keyIndex, err := getPromptWithMeta(ctx, session.Adapter, promptName, arguments)
 	// 计费插入点 B:成功确认 / 失败退款(提示结果无 isError 概念,仅看 err;超时归 ChargeOnTimeout)
 	if bill != nil {
 		h.finalizeBilling(bill, billing.ShouldChargeCall(err, false))
 	}
 	if err != nil {
-		return h.errorResponse(reqID, -32603, "Failed to get prompt: "+err.Error()), session.ServiceID, session.ServiceName, bill
+		return h.errorResponse(reqID, -32603, "Failed to get prompt: "+err.Error()), session.ServiceID, session.ServiceName, bill, keyIndex
 	}
 	return &JSONRPCResponse{
 		JSONRPC: "2.0",
 		ID:      reqID,
 		Result:  json.RawMessage(raw),
-	}, session.ServiceID, session.ServiceName, bill
+	}, session.ServiceID, session.ServiceName, bill, keyIndex
+}
+
+// readResourceWithMeta/getPromptWithMeta 经可选的 ResourceMetaCaller/PromptMetaCaller
+// 读资源/取提示,带回本次实际使用的秘钥序号(非多秘钥 adapter 恒 0),供日志
+// key_index 归因;与 tools/call 的 callTool(gateway_handler.go)同一模式。
+func readResourceWithMeta(ctx context.Context, adapter transport.TransportAdapter, uri string) (json.RawMessage, int, error) {
+	if mc, ok := adapter.(transport.ResourceMetaCaller); ok {
+		raw, meta, err := mc.ReadResourceWithMeta(ctx, uri)
+		return raw, meta.KeyIndex, err
+	}
+	raw, err := adapter.ReadResource(ctx, uri)
+	return raw, 0, err
+}
+
+func getPromptWithMeta(ctx context.Context, adapter transport.TransportAdapter, name string, arguments map[string]string) (json.RawMessage, int, error) {
+	if mc, ok := adapter.(transport.PromptMetaCaller); ok {
+		raw, meta, err := mc.GetPromptWithMeta(ctx, name, arguments)
+		return raw, meta.KeyIndex, err
+	}
+	raw, err := adapter.GetPrompt(ctx, name, arguments)
+	return raw, 0, err
 }
 
 // itemDisabledInOwningGroup 读侧强制:按该 API key 范围内首个包含此服务的分组,
@@ -527,8 +549,9 @@ func (h *GatewayHandler) itemDisabledInOwningGroup(logCtx *LogContext, serviceID
 // recordConsumeLog 把 resources/read、prompts/get 这类真实触达上游的调用记入
 // mcp_call_logs(与 tools/call 同一审计面)。target 为提示名或资源 URI。
 // requestID 为计费幂等键(写入 request_id 列——HasChargedRequest 防重扣依赖该列);
-// bill 为计费结算结果(非市场来源为 nil,billing_status 落默认 skipped)。
-func (h *GatewayHandler) recordConsumeLog(logCtx *LogContext, serviceID int64, serviceName, method, target, requestID string, resp *JSONRPCResponse, bill *billingOutcome, start time.Time) {
+// bill 为计费结算结果(非市场来源为 nil,billing_status 落默认 skipped);
+// keyIndex=多秘钥服务本次实际使用的池内序号(0=单秘钥/未调上游)。
+func (h *GatewayHandler) recordConsumeLog(logCtx *LogContext, serviceID int64, serviceName, method, target, requestID string, resp *JSONRPCResponse, bill *billingOutcome, keyIndex int, start time.Time) {
 	groupID, groupName := int64(0), ""
 	if serviceID != 0 {
 		groupID, groupName = h.resolveGroupForService(serviceID, logCtx)
@@ -554,6 +577,7 @@ func (h *GatewayHandler) recordConsumeLog(logCtx *LogContext, serviceID int64, s
 		ServiceName:    serviceName,
 		ToolName:       truncate(target, 255), // 资源=网关 URI / 提示=命名空间名,日志主列与 tool_name 过滤都依赖它
 		Method:         method,
+		KeyIndex:       keyIndex,
 		RequestID:      truncate(requestID, 64), // 计费幂等键(同 tools/call 口径),target 仍在 ToolName/payload
 		RequestPayload: truncate(string(payload), 65535),
 		ResponseStatus: status,
@@ -598,9 +622,10 @@ func (h *GatewayHandler) handleMetaRead(ctx context.Context, reqID interface{}, 
 			result.Resp = h.errorResponse(reqID, -32602, "Invalid resource target, expected "+gatewayURIScheme+"://<service>/<upstream-uri>")
 			return result
 		}
-		resp, serviceID, resolvedName, bill := h.readUpstreamResource(ctx, reqID, logCtx, serviceName, upstreamURI, requestID)
+		resp, serviceID, resolvedName, bill, keyIndex := h.readUpstreamResource(ctx, reqID, logCtx, serviceName, upstreamURI, requestID)
 		result.Resp = resp
 		result.Billing = bill
+		result.KeyIndex = keyIndex
 		if serviceID != 0 {
 			result.ServiceID = serviceID
 			result.ServiceName = resolvedName
@@ -616,9 +641,10 @@ func (h *GatewayHandler) handleMetaRead(ctx context.Context, reqID interface{}, 
 		result.Resp = h.errorResponse(reqID, -32602, "Invalid prompt target, expected '<service>__<prompt>'")
 		return result
 	}
-	resp, serviceID, resolvedName, bill := h.getUpstreamPrompt(ctx, reqID, logCtx, serviceName, promptName, params.Arguments, requestID)
+	resp, serviceID, resolvedName, bill, keyIndex := h.getUpstreamPrompt(ctx, reqID, logCtx, serviceName, promptName, params.Arguments, requestID)
 	result.Resp = resp
 	result.Billing = bill
+	result.KeyIndex = keyIndex
 	if serviceID != 0 {
 		result.ServiceID = serviceID
 		result.ServiceName = resolvedName

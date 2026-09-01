@@ -621,6 +621,27 @@ func HasGroupAccess(info *ApiKeyInfo, groupName string) bool
 
 > **设计目的**: 统一 APIKey 权限解析、分组查询、工具聚合逻辑，消除 gateway_handler、search_engine、xiaozhi_client 中的重复代码。
 
+### 4.12 KeySelector — 多秘钥选择器(仅 HTTP 类传输)
+
+```go
+// internal/mcp/bridge/key_selector.go
+
+// 进程级注册表(与 SessionPool 并列),按服务 ID 惰性构建/缓存
+var KeySelectors = &keySelectorRegistry{}
+KeySelectors.Get(svc)      // 多秘钥服务返回选择器;单秘钥/非 HTTP 返回 nil
+KeySelectors.Invalidate(id) // 池编辑/模式切换/删服务后失效,下次重建
+
+// KeySelector 实现 transport.DynamicAuth,由 headerRoundTripper 按上游请求调用
+Pick() (keyIndex int, headerValue string, err error) // 随机/轮询,纯内存
+OnAuthFailure(keyIndex int)                           // 401/403 熔断:落库+系统日志
+```
+
+> **设计要点**: 会话长存(`idleTimeout` 从不回收),选 key 必须在**每个上游 HTTP 请求**
+> 层面发生——`SDKAdapter.CallWithMeta` 每次逻辑调用 Pick 一次经 ctx 传给 RoundTripper
+> (同一次调用全程同一把 key,`mcp_call_logs.key_index` 精确归因),无 ctx 的后台 POST
+> 现选、GET 沿用最近值。轮询游标与禁用集均为进程内存快照,选 key 零 DB 访问(性能
+> 分析见 `docs/MULTI-KEY.md` §7);池快照仅在构建时读一次库,变更经 Invalidate + 踢会话重建生效。
+
 ---
 
 ## 5. 分层架构

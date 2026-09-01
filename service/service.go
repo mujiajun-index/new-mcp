@@ -48,6 +48,7 @@ func (s *McpServiceService) List(userID int64, page, pageSize int, filters map[s
 			Description:   svc.Description,
 			TransportType: svc.TransportType,
 			Source:        svc.Source,
+			KeyMode:       svc.ParseAuthKeyConfig().KeyMode,
 			HealthStatus:  svc.HealthStatus,
 			ToolsCount:    len(tools),
 			Status:        svc.Status,
@@ -90,8 +91,22 @@ func (s *McpServiceService) Create(userID int64, req *dto.CreateServiceReq) (*dt
 		svc.AuthType = "none"
 	}
 
+	// 多秘钥创建(仅 HTTP 类传输):认证头值不入 config.headers,存秘钥池。
+	if req.KeyMode != "" {
+		if err := s.applyCreateMultiKey(svc, req); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := svc.Insert(); err != nil {
 		return nil, err
+	}
+	if req.KeyMode != "" {
+		if _, err := model.AppendKeys(svc.ID, normalizeKeyValues(svc, req.AuthKeys)); err != nil {
+			// 服务行已建但池失败:整体回滚,避免留下不可用的半成品
+			_ = svc.Delete()
+			return nil, err
+		}
 	}
 
 	// 异步加载工具
@@ -243,9 +258,13 @@ func (s *McpServiceService) Update(userID, serviceID int64, req *dto.UpdateServi
 	}
 	// 配置（command/args/env/registry/url/headers）变更后，运行中的连接/子进程仍带旧配置。
 	// 踢掉旧 session 并按新配置异步重连（与 Create 一致）：让新 env 立即生效，同时刷新
-	// tools_cache 并预热连接。AuthConfig 不喂给 adapter、DisplayName/Description/Tags 为展示字段，均无需重连。
+	// tools_cache 并预热连接。AuthConfig 不喂给 adapter、DisplayName/Description/Tags 为展示字段，均无需重连;
+	// 但多秘钥的 AuthType(bearer 前缀)是选择器输入,变更时一并失效重连。
 	// 同请求里一并禁用的服务不重连——禁用即停,重连会把刚停的进程又拉起来。
-	if req.Config != nil && SessionPool != nil {
+	if (req.Config != nil || req.AuthType != nil) && SessionPool != nil {
+		if req.AuthType != nil {
+			bridge.KeySelectors.Invalidate(serviceID)
+		}
 		SessionPool.Remove(serviceID)
 		if req.Status == nil || *req.Status == common.StatusEnabled {
 			go SessionPool.GetOrConnect(context.Background(), svc)
@@ -280,6 +299,9 @@ func (s *McpServiceService) Delete(userID, serviceID int64) error {
 	if err := svc.Delete(); err != nil {
 		return err
 	}
+	// 服务已删,秘钥池一并清空,选择器快照同步失效(防注册表残留泄漏)。
+	_ = model.DeleteKeysByService(svc.ID)
+	bridge.KeySelectors.Invalidate(svc.ID)
 	// 服务已从 DB 删除，回收其连接及子进程，避免孤儿进程残留。
 	// Remove → Adapter.Close() → SDK CommandTransport.Close()：
 	// 关 stdin → 等 5s → SIGTERM → 再等 → SIGKILL，确保 stdio 子进程退出。
@@ -457,8 +479,8 @@ func (s *McpServiceService) CallTool(userID, serviceID int64, req *dto.CallToolR
 		return s.callMarketplaceToolTested(svc, userID, req)
 	}
 
-	res, _ := callToolTested(svc, userID, req)
-	recordManualTestLog(svc, userID, "tools/call", req.Name, res, nil)
+	res, _, keyIndex := callToolTested(svc, userID, req)
+	recordManualTestLog(svc, userID, "tools/call", req.Name, res, nil, keyIndex)
 	return res, nil
 }
 
@@ -560,33 +582,33 @@ func (s *McpServiceService) callMarketplaceToolTested(svc *model.McpService, use
 
 	if svc.MarketplaceItemID == nil {
 		res := &dto.CallToolResult{IsError: true, Error: "市场服务缺少关联市场项,无法测试"}
-		recordManualTestLog(svc, userID, "tools/call", req.Name, res, bill)
+		recordManualTestLog(svc, userID, "tools/call", req.Name, res, bill, 0)
 		return res, nil
 	}
 	// 注入平台上游配置/凭证(同网关 materializeMarketplaceConfig);市场项下架等失败直接终止。
 	if mErr := s.materializeMarketplace(svc); mErr != nil {
 		res := &dto.CallToolResult{IsError: true, Error: mErr.Error()}
-		recordManualTestLog(svc, userID, "tools/call", req.Name, res, bill)
+		recordManualTestLog(svc, userID, "tools/call", req.Name, res, bill, 0)
 		return res, nil
 	}
 	// 工具名先用快照缓存校验:不存在的工具直接拒绝,避免无效预扣/退款往返。
 	if !serviceHasTool(nil, svc, req.Name) {
 		res := &dto.CallToolResult{IsError: true, Error: "工具不存在: " + req.Name}
-		recordManualTestLog(svc, userID, "tools/call", req.Name, res, bill)
+		recordManualTestLog(svc, userID, "tools/call", req.Name, res, bill, 0)
 		return res, nil
 	}
 
 	sess, abort := manualEntryPreConsume(svc.ID, *svc.MarketplaceItemID, userID, billing.EntryKindTool, req.Name, bill)
 	if abort != nil {
-		recordManualTestLog(svc, userID, "tools/call", req.Name, abort, bill)
+		recordManualTestLog(svc, userID, "tools/call", req.Name, abort, bill, 0)
 		return abort, nil
 	}
 
-	res, callOK := callToolTested(svc, userID, req)
+	res, callOK, keyIndex := callToolTested(svc, userID, req)
 	// 成败判定同网关(§6.6):传输层失败(callOK=false)退款;结果内 isError(工具层
 	// 失败,如上游 key 错误/余额不足)默认退款,ChargeOnClientError=true 才计费。
 	manualEntryFinalize(sess, bill, callOK && billing.ShouldChargeCall(nil, res.IsError))
-	recordManualTestLog(svc, userID, "tools/call", req.Name, res, bill)
+	recordManualTestLog(svc, userID, "tools/call", req.Name, res, bill, keyIndex)
 	return res, nil
 }
 
@@ -594,38 +616,39 @@ func (s *McpServiceService) callMarketplaceToolTested(svc *model.McpService, use
 // 解析+预扣 → call() → 结算 → 落手动测试日志(与工具测试/网关 resources/read、
 // prompts/get 完全同口径;资源/提示无条目价缺省免费,显式继承按服务价)。call 的第二
 // 返回值 callOK=传输层成功(资源/提示读取无结果内 isError 概念,调用成功即扣费,同网关
-// err==nil 判定)。
-func (s *McpServiceService) testMarketplaceEntry(svc *model.McpService, userID int64, kind, entryName, method, target string, call func() (*dto.CallToolResult, bool)) (*dto.CallToolResult, error) {
+// err==nil 判定);第三返回值 keyIndex=多秘钥服务实际使用的池内序号,随日志落 key_index。
+func (s *McpServiceService) testMarketplaceEntry(svc *model.McpService, userID int64, kind, entryName, method, target string, call func() (*dto.CallToolResult, bool, int)) (*dto.CallToolResult, error) {
 	bill := &manualTestBilling{Status: "skipped", ItemID: svc.MarketplaceItemID}
 
 	if svc.MarketplaceItemID == nil {
 		res := &dto.CallToolResult{IsError: true, Error: "市场服务缺少关联市场项,无法测试"}
-		recordManualTestLog(svc, userID, method, target, res, bill)
+		recordManualTestLog(svc, userID, method, target, res, bill, 0)
 		return res, nil
 	}
 	if mErr := s.materializeMarketplace(svc); mErr != nil {
 		res := &dto.CallToolResult{IsError: true, Error: mErr.Error()}
-		recordManualTestLog(svc, userID, method, target, res, bill)
+		recordManualTestLog(svc, userID, method, target, res, bill, 0)
 		return res, nil
 	}
 
 	sess, abort := manualEntryPreConsume(svc.ID, *svc.MarketplaceItemID, userID, kind, entryName, bill)
 	if abort != nil {
-		recordManualTestLog(svc, userID, method, target, abort, bill)
+		recordManualTestLog(svc, userID, method, target, abort, bill, 0)
 		return abort, nil
 	}
 
-	res, callOK := call()
+	res, callOK, keyIndex := call()
 	manualEntryFinalize(sess, bill, callOK)
-	recordManualTestLog(svc, userID, method, target, res, bill)
+	recordManualTestLog(svc, userID, method, target, res, bill, keyIndex)
 	return res, nil
 }
 
 // callToolTested 工具测试的实际调用:虚拟服务分发或上游 tools/call,全部出口
 // (连接失败/工具不存在/调用失败/结果解析)统一返回 CallToolResult 供外层落日志。
 // 第二返回值 callOK=上游调用在传输层成功(结果内 isError 的工具层错误由外层结合
-// ChargeOnClientError 判定,传输失败恒退款,同网关 §6.6)。
-func callToolTested(svc *model.McpService, userID int64, req *dto.CallToolReq) (*dto.CallToolResult, bool) {
+// ChargeOnClientError 判定,传输失败恒退款,同网关 §6.6);第三返回值 keyIndex=
+// 多秘钥服务本次实际使用的池内序号(落日志 key_index,0=单秘钥/未调上游)。
+func callToolTested(svc *model.McpService, userID int64, req *dto.CallToolReq) (*dto.CallToolResult, bool, int) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -638,40 +661,51 @@ func callToolTested(svc *model.McpService, userID int64, req *dto.CallToolReq) (
 	// 虚拟服务:按 serviceID 分发到虚拟工具处理器(vision/camera 等自有性质,免费)。
 	if svc.TransportType == "virtual" {
 		if VirtualRegistry == nil {
-			return &dto.CallToolResult{IsError: true, Error: "虚拟服务未初始化"}, false
+			return &dto.CallToolResult{IsError: true, Error: "虚拟服务未初始化"}, false, 0
 		}
 		var config map[string]interface{}
 		_ = json.Unmarshal([]byte(svc.Config), &config)
 		raw, vErr := VirtualRegistry.Handle(virtual.WithCallerUserID(ctx, userID), svc.ID, config, req.Name, args)
 		if vErr != nil {
-			return &dto.CallToolResult{IsError: true, Error: vErr.Error(), DurationMs: time.Since(start).Milliseconds()}, false
+			return &dto.CallToolResult{IsError: true, Error: vErr.Error(), DurationMs: time.Since(start).Milliseconds()}, false, 0
 		}
 		res, _ := parseTestResult(raw, start)
-		return res, true
+		return res, true, 0
 	}
 
 	// 普通服务:获取测试用适配器(优先复用会话池,见 acquireTestAdapter)。
 	adapter, closeAdapter, fail := acquireTestAdapter(ctx, svc)
 	if fail != nil {
 		fail.DurationMs = time.Since(start).Milliseconds()
-		return fail, false
+		return fail, false, 0
 	}
 	defer closeAdapter()
 
 	// 工具名仅在服务自身工具列表中校验(单服务调试,不涉及网关命名空间路由)。
 	if !serviceHasTool(adapter, svc, req.Name) {
-		return &dto.CallToolResult{IsError: true, Error: "工具不存在: " + req.Name, DurationMs: time.Since(start).Milliseconds()}, false
+		return &dto.CallToolResult{IsError: true, Error: "工具不存在: " + req.Name, DurationMs: time.Since(start).Milliseconds()}, false, 0
 	}
 
-	raw, cErr := adapter.Call(ctx, "tools/call", map[string]interface{}{
+	// 多秘钥服务经 MetaCaller 带回本次实际使用的秘钥序号(落日志 key_index)。
+	var keyIndex int
+	var raw json.RawMessage
+	var cErr error
+	params := map[string]interface{}{
 		"name":      req.Name,
 		"arguments": req.Arguments,
-	})
+	}
+	if mc, ok := adapter.(transport.MetaCaller); ok {
+		var m transport.CallMeta
+		raw, m, cErr = mc.CallWithMeta(ctx, "tools/call", params)
+		keyIndex = m.KeyIndex
+	} else {
+		raw, cErr = adapter.Call(ctx, "tools/call", params)
+	}
 	if cErr != nil {
-		return &dto.CallToolResult{IsError: true, Error: cErr.Error(), DurationMs: time.Since(start).Milliseconds()}, false
+		return &dto.CallToolResult{IsError: true, Error: cErr.Error(), DurationMs: time.Since(start).Milliseconds()}, false, 0
 	}
 	res, _ := parseTestResult(raw, start)
-	return res, true
+	return res, true, keyIndex
 }
 
 // ReadResource 服务详情页资源测试:对指定 URI 执行 resources/read。
@@ -688,31 +722,42 @@ func (s *McpServiceService) ReadResource(userID, serviceID int64, req *dto.ReadR
 	}
 	if svc.Source == "marketplace" && svc.MarketplaceItemID != nil {
 		return s.testMarketplaceEntry(svc, userID, billing.EntryKindResource, req.URI, "resources/read", req.URI,
-			func() (*dto.CallToolResult, bool) { return readResourceTested(svc, req) })
+			func() (*dto.CallToolResult, bool, int) { return readResourceTested(svc, req) })
 	}
-	res, _ := readResourceTested(svc, req)
-	recordManualTestLog(svc, userID, "resources/read", req.URI, res, nil)
+	res, _, keyIndex := readResourceTested(svc, req)
+	recordManualTestLog(svc, userID, "resources/read", req.URI, res, nil, keyIndex)
 	return res, nil
 }
 
 // readResourceTested 资源测试的实际调用,全部出口统一返回 CallToolResult 供外层落日志。
-// 第二返回值 callOK=上游 resources/read 传输层成功(计费成败判定,同网关 err==nil)。
-func readResourceTested(svc *model.McpService, req *dto.ReadResourceReq) (*dto.CallToolResult, bool) {
+// 第二返回值 callOK=上游 resources/read 传输层成功(计费成败判定,同网关 err==nil);
+// 第三返回值 keyIndex=多秘钥服务本次实际使用的池内序号(落日志,0=单秘钥/未调上游)。
+func readResourceTested(svc *model.McpService, req *dto.ReadResourceReq) (*dto.CallToolResult, bool, int) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	start := time.Now()
 	adapter, closeAdapter, fail := acquireTestAdapter(ctx, svc)
 	if fail != nil {
 		fail.DurationMs = time.Since(start).Milliseconds()
-		return fail, false
+		return fail, false, 0
 	}
 	defer closeAdapter()
-	raw, rErr := adapter.ReadResource(ctx, req.URI)
+	// 多秘钥服务经 ResourceMetaCaller 带回实际使用的秘钥序号(落日志 key_index)。
+	var keyIndex int
+	var raw json.RawMessage
+	var rErr error
+	if mc, ok := adapter.(transport.ResourceMetaCaller); ok {
+		var m transport.CallMeta
+		raw, m, rErr = mc.ReadResourceWithMeta(ctx, req.URI)
+		keyIndex = m.KeyIndex
+	} else {
+		raw, rErr = adapter.ReadResource(ctx, req.URI)
+	}
 	if rErr != nil {
-		return &dto.CallToolResult{IsError: true, Error: rErr.Error(), DurationMs: time.Since(start).Milliseconds()}, false
+		return &dto.CallToolResult{IsError: true, Error: rErr.Error(), DurationMs: time.Since(start).Milliseconds()}, false, 0
 	}
 	res, _ := parseTestResult(raw, start)
-	return res, true
+	return res, true, keyIndex
 }
 
 // GetPrompt 服务详情页提示测试:按传入参数渲染提示(prompts/get),市场服务同
@@ -728,31 +773,42 @@ func (s *McpServiceService) GetPrompt(userID, serviceID int64, req *dto.GetPromp
 	}
 	if svc.Source == "marketplace" && svc.MarketplaceItemID != nil {
 		return s.testMarketplaceEntry(svc, userID, billing.EntryKindPrompt, req.Name, "prompts/get", req.Name,
-			func() (*dto.CallToolResult, bool) { return getPromptTested(svc, req) })
+			func() (*dto.CallToolResult, bool, int) { return getPromptTested(svc, req) })
 	}
-	res, _ := getPromptTested(svc, req)
-	recordManualTestLog(svc, userID, "prompts/get", req.Name, res, nil)
+	res, _, keyIndex := getPromptTested(svc, req)
+	recordManualTestLog(svc, userID, "prompts/get", req.Name, res, nil, keyIndex)
 	return res, nil
 }
 
 // getPromptTested 提示测试的实际调用,全部出口统一返回 CallToolResult 供外层落日志。
-// 第二返回值 callOK=上游 prompts/get 传输层成功(计费成败判定,同网关 err==nil)。
-func getPromptTested(svc *model.McpService, req *dto.GetPromptReq) (*dto.CallToolResult, bool) {
+// 第二返回值 callOK=上游 prompts/get 传输层成功(计费成败判定,同网关 err==nil);
+// 第三返回值 keyIndex=多秘钥服务本次实际使用的池内序号(落日志,0=单秘钥/未调上游)。
+func getPromptTested(svc *model.McpService, req *dto.GetPromptReq) (*dto.CallToolResult, bool, int) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	start := time.Now()
 	adapter, closeAdapter, fail := acquireTestAdapter(ctx, svc)
 	if fail != nil {
 		fail.DurationMs = time.Since(start).Milliseconds()
-		return fail, false
+		return fail, false, 0
 	}
 	defer closeAdapter()
-	raw, gErr := adapter.GetPrompt(ctx, req.Name, req.Arguments)
+	// 多秘钥服务经 PromptMetaCaller 带回实际使用的秘钥序号(落日志 key_index)。
+	var keyIndex int
+	var raw json.RawMessage
+	var gErr error
+	if mc, ok := adapter.(transport.PromptMetaCaller); ok {
+		var m transport.CallMeta
+		raw, m, gErr = mc.GetPromptWithMeta(ctx, req.Name, req.Arguments)
+		keyIndex = m.KeyIndex
+	} else {
+		raw, gErr = adapter.GetPrompt(ctx, req.Name, req.Arguments)
+	}
 	if gErr != nil {
-		return &dto.CallToolResult{IsError: true, Error: gErr.Error(), DurationMs: time.Since(start).Milliseconds()}, false
+		return &dto.CallToolResult{IsError: true, Error: gErr.Error(), DurationMs: time.Since(start).Milliseconds()}, false, 0
 	}
 	res, _ := parseTestResult(raw, start)
-	return res, true
+	return res, true, keyIndex
 }
 
 // acquireTestAdapter 获取测试用上游适配器:优先复用会话池连接(stdio 不必每次拉起子进程),
@@ -1173,6 +1229,7 @@ func (s *McpServiceService) toServiceListItems(services []model.McpService) []dt
 			Description:   svc.Description,
 			TransportType: svc.TransportType,
 			Source:        svc.Source,
+			KeyMode:       svc.ParseAuthKeyConfig().KeyMode,
 			HealthStatus:  svc.HealthStatus,
 			ToolsCount:    len(tools),
 			Status:        svc.Status,
@@ -1225,6 +1282,12 @@ func (s *McpServiceService) toDetail(svc *model.McpService) *dto.ServiceDetail {
 		Status:          svc.Status,
 		CreatedAt:       svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		PassiveConnected: svc.PassiveConnected,
+	}
+	// 多秘钥:模式 + 池内统计(徽章/详情页秘钥管理卡片用)
+	if cfg := svc.ParseAuthKeyConfig(); cfg.KeyMode != "" {
+		total, enabled := model.CountServiceKeys(svc.ID)
+		d.KeyMode = cfg.KeyMode
+		d.KeyCount, d.KeyEnabled = int(total), int(enabled)
 	}
 	// 市场引用服务带上条目 ID(前端跳转市场详情用)
 	if svc.Source == "marketplace" {

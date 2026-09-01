@@ -35,7 +35,9 @@ type McpCallLog struct {
 	QuotaConsumed     int64   `json:"quota_consumed" gorm:"default:0"`    // 本次实扣额度(quota)
 	PriceScope        string  `json:"price_scope" gorm:"size:16"`         // tool/service/marketplace/global
 	MarketplaceItemID *int64  `json:"marketplace_item_id" gorm:"index"`   // 市场来源服务关联的市场项 ID
-	ClientIP        string    `json:"client_ip" gorm:"size:64"`
+	// 多秘钥调用所用秘钥的池内序号(mcp_service_keys.sort_order);0 = 单秘钥/不适用。
+	KeyIndex int    `json:"key_index" gorm:"default:0"`
+	ClientIP string `json:"client_ip" gorm:"size:64"`
 	UserAgent       string    `json:"user_agent" gorm:"size:512"`
 	CreatedAt       time.Time `json:"created_at" gorm:"index"`
 	// 统一日志扩展:区分日志类型 + 人类可读描述 + 结构化元数据(见 model/log.go)。

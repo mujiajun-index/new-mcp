@@ -13,9 +13,22 @@ import { ArrowLeft, ArrowRight, Check, Loader2, Zap, RefreshCw } from 'lucide-re
 import type { TransportType, AuthType, TestResult, PrepareStdioResult } from '@/types'
 import { useAuthStore } from '@/stores/auth-store'
 import { isAdminRole } from '@/lib/roles'
+import { maskSecret } from '../lib/mask-secret'
 
 type CommandChoice = 'npx' | 'uvx' | 'custom'
 type InstallStatus = 'idle' | 'ready' | 'failed'
+// 秘钥模式:single=单秘钥;random/polling=多秘钥(随机/轮询)
+type SecretMode = 'single' | 'random' | 'polling'
+
+// 单把秘钥的连通性测试结果(多秘钥创建时逐把测试)
+interface KeyTestResult {
+  index: number
+  masked: string
+  connected: boolean
+  error?: string
+  tools_count: number
+  latency_ms: number
+}
 
 interface RegistryOption { key: string; label: string; url: string }
 
@@ -74,6 +87,7 @@ export function ServiceCreatePage() {
     : transportOptions.filter((opt) => opt.value !== 'stdio')
   const [step, setStep] = useState(0)
   const [testResult, setTestResult] = useState<TestResult | null>(null)
+  const [keyTestResults, setKeyTestResults] = useState<KeyTestResult[]>([])
   const [form, setForm] = useState({
     name: '',
     display_name: '',
@@ -83,6 +97,10 @@ export function ServiceCreatePage() {
     auth_type: 'none' as AuthType,
     auth_config: {} as Record<string, unknown>,
     tags: [] as string[],
+    // Secret pool (multi-secret)
+    key_mode: 'single' as SecretMode,
+    auth_keys: [] as string[],
+    auth_keys_input: '',
     // Stdio fields
     command: 'npx',
     args: '',
@@ -110,6 +128,7 @@ export function ServiceCreatePage() {
     mutationFn: () => {
       const config = buildConfig()
       const authConfig = buildAuthConfig()
+      const multi = form.key_mode !== 'single' && form.auth_type !== 'none'
       return createService({
         name: form.name,
         display_name: form.display_name || undefined,
@@ -118,6 +137,8 @@ export function ServiceCreatePage() {
         config,
         auth_type: form.auth_type === 'none' ? undefined : form.auth_type,
         auth_config: Object.keys(authConfig).length > 0 ? authConfig : undefined,
+        key_mode: multi && form.key_mode !== 'single' ? form.key_mode : undefined,
+        auth_keys: multi ? form.auth_keys : undefined,
         tags: form.tags.length > 0 ? form.tags : undefined,
       })
     },
@@ -129,6 +150,25 @@ export function ServiceCreatePage() {
 
   const testMutation = useMutation({
     mutationFn: async () => {
+      // 多秘钥:逐把换认证头测试(复用现有 test-connection 接口,不改后端)
+      if (form.key_mode !== 'single' && form.auth_type !== 'none' && form.auth_keys.length > 0) {
+        const results: KeyTestResult[] = []
+        for (let i = 0; i < form.auth_keys.length; i++) {
+          const secret = form.auth_keys[i] || ''
+          const config = buildConfig(secret)
+          let r: { connected: boolean; error?: string; tools_count: number; latency_ms: number }
+          try {
+            const testRes = await testConnection({ transport_type: form.transport_type, config })
+            r = testRes.data as TestResult
+          } catch (e) {
+            const err = e as { response?: { data?: { message?: string } }; message?: string }
+            r = { connected: false, error: err?.response?.data?.message || err?.message || '', tools_count: 0, latency_ms: 0 }
+          }
+          results.push({ index: i + 1, masked: maskSecret(secret), connected: r.connected, error: r.error, tools_count: r.tools_count, latency_ms: r.latency_ms })
+          setKeyTestResults([...results])
+        }
+        return
+      }
       const config = buildConfig()
       const testRes = await testConnection({ transport_type: form.transport_type, config })
       setTestResult(testRes.data as TestResult)
@@ -193,14 +233,31 @@ export function ServiceCreatePage() {
     }
   }
 
-  function buildConfig(): Record<string, unknown> {
+  // 多秘钥仅这两类 HTTP 传输支持(stdio 的 env 无法按请求轮换)
+  const multiKeySupported = form.transport_type === 'streamable-http' || form.transport_type === 'sse'
+  const isMultiKey = form.key_mode !== 'single' && form.auth_type !== 'none' && multiKeySupported
+
+  // 多秘钥模式下注入头名:api_key/bearer 固定,custom 用用户填的头名
+  function multiKeyHeaderName(): string {
+    if (form.auth_type === 'api_key') return 'X-API-Key'
+    if (form.auth_type === 'bearer') return 'Authorization'
+    return form.custom_header_key.trim()
+  }
+
+  // buildConfig 组装传输配置;multiKeyKey 非空时(单秘钥/逐把测试)把认证头烘进 headers,
+  // 多秘钥正式创建时不放认证头(值存秘钥池,由网关按策略注入)。
+  function buildConfig(multiKeyKey?: string): Record<string, unknown> {
     const headers: Record<string, string> = {}
-    if (form.auth_type === 'api_key' && form.api_key) {
-      headers['X-API-Key'] = form.api_key
-    } else if (form.auth_type === 'bearer' && form.bearer_token) {
-      headers['Authorization'] = `Bearer ${form.bearer_token}`
-    } else if (form.auth_type === 'custom' && form.custom_header_key) {
-      headers[form.custom_header_key] = form.custom_header_value
+    const withAuth = multiKeyKey !== undefined || !isMultiKey
+    if (withAuth && form.auth_type !== 'none') {
+      const key = multiKeyKey ?? (form.auth_type === 'api_key' ? form.api_key : form.auth_type === 'bearer' ? form.bearer_token : form.custom_header_value)
+      if (form.auth_type === 'api_key' && key) {
+        headers['X-API-Key'] = key
+      } else if (form.auth_type === 'bearer' && key) {
+        headers['Authorization'] = `Bearer ${key}`
+      } else if (form.auth_type === 'custom' && form.custom_header_key) {
+        headers[form.custom_header_key] = key
+      }
     }
 
     switch (form.transport_type) {
@@ -223,11 +280,39 @@ export function ServiceCreatePage() {
   }
 
   function buildAuthConfig(): Record<string, unknown> {
+    if (isMultiKey) {
+      // 多秘钥:key_mode 由请求字段传,这里只带注入头名(custom 必填,其余后端也能兜底)
+      const headerName = multiKeyHeaderName()
+      return headerName ? { header_name: headerName } : {}
+    }
     switch (form.auth_type) {
       case 'api_key': return { key: form.api_key }
       case 'bearer': return { token: form.bearer_token }
+      case 'custom':
+        // 同详情页:记录注入头名,供之后切换多秘钥时作默认值
+        return form.custom_header_key ? { header_name: form.custom_header_key } : {}
       default: return {}
     }
+  }
+
+  // 多秘钥:textarea 批量添加(每行一把,去空行/去重)
+  function addAuthKeys() {
+    const lines = form.auth_keys_input.split('\n').map((s) => s.trim()).filter(Boolean)
+    if (lines.length === 0) return
+    const merged = [...form.auth_keys]
+    let added = 0
+    for (const line of lines) {
+      if (!merged.includes(line)) {
+        merged.push(line)
+        added++
+      }
+    }
+    setForm({ ...form, auth_keys: merged, auth_keys_input: '' })
+    if (added < lines.length) toast.info(t('services.keys.duplicateSkipped', { count: lines.length - added }))
+  }
+
+  function removeAuthKey(index: number) {
+    setForm({ ...form, auth_keys: form.auth_keys.filter((_, i) => i !== index) })
   }
 
   const canNext = () => {
@@ -235,6 +320,10 @@ export function ServiceCreatePage() {
     if (step === 1) {
       if (form.transport_type === 'stdio') return readyForCurrentInputs
       return form.url.trim().length > 0
+    }
+    if (step === 2 && isMultiKey) {
+      if (form.auth_type === 'custom' && !form.custom_header_key.trim()) return false
+      return form.auth_keys.length > 0
     }
     return true
   }
@@ -461,14 +550,14 @@ export function ServiceCreatePage() {
             </div>
           </div>
 
-          {form.auth_type === 'api_key' && (
+          {form.auth_type === 'api_key' && !isMultiKey && (
             <div className="space-y-2">
               <Label>API Key</Label>
               <Input placeholder="sk-xxx" value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} />
               <p className="text-xs text-muted-foreground">{t('services.create.authXApiKey')}</p>
             </div>
           )}
-          {form.auth_type === 'bearer' && (
+          {form.auth_type === 'bearer' && !isMultiKey && (
             <div className="space-y-2">
               <Label>Token</Label>
               <Input placeholder="eyJhbGci..." value={form.bearer_token} onChange={(e) => setForm({ ...form, bearer_token: e.target.value })} />
@@ -478,7 +567,7 @@ export function ServiceCreatePage() {
           {form.auth_type === 'none' && (
             <p className="text-sm text-muted-foreground">{t('services.create.noAuthHint')}</p>
           )}
-          {form.auth_type === 'custom' && (
+          {form.auth_type === 'custom' && !isMultiKey && (
             <div className="space-y-2">
               <Label>{t('services.customHeaders')}</Label>
               <div className="flex gap-2">
@@ -486,6 +575,84 @@ export function ServiceCreatePage() {
                 <Input placeholder="Value" value={form.custom_header_value} onChange={(e) => setForm({ ...form, custom_header_value: e.target.value })} />
               </div>
               <p className="text-xs text-muted-foreground">{t('services.authHeaderTip', { header: `{ "Key": "Value" }` })}</p>
+            </div>
+          )}
+
+          {/* 秘钥模式:单秘钥 / 多秘钥(随机/轮询),仅 streamable-http & sse */}
+          {form.auth_type !== 'none' && multiKeySupported && (
+            <div className="space-y-3 border-t pt-4">
+              <div className="space-y-2">
+                <Label>{t('services.keys.modeLabel')}</Label>
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    { v: 'single' as SecretMode, label: t('services.keys.modeSingle') },
+                    { v: 'random' as SecretMode, label: t('services.keys.modeRandom') },
+                    { v: 'polling' as SecretMode, label: t('services.keys.modePolling') },
+                  ]).map((opt) => (
+                    <button
+                      key={opt.v}
+                      type="button"
+                      onClick={() => setForm({ ...form, key_mode: opt.v })}
+                      className={`rounded-lg border px-3 py-1.5 text-sm transition-all ${
+                        form.key_mode === opt.v
+                          ? 'border-primary bg-primary/5'
+                          : 'hover:border-primary/30'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {form.key_mode === 'single'
+                    ? t('services.keys.modeSingleHint')
+                    : form.key_mode === 'random'
+                      ? t('services.keys.modeRandomHint')
+                      : t('services.keys.modePollingHint')}
+                </p>
+              </div>
+
+              {isMultiKey && (
+                <div className="space-y-3">
+                  {form.auth_type === 'custom' && (
+                    <div className="space-y-2">
+                      <Label>{t('services.keys.headerNameLabel')}</Label>
+                      <Input placeholder="X-Custom-Auth" value={form.custom_header_key} onChange={(e) => setForm({ ...form, custom_header_key: e.target.value })} />
+                      <p className="text-xs text-muted-foreground">{t('services.keys.headerNameHint')}</p>
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <Label>{t('services.keys.addLabel')}</Label>
+                    <Textarea
+                      rows={4}
+                      placeholder={t('services.keys.textareaPlaceholder')}
+                      value={form.auth_keys_input}
+                      onChange={(e) => setForm({ ...form, auth_keys_input: e.target.value })}
+                    />
+                    <Button type="button" variant="outline" size="sm" onClick={addAuthKeys}>
+                      {t('services.keys.addBtn')}
+                    </Button>
+                  </div>
+                  {form.auth_keys.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">{t('services.keys.poolCount', { count: form.auth_keys.length })}</p>
+                      <div className="space-y-1.5">
+                        {form.auth_keys.map((k, i) => (
+                          <div key={i} className="flex items-center justify-between rounded-lg border px-3 py-1.5 text-sm">
+                            <span className="font-mono text-xs text-muted-foreground">
+                              <span className="mr-2 inline-block w-6 text-right">{i + 1}</span>
+                              {maskSecret(k)}
+                            </span>
+                            <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-destructive" onClick={() => removeAuthKey(i)}>
+                              {t('common.delete')}
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -500,7 +667,7 @@ export function ServiceCreatePage() {
               : t('services.create.testHint')}
           </p>
 
-          {testResult && (
+          {testResult && !keyTestResults.length && (
             <div className={`rounded-lg p-4 ${testResult.connected ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}>
               {testResult.connected ? (
                 <div className="space-y-1 text-sm">
@@ -513,6 +680,34 @@ export function ServiceCreatePage() {
               ) : (
                 <p className="text-sm text-red-600 dark:text-red-400">{t('services.create.testFailed', { error: testResult.error || t('common.unknownError') })}</p>
               )}
+            </div>
+          )}
+
+          {/* 多秘钥:逐把测试结果 */}
+          {keyTestResults.length > 0 && (
+            <div className="space-y-1.5">
+              {keyTestResults.map((r) => (
+                <div
+                  key={r.index}
+                  className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm ${
+                    r.connected ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-red-500/40 bg-red-500/5'
+                  }`}
+                >
+                  <span className="font-mono text-xs text-muted-foreground">
+                    <span className="mr-2 inline-block w-6 text-right">#{r.index}</span>
+                    {r.masked}
+                  </span>
+                  {r.connected ? (
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400">
+                      {t('services.keys.testOk', { count: r.tools_count, ms: r.latency_ms })}
+                    </span>
+                  ) : (
+                    <span className="truncate text-xs text-red-600 dark:text-red-400" title={r.error}>
+                      {t('services.keys.testFailed', { error: r.error || t('common.unknownError') })}
+                    </span>
+                  )}
+                </div>
+              ))}
             </div>
           )}
 

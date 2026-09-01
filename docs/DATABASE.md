@@ -110,7 +110,7 @@ CREATE TABLE `mcp_services` (
 
     -- 认证配置
     `auth_type`        VARCHAR(32)     DEFAULT 'none' COMMENT '认证类型: none, api_key, bearer, basic, oauth',
-    `auth_config`      TEXT            DEFAULT '{}' COMMENT '认证配置 JSON',
+    `auth_config`      TEXT            DEFAULT '{}' COMMENT '认证配置 JSON;多秘钥时存 {key_mode: random|polling, header_name: 注入头名}(运行时输入,见 docs/MULTI-KEY.md)',
 
     -- 缓存
     `tools_cache`      MEDIUMTEXT      DEFAULT '[]' COMMENT '工具目录缓存 JSON 数组',
@@ -367,6 +367,7 @@ CREATE TABLE `mcp_call_logs` (
 
     `duration_ms`      INT             DEFAULT 0 COMMENT '耗时 (毫秒)',
     `error_message`    TEXT            DEFAULT '' COMMENT '错误信息',
+    `key_index`        INT             DEFAULT 0 COMMENT '多秘钥调用所用秘钥的池内序号(mcp_service_keys.sort_order);0=单秘钥/不适用',
 
     -- 商业化计费列(§4.5):审计与计费合一,每次 tools/call 写一条
     `billing_status`   VARCHAR(16)     DEFAULT 'skipped' COMMENT '计费状态: skipped(自有/免费) / charged(已扣) / refunded(失败退款) / blocked(余额不足拒绝) / debt(FailOpen欠账)',
@@ -554,6 +555,28 @@ CREATE TABLE `redemptions` (
 
 > 参考 new-api `Redemption`。列名用 `code`(`key` 是 SQL 保留字)。兑换用"status 1→2 原子占领"(SQLite/MySQL/PostgreSQL 三库通用,无需 `FOR UPDATE`)+ 事务入账,受影响行数=0 即已被兑换/禁用/过期。
 
+### 2.18 mcp_service_keys - MCP 服务多秘钥池(仅 HTTP 类传输)
+
+```sql
+CREATE TABLE `mcp_service_keys` (
+    `id`              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `service_id`      BIGINT UNSIGNED NOT NULL COMMENT '所属服务 ID',
+    `sort_order`      INT             NOT NULL COMMENT '池内序号(1 起)= 轮询次序 = mcp_call_logs.key_index',
+    `value`           TEXT            NOT NULL COMMENT '秘钥明文(单把 ≤8KB,池上限 100 把)',
+    `status`          TINYINT         DEFAULT 1 COMMENT '1=启用, 2=手动禁用, 3=自动禁用(上游 401/403)',
+    `disabled_reason` VARCHAR(255)    DEFAULT '' COMMENT '禁用原因(自动禁用时为 upstream 401/403)',
+    `disabled_at`     DATETIME        DEFAULT NULL COMMENT '禁用时间',
+    `created_at`      DATETIME        DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`      DATETIME        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `idx_svc_key_pos` (`service_id`, `sort_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP 服务多秘钥池';
+```
+
+> 状态挂**行**上而非池内下标(删 key 序号重排不会把状态串到别的 key)。模式与注入头存
+> `mcp_services.auth_config` JSON(`{key_mode, header_name}`),主表零新增列(行宽贴近上限)。
+> 设计与性能分析见 `docs/MULTI-KEY.md`。
+
 ---
 
 ## 3. ER 关系图
@@ -583,6 +606,7 @@ cameras (1) ──> (0..1) mcp_services (启用时创建虚拟服务, transport_
 
 mcp_services (1) ──< (N) mcp_call_logs
 mcp_groups   (1) ──< (N) mcp_call_logs
+mcp_services (1) ──< (N) mcp_service_keys  (多秘钥池,仅 HTTP 类传输;auth_config 存模式/注入头)
 
 marketplace_items (1) ──< (N) mcp_services (用户从市场安装)
 
@@ -619,3 +643,4 @@ mcp_groups (1) ──< (N) mcp_group_services >── mcp_services
 | 用户的引用服务 | `mcp_services(user_id, source, marketplace_item_id)` | 找出用户添加的市场引用 |
 | 兑换码核销 | `redemptions(code)` UNIQUE | O(1) 查找 |
 | 条目级定价 | `mcp_tool_prices(marketplace_item_id, kind, tool_name)` UNIQUE | 命中即用 |
+| 多秘钥池 | `mcp_service_keys(service_id, sort_order)` UNIQUE | 按服务整池加载(选择器构建,非每请求) |

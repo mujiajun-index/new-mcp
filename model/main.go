@@ -78,6 +78,7 @@ func migrateDB() error {
 		&Camera{},
 		&CloudEndpoint{},
 		&McpCallLog{},
+		&McpServiceKey{},
 		&MarketplaceItem{},
 		&MarketplaceGroup{},
 		&MarketplaceItemGroup{},

@@ -83,7 +83,24 @@ func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (
 	}
 
 	if err := adapter.Connect(ctx); err != nil {
-		return nil, err
+		_ = adapter.Close()
+		// 多秘钥服务建连失败(首把 key 可能已被 401 熔断)时换 key 立即重试一次:
+		// OnAuthFailure 已在 RoundTripper 里禁掉坏 key,新 adapter 的 initialize
+		// 会选下一把。非鉴权性失败重试一次也无害。
+		reconnected := false
+		if KeySelectors.Get(svc) != nil {
+			if retry := CreateAdapter(svc); retry != nil {
+				if err2 := retry.Connect(ctx); err2 == nil {
+					adapter = retry
+					reconnected = true
+				} else {
+					_ = retry.Close()
+				}
+			}
+		}
+		if !reconnected {
+			return nil, err
+		}
 	}
 
 	session := &McpSession{
@@ -316,6 +333,16 @@ func (p *SessionPool) GetAllSessions() []*McpSession {
 	return result
 }
 
+// dynamicAuthOptions 返回多秘钥动态注入的构造选项;单秘钥/stdio 服务为空
+// (保持既有静态 headers 行为)。
+func dynamicAuthOptions(svc *model.McpService) []transport.AdapterOption {
+	sel := KeySelectors.Get(svc)
+	if sel == nil {
+		return nil
+	}
+	return []transport.AdapterOption{transport.WithDynamicAuth(sel.HeaderName(), sel)}
+}
+
 func CreateAdapter(svc *model.McpService) transport.TransportAdapter {
 	var config map[string]interface{}
 	_ = json.Unmarshal([]byte(svc.Config), &config)
@@ -351,7 +378,7 @@ func CreateAdapter(svc *model.McpService) transport.TransportAdapter {
 		for k, v := range headers {
 			h[k], _ = v.(string)
 		}
-		return transport.NewStreamableHTTPAdapter(svc.ID, url, h)
+		return transport.NewStreamableHTTPAdapter(svc.ID, url, h, dynamicAuthOptions(svc)...)
 
 	case transport.TypeSSE:
 		url, _ := config["url"].(string)
@@ -360,7 +387,7 @@ func CreateAdapter(svc *model.McpService) transport.TransportAdapter {
 		for k, v := range headers {
 			h[k], _ = v.(string)
 		}
-		return transport.NewSSEAdapter(svc.ID, url, h)
+		return transport.NewSSEAdapter(svc.ID, url, h, dynamicAuthOptions(svc)...)
 
 	default:
 		return nil

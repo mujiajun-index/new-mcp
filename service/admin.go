@@ -416,6 +416,7 @@ func (s *AdminService) GetLogsForUser(userID int64, isAdmin bool, filter *dto.Lo
 			QuotaConsumed:     l.QuotaConsumed,
 			PriceScope:        l.PriceScope,
 			MarketplaceItemID: l.MarketplaceItemID,
+			KeyIndex:          l.KeyIndex,
 			Type:              l.Type,
 			Content:           l.Content,
 			Extra:             l.Extra,

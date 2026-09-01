@@ -31,26 +31,49 @@ type SDKAdapter struct {
 	protocolVersion string
 	serverInfo      *ServerInfo
 	connected       bool
-	mu              sync.Mutex
+	// dyn 多秘钥动态注入槽位(nil = 静态 headers 行为,单秘钥/stdio)。
+	dyn *dynamicSlot
+	mu  sync.Mutex
+}
+
+// dynamicSlot 描述多秘钥注入位置与供值来源。
+type dynamicSlot struct {
+	target string // 目标头名(Authorization / X-API-Key / 自定义)
+	dyn    DynamicAuth
+}
+
+// AdapterOption 是 adapter 构造的可选配置。
+type AdapterOption func(*SDKAdapter)
+
+// WithDynamicAuth 为 HTTP 类传输启用多秘钥动态注入:每个上游请求按策略取头值,
+// 上游 401/403 时熔断对应秘钥。动态值在静态 headers 之后 Set,覆盖同名静态头。
+func WithDynamicAuth(targetHeader string, dyn DynamicAuth) AdapterOption {
+	return func(a *SDKAdapter) {
+		a.dyn = &dynamicSlot{target: targetHeader, dyn: dyn}
+	}
 }
 
 // NewStreamableHTTPAdapter 构造 Streamable HTTP 客户端传输。
 // 自定义鉴权 header（X-API-Key / Authorization / 自定义头）通过专属 http.Client 注入。
-func NewStreamableHTTPAdapter(serviceID int64, url string, headers map[string]string) *SDKAdapter {
+func NewStreamableHTTPAdapter(serviceID int64, url string, headers map[string]string, opts ...AdapterOption) *SDKAdapter {
 	_ = serviceID
-	return &SDKAdapter{
-		typ:       TypeStreamableHTTP,
-		transport: &mcp.StreamableClientTransport{Endpoint: url, HTTPClient: httpClientWithHeaders(headers)},
+	a := &SDKAdapter{typ: TypeStreamableHTTP}
+	for _, opt := range opts {
+		opt(a)
 	}
+	a.transport = &mcp.StreamableClientTransport{Endpoint: url, HTTPClient: httpClientWithHeaders(headers, a.dyn)}
+	return a
 }
 
 // NewSSEAdapter 构造 SSE（2024-11-05）客户端传输。
-func NewSSEAdapter(serviceID int64, url string, headers map[string]string) *SDKAdapter {
+func NewSSEAdapter(serviceID int64, url string, headers map[string]string, opts ...AdapterOption) *SDKAdapter {
 	_ = serviceID
-	return &SDKAdapter{
-		typ:       TypeSSE,
-		transport: &mcp.SSEClientTransport{Endpoint: url, HTTPClient: httpClientWithHeaders(headers)},
+	a := &SDKAdapter{typ: TypeSSE}
+	for _, opt := range opts {
+		opt(a)
 	}
+	a.transport = &mcp.SSEClientTransport{Endpoint: url, HTTPClient: httpClientWithHeaders(headers, a.dyn)}
+	return a
 }
 
 // NewStdioAdapter 构造 stdio 客户端传输：以子进程方式运行命令，经 stdin/stdout 通信。
@@ -111,40 +134,73 @@ func (a *SDKAdapter) Close() error {
 }
 
 func (a *SDKAdapter) Call(ctx context.Context, method string, params interface{}) (json.RawMessage, error) {
+	raw, _, err := a.CallWithMeta(ctx, method, params)
+	return raw, err
+}
+
+// pickAuthCtx 多秘钥服务在发起一次上游逻辑调用前按策略选 key:放入 ctx 供
+// RoundTripper 落到请求头(同一次调用的 POST/GET 全程同一把 key),返回所选
+// 序号;无动态槽位(单秘钥/stdio)原样返回 ctx 与 0。
+func (a *SDKAdapter) pickAuthCtx(ctx context.Context) (context.Context, int, error) {
+	a.mu.Lock()
+	dyn := a.dyn
+	a.mu.Unlock()
+	if dyn == nil {
+		return ctx, 0, nil
+	}
+	idx, value, err := dyn.dyn.Pick()
+	if err != nil {
+		return ctx, 0, fmt.Errorf("secret pool: %w", err)
+	}
+	return WithAuthChoice(ctx, idx, value), idx, nil
+}
+
+// CallWithMeta 在 Call 基础上带回本次调用所用秘钥的池内序号(MetaCaller)。
+// 多秘钥服务在发起 tools/call 前先按策略选好 key 并放入 ctx,由 RoundTripper
+// 落到请求头上——同一次调用的所有 HTTP 请求(POST/GET 流)全程同一把 key。
+func (a *SDKAdapter) CallWithMeta(ctx context.Context, method string, params interface{}) (json.RawMessage, CallMeta, error) {
+	meta := CallMeta{}
 	a.mu.Lock()
 	sess := a.sess
 	a.mu.Unlock()
 	if sess == nil {
-		return nil, fmt.Errorf("not connected")
+		return nil, meta, fmt.Errorf("not connected")
 	}
 
-	// 当前消费方（Gateway）仅调用 tools/call；其余方法显式拒绝，避免误用。
+	// 当前消费方(网关与服务详情工具测试)仅调用 tools/call;其余方法显式拒绝,避免误用。
 	if method != "tools/call" {
-		return nil, fmt.Errorf("unsupported method via SDK adapter: %s", method)
+		return nil, meta, fmt.Errorf("unsupported method via SDK adapter: %s", method)
 	}
 
 	raw, err := json.Marshal(params)
 	if err != nil {
-		return nil, err
+		return nil, meta, err
 	}
 	var p struct {
 		Name      string          `json:"name"`
 		Arguments json.RawMessage `json:"arguments"`
 	}
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return nil, err
+		return nil, meta, err
 	}
 
 	var args any
 	if len(p.Arguments) > 0 {
 		args = json.RawMessage(p.Arguments)
 	}
+	picked, idx, pErr := a.pickAuthCtx(ctx)
+	if pErr != nil {
+		return nil, meta, pErr
+	}
+	ctx = picked
+	meta.KeyIndex = idx
 	res, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: p.Name, Arguments: args})
 	if err != nil {
-		return nil, err
+		return nil, meta, err
 	}
-	// CallToolResult 的 JSON 形态（{content, isError, ...}）即 MCP tools/call 的 result。
-	return json.Marshal(res)
+	// CallToolResult 的 JSON 形态({content, isError, ...})即 MCP tools/call 的 result。
+	out, err := json.Marshal(res)
+	return out, meta, err
 }
 
 func (a *SDKAdapter) IsConnected() bool {
@@ -245,15 +301,29 @@ func (a *SDKAdapter) ListResourceTemplates(ctx context.Context) (json.RawMessage
 
 // ReadResource 转发 resources/read 到上游,返回完整 result(含 contents)。
 func (a *SDKAdapter) ReadResource(ctx context.Context, uri string) (json.RawMessage, error) {
+	raw, _, err := a.ReadResourceWithMeta(ctx, uri)
+	return raw, err
+}
+
+// ReadResourceWithMeta 在 ReadResource 基础上带回本次调用所用秘钥的池内序号
+// (ResourceMetaCaller,服务详情页资源测试落日志 key_index 用)。
+func (a *SDKAdapter) ReadResourceWithMeta(ctx context.Context, uri string) (json.RawMessage, CallMeta, error) {
+	meta := CallMeta{}
 	sess, err := a.session()
 	if err != nil {
-		return nil, err
+		return nil, meta, err
 	}
-	res, err := sess.ReadResource(ctx, &mcp.ReadResourceParams{URI: uri})
+	picked, idx, pErr := a.pickAuthCtx(ctx)
+	if pErr != nil {
+		return nil, meta, pErr
+	}
+	meta.KeyIndex = idx
+	res, err := sess.ReadResource(picked, &mcp.ReadResourceParams{URI: uri})
 	if err != nil {
-		return nil, fmt.Errorf("read resource %s: %w", uri, err)
+		return nil, meta, fmt.Errorf("read resource %s: %w", uri, err)
 	}
-	return json.Marshal(res)
+	out, err := json.Marshal(res)
+	return out, meta, err
 }
 
 // ListPrompts 拉取上游 prompts/list(迭代器自动翻页)。
@@ -277,15 +347,29 @@ func (a *SDKAdapter) ListPrompts(ctx context.Context) (json.RawMessage, error) {
 
 // GetPrompt 转发 prompts/get 到上游,返回完整 result(含 messages)。
 func (a *SDKAdapter) GetPrompt(ctx context.Context, name string, arguments map[string]string) (json.RawMessage, error) {
+	raw, _, err := a.GetPromptWithMeta(ctx, name, arguments)
+	return raw, err
+}
+
+// GetPromptWithMeta 在 GetPrompt 基础上带回本次调用所用秘钥的池内序号
+// (PromptMetaCaller,服务详情页提示测试落日志 key_index 用)。
+func (a *SDKAdapter) GetPromptWithMeta(ctx context.Context, name string, arguments map[string]string) (json.RawMessage, CallMeta, error) {
+	meta := CallMeta{}
 	sess, err := a.session()
 	if err != nil {
-		return nil, err
+		return nil, meta, err
 	}
-	res, err := sess.GetPrompt(ctx, &mcp.GetPromptParams{Name: name, Arguments: arguments})
+	picked, idx, pErr := a.pickAuthCtx(ctx)
+	if pErr != nil {
+		return nil, meta, pErr
+	}
+	meta.KeyIndex = idx
+	res, err := sess.GetPrompt(picked, &mcp.GetPromptParams{Name: name, Arguments: arguments})
 	if err != nil {
-		return nil, fmt.Errorf("get prompt %s: %w", name, err)
+		return nil, meta, fmt.Errorf("get prompt %s: %w", name, err)
 	}
-	return json.Marshal(res)
+	out, err := json.Marshal(res)
+	return out, meta, err
 }
 
 // --- helpers ---
@@ -315,13 +399,14 @@ func envToSlice(env map[string]string) []string {
 
 // httpClientWithHeaders 返回一个会为每个请求附加自定义 header 的 *http.Client，
 // 用于在 Streamable HTTP / SSE 传输上注入鉴权信息（SDK 传输本身不暴露 header 入口）。
-func httpClientWithHeaders(headers map[string]string) *http.Client {
+// dyn 非 nil 时启用多秘钥动态注入(见 headerRoundTripper)。
+func httpClientWithHeaders(headers map[string]string, dyn *dynamicSlot) *http.Client {
 	client := &http.Client{Timeout: 30 * time.Second}
 	// 空对象 arguments 兜底对所有上游生效(见 emptyObjectArgsRoundTripper),
 	// 自定义 header 再包在外层。
 	var rt http.RoundTripper = &emptyObjectArgsRoundTripper{base: http.DefaultTransport}
-	if len(headers) > 0 {
-		rt = &headerRoundTripper{base: rt, headers: headers}
+	if len(headers) > 0 || dyn != nil {
+		rt = &headerRoundTripper{base: rt, headers: headers, dyn: dyn}
 	}
 	client.Transport = rt
 	return client
@@ -394,6 +479,14 @@ func withEmptyArgumentsIfMissing(body []byte) []byte {
 type headerRoundTripper struct {
 	base    http.RoundTripper
 	headers map[string]string
+	// dyn 多秘钥动态注入槽位(nil = 纯静态 headers)。
+	dyn *dynamicSlot
+	// 无 ctx 指定的请求(后台 GET 流、会话 DELETE 等)沿用最近一次 POST 选的
+	// key,保证无归因请求与上一操作用同一把 key。
+	lastMu  sync.Mutex
+	lastIdx int
+	lastVal string
+	lastSet bool
 }
 
 func (h *headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -401,5 +494,47 @@ func (h *headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 	for k, v := range h.headers {
 		clone.Header.Set(k, v)
 	}
-	return h.base.RoundTrip(clone)
+	if h.dyn == nil {
+		return h.base.RoundTrip(clone)
+	}
+
+	var idx int
+	var val string
+	if c, ok := authChoiceFrom(req.Context()); ok {
+		// 逻辑调用已选定:key 全程一致(精确归因到 mcp_call_logs.key_index)。
+		idx, val = c.index, c.value
+	} else if req.Method == http.MethodPost {
+		// 后台 POST(initialize/通知/缓存刷新):现选一把。
+		i, v, err := h.dyn.dyn.Pick()
+		if err != nil {
+			return nil, fmt.Errorf("secret pool: %w", err)
+		}
+		idx, val = i, v
+	} else {
+		// GET/SSE 流/DELETE:沿用最近值;从未选过(如 SSE 首 GET)则现选。
+		h.lastMu.Lock()
+		if h.lastSet {
+			idx, val = h.lastIdx, h.lastVal
+		}
+		h.lastMu.Unlock()
+		if val == "" {
+			i, v, err := h.dyn.dyn.Pick()
+			if err != nil {
+				return nil, fmt.Errorf("secret pool: %w", err)
+			}
+			idx, val = i, v
+		}
+	}
+	// 动态值在静态 headers 之后 Set:覆盖同名静态头,防御两处并存。
+	clone.Header.Set(h.dyn.target, val)
+	if req.Method == http.MethodPost {
+		h.lastMu.Lock()
+		h.lastIdx, h.lastVal, h.lastSet = idx, val, true
+		h.lastMu.Unlock()
+	}
+	resp, err := h.base.RoundTrip(clone)
+	if err == nil && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
+		h.dyn.dyn.OnAuthFailure(idx)
+	}
+	return resp, err
 }

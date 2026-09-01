@@ -71,6 +71,13 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.GET("/services/:id/health", controller.GetServiceHealth)
 		auth.GET("/services/:id/process", controller.GetServiceProcess)
 		auth.POST("/services/:id/process/control", controller.ControlServiceProcess)
+		// 多秘钥管理(仅 HTTP 类自有服务):池视图/追加替换/启停/删除/批量/模式切换
+		auth.GET("/services/:id/keys", controller.GetServiceKeys)
+		auth.PUT("/services/:id/keys", controller.UpdateServiceKeys)
+		auth.PUT("/services/:id/keys/config", controller.UpdateServiceKeyConfig)
+		auth.POST("/services/:id/keys/batch", controller.BatchServiceKeys)
+		auth.PUT("/services/:id/keys/:keyID", controller.SetServiceKeyStatus)
+		auth.DELETE("/services/:id/keys/:keyID", controller.DeleteServiceKey)
 		// 服务总览(所有登录用户,按 user_id 只看自己的服务):统计摘要 + stdio 进程
 		// 资源快照 + 非 stdio 服务健康快照
 		auth.GET("/services/overview", controller.GetServicesOverview)

@@ -1,8 +1,11 @@
 package model
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
+
+	"github.com/mujkjk/newmcp/common"
 )
 
 type McpService struct {
@@ -43,6 +46,29 @@ type McpService struct {
 }
 
 func (McpService) TableName() string { return "mcp_services" }
+
+// AuthKeyConfig 是 AuthConfig 列中与多秘钥相关的配置段(该列还承载展示性字段
+// key/token 等,解析时只取这两个字段,写回由 service 层整体保留其余键)。
+type AuthKeyConfig struct {
+	KeyMode    string `json:"key_mode,omitempty"`    // ""=单秘钥;random | polling
+	HeaderName string `json:"header_name,omitempty"` // 多秘钥注入的目标头名
+}
+
+// ParseAuthKeyConfig 解析 AuthConfig 里的多秘钥配置;空/坏 JSON 返回零值。
+func (s *McpService) ParseAuthKeyConfig() AuthKeyConfig {
+	var c AuthKeyConfig
+	if s.AuthConfig == "" {
+		return c
+	}
+	_ = json.Unmarshal([]byte(s.AuthConfig), &c)
+	return c
+}
+
+// IsMultiKey 报告服务是否处于多秘钥模式(仅 HTTP 类传输由调用方保证)。
+func (s *McpService) IsMultiKey() bool {
+	m := s.ParseAuthKeyConfig().KeyMode
+	return m == common.KeyModeRandom || m == common.KeyModePolling
+}
 
 func ListServicesByUser(userID int64, offset, limit int, filters map[string]string) ([]McpService, int64, error) {
 	var services []McpService

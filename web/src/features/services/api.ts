@@ -2,6 +2,7 @@ import { api } from '@/lib/api'
 import type {
   ServiceListParams,
   CreateServiceReq, UpdateServiceReq, PrepareStdioReq, ProcessControlAction,
+  UpdateServiceKeysReq,
 } from '@/types'
 
 export async function getServices(params?: ServiceListParams) {
@@ -103,5 +104,43 @@ export async function controlServiceProcess(id: number, action: ProcessControlAc
 // 快照 + 非 stdio 健康状态条(总览页 5s 轮询)
 export async function getServiceOverview() {
   const res = await api.get('/services/overview')
+  return res.data
+}
+
+// --- 多秘钥管理(/services/:id/keys) ---
+
+// 秘钥池视图(掩码值 + 模式 + 统计)
+export async function getServiceKeys(id: number) {
+  const res = await api.get(`/services/${id}/keys`)
+  return res.data
+}
+
+// 更新秘钥:追加(去重保状态)/ 替换全部
+export async function updateServiceKeys(id: number, data: UpdateServiceKeysReq) {
+  const res = await api.put(`/services/${id}/keys`, data)
+  return res.data
+}
+
+// 模式切换:单↔多、随机↔轮询
+export async function updateServiceKeyConfig(id: number, data: { key_mode: 'single' | 'random' | 'polling'; header_name?: string }) {
+  const res = await api.put(`/services/${id}/keys/config`, data)
+  return res.data
+}
+
+// 启用/禁用单把秘钥
+export async function setServiceKeyStatus(id: number, keyID: number, status: 'enabled' | 'disabled') {
+  const res = await api.put(`/services/${id}/keys/${keyID}`, { status })
+  return res.data
+}
+
+// 删除单把秘钥
+export async function deleteServiceKey(id: number, keyID: number) {
+  const res = await api.delete(`/services/${id}/keys/${keyID}`)
+  return res.data
+}
+
+// 批量操作:全部启用 / 删除已禁用
+export async function batchServiceKeys(id: number, action: 'enable_all' | 'delete_disabled') {
+  const res = await api.post(`/services/${id}/keys/batch`, { action })
   return res.data
 }

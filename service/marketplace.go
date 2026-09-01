@@ -647,6 +647,20 @@ func (s *MarketplaceService) CloneFromService(adminID int64, req *dto.CloneMarke
 		return nil, fmt.Errorf("市场项标识已存在: %s,请修改服务标识", req.Name)
 	}
 
+	// 多秘钥源服务降级克隆(V1):市场项暂不支持秘钥池(二期做条目级池),取
+	// 首选启用秘钥烘成单秘钥 config 模板;记系统日志提示管理员确认凭证。
+	cloneConfig := svc.Config
+	if svc.IsMultiKey() {
+		degraded, err := degradeMultiKeyConfig(svc)
+		if err != nil {
+			return nil, err
+		}
+		cloneConfig = degraded
+		model.RecordSystemLog(adminID, "", fmt.Sprintf("市场项 %s 从多秘钥服务 %s(#%d) 克隆:已取首选启用秘钥降级为单秘钥", req.Name, svc.Name, svc.ID), 0, "", map[string]any{
+			"action": "marketplace_clone_multi_key_degraded", "service_id": svc.ID, "item_name": req.Name,
+		})
+	}
+
 	item := &model.MarketplaceItem{
 		AdminID:       adminID,
 		Name:          req.Name,
@@ -657,7 +671,7 @@ func (s *MarketplaceService) CloneFromService(adminID int64, req *dto.CloneMarke
 		TransportType: svc.TransportType,
 		// 独占进程开关仅对 stdio 源生效:其余传输无平台子进程概念,恒共享语义
 		IsolatedProcess: req.IsolatedProcess && svc.TransportType == string(transport.TypeStdio),
-		ConfigTemplate:  encryptConfigTemplate(svc.Config), // 克隆源凭证并加密;前端提示替换为平台凭证
+		ConfigTemplate:  encryptConfigTemplate(cloneConfig), // 克隆源凭证并加密;前端提示替换为平台凭证
 		AuthInstructions: svc.AuthType,
 		ConfigTemplateSource: svc.AuthConfig,
 		RequiredEnv:   "[]",

@@ -21,6 +21,14 @@ const (
 	// Status
 	StatusEnabled  = 1
 	StatusDisabled = 2
+	// StatusAutoDisabled 仅用于 McpServiceKey:上游 401/403 熔断自动禁用,可手动重新启用。
+	StatusAutoDisabled = 3
+
+	// 多秘钥(McpServiceKey 池)策略与更新模式
+	KeyModeRandom     = "random"
+	KeyModePolling    = "polling"
+	KeyUpdateAppend   = "append"
+	KeyUpdateReplace  = "replace"
 
 	// SuperAdminUserID 为系统初始化的超级管理员（首个账号，自增主键即 1）。
 	// 其角色与启用状态受保护：不可被改角色、禁用或删除，避免管理员被锁在系统之外。

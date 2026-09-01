@@ -344,6 +344,23 @@ GET /api/v1/services?page=1&page_size=20&sort=created_at&order=desc
 
 > 认证信息会自动写入 `config.headers`，由后端 Transport Adapter 在每次 HTTP 请求时携带。
 
+**多秘钥（可选，仅 streamable-http / sse）:** 传 `key_mode` + `auth_keys` 直接建池,
+此时认证值不进 `config.headers`,由秘钥池按策略逐请求注入:
+
+```json
+{
+    "transport_type": "streamable-http",
+    "config": { "url": "https://mcp.exa.ai/mcp" },
+    "auth_type": "bearer",
+    "auth_config": { "header_name": "Authorization" },
+    "key_mode": "polling",
+    "auth_keys": ["key-a", "key-b", "key-c"]
+}
+```
+
+> `key_mode`: `random` | `polling`。上限 100 把、单把 ≤8KB。上游 401/403 自动禁用对应
+> key 并落系统日志;调用日志记录所用序号 `key_index`。详见 `docs/MULTI-KEY.md`。
+
 **config 格式按 transport_type 不同:**
 
 stdio:
@@ -515,6 +532,65 @@ passive-ws (被动连接):
 
 ### GET /services/:id/health
 获取服务健康状态。
+
+### GET /services/:id/keys
+获取多秘钥池（值恒为掩码，永不回明文）。仅 HTTP 类传输的自有服务可用。
+
+**Response:** `200 OK`
+```json
+{
+    "success": true,
+    "data": {
+        "key_mode": "polling",
+        "header_name": "Authorization",
+        "auth_type": "bearer",
+        "transport_type": "streamable-http",
+        "total": 2,
+        "enabled": 1,
+        "keys": [
+            { "id": 11, "sort_order": 1, "masked_value": "exa-8f2…c91a", "status": 3, "disabled_reason": "upstream 401/403", "disabled_at": "2026-09-01T10:00:00Z" },
+            { "id": 12, "sort_order": 2, "masked_value": "exa-3ad…77b0", "status": 1 }
+        ]
+    }
+}
+```
+
+> `status`: 1=启用 2=手动禁用 3=自动禁用(上游 401/403)。`sort_order` 即调用日志
+> `key_index`。
+
+### PUT /services/:id/keys
+批量更新秘钥（追加 / 替换）。
+
+**Request Body:**
+```json
+{ "mode": "append", "values": ["key-d", "key-e"] }
+```
+
+> `mode`: `append`(对池内已有值去重,保留既有行与状态) | `replace`(整池替换,序号从 1
+> 重排,状态清零)。返回 `{added, skipped}`(skipped=追加时重复跳过的数量)。
+
+### PUT /services/:id/keys/:keyID
+启/禁单把秘钥。**Request Body:** `{ "status": 1 }`(1=启用,2=禁用;重新启用自动禁用
+的 key 会清空 `disabled_reason`/`disabled_at`)。
+
+### DELETE /services/:id/keys/:keyID
+删除单把秘钥。
+
+### POST /services/:id/keys/batch
+批量操作。**Request Body:** `{ "action": "enable_all" }` 或 `{ "action": "delete_disabled" }`。
+
+### PUT /services/:id/keys/config
+模式与策略切换。
+
+**Request Body:**
+```json
+{ "key_mode": "random", "header_name": "Authorization" }
+```
+
+> `key_mode`: `single`(多→单:首选启用 key 写回 `config.headers` 并清空池,替换语义)
+> | `random` | `polling`。单→多时 `config.headers` 里须已有目标头的值(收编为首把秘钥);
+> `header_name` 缺省按 auth_type 推导(api_key→`X-API-Key`、bearer→`Authorization`,
+> custom 必填);多秘钥模式下不可更换注入头。切换即失效运行时选择器并踢会话重建。
 
 ---
 

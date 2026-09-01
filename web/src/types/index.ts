@@ -69,6 +69,8 @@ export interface ServiceListItem {
   description: string
   transport_type: TransportType
   source: string
+  /** 多秘钥模式(random/polling);空 = 单秘钥 */
+  key_mode?: string
   health_status: string
   tools_count: number
   status: number
@@ -84,6 +86,10 @@ export interface ServiceDetail {
   source: string
   config: Record<string, unknown>
   auth_type: AuthType
+  /** 多秘钥:key_mode 为 random/polling 时认证头由秘钥池按策略注入 */
+  key_mode?: string
+  key_count?: number
+  key_enabled?: number
   health_status: string
   last_health_check: string
   tools_cache: McpTool[]
@@ -218,7 +224,48 @@ export interface CreateServiceReq {
   config: Record<string, unknown>
   auth_type?: AuthType
   auth_config?: Record<string, unknown>
+  /** 多秘钥(仅 streamable-http/sse):random/polling 时 auth_keys 必填 */
+  key_mode?: 'random' | 'polling'
+  auth_keys?: string[]
   tags?: string[]
+}
+
+// --- 多秘钥管理(/services/:id/keys) ---
+
+// 秘钥状态:1=启用 2=手动禁用 3=自动禁用(上游 401/403 熔断)
+export const KEY_STATUS = { enabled: 1, disabled: 2, autoDisabled: 3 } as const
+
+export interface ServiceKeyItem {
+  id: number
+  /** 池内序号(1 起)= 调用日志 key_index */
+  sort_order: number
+  /** 掩码值,接口永不回明文 */
+  masked_value: string
+  status: number
+  disabled_reason?: string
+  disabled_at?: string
+}
+
+export interface ServiceKeysResp {
+  /** ""=单秘钥;random|polling */
+  key_mode: string
+  header_name: string
+  auth_type: AuthType
+  transport_type: TransportType
+  total: number
+  enabled: number
+  keys: ServiceKeyItem[]
+}
+
+export interface UpdateServiceKeysReq {
+  /** 追加(去重保状态)/ 替换全部 */
+  mode: 'append' | 'replace'
+  values: string[]
+}
+
+export interface UpdateServiceKeysResult {
+  added: number
+  skipped: number
 }
 
 export interface UpdateServiceReq {
