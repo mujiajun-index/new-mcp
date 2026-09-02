@@ -1141,6 +1141,8 @@
     "tags": "标签",
     "rating": "评分",
     "category": "分类",
+    "sortOrder": "排序",
+    "sortOrderHint": "值越大越靠前，相同时按安装数",
     "repoUrl": "仓库地址",
     "installGuide": "安装指南",
     "sourceFieldsHint": "源码型服务展示给用户:仓库地址与安装指南",

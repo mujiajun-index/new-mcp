@@ -1141,6 +1141,8 @@
     "tags": "Tags",
     "rating": "Rating",
     "category": "Category",
+    "sortOrder": "Sort Order",
+    "sortOrderHint": "Higher first; ties broken by installs",
     "repoUrl": "Repository URL",
     "installGuide": "Install Guide",
     "sourceFieldsHint": "Source-type services show users: repository URL and install guide",

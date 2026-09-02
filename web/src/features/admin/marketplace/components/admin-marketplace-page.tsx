@@ -116,6 +116,7 @@ export function AdminMarketplacePage() {
     { key: 'check', w: 40 },
     { key: 'service', w: 200 },
     { key: 'category', w: 88 },
+    { key: 'sort', w: 64 },
     { key: 'billing', w: 104 },
     { key: 'price', w: 88 },
     { key: 'health', w: 240 },
@@ -188,6 +189,7 @@ export function AdminMarketplacePage() {
                   }
                   meta={[
                     { label: t('pricing.colCategory'), value: item.category === 'instant' ? t('marketplace.ready') : t('marketplace.source') },
+                    { label: t('marketplace.sortOrder'), value: <span className="tabular-nums">{item.sort_order}</span> },
                     {
                       label: t('pricing.colPrice'),
                       value: (
@@ -248,6 +250,7 @@ export function AdminMarketplacePage() {
                 </TableHead>
                 <TableHead className="whitespace-nowrap">{t('pricing.colService')}</TableHead>
                 <TableHead className="whitespace-nowrap">{t('pricing.colCategory')}</TableHead>
+                <TableHead className="whitespace-nowrap">{t('marketplace.sortOrder')}</TableHead>
                 <TableHead className="whitespace-nowrap">{t('marketplace.billingType')}</TableHead>
                 <TableHead className="whitespace-nowrap">{t('pricing.colPrice')}</TableHead>
                 <TableHead className="whitespace-nowrap">{t('marketplace.healthCol')}</TableHead>
@@ -270,6 +273,9 @@ export function AdminMarketplacePage() {
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                       {item.category === 'instant' ? t('marketplace.ready') : t('marketplace.source')}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
+                      {item.sort_order}
                     </TableCell>
                     <TableCell className="text-xs">
                       <Badge variant={item.billing_type === 'free' ? 'secondary' : 'outline'}>

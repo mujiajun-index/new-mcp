@@ -139,7 +139,7 @@ func ListPublishedMarketplaceItems(offset, limit int, category, keyword string, 
 		return nil, 0, err
 	}
 	var items []MarketplaceItem
-	err := query.Order("sort_order ASC, install_count DESC, created_at DESC").
+	err := query.Order("sort_order DESC, install_count DESC, created_at DESC").
 		Offset(offset).Limit(limit).Find(&items).Error
 	return items, total, err
 }
@@ -150,7 +150,7 @@ func ListAllMarketplaceItems(offset, limit int) ([]MarketplaceItem, int64, error
 		return nil, 0, err
 	}
 	var items []MarketplaceItem
-	err := DB.Order("sort_order ASC, created_at DESC").Offset(offset).Limit(limit).Find(&items).Error
+	err := DB.Order("sort_order DESC, install_count DESC, created_at DESC").Offset(offset).Limit(limit).Find(&items).Error
 	return items, total, err
 }
 

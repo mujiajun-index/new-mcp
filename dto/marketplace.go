@@ -24,6 +24,8 @@ type UpdateMarketplaceItemReq struct {
 	PromptsSnapshot      *[]interface{}         `json:"prompts_snapshot"`
 	Status               *int                   `json:"status"`
 	SortOrder            *int                   `json:"sort_order"`
+	// 下载数允许管理端手工修正(展示统计,非强约束;不可为负)
+	InstallCount         *int                   `json:"install_count" binding:"omitempty,gte=0"`
 	// 独占进程(仅 stdio 条目生效):切换共享↔独占会踢掉该条目全部池内会话按新模式重建
 	IsolatedProcess *bool `json:"isolated_process"`
 	// 商业化定价:启用/上架时非自用模式须显式定价(§5.6)
@@ -175,6 +177,8 @@ type MarketplaceDetail struct {
 	InstallGuide         string                 `json:"install_guide"`
 	RequiredEnv          []string               `json:"required_env"`
 	InstallCount         int                    `json:"install_count"`
+	// 广场排序值:大者靠前,相同时按 install_count 降序
+	SortOrder            int                    `json:"sort_order"`
 	RatingAvg            float64                `json:"rating_avg"`
 	RatingCount          int                    `json:"rating_count"`
 	ToolsSnapshot        []interface{}          `json:"tools_snapshot"`

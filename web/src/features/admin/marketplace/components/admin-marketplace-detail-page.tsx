@@ -331,6 +331,8 @@ function EditForm({ item, groups, tagsLib, notSelfUse, onSave, pending }: {
     install_guide: item.install_guide,
     billing_type: item.billing_type,
     price_per_call: String(item.price_per_call),
+    sort_order: String(item.sort_order ?? 0),
+    install_count: String(item.install_count ?? 0),
   })
   const [selectedTags, setSelectedTags] = useState<string[]>(item.tags ?? [])
   const [selectedGroups, setSelectedGroups] = useState<number[]>(item.group_ids ?? [])
@@ -358,6 +360,8 @@ function EditForm({ item, groups, tagsLib, notSelfUse, onSave, pending }: {
       tags: selectedTags.filter((name) => tagsLib.some((tag) => tag.name === name)),
       repo_url: form.repo_url,
       install_guide: form.install_guide,
+      sort_order: parseInt(form.sort_order) || 0,
+      install_count: parseInt(form.install_count) || 0,
       billing_type: billingType,
       price_per_call: billingType === 'free' ? 0 : price,
     })
@@ -394,6 +398,17 @@ function EditForm({ item, groups, tagsLib, notSelfUse, onSave, pending }: {
         <div className="space-y-2">
           <Label>{t('marketplace.version')}</Label>
           <Input value={form.version} onChange={(e) => setForm({ ...form, version: e.target.value })} />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>{t('marketplace.sortOrder')}</Label>
+          <Input type="number" value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: e.target.value })} />
+          <p className="text-xs text-muted-foreground">{t('marketplace.sortOrderHint')}</p>
+        </div>
+        <div className="space-y-2">
+          <Label>{t('marketplace.installCount')}</Label>
+          <Input type="number" min="0" value={form.install_count} onChange={(e) => setForm({ ...form, install_count: e.target.value })} />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-4">

@@ -597,6 +597,8 @@ export interface MarketplaceDetail {
   install_guide: string
   required_env: string[]
   install_count: number
+  // 广场排序值:大者靠前,相同时按 install_count 降序
+  sort_order: number
   rating_avg: number
   rating_count: number
   tools_snapshot: McpTool[]

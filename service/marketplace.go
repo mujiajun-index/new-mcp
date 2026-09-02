@@ -336,6 +336,9 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 	if req.SortOrder != nil {
 		item.SortOrder = *req.SortOrder
 	}
+	if req.InstallCount != nil {
+		item.InstallCount = *req.InstallCount
+	}
 	// 独占进程切换(仅 stdio 条目):会话池键控方式改变(行键↔条目键),旧会话必须
 	// 踢掉按新模式重建,否则共享→独占后旧共享进程仍被全体复用、反向则旧行进程残留。
 	kickSessions := req.ConfigTemplate != nil
@@ -783,7 +786,7 @@ func (s *MarketplaceService) GetItemByID(itemID int64) (*dto.MarketplaceDetail, 
 // AddToMyServices 把市场项添加为用户的**引用服务**:在 mcp_services 建一条 source=marketplace
 // 引用行,**config 留空(不复制上游配置/凭证)**、transport_type 置 "marketplace" 哨兵、复制 tools_cache 快照。
 // 上游连接/凭证仍由平台在 marketplace_items 侧托管;调用时 resolver 按 marketplace_item_id 注入平台 session(§6.1)。
-// 去重:同一用户对同一市场项仅一份引用,重复添加返回已有引用。
+// 去重:同一用户对同一市场项仅一份引用,重复添加返回已有引用(下载计数为累计口径,重复添加同样 +1)。
 func (s *MarketplaceService) AddToMyServices(userID, itemID int64) (*dto.InstallResult, error) {
 	item, err := model.GetMarketplaceItemByID(itemID)
 	if err != nil {
@@ -793,8 +796,9 @@ func (s *MarketplaceService) AddToMyServices(userID, itemID int64) (*dto.Install
 		return nil, fmt.Errorf("marketplace item not available")
 	}
 
-	// 去重:已存在引用则直接返回
+	// 去重:已存在引用则直接返回;下载计数为累计口径,重复添加同样 +1
 	if existing, e := model.GetMarketplaceReferenceByUser(userID, itemID); e == nil && existing != nil {
+		_ = model.IncrementInstallCount(item.ID)
 		return &dto.InstallResult{ServiceID: existing.ID, Name: existing.Name}, nil
 	}
 
@@ -999,6 +1003,7 @@ func (s *MarketplaceService) toDetail(item *model.MarketplaceItem) *dto.Marketpl
 		InstallGuide:         item.InstallGuide,
 		RequiredEnv:          requiredEnv,
 		InstallCount:         item.InstallCount,
+		SortOrder:            item.SortOrder,
 		RatingAvg:            item.RatingAvg,
 		RatingCount:          item.RatingCount,
 		ToolsSnapshot:        toolsSnapshot,
