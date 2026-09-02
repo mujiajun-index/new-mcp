@@ -1,10 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import {
-  getServiceKeys, updateServiceKeys, updateServiceKeyConfig,
-  setServiceKeyStatus, deleteServiceKey, batchServiceKeys,
-} from '../api'
 import { SectionCard } from '@/components/section-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,7 +17,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
 import { KeyRound, Loader2, Plus, ShieldAlert, Trash2 } from 'lucide-react'
-import type { AuthType, ServiceKeyItem } from '@/types'
+import type { ServiceKeysResp, ServiceKeyItem, UpdateServiceKeysReq, UpdateServiceKeysResult } from '@/types'
 
 // statusLabel 状态徽章(1启用/2手动禁用/3自动禁用)
 function statusBadge(t: (k: string) => string, status: number) {
@@ -31,15 +27,30 @@ function statusBadge(t: (k: string) => string, status: number) {
 }
 
 /**
+ * KeysApi 秘钥卡片的端点适配:卡片本体与服务详情页(/services/:id/keys)和
+ * 市场管理详情页(/admin/marketplace/:id/keys)共用,仅端点与鉴权语境不同,
+ * 由使用方构造注入。list/updateKeys 返回接口信封(卡片读 .data)。
+ */
+export interface KeysApi {
+  list: () => Promise<{ data?: ServiceKeysResp }>
+  updateKeys: (data: UpdateServiceKeysReq) => Promise<{ data?: UpdateServiceKeysResult }>
+  updateConfig: (data: { key_mode: 'single' | 'random' | 'polling'; header_name?: string }) => Promise<unknown>
+  setKeyStatus: (keyID: number, status: 'enabled' | 'disabled') => Promise<unknown>
+  deleteKey: (keyID: number) => Promise<unknown>
+  batch: (action: 'enable_all' | 'delete_disabled') => Promise<unknown>
+}
+
+/**
  * 秘钥管理卡片:单↔多模式与策略切换、池表格(掩码/状态/原因/启禁删)、
- * 添加秘钥(追加/替换)、批量操作。仅自有 HTTP 类服务渲染(由父组件把关)。
- * onModeChanged:模式/池变化后失效服务详情查询(徽章与认证区联动)。
+ * 添加秘钥(追加/替换)、批量操作。渲染条件由父组件把关(服务详情页:自有
+ * HTTP 类服务;市场管理详情:instant HTTP 类条目——一份池对全部安装用户全局轮换)。
+ * onModeChanged:模式/池变化后失效宿主页面的详情查询(徽章与认证区联动)。
  */
 export function ServiceKeysCard({
-  serviceId, authType, onModeChanged,
+  id, api, onModeChanged,
 }: {
-  serviceId: number
-  authType: AuthType
+  id: number
+  api: KeysApi
   onModeChanged: () => void
 }) {
   const { t } = useTranslation()
@@ -56,8 +67,8 @@ export function ServiceKeysCard({
   const [pendingMode, setPendingMode] = useState<'random' | 'polling' | null>(null)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['service-keys', serviceId],
-    queryFn: () => getServiceKeys(serviceId),
+    queryKey: ['service-keys', id],
+    queryFn: () => api.list(),
   })
   const resp = data?.data
   const keys: ServiceKeyItem[] = resp?.keys || []
@@ -66,13 +77,13 @@ export function ServiceKeysCard({
   const disabledKeys = keys.filter((k) => k.status !== 1).length
 
   function invalidate() {
-    queryClient.invalidateQueries({ queryKey: ['service-keys', serviceId] })
+    queryClient.invalidateQueries({ queryKey: ['service-keys', id] })
     onModeChanged()
   }
 
   const modeMutation = useMutation({
     mutationFn: (payload: { key_mode: 'single' | 'random' | 'polling'; header_name?: string }) =>
-      updateServiceKeyConfig(serviceId, payload),
+      api.updateConfig(payload),
     onSuccess: (_res, payload) => {
       toast.success(payload.key_mode === 'single' ? t('services.keys.downgraded') : t('services.keys.modeSwitched'))
       setPendingMode(null)
@@ -82,7 +93,7 @@ export function ServiceKeysCard({
   })
 
   const updateMutation = useMutation({
-    mutationFn: () => updateServiceKeys(serviceId, {
+    mutationFn: () => api.updateKeys({
       mode: addMode,
       values: addValues.split('\n').map((s) => s.trim()).filter(Boolean),
     }),
@@ -97,8 +108,8 @@ export function ServiceKeysCard({
 
   const keyActionMutation = useMutation({
     mutationFn: ({ key, action }: { key: ServiceKeyItem; action: 'enable' | 'disable' | 'delete' }) => {
-      if (action === 'delete') return deleteServiceKey(serviceId, key.id)
-      return setServiceKeyStatus(serviceId, key.id, action === 'enable' ? 'enabled' : 'disabled')
+      if (action === 'delete') return api.deleteKey(key.id)
+      return api.setKeyStatus(key.id, action === 'enable' ? 'enabled' : 'disabled')
     },
     onSuccess: (_d, { action }) => {
       toast.success(action === 'delete' ? t('services.keys.deleted') : t('services.keys.statusUpdated'))
@@ -107,7 +118,7 @@ export function ServiceKeysCard({
   })
 
   const batchMutation = useMutation({
-    mutationFn: (action: 'enable_all' | 'delete_disabled') => batchServiceKeys(serviceId, action),
+    mutationFn: (action: 'enable_all' | 'delete_disabled') => api.batch(action),
     onSuccess: () => {
       setDeleteDisabledConfirm(false)
       toast.success(t('common.success'))
@@ -115,10 +126,10 @@ export function ServiceKeysCard({
     },
   })
 
-  // 单→多:custom 认证需指定注入头——认证配置里已记录(保存自定义认证时随
-  // auth_config 落库)则直接用新设置的切换;否则弹框让用户从现有 config.headers 里填
+  // 单→多:custom 认证需指定注入头——端点响应里已带 header_name(服务侧来自
+  // auth_config 落库、条目侧来自模板反推)则直接切换;否则弹框让用户填写
   function requestUpgrade(mode: 'random' | 'polling') {
-    if (authType === 'custom' && !isMulti) {
+    if (resp?.auth_type === 'custom' && !isMulti) {
       if (resp?.header_name) {
         modeMutation.mutate({ key_mode: mode, header_name: resp.header_name })
         return
@@ -140,6 +151,7 @@ export function ServiceKeysCard({
 
   return (
     <SectionCard
+      defaultOpen={false}
       title={
         <span className="flex items-center gap-2">
           <KeyRound className="h-4 w-4 text-muted-foreground" />
@@ -279,21 +291,34 @@ export function ServiceKeysCard({
             <DialogDescription>{t('services.keys.addDialogDesc')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="flex gap-2">
+            {/* 选项框按文字宽度自适应(与策略切换按钮同规格);? 在框外,hover 展开提示 */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
               {(['append', 'replace'] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setAddMode(m)}
-                  className={`flex-1 rounded-lg border p-2 text-left text-sm transition-all ${
-                    addMode === m ? 'border-primary bg-primary/5' : 'hover:border-primary/30'
-                  }`}
-                >
-                  <p className="font-medium">{m === 'append' ? t('services.keys.updateAppend') : t('services.keys.updateReplace')}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {m === 'append' ? t('services.keys.updateAppendHint') : t('services.keys.updateReplaceHint')}
-                  </p>
-                </button>
+                <div key={m} className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setAddMode(m)}
+                    className={`rounded-lg border px-2.5 py-1 text-sm font-medium transition-all ${
+                      addMode === m ? 'border-primary bg-primary/5' : 'text-muted-foreground hover:border-primary/30'
+                    }`}
+                  >
+                    {m === 'append' ? t('services.keys.updateAppend') : t('services.keys.updateReplace')}
+                  </button>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex h-4 w-4 shrink-0 cursor-help items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] leading-none text-muted-foreground">
+                          ?
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="max-w-xs text-xs">
+                          {m === 'append' ? t('services.keys.updateAppendHint') : t('services.keys.updateReplaceHint')}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
               ))}
             </div>
             <div className="space-y-2">
@@ -301,7 +326,7 @@ export function ServiceKeysCard({
               <Textarea rows={6} placeholder={t('services.keys.textareaPlaceholder')} value={addValues} onChange={(e) => setAddValues(e.target.value)} />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="mt-4">
             <Button variant="outline" onClick={() => setAddOpen(false)}>{t('common.cancel')}</Button>
             <Button
               disabled={updateMutation.isPending || !addValues.trim()}

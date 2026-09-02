@@ -17,45 +17,6 @@ import (
 // 秘钥池仅支持 HTTP 类传输(streamable-http/sse);单秘钥服务保持 config.headers
 // 现状不动,多秘钥是显式开启的新模式(无旧数据迁移)。
 
-// degradeMultiKeyConfig 市场克隆的多秘钥降级(V1):取首选启用秘钥烘回 config.headers
-// 的认证头,返回单秘钥形态的 config JSON。池内无启用秘钥时报错(应先启用或更换)。
-func degradeMultiKeyConfig(svc *model.McpService) (string, error) {
-	cfg := svc.ParseAuthKeyConfig()
-	if cfg.HeaderName == "" {
-		return "", fmt.Errorf("源服务多秘钥配置缺少注入头,无法克隆")
-	}
-	keys, err := model.ListKeysByService(svc.ID)
-	if err != nil {
-		return "", err
-	}
-	pick := ""
-	for _, k := range keys {
-		if k.Status == common.StatusEnabled {
-			pick = k.Value
-			break
-		}
-	}
-	if pick == "" {
-		return "", fmt.Errorf("源服务秘钥池内没有启用秘钥,无法克隆")
-	}
-	var config map[string]interface{}
-	_ = json.Unmarshal([]byte(svc.Config), &config)
-	if config == nil {
-		config = map[string]interface{}{}
-	}
-	headers, ok := config["headers"].(map[string]interface{})
-	if !ok {
-		headers = map[string]interface{}{}
-	}
-	headers[cfg.HeaderName] = applyBearerPrefix(svc, pick)
-	config["headers"] = headers
-	b, err := json.Marshal(config)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
-}
-
 // applyCreateMultiKey 创建时的多秘钥装配:校验传输/认证/秘钥,推导目标头写入
 // AuthConfig,并防御性从 config.headers 剥离同名认证头(值只存池)。
 func (s *McpServiceService) applyCreateMultiKey(svc *model.McpService, req *dto.CreateServiceReq) error {

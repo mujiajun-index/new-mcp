@@ -192,6 +192,11 @@ type MarketplaceDetail struct {
 	// 条目级定价(工具/资源/提示;仅 enabled 行)。admin 详情与公开详情共用,
 	// 供管理端编辑回显与用户侧条目价格展示。
 	EntryPrices []MarketplaceEntryPrice `json:"entry_prices"`
+	// 条目级多秘钥(random|polling;空=单秘钥)。仅 admin 详情(GetItemByID)填充,
+	// 公开浏览(GetPublished)不携带;管理页徽章与秘钥卡片可见性判断用。
+	KeyMode    string `json:"key_mode,omitempty"`
+	KeyCount   int    `json:"key_count,omitempty"`
+	KeyEnabled int    `json:"key_enabled,omitempty"`
 }
 
 // --- User: Install from marketplace ---

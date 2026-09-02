@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -25,6 +26,10 @@ type MarketplaceItem struct {
 	// 非 stdio 条目读写两侧均忽略该字段。
 	IsolatedProcess      bool           `json:"isolated_process"`
 	ConfigTemplate       string         `json:"config_template" gorm:"type:varchar(4096);default:'{}'"`
+	// 条目级多秘钥配置段({"key_mode","header_name","bearer"}),与 mcp_services.AuthConfig
+	// 同语义;空串=单秘钥(模板 headers 存凭证)。type:text:本表 varchar 预算已贴近
+	// MySQL 行宽上限,新字符串大列一律 TEXT(TEXT 不可带 default)。
+	AuthConfig           string         `json:"auth_config" gorm:"type:text"`
 	AuthInstructions     string         `json:"auth_instructions" gorm:"type:text"`
 	RepoURL              string         `json:"repo_url" gorm:"size:1024"`
 	InstallGuide         string         `json:"install_guide" gorm:"type:text"`
@@ -58,6 +63,30 @@ type MarketplaceItem struct {
 }
 
 func (MarketplaceItem) TableName() string { return "marketplace_items" }
+
+// ItemAuthKeyConfig 是条目 AuthConfig 里的多秘钥配置段。比服务版 AuthKeyConfig
+// 多一个 Bearer 位:条目没有 AuthType,值补/剥 "Bearer " 前缀的依据显式落库。
+type ItemAuthKeyConfig struct {
+	KeyMode    string `json:"key_mode,omitempty"`    // ""=单秘钥;random | polling
+	HeaderName string `json:"header_name,omitempty"` // 多秘钥注入的目标头名
+	Bearer     bool   `json:"bearer,omitempty"`      // true=注入值加 "Bearer " 前缀
+}
+
+// ParseAuthKeyConfig 解析条目 AuthConfig 的多秘钥配置;空/坏 JSON 返回零值。
+func (i *MarketplaceItem) ParseAuthKeyConfig() ItemAuthKeyConfig {
+	var c ItemAuthKeyConfig
+	if i.AuthConfig == "" {
+		return c
+	}
+	_ = json.Unmarshal([]byte(i.AuthConfig), &c)
+	return c
+}
+
+// IsMultiKey 报告条目是否处于多秘钥模式(仅 HTTP 类传输由调用方保证)。
+func (i *MarketplaceItem) IsMultiKey() bool {
+	m := i.ParseAuthKeyConfig().KeyMode
+	return m == common.KeyModeRandom || m == common.KeyModePolling
+}
 
 type MarketplaceReview struct {
 	ID            int64          `json:"id" gorm:"primaryKey;autoIncrement"`

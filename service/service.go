@@ -218,6 +218,12 @@ func (s *McpServiceService) Update(userID, serviceID int64, req *dto.UpdateServi
 		svc.Description = *req.Description
 	}
 	if req.Config != nil {
+		// 详情回显的 headers/env 凭证值是首尾掩码(toDetail 已掩码):未改动的掩码
+		// 原样传回时先回填库内明文再落库(与市场管理详情保存同策);输入了新值的项
+		// (≠库内值的掩码)不受影响。stored 取自更新前的 svc.Config。
+		stored := map[string]interface{}{}
+		_ = json.Unmarshal([]byte(svc.Config), &stored)
+		mergeMaskedCredentials(req.Config, stored)
 		configJSON, _ := json.Marshal(req.Config)
 		svc.Config = string(configJSON)
 	}
@@ -1270,7 +1276,9 @@ func (s *McpServiceService) toDetail(svc *model.McpService) *dto.ServiceDetail {
 		Description:     svc.Description,
 		TransportType:   svc.TransportType,
 		Source:          svc.Source,
-		Config:          config,
+		// 凭证掩码(与市场管理详情同策):headers/env 的值只出首尾掩码,明文不出服务端;
+		// 编辑保存时未改动的掩码值由 Update 经 mergeMaskedCredentials 回填还原。
+		Config:          maskConfigCredentials(config),
 		AuthType:        svc.AuthType,
 		HealthStatus:    svc.HealthStatus,
 		LastHealthCheck: lastHealthCheck,

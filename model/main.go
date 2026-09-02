@@ -80,6 +80,7 @@ func migrateDB() error {
 		&McpCallLog{},
 		&McpServiceKey{},
 		&MarketplaceItem{},
+		&MarketplaceItemKey{},
 		&MarketplaceGroup{},
 		&MarketplaceItemGroup{},
 		&MarketplaceTag{},

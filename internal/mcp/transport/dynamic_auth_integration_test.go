@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -10,6 +11,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// errFakeNoKeys 池空哨兵,代替真实选择器的落库错误路径。
+var errFakeNoKeys = errors.New("no enabled secret keys")
 
 // e2eSelector 模拟 bridge.KeySelector:轮询供值 + 401/403 熔断(内存态)。
 type e2eSelector struct {

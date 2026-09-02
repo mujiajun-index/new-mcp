@@ -110,6 +110,94 @@ func AdminRefreshMarketplaceItem(c *gin.Context) {
 	common.Success(c, resp)
 }
 
+// --- 条目级多秘钥管理(/admin/marketplace/:id/keys) ---
+// 一份池对全部安装用户全局轮换;交互与 DTO 同服务级(/services/:id/keys)。
+
+// AdminGetMarketplaceKeys 条目秘钥池视图(掩码值 + 模式 + 统计)。
+func AdminGetMarketplaceKeys(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	resp, err := marketplaceService.ListKeys(id)
+	if err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, resp)
+}
+
+// AdminUpdateMarketplaceKeys 更新条目秘钥:追加(去重保状态)/ 替换全部。
+func AdminUpdateMarketplaceKeys(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	var req dto.UpdateServiceKeysReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	resp, err := marketplaceService.UpdateKeys(id, &req)
+	if err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, resp)
+}
+
+// AdminSetMarketplaceKeyStatus 启用/禁用单把条目秘钥。
+func AdminSetMarketplaceKeyStatus(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	keyID, _ := strconv.ParseInt(c.Param("keyID"), 10, 64)
+	var req dto.SetServiceKeyStatusReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	if err := marketplaceService.SetKeyStatus(id, keyID, &req); err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, nil)
+}
+
+// AdminDeleteMarketplaceKey 删除单把条目秘钥。
+func AdminDeleteMarketplaceKey(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	keyID, _ := strconv.ParseInt(c.Param("keyID"), 10, 64)
+	if err := marketplaceService.DeleteKey(id, keyID); err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, nil)
+}
+
+// AdminBatchMarketplaceKeys 批量操作:全部启用 / 删除已禁用。
+func AdminBatchMarketplaceKeys(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	var req dto.BatchServiceKeysReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	if err := marketplaceService.BatchKeys(id, req.Action); err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, nil)
+}
+
+// AdminUpdateMarketplaceKeyConfig 条目模式切换:单↔多、随机↔轮询。
+func AdminUpdateMarketplaceKeyConfig(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	var req dto.UpdateServiceKeyConfigReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	resp, err := marketplaceService.UpdateKeyConfig(id, &req)
+	if err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, resp)
+}
+
 // AdminBatchUpdateMarketplacePricing 批量设置已上架市场服务价格(§5.5)。
 func AdminBatchUpdateMarketplacePricing(c *gin.Context) {
 	var req dto.BatchPricingReq

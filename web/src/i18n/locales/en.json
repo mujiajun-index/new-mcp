@@ -343,7 +343,6 @@
     "deletePrompt": "Delete this service?",
     "serverInfo": "Server Info",
     "basicConfig": "Basic Config",
-    "connectionConfig": "Connection Config",
     "processInfo": "Process",
     "processRunning": "Running",
     "processStopped": "Not running",

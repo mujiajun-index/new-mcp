@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useRouter } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
-import { getService, updateService, deleteService, testService, refreshTools, getServiceResources, getServicePrompts, getServiceProcessStat } from '../api'
+import { getService, updateService, deleteService, testService, refreshTools, getServiceResources, getServicePrompts, getServiceProcessStat, serviceKeysApi } from '../api'
 import { StdioProcessControl } from './stdio-process-control'
-import { ServiceKeysCard } from './service-keys-card'
+import { ServiceKeysCard } from '@/components/service-keys-card'
 import { ToolTestDialog } from './tool-test-dialog'
 import { ResourceTestDialog, type ResourceTarget } from './resource-test-dialog'
 import { PromptTestDialog } from './prompt-test-dialog'
@@ -662,23 +662,13 @@ export function ServiceDetailPage() {
         </div>
       )}
 
-      {/* 秘钥管理(多秘钥池):Basic config 与 Raw config 之间 */}
+      {/* 秘钥管理(多秘钥池) */}
       {!editing && keysCardVisible && (
         <ServiceKeysCard
-          serviceId={serviceId}
-          authType={service.auth_type}
+          id={serviceId}
+          api={serviceKeysApi(serviceId)}
           onModeChanged={() => queryClient.invalidateQueries({ queryKey: ['service', id] })}
         />
-      )}
-
-      {/* Raw config (read-only) */}
-      {!editing && service.config && Object.keys(service.config).length > 0 && (
-        <div className="rounded-xl border bg-card p-5">
-          <h2 className="mb-3 text-sm font-semibold">{t('services.connectionConfig')}</h2>
-          <pre className="rounded-lg bg-muted/50 p-3 text-xs overflow-auto">
-            {JSON.stringify(service.config, null, 2)}
-          </pre>
-        </div>
       )}
 
       {/* Process stats (stdio only): 整棵进程树的内存/CPU/运行时长,5s 轮询 */}

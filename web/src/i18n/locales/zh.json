@@ -343,7 +343,6 @@
     "deletePrompt": "确定删除此服务？",
     "serverInfo": "服务器信息",
     "basicConfig": "基本配置",
-    "connectionConfig": "连接配置",
     "processInfo": "进程信息",
     "processRunning": "运行中",
     "processStopped": "未运行",

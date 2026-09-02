@@ -592,6 +592,18 @@ passive-ws (被动连接):
 > `header_name` 缺省按 auth_type 推导(api_key→`X-API-Key`、bearer→`Authorization`,
 > custom 必填);多秘钥模式下不可更换注入头。切换即失效运行时选择器并踢会话重建。
 
+### 市场条目级秘钥池(admin)
+
+`/admin/marketplace/:id/keys*` 与服务级六端点同构(路径前缀换成
+`/admin/marketplace/:id/keys`,AdminAuth 把关,请求/响应 DTO 完全一致)。差异:
+
+- 仅 `category=instant` 的 sse/streamable-http 条目可用;
+- 一份池对**全部安装该条目的用户**全局轮换,坏 key 一次禁光;调用日志 `key_index`
+  与服务级同口径;
+- 单→多时收编的是**平台上游模板**(`config_template`)里的认证头,多→单写回模板;
+  `header_name` 缺省按模板 headers 反推(`Authorization`/`X-API-Key`/首个自定义头);
+- 池/模式变更与删除条目会踢掉该条目全部引用会话。
+
 ---
 
 ## 5. MCP 分组接口

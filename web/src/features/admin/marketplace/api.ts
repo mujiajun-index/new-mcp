@@ -1,6 +1,8 @@
 import { api } from '@/lib/api'
+import type { KeysApi } from '@/components/service-keys-card'
 import type {
   BatchPricingReq, CloneMarketplaceReq, MarketplaceEntryPrice, ProcessControlAction,
+  UpdateServiceKeysReq,
 } from '@/types'
 
 // 管理员市场项列表(全量,含未发布)
@@ -82,4 +84,55 @@ export async function adminCloneMarketplace(data: CloneMarketplaceReq) {
 export async function adminListCloneSources() {
   const res = await api.get('/admin/marketplace/clone-sources')
   return res.data
+}
+
+// --- 条目级多秘钥管理(/admin/marketplace/:id/keys) ---
+// 一份池对全部安装用户全局轮换;DTO 与服务级(/services/:id/keys)一致。
+
+// 条目秘钥池视图(掩码值 + 模式 + 统计)
+export async function adminGetMarketplaceKeys(id: number) {
+  const res = await api.get(`/admin/marketplace/${id}/keys`)
+  return res.data
+}
+
+// 更新条目秘钥:追加(去重保状态)/ 替换全部
+export async function adminUpdateMarketplaceKeys(id: number, data: UpdateServiceKeysReq) {
+  const res = await api.put(`/admin/marketplace/${id}/keys`, data)
+  return res.data
+}
+
+// 条目模式切换:单↔多、随机↔轮询
+export async function adminUpdateMarketplaceKeyConfig(id: number, data: { key_mode: 'single' | 'random' | 'polling'; header_name?: string }) {
+  const res = await api.put(`/admin/marketplace/${id}/keys/config`, data)
+  return res.data
+}
+
+// 启用/禁用单把条目秘钥
+export async function adminSetMarketplaceKeyStatus(id: number, keyID: number, status: 'enabled' | 'disabled') {
+  const res = await api.put(`/admin/marketplace/${id}/keys/${keyID}`, { status })
+  return res.data
+}
+
+// 删除单把条目秘钥
+export async function adminDeleteMarketplaceKey(id: number, keyID: number) {
+  const res = await api.delete(`/admin/marketplace/${id}/keys/${keyID}`)
+  return res.data
+}
+
+// 批量操作:全部启用 / 删除已禁用
+export async function adminBatchMarketplaceKeys(id: number, action: 'enable_all' | 'delete_disabled') {
+  const res = await api.post(`/admin/marketplace/${id}/keys/batch`, { action })
+  return res.data
+}
+
+// marketplaceKeysApi 构造通用秘钥管理卡片(ServiceKeysCard)的条目级端点适配。
+export function marketplaceKeysApi(id: number): KeysApi {
+  return {
+    list: () => adminGetMarketplaceKeys(id),
+    updateKeys: (data) => adminUpdateMarketplaceKeys(id, data),
+    updateConfig: (data) => adminUpdateMarketplaceKeyConfig(id, data),
+    setKeyStatus: (keyID, status) => adminSetMarketplaceKeyStatus(id, keyID, status),
+    deleteKey: (keyID) => adminDeleteMarketplaceKey(id, keyID),
+    batch: (action) => adminBatchMarketplaceKeys(id, action),
+  }
 }

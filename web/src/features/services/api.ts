@@ -1,4 +1,5 @@
 import { api } from '@/lib/api'
+import type { KeysApi } from '@/components/service-keys-card'
 import type {
   ServiceListParams,
   CreateServiceReq, UpdateServiceReq, PrepareStdioReq, ProcessControlAction,
@@ -143,4 +144,16 @@ export async function deleteServiceKey(id: number, keyID: number) {
 export async function batchServiceKeys(id: number, action: 'enable_all' | 'delete_disabled') {
   const res = await api.post(`/services/${id}/keys/batch`, { action })
   return res.data
+}
+
+// serviceKeysApi 构造通用秘钥管理卡片(ServiceKeysCard)的服务级端点适配。
+export function serviceKeysApi(id: number): KeysApi {
+  return {
+    list: () => getServiceKeys(id),
+    updateKeys: (data) => updateServiceKeys(id, data),
+    updateConfig: (data) => updateServiceKeyConfig(id, data),
+    setKeyStatus: (keyID, status) => setServiceKeyStatus(id, keyID, status),
+    deleteKey: (keyID) => deleteServiceKey(id, keyID),
+    batch: (action) => batchServiceKeys(id, action),
+  }
 }

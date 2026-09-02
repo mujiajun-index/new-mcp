@@ -614,6 +614,11 @@ export interface MarketplaceDetail {
   price_per_call: number
   // 条目级定价(工具/资源/提示);无条目价时按缺省:工具回退服务价,资源/提示免费
   entry_prices?: MarketplaceEntryPrice[]
+  // 条目级多秘钥(random|polling;缺省=单秘钥)。仅 admin 详情接口回传(管理页
+  // 徽章与秘钥卡片可见性判断用),用户侧公开详情不携带。
+  key_mode?: string
+  key_count?: number
+  key_enabled?: number
 }
 
 // 条目级定价(§5.2 条目维度):工具/资源/提示单独设价。

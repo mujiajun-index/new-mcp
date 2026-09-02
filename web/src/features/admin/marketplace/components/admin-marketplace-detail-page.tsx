@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useRouter } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { adminGetMarketplace, adminUpdateMarketplace, adminRefreshMarketplace, adminGetMarketplaceProcess, adminControlMarketplaceProcess, adminSetEntryPrices } from '../api'
+import { adminGetMarketplace, adminUpdateMarketplace, adminRefreshMarketplace, adminGetMarketplaceProcess, adminControlMarketplaceProcess, adminSetEntryPrices, marketplaceKeysApi } from '../api'
 import { EntryPriceControl, EntryPricingBar, useEntryPricingDraft } from './entry-pricing'
+import { ServiceKeysCard } from '@/components/service-keys-card'
 import { adminListMarketplaceGroups, adminListMarketplaceTags } from '@/features/admin/marketplace-categories/api'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import { priceLabel } from '@/lib/billing'
@@ -119,6 +120,14 @@ export function AdminMarketplaceDetailPage() {
   // 上游握手拿到的真实服务版本(名称下方标识行展示;名称行跟手填的上架版本)
   const serverName = typeof item.server_info?.name === 'string' ? item.server_info.name : ''
   const serverVersion = typeof item.server_info?.version === 'string' ? item.server_info.version : ''
+  // 条目级多秘钥(一份池对全部安装用户全局轮换);秘钥卡片与服务详情页同款,
+  // 渲染条件对齐:instant + HTTP 类 + 已有认证(多秘钥态模板无认证头,以 key_mode 判定)
+  const isMultiItem = item.key_mode === 'random' || item.key_mode === 'polling'
+  const itemHeaders = ((item.config_template as Record<string, unknown> | undefined)?.headers as Record<string, string>) || {}
+  const keysCardVisible =
+    item.category === 'instant' &&
+    (item.transport_type === 'sse' || item.transport_type === 'streamable-http') &&
+    (isMultiItem || Object.keys(itemHeaders).length > 0)
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
@@ -193,6 +202,14 @@ export function AdminMarketplaceDetailPage() {
             return <Badge key={tag} variant="outline" className="font-normal"
               style={color ? { color, backgroundColor: `${color}1A`, borderColor: `${color}55` } : undefined}>{tag}</Badge>
           })}
+          {isMultiItem && (
+            <span className="inline-flex items-center rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+              {t('services.keys.multiKeyBadge', {
+                mode: item.key_mode === 'random' ? t('services.keys.modeRandom') : t('services.keys.modePolling'),
+                count: item.key_count ?? 0,
+              })}
+            </span>
+          )}
           <span className="flex items-center gap-1 text-muted-foreground">
             <Download className="h-3 w-3" />{item.install_count}
           </span>
@@ -208,6 +225,15 @@ export function AdminMarketplaceDetailPage() {
 
       {/* 平台上游配置编辑(仅平台托管项):折叠区,展开后可改 URL/鉴权等,与服务详情同款 */}
       {item.category === 'instant' && <UpstreamConfigCard item={item} queryId={id} />}
+
+      {/* 条目级秘钥管理(多秘钥池):一份池对全部安装用户全局轮换,交互同服务详情页 */}
+      {keysCardVisible && (
+        <ServiceKeysCard
+          id={Number(id)}
+          api={marketplaceKeysApi(Number(id))}
+          onModeChanged={() => queryClient.invalidateQueries({ queryKey: ['admin-marketplace-detail', id] })}
+        />
+      )}
 
       {/* stdio 平台托管项的进程视图与启停:共享=平台唯一进程;独占=按安装用户逐行 */}
       {item.category === 'instant' && item.transport_type === 'stdio' && (
@@ -497,6 +523,8 @@ function UpstreamConfigCard({ item, queryId }: { item: MarketplaceDetail; queryI
 
   const cfg = (item.config_template || {}) as Record<string, unknown>
   const isStdio = item.transport_type === 'stdio'
+  // 条目级多秘钥:认证头由秘钥池注入(模板 headers 不含认证头),认证区只读并指向秘钥卡片
+  const isMulti = item.key_mode === 'random' || item.key_mode === 'polling'
 
   const updateMutation = useMutation({
     mutationFn: (body: Record<string, unknown>) => adminUpdateMarketplace(item.id, body),
@@ -543,16 +571,19 @@ function UpstreamConfigCard({ item, queryId }: { item: MarketplaceDetail; queryI
   }, [item, editing])
 
   // 与服务详情 buildConfig 同款:未填新凭据时保留原 headers,切回 none 才清空;
-  // stdio 的命令/参数不可编辑,沿用原配置仅改环境变量
+  // 多秘钥下认证头由秘钥池提供,不重建;stdio 的命令/参数不可编辑,沿用原配置仅改环境变量
   function buildConfig(): Record<string, unknown> {
     const originalHeaders = (cfg.headers as Record<string, string>) || {}
     const hasNewAuth =
-      (form.auth_type === 'api_key' && !!form.api_key) ||
+      !isMulti &&
+      ((form.auth_type === 'api_key' && !!form.api_key) ||
       (form.auth_type === 'bearer' && !!form.bearer_token) ||
-      (form.auth_type === 'custom' && !!form.custom_header_key)
+      (form.auth_type === 'custom' && !!form.custom_header_key))
 
     let headers: Record<string, string>
-    if (form.auth_type === 'none') {
+    if (isMulti) {
+      headers = { ...originalHeaders }
+    } else if (form.auth_type === 'none') {
       headers = {}
     } else if (hasNewAuth) {
       headers = {}
@@ -642,6 +673,10 @@ function UpstreamConfigCard({ item, queryId }: { item: MarketplaceDetail; queryI
             <div className="space-y-1.5 sm:col-span-2">
               <Label className="text-xs text-muted-foreground">{t('services.authMethod')}</Label>
               {editing ? (
+                isMulti ? (
+                  /* 多秘钥:凭据由秘钥池提供,认证区锁定(改认证请先切回单秘钥) */
+                  <p className="pt-1 text-xs text-muted-foreground">{t('services.keys.manageInCardBelow')}</p>
+                ) : (
                 <div className="flex flex-wrap gap-2 pt-1">
                   {authOptions.map((opt) => (
                     <button
@@ -656,26 +691,31 @@ function UpstreamConfigCard({ item, queryId }: { item: MarketplaceDetail; queryI
                     </button>
                   ))}
                 </div>
+                )
               ) : (
-                <p className="text-sm">{authOptions.find((o) => o.value === form.auth_type)?.label || t('services.authNone')}</p>
+                <p className="text-sm">
+                  {isMulti
+                    ? t('services.keys.providedByPool', { count: item.key_count ?? 0 })
+                    : (authOptions.find((o) => o.value === form.auth_type)?.label || t('services.authNone'))}
+                </p>
               )}
             </div>
 
-            {editing && form.auth_type === 'api_key' && (
+            {editing && !isMulti && form.auth_type === 'api_key' && (
               <div className="space-y-1.5 sm:col-span-2">
                 <Label className="text-xs text-muted-foreground">API Key</Label>
                 <Input value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })}
                   placeholder={t('services.placeholderKeepUnchanged')} autoComplete="off" />
               </div>
             )}
-            {editing && form.auth_type === 'bearer' && (
+            {editing && !isMulti && form.auth_type === 'bearer' && (
               <div className="space-y-1.5 sm:col-span-2">
                 <Label className="text-xs text-muted-foreground">Token</Label>
                 <Input value={form.bearer_token} onChange={(e) => setForm({ ...form, bearer_token: e.target.value })}
                   placeholder={t('services.placeholderKeepUnchanged')} autoComplete="off" />
               </div>
             )}
-            {editing && form.auth_type === 'custom' && (
+            {editing && !isMulti && form.auth_type === 'custom' && (
               <div className="space-y-1.5 sm:col-span-2">
                 <Label className="text-xs text-muted-foreground">{t('services.customHeaders')}</Label>
                 <div className="flex gap-2">

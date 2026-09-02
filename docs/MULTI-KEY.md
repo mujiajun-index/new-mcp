@@ -2,6 +2,7 @@
 
 > 2026-09 V1。仅 `streamable-http` / `SSE` 两类 HTTP 传输;stdio 不支持(env 在进程
 > spawn 时固定,无法按请求轮换)。单秘钥服务保持 `config.headers` 现状,零改动、零兼容代码。
+> 市场条目级池(一份池全局轮换)已于 V1.1 落地(§6)。
 
 ## 1. 背景与范围
 
@@ -16,7 +17,7 @@
 | 管理 | 池列表(掩码)、单把启/禁/删、批量(全部启用/删除已禁用)、模式与策略切换 |
 | 熔断 | 上游 401/403 自动禁用该 key(落库 + 系统日志),会话不断、下一请求自动换 key |
 | 归因 | `mcp_call_logs.key_index` 记录每次调用实际使用的池内序号 |
-| 边界 | 市场克隆多秘钥源服务降级为单秘钥模板;条目级池留二期 |
+| 边界 | 服务级池(自有服务)与条目级池(市场 instant HTTP 条目,一份池全局轮换)并存;克隆多秘钥源服务整拷为条目池 |
 
 ## 2. 数据模型
 
@@ -66,9 +67,12 @@ gateway CallTool ──> SDKAdapter.CallWithMeta
                 响应 401/403 → OnAuthFailure(本次实际用的 index)
 ```
 
-- **KeySelector**(`internal/mcp/bridge/key_selector.go`):每服务一个,进程级注册表
+- **KeySelector**(`internal/mcp/bridge/key_selector.go`):每属主一个,进程级注册表
   `bridge.KeySelectors` 惰性构建(读池快照进内存),与会话生命周期解耦——池编辑/
-  模式切换后 `Invalidate` + 踢会话,下次建连按新池重建;轮询游标为内存态。
+  模式切换后 `Invalidate` / `InvalidateItem` + 踢会话,下次建连按新池重建;轮询游标为内存态。
+  **市场引用行分流**:`Get(svc)` 遇 `source=marketplace` 的行改按条目 ID 构建选择器
+  (一份池对全部安装用户全局共享,坏 key 一次禁光;session_pool 两个调用点零改动),
+  熔断落库与日志文案按属主类型分流(服务池 / 条目池)。
 - **归因精度**:`CallWithMeta`(transport 包 `MetaCaller` 接口)在发起 `tools/call` 前
   Pick 一次放进 ctx,同一次调用的所有 HTTP 请求(POST + GET 流)全程同一把 key;
   资源/提示有同款 `ReadResourceWithMeta` / `GetPromptWithMeta`(`ResourceMetaCaller` /
@@ -100,20 +104,51 @@ gateway CallTool ──> SDKAdapter.CallWithMeta
 
 创建入口:`POST /api/v1/services` 带 `key_mode` + `auth_keys[]` 一步建池。
 
+条目级池的管理端点同构(AdminAuth 把关,属主为市场条目;见 `docs/API.md` §4):
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/admin/marketplace/:id/keys` | 条目池列表(掩码值)+ key_mode + header_name + 启用数 |
+| PUT | `/api/v1/admin/marketplace/:id/keys` | `{mode: append\|replace, values:[]}` 批量更新 |
+| PUT | `/api/v1/admin/marketplace/:id/keys/:keyID` | 启/禁单把 |
+| DELETE | `/api/v1/admin/marketplace/:id/keys/:keyID` | 删除单把 |
+| POST | `/api/v1/admin/marketplace/:id/keys/batch` | `{action: enable_all\|delete_disabled}` |
+| PUT | `/api/v1/admin/marketplace/:id/keys/config` | 模式/策略切换;单→多收编模板认证头为首把,多→单首选启用 key 写回模板并清池 |
+
+仅 `category=instant` 的 sse/streamable-http 条目可管理;DTO 与服务级完全复用(auth_type
+由服务端按 header_name/模板 headers 反推)。池/模式变更后 `InvalidateItem` +
+`SessionPool.RemoveByMarketplaceItem`(踢该条目全部引用会话,按需重连)。
+
 ## 5. 前端
 
 - **创建页**第 3 步选秘钥模式(单 / 多·随机 / 多·轮询,stdio 隐藏)+ 批量粘贴;
   第 4 步逐把循环调既有 `testConnection` 展示每把通过/失败。
 - **详情页**「秘钥管理」卡片(完整管理能力):池表格、
   添加对话框(追加/替换单选,替换二次确认)、批量操作、全部禁用红色横幅、自动禁用
-  原因悬停;多秘钥模式下认证区锁定并指向该卡片。
+  原因悬停;多秘钥模式下认证区锁定并指向该卡片。卡片为通用组件
+  (`web/src/components/service-keys-card.tsx`,注入 `KeysApi` 端点适配):服务详情页与
+  **市场管理详情页**(instant HTTP 条目,一份池全局轮换)复用同一交互;市场页上游
+  配置卡在多秘钥态同样锁定认证区,概览头部加同款多秘钥徽章。
 - **列表/详情**「多秘钥·随机/轮询」琥珀徽章;**日志页** `#N` 秘钥索引徽章。
+- **凭证掩码**(与市场管理详情同策):服务详情响应的 `config.headers/env` 凭证值只出
+  首尾掩码(`maskConfigCredentials`),明文不出服务端;编辑保存时未改动的掩码值经
+  `mergeMaskedCredentials` 回填还原,改动过的按新值入库。原「连接配置」原始 JSON
+  转储卡已移除。
 
-## 6. 市场边界
+## 6. 市场边界:条目级池(V1.1 已落地)
 
-`CloneFromService` 遇多秘钥源服务**降级**为单秘钥模板(取首选启用 key 烘进
-`config_template`)+ 系统日志提示;安装用户各自改自己的 key 不现实,条目级共享池
-(`marketplace_item_keys`,一份池全局轮换)留二期。
+市场条目有自己的秘钥池(`marketplace_item_keys`,与 `mcp_service_keys` 同构,属主为
+条目):**一份池对全部安装用户全局轮换**,坏 key 一次禁光,`key_index` 归因与服务级
+同一口径。选择器按条目 ID 构建(`Get(svc)` 对市场引用行自动分流),挂上后网关各调用
+路径的轮换、熔断、归因零改动生效。
+
+- **克隆上架**:`CloneFromService` 遇多秘钥源服务**整拷**为条目池——模板 headers 剥掉
+  认证头(值只存池),`{key_mode, header_name, bearer}` 写入 `marketplace_items.auth_config`,
+  池整拷(状态重置为启用)+ 系统日志;源池为空时拒绝克隆。
+- **存量单秘钥条目**:管理详情页秘钥卡片里单→多,模板认证头收编为首把 key(同服务级
+  交互);多→单首选启用 key 写回模板。
+- 池编辑/模式切换/删条目:`InvalidateItem` + `RemoveByMarketplaceItem` 踢该条目全部
+  引用会话;删条目同事务硬删池行(注册表不残留明文快照)。
 
 ## 7. 性能分析
 
@@ -158,18 +193,21 @@ key)会残留注册表——内存泄漏 + 明文滞留。已在 `service.Delete
 
 ## 8. 测试与验证
 
-- `internal/mcp/transport/dynamic_auth_test.go`:POST 轮换 / GET 沿用 / ctx 优先 /
-  动态覆盖静态头 / 401、403 上报熔断。
 - `internal/mcp/transport/dynamic_auth_integration_test.go`:真实 go-sdk 握手端到端——
-  坏 key initialize 401 熔断 → 换 key 建连成功 → `CallWithMeta` 归因 `KeyIndex=2`。
+  坏 key initialize 401 熔断 → 换 key 建连成功 → `CallWithMeta` 归因 `KeyIndex=2`,
+  附带资源/提示读取的 WithMeta 归因断言。
 - `internal/mcp/bridge/key_selector_test.go`:轮询跳禁用/回绕、随机跳禁用、空池报错、
-  Bearer 前缀。
+  Bearer 前缀、条目属主(kind=item)池行为。
+- `service/marketplace_keys_test.go`:条目池升/降级(收编写回、bearer 位、模板剥头/
+  写回)、守卫(无认证头/换头/source/stdio)、追加去重/替换重排/批量、克隆整拷
+  (含空池拒绝、单秘钥源不变)。
+- `service/service_config_mask_test.go`:详情响应凭证掩码(url 明文、headers 掩码、
+  Bearer 方案保留)、保存回填(未改动还原明文、改动存新值)。
 - `go build ./...` / `go vet ./...` / `go test ./...`、`npx tsc --noEmit`、
   `npm run build` 全绿(本机缺 gcc,`-race` 不可用)。
 
 ## 9. 二期边界(未做)
 
-- 市场条目级池 `marketplace_item_keys`(一份池全局轮换、坏 key 一次禁光)。
 - stdio env 多秘钥(重启进程轮换)。
 - 结果内容级熔断规则(insufficient quota 等文本)。
 - 日志按 `key_index` 筛选聚合(每把 key 的调用量/成功率统计)。

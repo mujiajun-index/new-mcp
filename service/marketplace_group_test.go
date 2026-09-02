@@ -21,7 +21,7 @@ func setupMarketplaceGroupTest(t *testing.T) {
 	}
 	model.DB = db
 	if err := db.AutoMigrate(&model.Option{}, &model.MarketplaceItem{}, &model.MarketplaceGroup{},
-		&model.MarketplaceItemGroup{}, &model.McpToolPrice{}); err != nil {
+		&model.MarketplaceItemGroup{}, &model.MarketplaceItemKey{}, &model.McpToolPrice{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	model.InitOptionMap()

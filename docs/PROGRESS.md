@@ -538,3 +538,16 @@ COMMERCIALIZATION §6.6 失败边界表(新增"工具层失败 isError"行,明�
 无需 Redis);
 DATABASE.md(2.18 新表 + key_index 列 + ER/索引)、API.md(§4 六个 keys 端点 +
 创建参数)、ARCHITECTURE.md(4.12 KeySelector)。
+
+### 14.4 条目级池 + 凭证掩码(V1.1,2026-09-02)✅(build/vet/test + tsc/build 全绿)
+
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| 数据模型 | ✅ | 新表 `marketplace_item_keys`(与 mcp_service_keys 同构,属主=条目);`marketplace_items.auth_config`(TEXT)存 `{key_mode, header_name, bearer}`(条目无 AuthType,bearer 位显式落库) |
+| 运行时 | ✅ | `KeySelectors.Get(svc)` 对市场引用行(source=marketplace)自动分流按条目 ID 构建选择器——一份池对全部安装用户全局轮换,坏 key 一次禁光;熔断落库/日志按属主分流;session_pool 调用点零改动 |
+| 管理 API | ✅ | `/admin/marketplace/:id/keys*` 六端点同构(仅 instant HTTP 条目);单→多收编模板认证头,多→单写回模板;变更 InvalidateItem+RemoveByMarketplaceItem |
+| 克隆 | ✅ | 多秘钥源**整拷**为条目池(模板剥认证头、池整拷状态重置、空池拒绝),不再降级;`degradeMultiKeyConfig` 删除 |
+| 删条目 | ✅ | 同事务硬删池 + InvalidateItem + 踢会话(修复注册表明文快照残留隐患) |
+| 凭证掩码 | ✅ | 服务详情响应 `config.headers/env` 掩码(复用 maskConfigCredentials,与市场管理详情同策);Update 落库前 mergeMaskedCredentials 回填未改动掩码;服务详情「连接配置」裸 JSON 卡移除 |
+| 前端 | ✅ | 秘钥卡片抽为通用组件(components/service-keys-card.tsx,KeysApi 注入);市场管理详情页集成卡片+徽章+上游配置卡多秘钥锁定;MarketplaceDetail 增 key_mode/key_count/key_enabled(仅 admin 详情回传) |
+| 测试 | ✅ | marketplace_keys_test.go(升降级/守卫/批量/克隆整拷)、service_config_mask_test.go(掩码+回填)、key_selector_test.go 增条目属主用例 |

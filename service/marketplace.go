@@ -386,17 +386,25 @@ func (s *MarketplaceService) DeleteItem(itemID int64) error {
 	if err != nil {
 		return err
 	}
-	// 软删条目 + 同事务清掉分组绑定行(避免悬空引用)
+	// 软删条目 + 同事务清掉分组绑定行与条目级秘钥池(避免悬空引用/孤儿秘钥行)
 	if err := model.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Delete(item).Error; err != nil {
 			return err
 		}
-		return model.DeleteMarketplaceItemGroupsByItemID(tx, itemID)
+		if err := model.DeleteMarketplaceItemGroupsByItemID(tx, itemID); err != nil {
+			return err
+		}
+		return tx.Where("item_id = ?", itemID).Delete(&model.MarketplaceItemKey{}).Error
 	}); err != nil {
 		return err
 	}
 	// 硬删除(软删):已添加引用的 mcp_services 行保留(resolver 调用时会因 item 不可用而失败退款)。
 	// V2 提供显式级联清理 + 引用悬空检测(§11)。
+	// 失效选择器快照(避免注册表残留明文,同服务删除侧)+ 踢掉该条目现存会话
+	bridge.KeySelectors.InvalidateItem(itemID)
+	if SessionPool != nil {
+		SessionPool.RemoveByMarketplaceItem(itemID)
+	}
 	billing.InvalidatePricingCacheItem(itemID)
 	return nil
 }
@@ -647,18 +655,19 @@ func (s *MarketplaceService) CloneFromService(adminID int64, req *dto.CloneMarke
 		return nil, fmt.Errorf("市场项标识已存在: %s,请修改服务标识", req.Name)
 	}
 
-	// 多秘钥源服务降级克隆(V1):市场项暂不支持秘钥池(二期做条目级池),取
-	// 首选启用秘钥烘成单秘钥 config 模板;记系统日志提示管理员确认凭证。
+	// 多秘钥源服务整拷为条目级池:模板剥掉认证头(值只存池),模式/头名/bearer 位
+	// 写入条目 auth_config,池整拷(状态重置为启用)——一份池对全部安装用户全局轮换。
 	cloneConfig := svc.Config
+	itemAuthConfig := ""
+	carryKeyPool := false
 	if svc.IsMultiKey() {
-		degraded, err := degradeMultiKeyConfig(svc)
+		stripped, err := stripAuthHeaderConfig(svc)
 		if err != nil {
 			return nil, err
 		}
-		cloneConfig = degraded
-		model.RecordSystemLog(adminID, "", fmt.Sprintf("市场项 %s 从多秘钥服务 %s(#%d) 克隆:已取首选启用秘钥降级为单秘钥", req.Name, svc.Name, svc.ID), 0, "", map[string]any{
-			"action": "marketplace_clone_multi_key_degraded", "service_id": svc.ID, "item_name": req.Name,
-		})
+		cloneConfig = stripped
+		itemAuthConfig = itemAuthConfigFromService(svc)
+		carryKeyPool = true
 	}
 
 	item := &model.MarketplaceItem{
@@ -672,7 +681,9 @@ func (s *MarketplaceService) CloneFromService(adminID int64, req *dto.CloneMarke
 		// 独占进程开关仅对 stdio 源生效:其余传输无平台子进程概念,恒共享语义
 		IsolatedProcess: req.IsolatedProcess && svc.TransportType == string(transport.TypeStdio),
 		ConfigTemplate:  encryptConfigTemplate(cloneConfig), // 克隆源凭证并加密;前端提示替换为平台凭证
-		AuthInstructions: svc.AuthType,
+		// 条目级多秘钥配置段(仅多秘钥源克隆时非空;单秘钥源保持空=单秘钥模板)
+		AuthConfig:         itemAuthConfig,
+		AuthInstructions:   svc.AuthType,
 		ConfigTemplateSource: svc.AuthConfig,
 		RequiredEnv:   "[]",
 		ToolsSnapshot: svc.ToolsCache,
@@ -695,6 +706,18 @@ func (s *MarketplaceService) CloneFromService(adminID int64, req *dto.CloneMarke
 
 	if err := item.Insert(); err != nil {
 		return nil, err
+	}
+	if carryKeyPool {
+		values, err := servicePoolValues(svc.ID)
+		if err != nil {
+			return nil, err
+		}
+		if err := model.ReplaceItemKeys(item.ID, values); err != nil {
+			return nil, err
+		}
+		model.RecordSystemLog(adminID, "", fmt.Sprintf("市场项 %s 从多秘钥服务 %s(#%d) 克隆:已整拷 %d 把秘钥为条目级池(状态重置为启用)", req.Name, svc.Name, svc.ID, len(values)), 0, "", map[string]any{
+			"action": "marketplace_clone_multi_key_pool_copied", "service_id": svc.ID, "item_id": item.ID, "item_name": req.Name,
+		})
 	}
 	billing.InvalidatePricingCacheItem(item.ID)
 	return s.toDetail(item), nil
@@ -748,6 +771,10 @@ func (s *MarketplaceService) GetItemByID(itemID int64) (*dto.MarketplaceDetail, 
 	var cfg map[string]interface{}
 	_ = json.Unmarshal([]byte(plain), &cfg)
 	detail.ConfigTemplate = maskConfigCredentials(cfg)
+	// 条目级多秘钥状态(仅 admin 详情,公开浏览 toDetail 不填)
+	detail.KeyMode = item.ParseAuthKeyConfig().KeyMode
+	total, enabled := model.CountItemKeys(itemID)
+	detail.KeyCount, detail.KeyEnabled = int(total), int(enabled)
 	return detail, nil
 }
 

@@ -367,7 +367,7 @@ CREATE TABLE `mcp_call_logs` (
 
     `duration_ms`      INT             DEFAULT 0 COMMENT '耗时 (毫秒)',
     `error_message`    TEXT            DEFAULT '' COMMENT '错误信息',
-    `key_index`        INT             DEFAULT 0 COMMENT '多秘钥调用所用秘钥的池内序号(mcp_service_keys.sort_order);0=单秘钥/不适用',
+    `key_index`        INT             DEFAULT 0 COMMENT '多秘钥调用所用秘钥的池内序号(mcp_service_keys / marketplace_item_keys 的 sort_order);0=单秘钥/不适用',
 
     -- 商业化计费列(§4.5):审计与计费合一,每次 tools/call 写一条
     `billing_status`   VARCHAR(16)     DEFAULT 'skipped' COMMENT '计费状态: skipped(自有/免费) / charged(已扣) / refunded(失败退款) / blocked(余额不足拒绝) / debt(FailOpen欠账)',
@@ -415,6 +415,7 @@ CREATE TABLE `marketplace_items` (
     `transport_type`   VARCHAR(32)     DEFAULT '' COMMENT '传输类型: streamable-http, sse, websocket, stdio (即用型)',
     `isolated_process` TINYINT        DEFAULT 0 COMMENT '独占进程(仅 stdio 条目): 0=共享(全部安装用户共用平台侧一个子进程), 1=独占(每安装用户引用行各一进程);切换即踢会话重建',
     `config_template`  TEXT            DEFAULT '{}' COMMENT '连接配置模板 JSON(含平台上游凭证,加密落库;API 不返回明文)',
+    `auth_config`      TEXT            DEFAULT ''  COMMENT '条目级多秘钥配置 JSON {key_mode, header_name, bearer};空=单秘钥(凭证在 config_template.headers)。多秘钥态模板不含认证头',
     `auth_instructions` TEXT           DEFAULT '' COMMENT '认证说明 (即用型，如"需要 Exa API Key")',
 
     -- 源码型配置 (category=source)
@@ -577,6 +578,29 @@ CREATE TABLE `mcp_service_keys` (
 > `mcp_services.auth_config` JSON(`{key_mode, header_name}`),主表零新增列(行宽贴近上限)。
 > 设计与性能分析见 `docs/MULTI-KEY.md`。
 
+### 2.19 marketplace_item_keys - 市场条目多秘钥池(仅 HTTP 类 instant 条目)
+
+```sql
+CREATE TABLE `marketplace_item_keys` (
+    `id`              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `item_id`         BIGINT UNSIGNED NOT NULL COMMENT '所属市场条目 ID',
+    `sort_order`      INT             NOT NULL COMMENT '池内序号(1 起)= 轮询次序 = mcp_call_logs.key_index',
+    `value`           TEXT            NOT NULL COMMENT '秘钥明文(单把 ≤8KB,池上限 100 把)',
+    `status`          TINYINT         DEFAULT 1 COMMENT '1=启用, 2=手动禁用, 3=自动禁用(上游 401/403)',
+    `disabled_reason` VARCHAR(255)    DEFAULT '' COMMENT '禁用原因(自动禁用时为 upstream 401/403)',
+    `disabled_at`     DATETIME        DEFAULT NULL COMMENT '禁用时间',
+    `created_at`      DATETIME        DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`      DATETIME        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `idx_item_key_pos` (`item_id`, `sort_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='市场条目多秘钥池';
+```
+
+> 与 `mcp_service_keys` 同构,差别只在属主:一份池挂在**条目**上,全部安装该条目的用户
+> 经同一选择器全局轮换(坏 key 一次禁光)。模式/注入头/bearer 位存
+> `marketplace_items.auth_config` JSON;多秘钥源服务克隆上架时整池拷入(状态重置为启用)。
+> 删条目时同事务硬删池行。设计见 `docs/MULTI-KEY.md` §6。
+
 ---
 
 ## 3. ER 关系图
@@ -609,6 +633,7 @@ mcp_groups   (1) ──< (N) mcp_call_logs
 mcp_services (1) ──< (N) mcp_service_keys  (多秘钥池,仅 HTTP 类传输;auth_config 存模式/注入头)
 
 marketplace_items (1) ──< (N) mcp_services (用户从市场安装)
+marketplace_items (1) ──< (N) marketplace_item_keys (条目级多秘钥池,一份池全局轮换)
 
 -- 商业化
 users (1) ──< (N) redemptions              (兑换记录)
@@ -644,3 +669,4 @@ mcp_groups (1) ──< (N) mcp_group_services >── mcp_services
 | 兑换码核销 | `redemptions(code)` UNIQUE | O(1) 查找 |
 | 条目级定价 | `mcp_tool_prices(marketplace_item_id, kind, tool_name)` UNIQUE | 命中即用 |
 | 多秘钥池 | `mcp_service_keys(service_id, sort_order)` UNIQUE | 按服务整池加载(选择器构建,非每请求) |
+| 条目多秘钥池 | `marketplace_item_keys(item_id, sort_order)` UNIQUE | 按条目整池加载(一份池全局轮换) |
