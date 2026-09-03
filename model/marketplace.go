@@ -259,6 +259,16 @@ func GetMarketplaceItemsByIDs(ids []int64) ([]MarketplaceItem, error) {
 	return items, err
 }
 
+// BatchSetMarketplaceItemsTags 批量把多个市场项的 tags 串设为同一值(替换语义),
+// 返回实际更新行数。软删行由 GORM 默认作用域自动排除;须在事务内调用。
+func BatchSetMarketplaceItemsTags(tx *gorm.DB, ids []int64, tags string) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	res := tx.Model(&MarketplaceItem{}).Where("id IN ?", ids).Update("tags", tags)
+	return res.RowsAffected, res.Error
+}
+
 // --- 市场项 tags 串同步(标签字典改名/禁用/删除时维护引用) ---
 // 市场项 Tags 存的是逗号拼接的标签名:LIKE 仅作候选预筛(通配符只会放宽不会漏),
 // Go 侧按逗号整词精确匹配,避免"AI"误伤"AI助手"。

@@ -812,7 +812,7 @@ export interface RedeemResp {
   amount: number
 }
 
-// --- 商业化:Marketplace 批量定价 / 克隆 ---
+// --- 商业化:Marketplace 批量定价 / 批量分组标签 / 克隆 ---
 export interface BatchPricingItem {
   id: number
   billing_type: string // free / per_call
@@ -821,6 +821,13 @@ export interface BatchPricingItem {
 
 export interface BatchPricingReq {
   items: BatchPricingItem[]
+}
+
+// Marketplace 批量设置分组/标签(替换语义):两字段可选,缺省=不动,[]=清空,须至少传一个
+export interface BatchGroupsTagsReq {
+  ids: number[]
+  group_ids?: number[]
+  tags?: string[]
 }
 
 export interface CloneMarketplaceReq {

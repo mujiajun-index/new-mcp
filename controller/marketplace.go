@@ -216,6 +216,22 @@ func AdminBatchUpdateMarketplacePricing(c *gin.Context) {
 	common.Success(c, gin.H{"affected": affected})
 }
 
+// AdminBatchSetMarketplaceGroupsTags 批量设置市场项分组/标签(替换语义:
+// 字段缺省=不动,空数组=清空;两字段独立开关)。
+func AdminBatchSetMarketplaceGroupsTags(c *gin.Context) {
+	var req dto.BatchGroupsTagsReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	affected, err := marketplaceService.BatchSetGroupsTags(&req)
+	if err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, gin.H{"affected": affected})
+}
+
 // AdminSetMarketplaceEntryPrices 全量替换市场项条目级定价(工具/资源/提示单独设价,
 // §5.2)。不在载荷中的条目回退:工具→服务统一价,资源/提示→免费。
 func AdminSetMarketplaceEntryPrices(c *gin.Context) {

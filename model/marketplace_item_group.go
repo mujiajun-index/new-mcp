@@ -46,6 +46,27 @@ func ReplaceMarketplaceItemGroups(tx *gorm.DB, itemID int64, groupIDs []int64) e
 	return tx.Create(&rows).Error
 }
 
+// BatchReplaceMarketplaceItemGroups 批量全量替换多个市场项的分组绑定(删旧插新;
+// 须在事务内调用)。groupIDs 须为调用方清洗后的干净列表(去重/去非正);空列表=清空。
+func BatchReplaceMarketplaceItemGroups(tx *gorm.DB, itemIDs []int64, groupIDs []int64) error {
+	if len(itemIDs) == 0 {
+		return nil
+	}
+	if err := tx.Where("item_id IN ?", itemIDs).Delete(&MarketplaceItemGroup{}).Error; err != nil {
+		return err
+	}
+	if len(groupIDs) == 0 {
+		return nil
+	}
+	rows := make([]MarketplaceItemGroup, 0, len(itemIDs)*len(groupIDs))
+	for _, itemID := range itemIDs {
+		for _, gid := range groupIDs {
+			rows = append(rows, MarketplaceItemGroup{ItemID: itemID, GroupID: gid})
+		}
+	}
+	return tx.CreateInBatches(rows, 500).Error
+}
+
 // DeleteMarketplaceItemGroupsByGroupID 摘除某分组下的全部绑定(分组禁用/删除时同步,
 // 维持"市场项绑定 ⊆ 启用分组"不变量;须在事务内调用)。
 func DeleteMarketplaceItemGroupsByGroupID(tx *gorm.DB, groupID int64) error {

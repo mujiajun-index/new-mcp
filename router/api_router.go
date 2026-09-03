@@ -191,6 +191,7 @@ func SetApiRouter(engine *gin.Engine) {
 		admin.GET("/marketplace/health", controller.AdminGetMarketplaceHealth) // 平台级健康(全用户调用聚合)
 		admin.POST("/marketplace/clone", controller.AdminCloneMarketplaceItem)
 		admin.PUT("/marketplace/pricing/batch", controller.AdminBatchUpdateMarketplacePricing)
+		admin.PUT("/marketplace/groups-tags/batch", controller.AdminBatchSetMarketplaceGroupsTags) // 批量设置分组/标签(替换语义)
 		admin.GET("/marketplace/clone-sources", controller.AdminListCloneSources)
 		admin.GET("/marketplace/:id", controller.AdminGetMarketplaceItem)
 		admin.PUT("/marketplace/:id", controller.AdminUpdateMarketplaceItem)
