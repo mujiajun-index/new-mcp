@@ -20,6 +20,10 @@ type InstallStatus = 'idle' | 'ready' | 'failed'
 // 秘钥模式:single=单秘钥;random/polling=多秘钥(随机/轮询)
 type SecretMode = 'single' | 'random' | 'polling'
 
+// 服务标识规则(与后端 validateServiceName 同口径):英文字母开头,
+// 仅含字母/数字/下划线/连字符,最长 64
+const SERVICE_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/
+
 // 单把秘钥的连通性测试结果(多秘钥创建时逐把测试)
 interface KeyTestResult {
   index: number
@@ -316,7 +320,7 @@ export function ServiceCreatePage() {
   }
 
   const canNext = () => {
-    if (step === 0) return form.name.trim().length > 0
+    if (step === 0) return form.name.trim().length > 0 && SERVICE_NAME_RE.test(form.name)
     if (step === 1) {
       if (form.transport_type === 'stdio') return readyForCurrentInputs
       return form.url.trim().length > 0
@@ -357,8 +361,12 @@ export function ServiceCreatePage() {
         <div className="space-y-4 rounded-xl border bg-card p-6">
           <div className="space-y-2">
             <Label htmlFor="name">{t('services.create.serviceIdentifierRequired')}</Label>
-            <Input id="name" placeholder="my-service" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <Input id="name" placeholder="my-service" maxLength={64} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             <p className="text-xs text-muted-foreground">{t('services.create.serviceIdentifierTip')}</p>
+            {/* 填了但格式不符:即时行内报错(下一步按钮同时禁用,原因可见) */}
+            {form.name.trim().length > 0 && !SERVICE_NAME_RE.test(form.name) && (
+              <p className="text-xs text-destructive">{t('services.create.serviceIdentifierInvalid')}</p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="display_name">{t('services.displayName')}</Label>

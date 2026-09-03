@@ -206,7 +206,9 @@ export function AdminBillingPage() {
                 <Label>{t('adminBilling.billingDefaultPricePerCall')}</Label>
                 <Input
                   type="number"
-                  step="0.0001"
+                  min="0"
+                  max="999"
+                  step="0.001"
                   value={localValues.BillingDefaultPricePerCall ?? '0'}
                   onChange={(e) => updateLocal('BillingDefaultPricePerCall', e.target.value)}
                   onBlur={() => saveField('BillingDefaultPricePerCall')}

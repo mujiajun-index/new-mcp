@@ -9,7 +9,7 @@ import {
 } from '../api'
 import { ServiceHealthBar } from '@/features/services/components/service-health-bar'
 import { useSystemConfigStore } from '@/stores/system-config-store'
-import { priceLabel, isExplicitlyPriced } from '@/lib/billing'
+import { priceLabel, isExplicitlyPriced, PRICE_MAX, PRICE_MIN } from '@/lib/billing'
 import type { MarketplaceItemHealth } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -410,6 +410,10 @@ function CloneDialog({
       toast.error(t('marketplace.priceNegative'))
       return
     }
+    if (price > 0 && (price < PRICE_MIN || price > PRICE_MAX)) {
+      toast.error(t('marketplace.priceRange'))
+      return
+    }
     if (notSelfUse && billingType !== 'free' && price <= 0) {
       toast.error(t('pricing.commercialNote'))
       return
@@ -471,7 +475,7 @@ function CloneDialog({
             </div>
             <div className="space-y-2">
               <Label>{t('marketplace.pricePerCall')}</Label>
-              <Input type="number" min="0" step="0.0001" disabled={form.billing_type === 'free'}
+              <Input type="number" min="0.001" max="999" step="0.001" disabled={form.billing_type === 'free'}
                 value={form.price_per_call} onChange={(e) => setForm({ ...form, price_per_call: e.target.value })} />
             </div>
           </div>
@@ -537,6 +541,10 @@ function BatchDialog({
       toast.error(t('marketplace.priceNegative'))
       return
     }
+    if (p > 0 && (p < PRICE_MIN || p > PRICE_MAX)) {
+      toast.error(t('marketplace.priceRange'))
+      return
+    }
     onConfirm(
       selectedItems.map((i) => ({
         id: i.id,
@@ -567,7 +575,7 @@ function BatchDialog({
             </div>
             <div className="space-y-2">
               <Label>{t('marketplace.pricePerCall')}</Label>
-              <Input type="number" min="0" step="0.0001" disabled={billingType === 'free'} value={price} onChange={(e) => setPrice(e.target.value)} />
+              <Input type="number" min="0.001" max="999" step="0.001" disabled={billingType === 'free'} value={price} onChange={(e) => setPrice(e.target.value)} />
             </div>
           </div>
         </div>

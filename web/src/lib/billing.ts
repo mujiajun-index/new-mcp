@@ -3,6 +3,10 @@ import i18n from '@/i18n/config'
 // 商业化展示 helper(§3/§5)。市场价格 price_per_call 已是展示货币 decimal,直接展示;
 // 用户额度按货币单位展示(quota / QuotaPerUnit,对齐 reference/new-api formatQuota)。
 
+/** 按次单价上下限(与后端 service.MinPricePerCall/MaxPricePerCall 同口径);0 保留给免费/未定价 */
+export const PRICE_MIN = 0.001
+export const PRICE_MAX = 999
+
 /**
  * 市场服务价格文本:免费 / ¥0.05/次。displayCurrency 默认 CNY。
  * item 形如 { billing_type, price_per_call }。
@@ -14,7 +18,10 @@ export function priceLabel(billingType: string, pricePerCall: number, displayCur
     return i18n.t('billing.unpriced')
   }
   const symbol = currencySymbol(displayCurrency)
-  return `${symbol}${pricePerCall.toFixed(2)}${i18n.t('billing.perCall')}`
+  // 不四舍五入:与入库 decimal(10,4)/输入 step=0.001 对齐,最多展示 4 位小数
+  // (0.001 等小额精确可见),再去掉尾部多余的 0(0.0500 → 0.05)
+  const trimmed = pricePerCall.toFixed(4).replace(/\.?0+$/, '')
+  return `${symbol}${trimmed || '0'}${i18n.t('billing.perCall')}`
 }
 
 export function currencySymbol(currency: string): string {

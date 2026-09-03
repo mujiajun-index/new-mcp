@@ -35,6 +35,15 @@ var ErrServiceNotOwned = errors.New("无权克隆该服务:仅可克隆自己账
 // ErrNegativePrice 价格不能为负数(§5.5)。
 var ErrNegativePrice = errors.New("价格不能为负数")
 
+// 按次单价上下限(§5.5):0 保留给 free/inherit;正值须落在 [0.001, 999]。
+const (
+	MinPricePerCall = 0.001
+	MaxPricePerCall = 999.0
+)
+
+// ErrPriceOutOfRange 按次单价超出 [0.001, 999] 范围。
+var ErrPriceOutOfRange = fmt.Errorf("价格须在 %g ~ %g 之间", MinPricePerCall, MaxPricePerCall)
+
 // ErrTagNotInDictionary 提交的标签不在启用标签库中(§11)。
 var ErrTagNotInDictionary = errors.New("标签不在标签库中,请先在标签库中创建")
 
@@ -45,10 +54,13 @@ var ErrGroupNotFound = errors.New("市场分组不存在或未启用")
 // source 类目为用户自行部署形态,平台侧无上游连接,快照由管理员通过编辑接口维护。
 var ErrOnlyInstantRefreshable = errors.New("仅开箱即用(平台托管)市场项支持刷新快照")
 
-// validatePrice 校验价格非负(§5.5)。
+// validatePrice 校验价格非负且正值在 [0.001, 999](§5.5;0 为 free/inherit 合法值)。
 func validatePrice(price float64) error {
 	if price < 0 {
 		return ErrNegativePrice
+	}
+	if price > 0 && (price < MinPricePerCall || price > MaxPricePerCall) {
+		return ErrPriceOutOfRange
 	}
 	return nil
 }

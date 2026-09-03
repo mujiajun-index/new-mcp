@@ -247,9 +247,10 @@ function LandingPage() {
                     <ArrowRight className="h-4 w-4" />
                   </Button>
                 </Link>
+                {/* 文档站暂未上线,「查看文档」按钮先隐藏,上线后恢复
                 <Button variant="outline" size="lg" className="rounded-full px-6">
                   {t('landing.viewDocs')}
-                </Button>
+                </Button> */}
               </>
             )}
           </div>

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { MarketplaceDetail, MarketplaceEntryKind, MarketplaceEntryPrice } from '@/types'
+import { PRICE_MAX, PRICE_MIN } from '@/lib/billing'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -95,7 +96,8 @@ export function useEntryPricingDraft(item?: MarketplaceDetail) {
         continue
       }
       const price = parseFloat(v.price) || 0
-      if (price <= 0) return null
+      // custom 价须落在 [0.001, 999](覆盖原 price<=0 拦截,与后端 validatePrice 同口径)
+      if (price < PRICE_MIN || price > PRICE_MAX) return null
       out.push({ kind, name, billing_type: 'per_call', price_per_call: price })
     }
     return out
@@ -130,8 +132,9 @@ export function EntryPriceControl({ value, onChange }: {
       {value.mode === 'custom' && (
         <Input
           type="number"
-          min="0"
-          step="0.0001"
+          min="0.001"
+          max="999"
+          step="0.001"
           className="h-7 w-24 text-xs"
           value={value.price}
           onChange={(e) => onChange({ ...value, price: e.target.value })}

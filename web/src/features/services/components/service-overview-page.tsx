@@ -39,6 +39,8 @@ function formatBytes(bytes?: number): string {
 }
 
 type StatusFilter = 'all' | 'running' | 'stopped'
+// 启用状态筛选(与运行状态正交,running/stopped 看进程、这里看 status 启停位):默认仅显示已启用
+type EnabledFilter = 'all' | 'enabled' | 'disabled'
 // marketplace 非传输类型而是 source 维度:平台托管(市场)服务的专属筛选项
 type TypeFilter = 'all' | TransportType | 'marketplace'
 // 类型筛选可选项(顺序即下拉展示顺序)
@@ -150,6 +152,7 @@ export function ServiceOverviewPage() {
   const { auth } = useAuthStore()
   const isAdmin = isAdminRole(auth.user?.role)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [enabledFilter, setEnabledFilter] = useState<EnabledFilter>('enabled')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [search, setSearch] = useState('')
   // 客户端本地分页(接口返回全量):默认每页 18 条;筛选/搜索变化即回第 1 页
@@ -175,12 +178,14 @@ export function ServiceOverviewPage() {
       } else if (typeFilter !== 'all' && s.transport_type !== typeFilter) {
         return false
       }
+      if (enabledFilter === 'enabled' && s.status !== 1) return false
+      if (enabledFilter === 'disabled' && s.status === 1) return false
       if (statusFilter === 'running' && !s.running) return false
       if (statusFilter === 'stopped' && s.running) return false
       if (!kw) return true
       return s.name.toLowerCase().includes(kw) || s.display_name.toLowerCase().includes(kw)
     })
-  }, [services, statusFilter, typeFilter, search])
+  }, [services, statusFilter, enabledFilter, typeFilter, search])
 
   // 本地分页:轮询刷新使条数变化时夹紧当前页,不越界也不跳回
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
@@ -276,6 +281,17 @@ export function ServiceOverviewPage() {
                     {type === 'marketplace' ? t('marketplace.platformHosted') : transportTypeLabel(t, type)}
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+            {/* 启用状态筛选:默认已启用;排在运行状态前,是更基础的维度 */}
+            <Select value={enabledFilter} onValueChange={(v) => { setEnabledFilter(v as EnabledFilter); setPage(1) }}>
+              <SelectTrigger className="w-28">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('services.overview.filterAll')}</SelectItem>
+                <SelectItem value="enabled">{t('services.overview.filterEnabled')}</SelectItem>
+                <SelectItem value="disabled">{t('services.overview.filterDisabled')}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v as StatusFilter); setPage(1) }}>

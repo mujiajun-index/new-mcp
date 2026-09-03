@@ -7,7 +7,7 @@ import { EntryPriceControl, EntryPricingBar, useEntryPricingDraft } from './entr
 import { ServiceKeysCard } from '@/components/service-keys-card'
 import { adminListMarketplaceGroups, adminListMarketplaceTags } from '@/features/admin/marketplace-categories/api'
 import { useSystemConfigStore } from '@/stores/system-config-store'
-import { priceLabel } from '@/lib/billing'
+import { priceLabel, PRICE_MAX, PRICE_MIN } from '@/lib/billing'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -347,6 +347,7 @@ function EditForm({ item, groups, tagsLib, notSelfUse, onSave, pending }: {
     const billingType = form.billing_type
     const price = parseFloat(form.price_per_call) || 0
     if (price < 0) { toast.error(t('marketplace.priceNegative')); return }
+    if (price > 0 && (price < PRICE_MIN || price > PRICE_MAX)) { toast.error(t('marketplace.priceRange')); return }
     if (notSelfUse && billingType !== 'free' && price <= 0) { toast.error(t('pricing.commercialNote')); return }
     onSave({
       display_name: form.display_name,
@@ -424,7 +425,7 @@ function EditForm({ item, groups, tagsLib, notSelfUse, onSave, pending }: {
         </div>
         <div className="space-y-2">
           <Label>{t('marketplace.pricePerCall')}</Label>
-          <Input type="number" min="0" step="0.0001" disabled={form.billing_type === 'free'}
+          <Input type="number" min="0.001" max="999" step="0.001" disabled={form.billing_type === 'free'}
             value={form.price_per_call} onChange={(e) => setForm({ ...form, price_per_call: e.target.value })} />
         </div>
       </div>

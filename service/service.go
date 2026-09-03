@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -23,6 +24,17 @@ import (
 var SessionPool *bridge.SessionPool
 var VirtualRegistry *virtual.VirtualToolRegistry
 var CameraStreamMgr *camera.CameraStreamManager
+
+// serviceNameRe 服务标识规则:英文字母开头,仅含字母/数字/下划线/连字符,长度 1~64。
+var serviceNameRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,63}$`)
+
+// validateServiceName 校验服务标识格式(创建时;创建后不可修改,分组引用依赖该格式)。
+func validateServiceName(name string) error {
+	if !serviceNameRe.MatchString(name) {
+		return errors.New("服务标识须以英文字母开头,仅可包含英文字母、数字、下划线或连字符,长度不超过 64 字符")
+	}
+	return nil
+}
 
 // manualBillingService 市场服务手动测试计费用的计费服务实例(无状态,包级复用)。
 var manualBillingService = billing.NewBillingService()
@@ -62,6 +74,9 @@ func (s *McpServiceService) Create(userID int64, req *dto.CreateServiceReq) (*dt
 	// 纯市场模式:禁止用户添加自有服务(§7.5)。市场引用服务经 /marketplace/:id/add 添加,不受此限。
 	if !model.GetOptionBool("UserOwnedServicesEnabled") {
 		return nil, fmt.Errorf("当前为纯市场模式,不允许添加自有服务")
+	}
+	if err := validateServiceName(req.Name); err != nil {
+		return nil, err
 	}
 	// 检查同名服务是否已存在
 	var count int64
@@ -1167,6 +1182,9 @@ func hasRecentSuccess(buckets []dto.HealthBucket) bool {
 // --- Admin service management ---
 
 func (s *McpServiceService) CreateAdminService(adminID int64, req *dto.CreateServiceReq) (*dto.ServiceDetail, error) {
+	if err := validateServiceName(req.Name); err != nil {
+		return nil, err
+	}
 	configJSON, _ := json.Marshal(req.Config)
 	authConfigJSON, _ := json.Marshal(req.AuthConfig)
 	tags := strings.Join(req.Tags, ",")

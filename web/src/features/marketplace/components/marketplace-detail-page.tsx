@@ -133,14 +133,11 @@ export function MarketplaceDetailPage() {
       <div className="rounded-xl border bg-card p-5">
         {item.category === 'instant' ? (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <p className="text-lg font-semibold text-primary">{priceText}</p>
-                <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                  {t('marketplace.platformHosted')}
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground">{t('marketplace.platformHostedDesc')}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-lg font-semibold text-primary">{priceText}</p>
+              <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                {t('marketplace.platformHosted')}
+              </span>
             </div>
             <Button className="gap-2" onClick={() => installMutation.mutate()} disabled={installMutation.isPending}>
               {installMutation.isPending ? <Zap className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
