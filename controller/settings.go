@@ -25,7 +25,7 @@ func AdminUpdateSetting(c *gin.Context) {
 	}
 	if err := settingsService.UpdateSetting(operatorFromContext(c), req.Key, req.Value); err != nil {
 		// 校验类错误(如分组仍有用户绑定)返回 400,而非 500
-		if errors.Is(err, service.ErrUserGroupInUse) {
+		if errors.Is(err, service.ErrUserGroupInUse) || errors.Is(err, service.ErrInvalidSetting) {
 			common.Error(c, http.StatusBadRequest, err.Error())
 			return
 		}

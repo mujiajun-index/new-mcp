@@ -155,10 +155,11 @@ func (h *GatewayHandler) aggregateUpstream(ctx context.Context, scope []scopeEnt
 			if err := h.materializeMarketplaceConfig(entry.svc); err != nil {
 				return
 			}
-			session, err := h.pool.GetOrConnect(ctx, entry.svc)
+			session, release, err := h.pool.Acquire(ctx, entry.svc)
 			if err != nil {
 				return
 			}
+			defer release()
 			if items, err := fetch(session, entry.groupID); err == nil {
 				results[idx] = items
 			}
@@ -194,6 +195,19 @@ func (h *GatewayHandler) connectServiceByName(ctx context.Context, serviceName s
 		return nil, fmt.Errorf("failed to connect service %s: %v", serviceName, err)
 	}
 	return session, nil
+}
+
+func (h *GatewayHandler) acquireServiceByName(ctx context.Context, serviceName string, userID int64) (*bridge.McpSession, func(), error) {
+	for i := 0; i < 2; i++ {
+		session, err := h.connectServiceByName(ctx, serviceName, userID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if release, ok := h.pool.AcquireSession(session); ok {
+			return session, release, nil
+		}
+	}
+	return nil, nil, fmt.Errorf("service session was released while acquiring")
 }
 
 // unmarshalEntryList 把上游 List* 结果拆成条目 map 列表,便于改写字段后重组。
@@ -403,10 +417,11 @@ func (h *GatewayHandler) readUpstreamResource(ctx context.Context, reqID interfa
 		return resp, 0, serviceName, nil, 0
 	}
 
-	session, err := h.connectServiceByName(ctx, serviceName, logCtx.UserID)
+	session, release, err := h.acquireServiceByName(ctx, serviceName, logCtx.UserID)
 	if err != nil {
 		return h.errorResponse(reqID, -32602, err.Error()), 0, serviceName, nil, 0
 	}
+	defer release()
 
 	if h.itemDisabledInOwningGroup(logCtx, session.ServiceID, itemKindResource, upstreamURI) {
 		return h.errorResponse(reqID, -32602, "resource is disabled in its group"), session.ServiceID, session.ServiceName, nil, 0
@@ -482,10 +497,11 @@ func (h *GatewayHandler) getUpstreamPrompt(ctx context.Context, reqID interface{
 		return h.errorResponse(reqID, -32602, fmt.Sprintf("service '%s' is not accessible with this API key", serviceName)), 0, serviceName, nil, 0
 	}
 
-	session, err := h.connectServiceByName(ctx, serviceName, logCtx.UserID)
+	session, release, err := h.acquireServiceByName(ctx, serviceName, logCtx.UserID)
 	if err != nil {
 		return h.errorResponse(reqID, -32602, err.Error()), 0, serviceName, nil, 0
 	}
+	defer release()
 
 	if h.itemDisabledInOwningGroup(logCtx, session.ServiceID, itemKindPrompt, promptName) {
 		return h.errorResponse(reqID, -32602, "prompt is disabled in its group"), session.ServiceID, session.ServiceName, nil, 0

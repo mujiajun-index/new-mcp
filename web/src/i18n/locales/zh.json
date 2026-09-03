@@ -1218,6 +1218,8 @@
     "maintenanceDesc": "查看当前版本信息",
     "cloudflareProxy": "Cloudflare 代理",
     "cloudflareProxyDesc": "站点通过 Cloudflare 代理访问时启用，将获取真实客户端 IP。仅在源站仅经 Cloudflare 可达时开启。",
+    "sharedStdioIdleTimeout": "平台 Stdio 空闲释放时长（分钟）",
+    "sharedStdioIdleTimeoutDesc": "市场平台托管的共享和独占 Stdio 进程在无实际 MCP 调用时自动释放。0 表示关闭自动释放；修改立即生效。",
     "version": "当前版本",
     "startTime": "启动时间",
     "checkUpdate": "检查更新",

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 )
 
 type McpSession struct {
+	key         sessionKey
 	ServiceID   int64
 	ServiceName string
 	UserID      int64
@@ -25,13 +27,14 @@ type McpSession struct {
 	LastRefresh       time.Time
 	Health            string
 	failCount         int
+	useMu             sync.Mutex
+	inUse             int
 }
 
 type SessionPool struct {
-	mu          sync.RWMutex
-	sessions    map[sessionKey]*McpSession
-	idleTimeout time.Duration
-	maxRetries  int
+	mu         sync.RWMutex
+	sessions   map[sessionKey]*McpSession
+	maxRetries int
 }
 
 // sessionKey 会话池键:默认按服务行键控(自有服务/独占市场引用一行一会话);
@@ -52,9 +55,8 @@ func sessionKeyFor(svc *model.McpService) sessionKey {
 
 func NewSessionPool() *SessionPool {
 	return &SessionPool{
-		sessions:    make(map[sessionKey]*McpSession),
-		idleTimeout: 10 * time.Minute,
-		maxRetries:  5,
+		sessions:   make(map[sessionKey]*McpSession),
+		maxRetries: 5,
 	}
 }
 
@@ -62,7 +64,7 @@ func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (
 	key := sessionKeyFor(svc)
 	p.mu.RLock()
 	if session, ok := p.sessions[key]; ok && session.Adapter.IsConnected() {
-		session.LastUsed = time.Now()
+		session.markUsed()
 		p.mu.RUnlock()
 		return session, nil
 	}
@@ -73,7 +75,7 @@ func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (
 
 	// Double check after acquiring write lock
 	if session, ok := p.sessions[key]; ok && session.Adapter.IsConnected() {
-		session.LastUsed = time.Now()
+		session.markUsed()
 		return session, nil
 	}
 
@@ -104,6 +106,7 @@ func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (
 	}
 
 	session := &McpSession{
+		key:               key,
 		ServiceID:         svc.ID,
 		ServiceName:       svc.Name,
 		UserID:            svc.UserID,
@@ -122,10 +125,126 @@ func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (
 	// 引用行的 tools/握手信息由真实调用路径或刷新补齐。
 	if svc.ID != 0 {
 		updateSessionRow(session, adapter)
-		go p.RefreshItemCaches(context.Background(), session)
+		go p.refreshItemCachesWhenLeased(session)
 	}
 
 	return session, nil
+}
+
+// AcquireSession holds a lease for a session previously returned by this pool.
+// A false result means it was concurrently removed and the caller should retry
+// through its normal connect path.
+func (p *SessionPool) AcquireSession(session *McpSession) (func(), bool) {
+	if session == nil {
+		return nil, false
+	}
+	return p.acquireExisting(session.key, session)
+}
+
+// Acquire connects a service if necessary and holds a usage lease until the
+// returned release function is called. The lease prevents idle cleanup from
+// closing a platform stdio process while an upstream request is in flight.
+func (p *SessionPool) Acquire(ctx context.Context, svc *model.McpService) (*McpSession, func(), error) {
+	for i := 0; i < 2; i++ {
+		session, err := p.GetOrConnect(ctx, svc)
+		if err != nil {
+			return nil, nil, err
+		}
+		if release, ok := p.acquireExisting(sessionKeyFor(svc), session); ok {
+			return session, release, nil
+		}
+	}
+	return nil, nil, fmt.Errorf("service session was released while acquiring")
+}
+
+func (p *SessionPool) acquireExisting(key sessionKey, want *McpSession) (func(), bool) {
+	p.mu.RLock()
+	session, ok := p.sessions[key]
+	if !ok || session != want || !session.Adapter.IsConnected() {
+		p.mu.RUnlock()
+		return nil, false
+	}
+	session.useMu.Lock()
+	session.inUse++
+	session.LastUsed = time.Now()
+	session.useMu.Unlock()
+	p.mu.RUnlock()
+	return func() {
+		session.useMu.Lock()
+		if session.inUse > 0 {
+			session.inUse--
+		}
+		session.LastUsed = time.Now()
+		session.useMu.Unlock()
+	}, true
+}
+
+func (s *McpSession) markUsed() {
+	s.useMu.Lock()
+	s.LastUsed = time.Now()
+	s.useMu.Unlock()
+}
+
+func (p *SessionPool) refreshItemCachesWhenLeased(session *McpSession) {
+	if release, ok := p.AcquireSession(session); ok {
+		defer release()
+		p.RefreshItemCaches(context.Background(), session)
+	}
+}
+
+// StartIdleReaper checks every minute for idle platform-managed stdio sessions.
+// timeout is read for every sweep so an administrator's setting takes effect
+// without restarting the server.
+func (p *SessionPool) StartIdleReaper(ctx context.Context, timeout func() time.Duration) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			p.ReleaseIdlePlatformStdio(timeout())
+		}
+	}
+}
+
+// ReleaseIdlePlatformStdio removes only marketplace-owned stdio sessions that
+// have no active lease. Adapters are closed after releasing the pool lock;
+// 每个被释放的进程记一条日志(服务/条目标识 + 空闲时长),便于运维对账。
+func (p *SessionPool) ReleaseIdlePlatformStdio(timeout time.Duration) int {
+	if timeout <= 0 {
+		return 0
+	}
+	cutoff := time.Now().Add(-timeout)
+	var victims []*McpSession
+	p.mu.Lock()
+	for key, session := range p.sessions {
+		if session.Source != "marketplace" || session.Adapter.GetType() != transport.TypeStdio {
+			continue
+		}
+		session.useMu.Lock()
+		idle := session.inUse == 0 && session.LastUsed.Before(cutoff)
+		session.useMu.Unlock()
+		if !idle {
+			continue
+		}
+		delete(p.sessions, key)
+		victims = append(victims, session)
+	}
+	p.mu.Unlock()
+	for _, session := range victims {
+		// 会话已出池且无人能再租到,LastUsed 可直接读
+		idle := time.Since(session.LastUsed).Round(time.Minute)
+		target := fmt.Sprintf("service %d", session.ServiceID)
+		if session.key.itemID != 0 {
+			target = fmt.Sprintf("shared item %d", session.key.itemID)
+		}
+		log.Printf("[idle-reaper] released marketplace stdio process %q (%s) after %s idle", session.ServiceName, target, idle)
+		if err := session.Adapter.Close(); err != nil {
+			log.Printf("[idle-reaper] close %q (%s) failed: %v", session.ServiceName, target, err)
+		}
+	}
+	return len(victims)
 }
 
 // updateSessionRow 连接成功后把 tools 缓存 + 上游握手信息回写服务行。

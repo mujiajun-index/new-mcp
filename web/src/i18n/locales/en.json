@@ -1218,6 +1218,8 @@
     "maintenanceDesc": "View current version information",
     "cloudflareProxy": "Cloudflare Proxy",
     "cloudflareProxyDesc": "Enabled when the site is accessed via Cloudflare proxy, allowing retrieval of the real client IP. Only enable if the origin server is accessible exclusively through Cloudflare.",
+    "sharedStdioIdleTimeout": "Platform Stdio idle timeout (minutes)",
+    "sharedStdioIdleTimeoutDesc": "Automatically releases shared and isolated marketplace Stdio processes after this long without an MCP call. Set 0 to disable; changes apply immediately.",
     "version": "Current Version",
     "startTime": "Startup Time",
     "checkUpdate": "Check for updates",

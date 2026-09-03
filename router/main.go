@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	frontend "github.com/mujkjk/newmcp" // package frontend: embedded web/dist SPA assets
@@ -198,6 +199,11 @@ func StartBackgroundJobs(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	backgroundJobsCancel = cancel
 	go service.StartCleanupLoop(ctx)
+	if SessionPool != nil {
+		go SessionPool.StartIdleReaper(ctx, func() time.Duration {
+			return time.Duration(model.GetOptionInt("SharedStdioIdleTimeoutMinutes")) * time.Minute
+		})
+	}
 }
 
 func StopBackgroundJobs() {

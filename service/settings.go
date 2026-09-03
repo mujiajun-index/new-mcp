@@ -14,6 +14,7 @@ type SettingsService struct{}
 
 // ErrUserGroupInUse 校验类错误:待删除的用户分组仍有用户绑定(400,而非 500)。
 var ErrUserGroupInUse = errors.New("user group still in use")
+var ErrInvalidSetting = errors.New("invalid setting value")
 
 func (s *SettingsService) GetAllSettings() []dto.SettingItem {
 	model.OptionMapMutex.RLock()
@@ -56,6 +57,11 @@ func (s *SettingsService) UpdateSetting(actor model.Operator, key string, value 
 			return err
 		}
 	}
+	if key == "SharedStdioIdleTimeoutMinutes" {
+		if err := validateNonNegativeInt(value); err != nil {
+			return err
+		}
+	}
 	if err := model.UpdateOption(key, value); err != nil {
 		return err
 	}
@@ -68,6 +74,17 @@ func (s *SettingsService) UpdateSetting(actor model.Operator, key string, value 
 		"key":   key,
 		"value": logValue,
 	})
+	return nil
+}
+
+func validateNonNegativeInt(value string) error {
+	if value == "" {
+		return fmt.Errorf("%w: 必须为非负整数", ErrInvalidSetting)
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil || n < 0 {
+		return fmt.Errorf("%w: 必须为非负整数", ErrInvalidSetting)
+	}
 	return nil
 }
 

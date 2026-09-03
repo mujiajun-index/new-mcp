@@ -277,7 +277,7 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 	var serviceName string
 	var billing *billingOutcome
 	var batchLogs []*model.McpCallLog
-	var keyIndex int // 多秘钥调用所用秘钥池内序号(写日志 key_index)
+	var keyIndex int       // 多秘钥调用所用秘钥池内序号(写日志 key_index)
 	originalToolName := "" // records meta-tool name for smart mode
 	// request_id:计费幂等键 = JSON-RPC id + 工具与参数短哈希。纯 id 在不同客户端/会话复用同一 id 时
 	// 会把新逻辑请求误判为重试而漏扣;加入 tool/args 哈希后,仅真正的同请求重试(id/工具/参数全同)才命中跳过。
@@ -462,10 +462,11 @@ func (h *GatewayHandler) routeAndCall(ctx context.Context, reqID interface{}, lo
 	}
 
 	// Route to real MCP service
-	session, resolvedTool, err := h.routeOrConnect(ctx, toolName, logCtx.UserID)
+	session, resolvedTool, release, err := h.acquireRouteOrConnect(ctx, toolName, logCtx.UserID)
 	if err != nil {
 		return h.errorResponse(reqID, -32602, err.Error())
 	}
+	defer release()
 
 	*svcID = session.ServiceID
 	*svcName = session.ServiceName
@@ -671,10 +672,11 @@ func (h *GatewayHandler) executeOne(ctx context.Context, logCtx *LogContext, too
 		}
 	}
 
-	session, toolName, err := h.routeOrConnect(ctx, toolID, logCtx.UserID)
+	session, toolName, release, err := h.acquireRouteOrConnect(ctx, toolID, logCtx.UserID)
 	if err != nil {
 		return &callOutcome{Err: err.Error(), ErrCode: -32602}
 	}
+	defer release()
 
 	gID, gName := h.resolveGroupForService(session.ServiceID, logCtx)
 
@@ -792,6 +794,7 @@ type executeBatchResult struct {
 //   - calls: [{tool_id, arguments}] —— 混合不同工具;
 //   - tool_id + arguments_list —— 同工具扇出(批量控制开关/设备等场景的短形态,
 //     少一层嵌套、无需逐项重复 tool_id,降低小参数量模型生成非法 JSON 的概率)。
+//
 // timeout_ms 为整批统一超时(不再逐项设置,减少逐项 schema 噪音)。
 // 结果聚合为一个 CallToolResult(逐项 [index] 头 + 上游 content 原样透传,全失败才置
 // isError);日志逐项落一条(method=mcp.execute_batch,计费列按项结算),分组归属沿用
@@ -1085,6 +1088,21 @@ func (h *GatewayHandler) routeOrConnect(ctx context.Context, namespacedTool stri
 	}
 
 	return nil, "", fmt.Errorf("tool not found: %s", namespacedTool)
+}
+
+// acquireRouteOrConnect retries the normal DB-backed connection path if a
+// reaper removes a session between routing and obtaining its usage lease.
+func (h *GatewayHandler) acquireRouteOrConnect(ctx context.Context, namespacedTool string, userID int64) (*bridge.McpSession, string, func(), error) {
+	for i := 0; i < 2; i++ {
+		session, toolName, err := h.routeOrConnect(ctx, namespacedTool, userID)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		if release, ok := h.pool.AcquireSession(session); ok {
+			return session, toolName, release, nil
+		}
+	}
+	return nil, "", nil, fmt.Errorf("service session was released while acquiring")
 }
 
 // userOwnedServicesAllowed 报告当前是否允许调用给定来源的服务(§7.5)。

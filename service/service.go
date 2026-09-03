@@ -836,11 +836,11 @@ func getPromptTested(svc *model.McpService, req *dto.GetPromptReq) (*dto.CallToo
 // 池未初始化时回退一次性连接(同 Test)。失败时返回可直接下发的 IsError 结果(DurationMs 由调用方补)。
 func acquireTestAdapter(ctx context.Context, svc *model.McpService) (transport.TransportAdapter, func(), *dto.CallToolResult) {
 	if SessionPool != nil {
-		session, err := SessionPool.GetOrConnect(ctx, svc)
+		session, release, err := SessionPool.Acquire(ctx, svc)
 		if err != nil {
 			return nil, nil, &dto.CallToolResult{IsError: true, Error: err.Error()}
 		}
-		return session.Adapter, func() {}, nil
+		return session.Adapter, release, nil
 	}
 	adapter := bridge.CreateAdapter(svc)
 	if adapter == nil {

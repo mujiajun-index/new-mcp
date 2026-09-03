@@ -86,6 +86,8 @@ var defaultOptions = map[string]string{
 	"SignedURLTTLSeconds":          "3600",       // 签名 URL 有效期(秒),1h
 	"UploadRetentionHours":         "24",         // 上传文件保留时长(小时),须 > SignedURLTTL
 	"UploadCleanupIntervalMinutes": "60",         // 过期清理扫描间隔(分钟)
+	// 市场平台托管的 stdio 进程空闲回收；0 表示关闭自动回收。
+	"SharedStdioIdleTimeoutMinutes": "60",
 	// --- V1.1: shell 直传 / 图片管理 / 入参择优 ---
 	"PresignedPutTTLSeconds": "600",   // 预签名 PUT URL 有效期(秒),直传路径;须 < SignedURLTTL
 	"MaxUploadsPerUser":      "0",     // 每用户活跃上传数上限(护栏);0=不限
