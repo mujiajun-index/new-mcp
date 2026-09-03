@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/mujkjk/newmcp/common"
@@ -92,6 +93,18 @@ type LogFilter struct {
 	Type        int // 0=全部(哨兵),否则按 LogType 过滤
 }
 
+// parseLogDate 兼容两种日期传参:完整时间 "2006-01-02 15:04:05" 与纯日期 "2006-01-02"。
+// created_at 按进程本地时间落库,用 ParseInLocation 保持同一时区口径(time.Parse 会按
+// UTC 解析,东八区下会整体偏移 8 小时)。
+func parseLogDate(s string) (time.Time, bool) {
+	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02"} {
+		if t, err := time.ParseInLocation(layout, s, time.Local); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
 func applyLogFilter(query *gorm.DB, f *LogFilter) *gorm.DB {
 	if f == nil {
 		return query
@@ -100,13 +113,18 @@ func applyLogFilter(query *gorm.DB, f *LogFilter) *gorm.DB {
 		query = query.Where("type = ?", f.Type)
 	}
 	if f.StartDate != "" {
-		if t, err := time.Parse("2006-01-02", f.StartDate); err == nil {
+		if t, ok := parseLogDate(f.StartDate); ok {
 			query = query.Where("created_at >= ?", t)
 		}
 	}
 	if f.EndDate != "" {
-		if t, err := time.Parse("2006-01-02", f.EndDate); err == nil {
-			query = query.Where("created_at < ?", t.AddDate(0, 0, 1))
+		if t, ok := parseLogDate(f.EndDate); ok {
+			if len(strings.TrimSpace(f.EndDate)) <= len("2006-01-02") {
+				// 纯日期视为"含当天全天"
+				query = query.Where("created_at < ?", t.AddDate(0, 0, 1))
+			} else {
+				query = query.Where("created_at <= ?", t)
+			}
 		}
 	}
 	if f.Status == "success" {
@@ -318,6 +336,13 @@ type LogStatsResult struct {
 	CallsToday    int64
 }
 
+// startOfToday 返回本地时区今日 0 点。time.Now().Truncate(24h) 按 UTC 绝对时间
+// 截断,东八区会把"今日"起点偏到 08:00,故显式构造本地零点。
+func startOfToday() time.Time {
+	now := time.Now()
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+}
+
 func GetCallLogStats(filter *LogFilter) (*LogStatsResult, error) {
 	// 统计恒为消费行,忽略调用方传入的 type 过滤,避免登录/注册/管理行污染调用统计。
 	statFilter := &LogFilter{}
@@ -344,7 +369,7 @@ func GetCallLogStats(filter *LogFilter) (*LogStatsResult, error) {
 	db = applyLogFilter(db, statFilter)
 	db.Where("tool_name NOT IN ?", []string{"mcp.search", "mcp.describe"}).Select("COALESCE(AVG(duration_ms), 0)").Scan(&avgDuration)
 
-	today := time.Now().Truncate(24 * time.Hour)
+	today := startOfToday()
 	var todayCount int64
 	DB.Model(&McpCallLog{}).Where("type = ?", LogTypeConsume).Where("created_at >= ?", today).Count(&todayCount)
 
@@ -418,7 +443,7 @@ func getCallLogStatsInternal(userID int64, filter *LogFilter) (*LogStatsResult, 
 	var avgDuration float64
 	applyLogFilter(avgQuery, userFilter).Where("tool_name NOT IN ?", []string{"mcp.search", "mcp.describe"}).Select("COALESCE(AVG(duration_ms), 0)").Scan(&avgDuration)
 
-	today := time.Now().Truncate(24 * time.Hour)
+	today := startOfToday()
 	todayQuery := DB.Model(&McpCallLog{})
 	if userID > 0 {
 		todayQuery = todayQuery.Where("user_id = ?", userID)

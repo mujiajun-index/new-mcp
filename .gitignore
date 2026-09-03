@@ -44,7 +44,8 @@ __pycache__/
 *.pyc
 
 # Logs
-logs/
+# 锚定根目录:裸 logs/ 会连带忽略 web/src/features/logs 前端源码目录(gitignore 模式匹配任意层级)
+/logs/
 *.log
 
 # IDE

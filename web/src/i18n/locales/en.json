@@ -275,7 +275,11 @@
     "errorPreview": "Error Detail",
     "smartCall": "Smart",
     "smartCallTip": "Called via Smart Mode ({{method}})",
-    "keyIndexTip": "Secret pool index #{{index}} used by this call (see Secret Keys in the service detail page)"
+    "keyIndexTip": "Secret pool index #{{index}} used by this call (see Secret Keys in the service detail page)",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "filter": "Filter",
+    "filterDrawerDesc": "Adjust filters, then search to refresh the logs."
   },
   "setup": {
     "title": "Initialize System",

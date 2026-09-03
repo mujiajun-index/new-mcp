@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useSearch } from '@tanstack/react-router'
@@ -8,13 +8,13 @@ import { useAuthStore } from '@/stores/auth-store'
 import { isAdminRole } from '@/lib/roles'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { MobileListCard } from '@/components/ui/mobile-list-card'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CompactDateTimeRangePicker } from '@/components/ui/date-time-range-picker'
-import { Activity, CheckCircle, XCircle, Clock, Zap, Search, RotateCw, ChevronLeft, ChevronRight, Copy, Eye } from 'lucide-react'
+import { LogsFilterField, LogsFilterInput, LogsFilterToolbar } from './logs-filter-toolbar'
+import { ChevronLeft, ChevronRight, Copy, Eye } from 'lucide-react'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -104,6 +104,15 @@ function getOperatorDisplay(extra?: string): string | null {
   return null
 }
 
+// 默认时间范围:今天 00:00:00 ~ 23:59:59(与选择器「今天」预设同口径;
+// 后端 end_date 为闭区间,当天全天都会命中)。进页面与「重置」都回到此范围。
+function todayRange() {
+  return {
+    start: dayjs().startOf('day').toDate(),
+    end: dayjs().endOf('day').toDate(),
+  }
+}
+
 export function UserLogsPage() {
   const { t } = useTranslation()
   const { auth } = useAuthStore()
@@ -118,19 +127,31 @@ export function UserLogsPage() {
   const queryClient = useQueryClient()
   // 支持外部带 ?type=N 跳转预选类型(如钱包页「查看消费明细」→ /logs?type=2)。
   const urlSearch = useSearch({ strict: false }) as { type?: string | number }
+  const initialFilter = useMemo<LogFilter>(
+    () => (urlSearch.type ? { type: Number(urlSearch.type) } : {}),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  )
   const [page, setPage] = useState(1)
   const pageSize = 20
-  const [filter, setFilter] = useState<LogFilter>({ type: urlSearch.type ? Number(urlSearch.type) : undefined })
-  const [dateRange, setDateRange] = useState<{ start?: Date; end?: Date }>({})
+  // 筛选草稿态:输入即时更新,点击「搜索」才提交查询(参考 reference 的交互)。
+  const [filter, setFilter] = useState<LogFilter>(initialFilter)
+  // 时间段默认今天;重置也回到今天(与 reference 行为一致)。
+  const [dateRange, setDateRange] = useState<{ start?: Date; end?: Date }>(todayRange)
+  // 已提交态:查询真正使用的条件。
+  const [applied, setApplied] = useState<{ filter: LogFilter; range: { start?: Date; end?: Date } }>(() => ({
+    filter: initialFilter,
+    range: todayRange(),
+  }))
   // 错误信息预览弹窗:点击某行错误信息后展开完整内容并支持复制。
   const [previewError, setPreviewError] = useState<string | null>(null)
 
   const apiFilter = useMemo(() => {
-    const f: LogFilter = { ...filter }
-    if (dateRange.start) f.start_date = dayjs(dateRange.start).format('YYYY-MM-DD HH:mm:ss')
-    if (dateRange.end) f.end_date = dayjs(dateRange.end).format('YYYY-MM-DD HH:mm:ss')
+    const f: LogFilter = { ...applied.filter }
+    if (applied.range.start) f.start_date = dayjs(applied.range.start).format('YYYY-MM-DD HH:mm:ss')
+    if (applied.range.end) f.end_date = dayjs(applied.range.end).format('YYYY-MM-DD HH:mm:ss')
     return f
-  }, [filter, dateRange])
+  }, [applied])
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['user-log-stats', apiFilter],
@@ -148,17 +169,28 @@ export function UserLogsPage() {
 
   const updateFilter = (key: keyof LogFilter, value: string) => {
     setFilter(prev => ({ ...prev, [key]: value || undefined }))
-    setPage(1)
   }
 
   const setType = (v: string) => {
     setFilter(prev => ({ ...prev, type: v === '0' ? undefined : Number(v) }))
+  }
+
+  const handleSearch = () => {
+    setApplied({ filter, range: dateRange })
     setPage(1)
+    // 与 reference 行为一致:点击搜索同时强制刷新(条件未变时也能拉到最新数据)。
+    queryClient.invalidateQueries({ queryKey: ['user-logs'] })
+    queryClient.invalidateQueries({ queryKey: ['user-log-stats'] })
+  }
+
+  const handleKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') handleSearch()
   }
 
   const resetFilters = () => {
     setFilter({})
-    setDateRange({})
+    setDateRange(todayRange())
+    setApplied({ filter: {}, range: todayRange() })
     setPage(1)
     // 重置后强制刷新列表与统计:即便过滤条件未变化(如本就为空)也重新拉取,确保数据为最新。
     queryClient.invalidateQueries({ queryKey: ['user-logs'] })
@@ -173,11 +205,6 @@ export function UserLogsPage() {
     } catch {
       toast.error(t('common.copyFailed'))
     }
-  }
-
-  const handleDateRangeChange = (range: { start?: Date; end?: Date }) => {
-    setDateRange(range)
-    setPage(1)
   }
 
   const formatTime = (dateStr: string) => {
@@ -196,13 +223,35 @@ export function UserLogsPage() {
     return `${(ms / 1000).toFixed(2)}s`
   }
 
-  const statCards = [
-    { label: t('logs.totalCalls'), value: stats?.data?.total_calls ?? 0, icon: Activity, color: 'text-sky-500', bg: 'bg-sky-500/10' },
-    { label: t('logs.successCalls'), value: stats?.data?.success_calls ?? 0, icon: CheckCircle, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-    { label: t('logs.failedCalls'), value: stats?.data?.failed_calls ?? 0, icon: XCircle, color: 'text-red-500', bg: 'bg-red-500/10' },
-    { label: t('logs.avgDuration'), value: stats?.data?.avg_duration_ms ? formatAvgDuration(stats.data.avg_duration_ms) : '0ms', icon: Clock, color: 'text-violet-500', bg: 'bg-violet-500/10' },
-    { label: t('logs.todayCalls'), value: stats?.data?.calls_today ?? 0, icon: Zap, color: 'text-amber-500', bg: 'bg-amber-500/10' },
-  ]
+  // 激活筛选计数:主筛选/高级筛选分开统计,驱动「展开」徽标、移动端「筛选」徽标与重置按钮的禁用态。
+  // 时间段不计数:默认恒为今天(与 reference 一致),计入会让重置按钮常亮。
+  const hasTypeFilter = filter.type !== undefined
+  const primaryFilterCount = [
+    !!filter.tool_name,
+    !!filter.group_name,
+    !!filter.status,
+    hasTypeFilter,
+  ].filter(Boolean).length
+  const advancedFilterCount = [
+    !!filter.keyword,
+    !!filter.api_key_name,
+    ...(isAdmin ? [!!filter.username, !!filter.service_name] : []),
+  ].filter(Boolean).length
+  const hasActiveFilters = primaryFilterCount + advancedFilterCount > 0
+
+  const statsBar = (
+    <div className="flex flex-wrap items-center gap-2">
+      <StatBadge label={t('logs.totalCalls')} value={statsLoading ? '…' : (stats?.data?.total_calls ?? 0)} accent="bg-sky-500/70" />
+      <StatBadge label={t('logs.successCalls')} value={statsLoading ? '…' : (stats?.data?.success_calls ?? 0)} accent="bg-emerald-500/70" />
+      <StatBadge label={t('logs.failedCalls')} value={statsLoading ? '…' : (stats?.data?.failed_calls ?? 0)} accent="bg-rose-500/65" />
+      <StatBadge
+        label={t('logs.avgDuration')}
+        value={statsLoading ? '…' : (stats?.data?.avg_duration_ms ? formatAvgDuration(stats.data.avg_duration_ms) : '0ms')}
+        accent="bg-violet-500/70"
+      />
+      <StatBadge label={t('logs.todayCalls')} value={statsLoading ? '…' : (stats?.data?.calls_today ?? 0)} accent="bg-amber-500/70" />
+    </div>
+  )
 
   // 列宽权重(px),通用日志的 DataTableColgroup:经 <colgroup> 换算成各列占总宽的
   // 百分比,表格 w-full 时所有列等比例同步伸缩(全屏分布均匀,视口加宽每列按占比变宽);
@@ -224,6 +273,118 @@ export function UserLogsPage() {
   ]
   const logColumnsTotal = logColumns.reduce((s, c) => s + c.w, 0)
 
+  // 筛选字段定义:主筛选常驻(时间/工具/分组/类型/状态),其余收进可折叠高级区。
+  const dateRangeFilter = (
+    <LogsFilterField wide>
+      <CompactDateTimeRangePicker
+        start={dateRange.start}
+        end={dateRange.end}
+        onChange={setDateRange}
+        className="h-8 w-full justify-start gap-2 px-2.5 font-sans text-sm leading-5 font-normal tabular-nums"
+      />
+    </LogsFilterField>
+  )
+  const toolNameFilter = (
+    <LogsFilterField>
+      <LogsFilterInput
+        placeholder={t('logs.toolName')}
+        value={filter.tool_name ?? ''}
+        onChange={e => updateFilter('tool_name', e.target.value)}
+        onKeyDown={handleKeyDown}
+      />
+    </LogsFilterField>
+  )
+  const groupNameFilter = (
+    <LogsFilterField>
+      <LogsFilterInput
+        placeholder={t('logs.groupName')}
+        value={filter.group_name ?? ''}
+        onChange={e => updateFilter('group_name', e.target.value)}
+        onKeyDown={handleKeyDown}
+      />
+    </LogsFilterField>
+  )
+  const typeFilter = (
+    <LogsFilterField>
+      <Select value={String(filter.type ?? 0)} onValueChange={setType}>
+        <SelectTrigger className="h-8 text-sm">
+          <SelectValue placeholder={t('logs.type')} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="0">{t('logs.typeAll')}</SelectItem>
+          <SelectItem value="2">{t('logs.typeConsume')}</SelectItem>
+          <SelectItem value="1">{t('logs.typeTopup')}</SelectItem>
+          <SelectItem value="3">{t('logs.typeManage')}</SelectItem>
+          <SelectItem value="4">{t('logs.typeSystem')}</SelectItem>
+          <SelectItem value="7">{t('logs.typeLogin')}</SelectItem>
+        </SelectContent>
+      </Select>
+    </LogsFilterField>
+  )
+  const statusFilter = (
+    <LogsFilterField>
+      <Select value={filter.status ?? 'all'} onValueChange={v => updateFilter('status', v === 'all' ? '' : v)}>
+        <SelectTrigger className="h-8 text-sm">
+          <SelectValue placeholder={t('logs.status')} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">{t('logs.allStatus')}</SelectItem>
+          <SelectItem value="success">{t('logs.success')}</SelectItem>
+          <SelectItem value="error">{t('logs.error')}</SelectItem>
+        </SelectContent>
+      </Select>
+    </LogsFilterField>
+  )
+  const keywordFilter = (
+    <LogsFilterField>
+      <LogsFilterInput
+        placeholder={t('logs.searchPlaceholder')}
+        value={filter.keyword ?? ''}
+        onChange={e => updateFilter('keyword', e.target.value)}
+        onKeyDown={handleKeyDown}
+      />
+    </LogsFilterField>
+  )
+  const apiKeyNameFilter = (
+    <LogsFilterField>
+      {/* 令牌名称筛选(与令牌列同口径对所有用户开放);输入 tool-test 可筛出手动测试记录 */}
+      <LogsFilterInput
+        placeholder={t('logs.apiKeyName')}
+        value={filter.api_key_name ?? ''}
+        onChange={e => updateFilter('api_key_name', e.target.value)}
+        onKeyDown={handleKeyDown}
+      />
+    </LogsFilterField>
+  )
+  const usernameFilter = (
+    <LogsFilterField>
+      <LogsFilterInput
+        placeholder={t('logs.username')}
+        value={filter.username ?? ''}
+        onChange={e => updateFilter('username', e.target.value)}
+        onKeyDown={handleKeyDown}
+      />
+    </LogsFilterField>
+  )
+  const serviceNameFilter = (
+    <LogsFilterField>
+      <LogsFilterInput
+        placeholder={t('logs.serviceName')}
+        value={filter.service_name ?? ''}
+        onChange={e => updateFilter('service_name', e.target.value)}
+        onKeyDown={handleKeyDown}
+      />
+    </LogsFilterField>
+  )
+  const advancedFilters = (
+    <>
+      {keywordFilter}
+      {apiKeyNameFilter}
+      {isAdmin && usernameFilter}
+      {isAdmin && serviceNameFilter}
+    </>
+  )
+
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
         {/* Header */}
@@ -232,109 +393,37 @@ export function UserLogsPage() {
           <p className="mt-1 text-sm text-muted-foreground">{t('logs.subtitle')}</p>
         </div>
 
-        {/* Stats */}
-        <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
-          {statCards.map((card, i) => (
-            <div key={i} className="rounded-xl border bg-card p-4">
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-muted-foreground">{card.label}</p>
-                <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${card.bg}`}>
-                  <card.icon className={`h-4 w-4 ${card.color}`} />
-                </div>
-              </div>
-              <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums">
-                {statsLoading ? '...' : card.value}
-              </p>
-            </div>
-          ))}
-        </div>
-
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-4">
-          <div className="relative flex-1 min-w-[200px] max-w-xs">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder={t('logs.searchPlaceholder')}
-              value={filter.keyword ?? ''}
-              onChange={e => updateFilter('keyword', e.target.value)}
-              className="pl-9 h-9"
-            />
-          </div>
-
-          <Select value={String(filter.type ?? 0)} onValueChange={setType}>
-            <SelectTrigger className="w-[120px] h-9">
-              <SelectValue placeholder={t('logs.type')} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="0">{t('logs.typeAll')}</SelectItem>
-              <SelectItem value="2">{t('logs.typeConsume')}</SelectItem>
-              <SelectItem value="1">{t('logs.typeTopup')}</SelectItem>
-              <SelectItem value="3">{t('logs.typeManage')}</SelectItem>
-              <SelectItem value="4">{t('logs.typeSystem')}</SelectItem>
-              <SelectItem value="7">{t('logs.typeLogin')}</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select value={filter.status ?? 'all'} onValueChange={v => updateFilter('status', v === 'all' ? '' : v)}>
-            <SelectTrigger className="w-[130px] h-9">
-              <SelectValue placeholder={t('logs.status')} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t('logs.allStatus')}</SelectItem>
-              <SelectItem value="success">{t('logs.success')}</SelectItem>
-              <SelectItem value="error">{t('logs.error')}</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <CompactDateTimeRangePicker
-            start={dateRange.start}
-            end={dateRange.end}
-            onChange={handleDateRangeChange}
-          />
-
-          <Input
-            placeholder={t('logs.toolName')}
-            value={filter.tool_name ?? ''}
-            onChange={e => updateFilter('tool_name', e.target.value)}
-            className="w-[150px] h-9"
-          />
-
-          <Input
-            placeholder={t('logs.groupName')}
-            value={filter.group_name ?? ''}
-            onChange={e => updateFilter('group_name', e.target.value)}
-            className="w-[150px] h-9"
-          />
-
-          {isAdmin && (
-            <Input
-              placeholder={t('logs.serviceName')}
-              value={filter.service_name ?? ''}
-              onChange={e => updateFilter('service_name', e.target.value)}
-              className="w-[150px] h-9"
-            />
-          )}
-          {isAdmin && (
-            <Input
-              placeholder={t('logs.username')}
-              value={filter.username ?? ''}
-              onChange={e => updateFilter('username', e.target.value)}
-              className="w-[130px] h-9"
-            />
-          )}
-          {/* 令牌名称筛选(与令牌列同口径对所有用户开放);输入 tool-test 可筛出手动测试记录 */}
-          <Input
-            placeholder={t('logs.apiKeyName')}
-            value={filter.api_key_name ?? ''}
-            onChange={e => updateFilter('api_key_name', e.target.value)}
-            className="w-[130px] h-9"
-          />
-
-          <Button variant="outline" size="sm" onClick={resetFilters} className="h-9">
-            <RotateCw className="mr-1.5 h-3.5 w-3.5" />
-            {t('logs.reset')}
-          </Button>
-        </div>
+        {/* Filters + inline stats(布局参考 reference/new-api) */}
+        <LogsFilterToolbar
+          primaryFilters={
+            <>
+              {dateRangeFilter}
+              {toolNameFilter}
+              {groupNameFilter}
+              {typeFilter}
+              {statusFilter}
+            </>
+          }
+          advancedFilters={advancedFilters}
+          mobilePinnedFilters={dateRangeFilter}
+          mobileFilters={
+            <>
+              {toolNameFilter}
+              {groupNameFilter}
+              {typeFilter}
+              {statusFilter}
+              {advancedFilters}
+            </>
+          }
+          mobileFilterCount={primaryFilterCount + advancedFilterCount}
+          stats={statsBar}
+          hasActiveFilters={hasActiveFilters}
+          hasAdvancedActiveFilters={advancedFilterCount > 0}
+          advancedFilterCount={advancedFilterCount}
+          searchLoading={isFetching}
+          onSearch={handleSearch}
+          onReset={resetFilters}
+        />
 
         {/* Table */}
         <div className="rounded-xl border bg-card">
@@ -450,6 +539,19 @@ export function UserLogsPage() {
     </div>
   )
 }
+
+// 行内统计徽标(参考 reference CommonLogsStats 的 StatBadge):色条 + 标签 + 数值,
+// 嵌在筛选工具栏底行,替代原来的大卡片。
+function StatBadge({ label, value, accent }: { label: string; value: string | number; accent: string }) {
+  return (
+    <span className="inline-flex h-7 items-center gap-2 rounded-md border border-border/60 bg-muted/25 px-2.5 text-xs shadow-xs">
+      <span className={`h-3.5 w-0.5 rounded-full ${accent}`} />
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-mono font-semibold tabular-nums text-foreground/85">{value}</span>
+    </span>
+  )
+}
+
 
 // 额度变动展示(非消费类):正数=入账(绿),负数=扣除(红)。统一换算成展示货币。
 function QuotaDelta({ value, fmt }: { value: number; fmt: (n: number) => string }) {

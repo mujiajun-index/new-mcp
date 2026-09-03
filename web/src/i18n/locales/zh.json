@@ -275,7 +275,11 @@
     "errorPreview": "错误详情",
     "smartCall": "智能",
     "smartCallTip": "智能模式调用（{{method}}）",
-    "keyIndexTip": "多秘钥调用使用的秘钥池内序号 #{{index}}(对应服务详情「秘钥管理」的序号列)"
+    "keyIndexTip": "多秘钥调用使用的秘钥池内序号 #{{index}}(对应服务详情「秘钥管理」的序号列)",
+    "expand": "展开",
+    "collapse": "收起",
+    "filter": "筛选",
+    "filterDrawerDesc": "调整筛选条件后点击搜索刷新日志"
   },
   "setup": {
     "title": "初始化系统",
