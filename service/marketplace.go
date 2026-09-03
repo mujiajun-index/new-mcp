@@ -738,9 +738,9 @@ func (s *MarketplaceService) CloneFromService(adminID int64, req *dto.CloneMarke
 	return s.toDetail(item), nil
 }
 
-func (s *MarketplaceService) ListItemsAdmin(page, pageSize int) ([]dto.MarketplaceListItem, int64, error) {
+func (s *MarketplaceService) ListItemsAdmin(page, pageSize, status int, category, keyword string, groupID int64, tag string) ([]dto.MarketplaceListItem, int64, error) {
 	offset := common.GetOffset(page, pageSize)
-	items, total, err := model.ListAllMarketplaceItems(offset, pageSize)
+	items, total, err := model.ListAllMarketplaceItems(offset, pageSize, status, category, keyword, groupID, tag)
 	if err != nil {
 		return nil, 0, err
 	}

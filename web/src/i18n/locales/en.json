@@ -1059,6 +1059,7 @@
     "title": "MCP Marketplace",
     "subtitle": "Discover and install MCP services",
     "searchPlaceholder": "Search services...",
+    "adminSearchPlaceholder": "Search name / identifier / description...",
     "filterAll": "All",
     "categoryLabel": "Service type: ",
     "filterReady": "Ready-to-use",

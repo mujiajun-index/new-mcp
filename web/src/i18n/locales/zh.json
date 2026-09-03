@@ -1059,6 +1059,7 @@
     "title": "MCP 广场",
     "subtitle": "发现并安装 MCP 服务",
     "searchPlaceholder": "搜索服务...",
+    "adminSearchPlaceholder": "搜索名称 / 标识 / 描述...",
     "filterAll": "全部",
     "categoryLabel": "服务类型：",
     "filterReady": "即用型",

@@ -7,6 +7,7 @@ import {
   adminBatchPricing, adminCloneMarketplace, adminListCloneSources,
   adminGetMarketplaceHealth,
 } from '../api'
+import { adminListMarketplaceGroups, adminListMarketplaceTags } from '@/features/admin/marketplace-categories/api'
 import { ServiceHealthBar } from '@/features/services/components/service-health-bar'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import { priceLabel, isExplicitlyPriced, PRICE_MAX, PRICE_MIN } from '@/lib/billing'
@@ -25,7 +26,7 @@ import { MobileListCard } from '@/components/ui/mobile-list-card'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { toast } from 'sonner'
 import {
-  Copy, Trash2, CheckSquare, Square, Tag, AlertTriangle, Store, Eye,
+  Copy, Trash2, CheckSquare, Square, Tag, AlertTriangle, Store, Eye, Search,
 } from 'lucide-react'
 
 export function AdminMarketplacePage() {
@@ -39,12 +40,28 @@ export function AdminMarketplacePage() {
   const pageSize = 20
   const [selected, setSelected] = useState<Set<number>>(new Set())
 
+  // 筛选:搜索词(提交生效)+状态/类型/分组/标签;默认只看已启用,状态 0=全部
+  const [searchInput, setSearchInput] = useState('')
+  const [keyword, setKeyword] = useState('')
+  const [status, setStatus] = useState(1)
+  const [category, setCategory] = useState('')
+  const [groupId, setGroupId] = useState<number | ''>('')
+  const [tag, setTag] = useState('')
+
   const [cloneOpen, setCloneOpen] = useState(false)
   const [batchOpen, setBatchOpen] = useState(false)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-marketplace', page],
-    queryFn: () => adminListMarketplace({ page, page_size: pageSize }),
+    queryKey: ['admin-marketplace', page, keyword, status, category, groupId, tag],
+    queryFn: () => adminListMarketplace({
+      page,
+      page_size: pageSize,
+      status: status || undefined,
+      keyword: keyword || undefined,
+      category: category || undefined,
+      group_id: groupId || undefined,
+      tag: tag || undefined,
+    }),
   })
   // 平台级健康:全部条目同条目下全部用户引用行的调用聚合;30s 轮询对齐后端缓存
   const { data: healthData } = useQuery({
@@ -56,6 +73,18 @@ export function AdminMarketplacePage() {
   const items: any[] = data?.data ?? []
   const pagination = data?.pagination
   const totalPages = pagination?.total_pages ?? 1
+
+  // 筛选字典:分组仅启用(禁用分组的绑定已在禁用时同事务摘除);标签取启用字典
+  const { data: groupsData } = useQuery({
+    queryKey: ['admin-marketplace-groups'],
+    queryFn: () => adminListMarketplaceGroups(),
+  })
+  const groups: any[] = (groupsData?.data ?? []).filter((g: any) => g.status === 1)
+  const { data: tagsData } = useQuery({
+    queryKey: ['admin-marketplace-tags'],
+    queryFn: () => adminListMarketplaceTags({ page: 1, page_size: 200, status: 1 }),
+  })
+  const tagsLib: any[] = tagsData?.data ?? []
 
   const toggleSelect = (id: number) =>
     setSelected((prev) => {
@@ -114,7 +143,7 @@ export function AdminMarketplacePage() {
   // 色带列(20 格 flex-1)吃伸缩余量。
   const columns = [
     { key: 'check', w: 40 },
-    { key: 'service', w: 200 },
+    { key: 'service', w: 220 },
     { key: 'category', w: 88 },
     { key: 'sort', w: 64 },
     { key: 'billing', w: 104 },
@@ -145,6 +174,68 @@ export function AdminMarketplacePage() {
           <span>{t('pricing.commercialNote')}</span>
         </div>
       )}
+
+      {/* Filters:搜索(提交生效)+状态/类型/分组/标签下拉(默认已启用) */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <form
+          onSubmit={(e) => { e.preventDefault(); setKeyword(searchInput); setPage(1) }}
+          className="relative w-full max-w-sm flex-1"
+        >
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input placeholder={t('marketplace.adminSearchPlaceholder')} value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)} className="pl-9" />
+        </form>
+        {/* Radix Select 不允许空串 value,「全部」用哨兵 all 表示不过滤 */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <label className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">{t('common.status')}</span>
+            <Select value={String(status)} onValueChange={(v) => { setStatus(Number(v)); setPage(1) }}>
+              <SelectTrigger className="w-[92px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">{t('common.enabled')}</SelectItem>
+                <SelectItem value="2">{t('common.disabled')}</SelectItem>
+                <SelectItem value="0">{t('marketplace.filterAll')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">{t('pricing.colCategory')}</span>
+            <Select value={category || 'all'} onValueChange={(v) => { setCategory(v === 'all' ? '' : v); setPage(1) }}>
+              <SelectTrigger className="w-[92px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('marketplace.filterAll')}</SelectItem>
+                <SelectItem value="instant">{t('marketplace.filterReady')}</SelectItem>
+                <SelectItem value="source">{t('marketplace.filterSource')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">{t('categories.groups')}</span>
+            <Select value={groupId === '' ? 'all' : String(groupId)}
+              onValueChange={(v) => { setGroupId(v === 'all' ? '' : Number(v)); setPage(1) }}>
+              <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('marketplace.filterAll')}</SelectItem>
+                {groups.map((g) => (
+                  <SelectItem key={g.id} value={String(g.id)}>{g.display_name || g.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">{t('categories.tags')}</span>
+            <Select value={tag || 'all'} onValueChange={(v) => { setTag(v === 'all' ? '' : v); setPage(1) }}>
+              <SelectTrigger className="w-[110px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('marketplace.filterAll')}</SelectItem>
+                {tagsLib.map((tg) => (
+                  <SelectItem key={tg.id} value={tg.name}>{tg.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+        </div>
+      </div>
 
       {/* Batch bar */}
       {selected.size > 0 && (
@@ -179,6 +270,11 @@ export function AdminMarketplacePage() {
                       <button onClick={() => toggleSelect(item.id)} className="shrink-0 text-muted-foreground hover:text-foreground">
                         {selected.has(item.id) ? <CheckSquare className="h-4 w-4 text-primary" /> : <Square className="h-4 w-4" />}
                       </button>
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded bg-primary/10 text-primary">
+                        {item.icon_url
+                          ? <img src={item.icon_url} alt="" className="h-3.5 w-3.5" />
+                          : <span className="text-[10px] font-bold">{(item.display_name || item.name).charAt(0)}</span>}
+                      </span>
                       <span className="truncate">{item.display_name || item.name}</span>
                     </div>
                   }
@@ -268,8 +364,16 @@ export function AdminMarketplacePage() {
                         {selected.has(item.id) ? <CheckSquare className="h-4 w-4 text-primary" /> : <Square className="h-4 w-4" />}
                       </button>
                     </TableCell>
-                    <TableCell className="truncate font-medium" title={item.display_name || item.name}>
-                      {item.display_name || item.name}
+                    <TableCell className="font-medium" title={item.display_name || item.name}>
+                      <div className="flex min-w-0 items-center gap-2">
+                        {/* 服务图标:无图标时回退首字母,与市场广场同款 */}
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-md bg-primary/10 text-primary">
+                          {item.icon_url
+                            ? <img src={item.icon_url} alt="" className="h-4 w-4" />
+                            : <span className="text-xs font-bold">{(item.display_name || item.name).charAt(0)}</span>}
+                        </span>
+                        <span className="truncate">{item.display_name || item.name}</span>
+                      </div>
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                       {item.category === 'instant' ? t('marketplace.ready') : t('marketplace.source')}

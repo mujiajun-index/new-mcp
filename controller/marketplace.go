@@ -16,7 +16,10 @@ var marketplaceService = &service.MarketplaceService{}
 
 func AdminListMarketplaceItems(c *gin.Context) {
 	page, pageSize := common.GetPagination(c)
-	items, total, err := marketplaceService.ListItemsAdmin(page, pageSize)
+	status, _ := strconv.Atoi(c.Query("status"))
+	groupID, _ := strconv.ParseInt(c.Query("group_id"), 10, 64)
+	items, total, err := marketplaceService.ListItemsAdmin(page, pageSize, status,
+		c.Query("category"), c.Query("keyword"), groupID, c.Query("tag"))
 	if err != nil {
 		common.Error(c, http.StatusInternalServerError, "获取市场列表失败")
 		return

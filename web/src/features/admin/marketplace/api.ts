@@ -5,8 +5,17 @@ import type {
   UpdateServiceKeysReq,
 } from '@/types'
 
-// 管理员市场项列表(全量,含未发布)
-export async function adminListMarketplace(params?: { page?: number; page_size?: number }) {
+// 管理员市场项列表(全量,含未发布);status=0 不过滤,keyword 匹配标识/显示名/描述,
+// category/group_id/tag 筛选与广场已发布列表同口径
+export async function adminListMarketplace(params?: {
+  page?: number
+  page_size?: number
+  status?: number
+  keyword?: string
+  category?: string
+  group_id?: number
+  tag?: string
+}) {
   const res = await api.get('/admin/marketplace', { params })
   return res.data
 }

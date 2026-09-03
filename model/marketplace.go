@@ -113,8 +113,9 @@ func GetMarketplaceItemByID(id int64) (*MarketplaceItem, error) {
 	return &item, err
 }
 
-func ListPublishedMarketplaceItems(offset, limit int, category, keyword string, groupID int64, tag string) ([]MarketplaceItem, int64, error) {
-	query := DB.Where("status = ?", common.StatusEnabled)
+// applyItemFilters 叠加除状态外的公共筛选(类型/分组/标签/关键词),
+// 已发布列表与管理端列表共用,保证两端口径一致。
+func applyItemFilters(query *gorm.DB, category, keyword string, groupID int64, tag string) *gorm.DB {
 	if category != "" {
 		query = query.Where("category = ?", category)
 	}
@@ -134,6 +135,10 @@ func ListPublishedMarketplaceItems(offset, limit int, category, keyword string, 
 		query = query.Where("name LIKE ? OR display_name LIKE ? OR description LIKE ?",
 			"%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
 	}
+	return query
+}
+
+func findMarketplaceItems(query *gorm.DB, offset, limit int) ([]MarketplaceItem, int64, error) {
 	var total int64
 	if err := query.Model(&MarketplaceItem{}).Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -144,14 +149,20 @@ func ListPublishedMarketplaceItems(offset, limit int, category, keyword string, 
 	return items, total, err
 }
 
-func ListAllMarketplaceItems(offset, limit int) ([]MarketplaceItem, int64, error) {
-	var total int64
-	if err := DB.Model(&MarketplaceItem{}).Count(&total).Error; err != nil {
-		return nil, 0, err
+func ListPublishedMarketplaceItems(offset, limit int, category, keyword string, groupID int64, tag string) ([]MarketplaceItem, int64, error) {
+	query := applyItemFilters(DB.Where("status = ?", common.StatusEnabled), category, keyword, groupID, tag)
+	return findMarketplaceItems(query, offset, limit)
+}
+
+// ListAllMarketplaceItems 管理端全量列表(含未发布);status=0 不过滤,
+// 其余筛选与已发布列表同口径。
+func ListAllMarketplaceItems(offset, limit, status int, category, keyword string, groupID int64, tag string) ([]MarketplaceItem, int64, error) {
+	query := DB.Model(&MarketplaceItem{})
+	if status > 0 {
+		query = query.Where("status = ?", status)
 	}
-	var items []MarketplaceItem
-	err := DB.Order("sort_order DESC, install_count DESC, created_at DESC").Offset(offset).Limit(limit).Find(&items).Error
-	return items, total, err
+	query = applyItemFilters(query, category, keyword, groupID, tag)
+	return findMarketplaceItems(query, offset, limit)
 }
 
 // ListMarketplaceItemStatuses 全部条目的 id+status 窄行(管理页平台级健康聚合用,
