@@ -88,6 +88,9 @@ var defaultOptions = map[string]string{
 	"UploadCleanupIntervalMinutes": "60",         // 过期清理扫描间隔(分钟)
 	// 市场平台托管的 stdio 进程空闲回收；0 表示关闭自动回收。
 	"SharedStdioIdleTimeoutMinutes": "60",
+	// 市场共享 stdio 条目的并发调用上限(每条目独立,全体用户合计);超出立即
+	// 返回"负载较高,请稍后重试"。0 表示不限。
+	"SharedStdioMaxConcurrency": "10",
 	// --- V1.1: shell 直传 / 图片管理 / 入参择优 ---
 	"PresignedPutTTLSeconds": "600",   // 预签名 PUT URL 有效期(秒),直传路径;须 < SignedURLTTL
 	"MaxUploadsPerUser":      "0",     // 每用户活跃上传数上限(护栏);0=不限

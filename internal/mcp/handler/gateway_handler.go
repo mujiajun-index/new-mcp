@@ -464,7 +464,7 @@ func (h *GatewayHandler) routeAndCall(ctx context.Context, reqID interface{}, lo
 	// Route to real MCP service
 	session, resolvedTool, release, err := h.acquireRouteOrConnect(ctx, toolName, logCtx.UserID)
 	if err != nil {
-		return h.errorResponse(reqID, -32602, err.Error())
+		return h.errorResponse(reqID, acquireErrCode(err), err.Error())
 	}
 	defer release()
 
@@ -674,7 +674,7 @@ func (h *GatewayHandler) executeOne(ctx context.Context, logCtx *LogContext, too
 
 	session, toolName, release, err := h.acquireRouteOrConnect(ctx, toolID, logCtx.UserID)
 	if err != nil {
-		return &callOutcome{Err: err.Error(), ErrCode: -32602}
+		return &callOutcome{Err: err.Error(), ErrCode: acquireErrCode(err)}
 	}
 	defer release()
 
@@ -1092,17 +1092,29 @@ func (h *GatewayHandler) routeOrConnect(ctx context.Context, namespacedTool stri
 
 // acquireRouteOrConnect retries the normal DB-backed connection path if a
 // reaper removes a session between routing and obtaining its usage lease.
+// 共享 stdio 并发上限命中(ErrServiceBusy)不可重试,带服务名上抛。
 func (h *GatewayHandler) acquireRouteOrConnect(ctx context.Context, namespacedTool string, userID int64) (*bridge.McpSession, string, func(), error) {
 	for i := 0; i < 2; i++ {
 		session, toolName, err := h.routeOrConnect(ctx, namespacedTool, userID)
 		if err != nil {
 			return nil, "", nil, err
 		}
-		if release, ok := h.pool.AcquireSession(session); ok {
+		if release, ok, aerr := h.pool.AcquireSession(session); aerr != nil {
+			return nil, "", nil, fmt.Errorf("%s: %w", session.ServiceName, aerr)
+		} else if ok {
 			return session, toolName, release, nil
 		}
 	}
 	return nil, "", nil, fmt.Errorf("service session was released while acquiring")
+}
+
+// acquireErrCode 租用失败转 JSON-RPC 错误码:共享 stdio 并发上限命中用
+// 服务端错误码 -32000(错误文案即"负载较高,请稍后重试"友好提示),其余维持 -32602。
+func acquireErrCode(err error) int {
+	if errors.Is(err, bridge.ErrServiceBusy) {
+		return -32000
+	}
+	return -32602
 }
 
 // userOwnedServicesAllowed 报告当前是否允许调用给定来源的服务(§7.5)。

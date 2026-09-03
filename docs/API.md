@@ -1391,6 +1391,8 @@ canvas.toBlob(blob => {
 | 限流 | `RateLimitMaxRequests` | int | 时间窗口内最大请求数 |
 | 限流 | `RateLimitWindowMinutes` | int | 时间窗口（分钟） |
 | 限流 | `RateLimitGroupConfig` | string | 分组级限流配置 JSON，如 `{"vip":{"max":120,"window":1}}` |
+| 市场 Stdio | `SharedStdioIdleTimeoutMinutes` | int | 平台托管 stdio 进程空闲自动释放时长（分钟），0=关闭自动释放；修改立即生效 |
+| 市场 Stdio | `SharedStdioMaxConcurrency` | int | 共享市场 stdio 条目并发调用上限（每条目独立、全体用户合计），超出立即返回 `-32000 "服务名: 当前服务负载较高，请稍后重试"`；0=不限；修改立即生效 |
 | SMTP | `SMTPServer` | string | SMTP 服务器地址 |
 | SMTP | `SMTPPort` | int | SMTP 端口（默认 587，STARTTLS） |
 | SMTP | `SMTPAccount` | string | SMTP 账号 |

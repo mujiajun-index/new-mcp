@@ -609,6 +609,27 @@ export function AdminSettingsPage() {
                   onBlur={() => saveField('SharedStdioIdleTimeoutMinutes')}
                 />
               </div>
+
+              <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                <div className="space-y-0.5">
+                  <label className="text-sm font-medium" htmlFor="shared-stdio-max-concurrency">
+                    {t('settings.sharedStdioMaxConcurrency')}
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    {t('settings.sharedStdioMaxConcurrencyDesc')}
+                  </p>
+                </div>
+                <Input
+                  id="shared-stdio-max-concurrency"
+                  type="number"
+                  min="0"
+                  step="1"
+                  className="w-20 shrink-0 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  value={localValues.SharedStdioMaxConcurrency ?? '10'}
+                  onChange={(e) => updateLocal('SharedStdioMaxConcurrency', e.target.value)}
+                  onBlur={() => saveField('SharedStdioMaxConcurrency')}
+                />
+              </div>
             </div>
           </div>
 

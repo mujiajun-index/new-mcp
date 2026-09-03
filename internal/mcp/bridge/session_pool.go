@@ -3,6 +3,7 @@ package bridge
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -31,10 +32,24 @@ type McpSession struct {
 	inUse             int
 }
 
+// ErrServiceBusy 共享市场 stdio 会话并发达到上限时返回。调用方应转成
+// "负载较高,请稍后重试"的友好响应(errors.Is 判定)。
+var ErrServiceBusy = errors.New("当前服务负载较高，请稍后重试")
+
+// keyedMutex 按 sessionKey 键控的建连互斥锁,引用计数归零后从池中摘除。
+type keyedMutex struct {
+	mu  sync.Mutex
+	ref int
+}
+
 type SessionPool struct {
 	mu         sync.RWMutex
 	sessions   map[sessionKey]*McpSession
 	maxRetries int
+	// connMu/connectLocks: per-key 建连锁。慢启动(npx 冷下载可达数十秒)只
+	// 排队同键请求,不再持整池写锁卡住其他服务的会话查找与建连。
+	connMu       sync.Mutex
+	connectLocks map[sessionKey]*keyedMutex
 }
 
 // sessionKey 会话池键:默认按服务行键控(自有服务/独占市场引用一行一会话);
@@ -55,27 +70,23 @@ func sessionKeyFor(svc *model.McpService) sessionKey {
 
 func NewSessionPool() *SessionPool {
 	return &SessionPool{
-		sessions:   make(map[sessionKey]*McpSession),
-		maxRetries: 5,
+		sessions:     make(map[sessionKey]*McpSession),
+		maxRetries:   5,
+		connectLocks: make(map[sessionKey]*keyedMutex),
 	}
 }
 
 func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (*McpSession, error) {
 	key := sessionKeyFor(svc)
-	p.mu.RLock()
-	if session, ok := p.sessions[key]; ok && session.Adapter.IsConnected() {
-		session.markUsed()
-		p.mu.RUnlock()
+	if session := p.connectedSession(key); session != nil {
 		return session, nil
 	}
-	p.mu.RUnlock()
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	// 同键建连互斥:拿到 key 锁后 double check,仍无会话才真正建连。
+	connLock := p.lockConnect(key)
+	defer p.unlockConnect(key, connLock)
 
-	// Double check after acquiring write lock
-	if session, ok := p.sessions[key]; ok && session.Adapter.IsConnected() {
-		session.markUsed()
+	if session := p.connectedSession(key); session != nil {
 		return session, nil
 	}
 
@@ -119,7 +130,12 @@ func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (
 		Health:            "healthy",
 	}
 
+	// 池锁只护 map 写入(建连期间不再持有)。建连耗时窗口内若发生条目配置
+	// 变更踢会话(RemoveByMarketplaceItem),本写入无法感知,极小概率留下旧
+	// 配置会话——由空闲回收兜底,下次空闲释放后按新配置重建。
+	p.mu.Lock()
 	p.sessions[key] = session
+	p.mu.Unlock()
 
 	// 共享条目预热用的是内存行(ID=0,不落库):跳过 DB 回写与缓存预热,
 	// 引用行的 tools/握手信息由真实调用路径或刷新补齐。
@@ -131,12 +147,50 @@ func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (
 	return session, nil
 }
 
+// connectedSession 返回键控会话(须已连接),命中即刷新使用时间;无可用会话返回 nil。
+func (p *SessionPool) connectedSession(key sessionKey) *McpSession {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if session, ok := p.sessions[key]; ok && session.Adapter.IsConnected() {
+		session.markUsed()
+		return session
+	}
+	return nil
+}
+
+// lockConnect/unlockConnect 维护 per-key 建连互斥:引用计数归零即从 map 摘除,
+// 防止长期运行下 map 无界增长。已持有锁引用的等待者不受摘除影响(操作的是同一把锁)。
+func (p *SessionPool) lockConnect(key sessionKey) *keyedMutex {
+	p.connMu.Lock()
+	km := p.connectLocks[key]
+	if km == nil {
+		km = &keyedMutex{}
+		p.connectLocks[key] = km
+	}
+	km.ref++
+	p.connMu.Unlock()
+	km.mu.Lock()
+	return km
+}
+
+func (p *SessionPool) unlockConnect(key sessionKey, km *keyedMutex) {
+	p.connMu.Lock()
+	km.ref--
+	if km.ref == 0 {
+		delete(p.connectLocks, key)
+	}
+	p.connMu.Unlock()
+	km.mu.Unlock()
+}
+
 // AcquireSession holds a lease for a session previously returned by this pool.
-// A false result means it was concurrently removed and the caller should retry
-// through its normal connect path.
-func (p *SessionPool) AcquireSession(session *McpSession) (func(), bool) {
+// A (nil,false,nil) result means it was concurrently removed and the caller
+// should retry through its normal connect path; (nil,true,err) with
+// errors.Is(err, ErrServiceBusy) means the shared stdio concurrency limit
+// was hit and the caller should fail with a friendly retry-later response.
+func (p *SessionPool) AcquireSession(session *McpSession) (func(), bool, error) {
 	if session == nil {
-		return nil, false
+		return nil, false, nil
 	}
 	return p.acquireExisting(session.key, session)
 }
@@ -150,21 +204,30 @@ func (p *SessionPool) Acquire(ctx context.Context, svc *model.McpService) (*McpS
 		if err != nil {
 			return nil, nil, err
 		}
-		if release, ok := p.acquireExisting(sessionKeyFor(svc), session); ok {
+		release, ok, aerr := p.acquireExisting(sessionKeyFor(svc), session)
+		if aerr != nil {
+			return nil, nil, aerr // ErrServiceBusy 不可重试,直接上抛
+		}
+		if ok {
 			return session, release, nil
 		}
 	}
 	return nil, nil, fmt.Errorf("service session was released while acquiring")
 }
 
-func (p *SessionPool) acquireExisting(key sessionKey, want *McpSession) (func(), bool) {
+func (p *SessionPool) acquireExisting(key sessionKey, want *McpSession) (func(), bool, error) {
 	p.mu.RLock()
 	session, ok := p.sessions[key]
 	if !ok || session != want || !session.Adapter.IsConnected() {
 		p.mu.RUnlock()
-		return nil, false
+		return nil, false, nil
 	}
 	session.useMu.Lock()
+	if err := session.busyLocked(); err != nil {
+		session.useMu.Unlock()
+		p.mu.RUnlock()
+		return nil, true, err
+	}
 	session.inUse++
 	session.LastUsed = time.Now()
 	session.useMu.Unlock()
@@ -176,7 +239,22 @@ func (p *SessionPool) acquireExisting(key sessionKey, want *McpSession) (func(),
 		}
 		session.LastUsed = time.Now()
 		session.useMu.Unlock()
-	}, true
+	}, true, nil
+}
+
+// busyLocked 报告共享市场 stdio 会话的租用是否已达并发上限(须持 useMu 调用)。
+// 仅条目键控的共享会话受限(独占/自有 stdio 每用户一进程,天然低并发);上限每次
+// 实时读配置 SharedStdioMaxConcurrency,0 或负数 = 不限,管理端改动即时生效。
+// 超限快速失败(不排队),由调用方转成友好重试提示。
+func (s *McpSession) busyLocked() error {
+	if s.key.itemID == 0 {
+		return nil
+	}
+	limit := model.GetOptionInt("SharedStdioMaxConcurrency")
+	if limit <= 0 || s.inUse < limit {
+		return nil
+	}
+	return ErrServiceBusy
 }
 
 func (s *McpSession) markUsed() {
@@ -186,7 +264,8 @@ func (s *McpSession) markUsed() {
 }
 
 func (p *SessionPool) refreshItemCachesWhenLeased(session *McpSession) {
-	if release, ok := p.AcquireSession(session); ok {
+	// 后台预热抢不到租约(并发上限/会话被移除)就跳过,缓存由下次真实调用补齐。
+	if release, ok, err := p.AcquireSession(session); err == nil && ok {
 		defer release()
 		p.RefreshItemCaches(context.Background(), session)
 	}
