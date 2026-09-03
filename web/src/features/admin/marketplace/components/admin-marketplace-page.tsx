@@ -261,6 +261,10 @@ export function AdminMarketplacePage() {
           <div className="divide-y">
             {items.map((item) => {
               const priced = isExplicitlyPriced(item.billing_type, item.price_per_call)
+              // 价格分色:免费绿(对齐市场列表卡)、已定价主题色、未定价琥珀警示
+              const priceColor = item.billing_type === 'free'
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : priced ? 'text-primary' : 'text-amber-600'
               return (
                 <MobileListCard
                   key={item.id}
@@ -289,7 +293,7 @@ export function AdminMarketplacePage() {
                     {
                       label: t('pricing.colPrice'),
                       value: (
-                        <span className={priced ? 'text-primary' : 'text-amber-600'}>
+                        <span className={priceColor}>
                           {priceLabel(item.billing_type, item.price_per_call, config.displayCurrency)}
                         </span>
                       ),
@@ -357,6 +361,9 @@ export function AdminMarketplacePage() {
             <TableBody>
               {items.map((item) => {
                 const priced = isExplicitlyPriced(item.billing_type, item.price_per_call)
+                const priceColor = item.billing_type === 'free'
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : priced ? 'text-primary' : 'text-amber-600'
                 return (
                   <TableRow key={item.id} data-state={selected.has(item.id) ? 'selected' : undefined}>
                     <TableCell>
@@ -387,7 +394,7 @@ export function AdminMarketplacePage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <span className={`text-sm font-medium ${priced ? 'text-primary' : 'text-amber-600'}`}>
+                      <span className={`text-sm font-medium ${priceColor}`}>
                         {priceLabel(item.billing_type, item.price_per_call, config.displayCurrency)}
                       </span>
                     </TableCell>

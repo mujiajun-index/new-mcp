@@ -45,8 +45,8 @@ export function MarketplaceListPage() {
   const items: MarketplaceListItem[] = data?.data || []
   const pagination = data?.pagination
   const totalPages = pagination?.total_pages ?? 1
-  // 仅分组/标签查询时显示统计条(与筛选 chip 一块);关键词、服务类型查询不触发
-  const hasQuery = Boolean(tag || typeof groupId === 'number')
+  // 分组/标签/关键词查询时显示统计条;服务类型查询不触发
+  const hasQuery = Boolean(keyword || tag || typeof groupId === 'number')
 
   return (
     <div className="flex gap-6 p-4 sm:p-6 lg:p-8">
@@ -125,10 +125,17 @@ export function MarketplaceListPage() {
           </div>
         )}
 
-        {/* 结果统计条:仅分组/标签查询时显示,总数 + 当前生效筛选 chip(点 chip 取消对应查询) */}
+        {/* 结果统计条:分组/标签/关键词查询时显示,总数 + 当前生效筛选 chip(点 chip 取消对应查询);关键词 chip 紧跟总数 */}
         {!isLoading && pagination && hasQuery && (
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm text-muted-foreground">{t('marketplace.foundResults', { count: pagination.total })}</p>
+            {keyword && (
+              <button type="button" onClick={() => { setKeyword(''); setSearchInput(''); setPage(1) }}
+                className="flex cursor-pointer items-center gap-1.5 rounded-full border bg-muted/40 px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted">
+                {t('marketplace.searchChip', { keyword })}
+                <X className="h-3 w-3 text-muted-foreground" />
+              </button>
+            )}
             {activeGroup && (
               <button type="button" onClick={() => { setGroupId(''); setPage(1) }}
                 className="flex cursor-pointer items-center gap-1.5 rounded-full border bg-muted/40 px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted">
@@ -144,13 +151,6 @@ export function MarketplaceListPage() {
                 }`}>
                 {tag}
                 <X className="h-3 w-3 opacity-60" />
-              </button>
-            )}
-            {keyword && (
-              <button type="button" onClick={() => { setKeyword(''); setSearchInput(''); setPage(1) }}
-                className="flex cursor-pointer items-center gap-1.5 rounded-full border bg-muted/40 px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted">
-                {t('marketplace.searchChip', { keyword })}
-                <X className="h-3 w-3 text-muted-foreground" />
               </button>
             )}
           </div>
@@ -242,9 +242,11 @@ export function MarketplaceListPage() {
                         </div>
                       </div>
                     </div>
-                    {item.description && <p className="mt-3 line-clamp-2 flex-1 text-sm text-muted-foreground">{item.description}</p>}
-                    <div className="mt-3 flex items-center justify-between gap-2">
-                      <span className="text-sm font-semibold text-primary">{priceLabel(item.billing_type, item.price_per_call, config.displayCurrency)}</span>
+                    {item.description && <p className="mt-3 line-clamp-2 text-sm text-muted-foreground">{item.description}</p>}
+                    {/* 价格/下载固定卡片底部:描述缺失或长短不一时,同行卡片底线对齐;pt-3 保证无富余空间时仍有间距 */}
+                    <div className="mt-auto flex items-center justify-between gap-2 pt-3">
+                      {/* 免费标识绿色(对齐「即用型」emerald 色系),付费价保持主题色 */}
+                      <span className={`text-sm font-semibold ${item.billing_type === 'free' ? 'text-emerald-600 dark:text-emerald-400' : 'text-primary'}`}>{priceLabel(item.billing_type, item.price_per_call, config.displayCurrency)}</span>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1"><Download className="h-3 w-3" />{item.install_count}</span>
                         {item.rating_count > 0 && <span className="flex items-center gap-1"><Star className="h-3 w-3" />{item.rating_avg.toFixed(1)}</span>}

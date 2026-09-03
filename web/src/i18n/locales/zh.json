@@ -1066,7 +1066,7 @@
     "filterSource": "源码型",
     "noServices": "暂无市场服务",
     "foundResults": "共找到 {{count}} 个结果",
-    "searchChip": "搜索「{{keyword}}」",
+    "searchChip": "{{keyword}}",
     "moreGroups": "{{first}}等{{count}}个分类",
     "moreTags": "{{first}}等{{count}}个标签",
     "ready": "即用型",

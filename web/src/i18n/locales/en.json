@@ -1066,7 +1066,7 @@
     "filterSource": "Source",
     "noServices": "No marketplace services",
     "foundResults": "{{count}} results found",
-    "searchChip": "\"{{keyword}}\"",
+    "searchChip": "{{keyword}}",
     "moreGroups": "{{first}} +{{more}} groups",
     "moreTags": "{{first}} +{{more}} tags",
     "ready": "Ready",
