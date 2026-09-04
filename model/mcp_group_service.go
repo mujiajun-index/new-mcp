@@ -1,6 +1,10 @@
 package model
 
-import "time"
+import (
+	"time"
+
+	"github.com/mujkjk/newmcp/common"
+)
 
 type McpGroupService struct {
 	ID         int64     `json:"id" gorm:"primaryKey;autoIncrement"`
@@ -63,6 +67,9 @@ type GroupServicePair struct {
 // given groups, each paired with the group it was reached through. It uses two batched
 // queries (memberships, then services) instead of one query per group and per service.
 // Order is stable: groups in the given order, services in intra-group sort_order.
+// Services with a non-enabled row status are skipped defensively: normal disable paths
+// delete the membership rows, but any leftover row must not leak a disabled service
+// into mcp.search / gateway routing / resources-prompts aggregation.
 func ResolveEnabledServicesForGroups(groups []McpGroup) ([]GroupServicePair, error) {
 	if len(groups) == 0 {
 		return nil, nil
@@ -107,7 +114,9 @@ func ResolveEnabledServicesForGroups(groups []McpGroup) ([]GroupServicePair, err
 	result := make([]GroupServicePair, 0, len(memberships))
 	for _, g := range groups {
 		for _, sid := range byGroup[g.ID] {
-			if svc := svcByID[sid]; svc != nil {
+			// 防御性排除:分组聚合只看成员行 enabled,不看服务行 status——正常禁用
+			// 路径已删关联行,此处兜底阻止残留行把禁用服务泄入路由/搜索文档。
+			if svc := svcByID[sid]; svc != nil && svc.Status == common.StatusEnabled {
 				result = append(result, GroupServicePair{Group: g, Service: *svc})
 			}
 		}

@@ -49,6 +49,7 @@ func (s *McpServiceService) List(userID int64, page, pageSize int, filters map[s
 	}
 
 	items := make([]dto.ServiceListItem, len(services))
+	offline := marketplaceOfflineSet(services)
 	for i, svc := range services {
 		var tools []interface{}
 		_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
@@ -65,6 +66,7 @@ func (s *McpServiceService) List(userID int64, page, pageSize int, filters map[s
 			ToolsCount:    len(tools),
 			Status:        svc.Status,
 			CreatedAt:     svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			MarketplaceOffline: offline[svc.ID],
 		}
 	}
 	return items, total, nil
@@ -225,6 +227,16 @@ func (s *McpServiceService) Update(userID, serviceID int64, req *dto.UpdateServi
 	svc, err := model.GetServiceByID(userID, serviceID)
 	if err != nil {
 		return err
+	}
+	// 平台下架/删除的市场引用行不可手动启用(软删条目被默认作用域排除,e!=nil 同为
+	// 下架);条目重新上架或用户从市场重新添加后方可恢复。只按 ==StatusEnabled 判断:
+	// 前端禁用发的是 0 而非 2,勿用 ==2 反推。
+	if req.Status != nil && *req.Status == common.StatusEnabled &&
+		svc.Source == "marketplace" && svc.MarketplaceItemID != nil {
+		item, e := model.GetMarketplaceItemByID(*svc.MarketplaceItemID)
+		if e != nil || item.Status != common.StatusEnabled {
+			return ErrMarketplaceItemOffline
+		}
 	}
 	if req.DisplayName != nil {
 		svc.DisplayName = *req.DisplayName
@@ -1064,6 +1076,7 @@ func (s *McpServiceService) GetServicesOverview(userID int64, isAdmin bool) (*dt
 	healthSnaps := GetServiceHealthSnapshots(remoteIDs)
 
 	resp := &dto.ServicesOverview{Services: make([]dto.ServicesOverviewItem, len(services))}
+	offline := marketplaceOfflineSet(services)
 	for i, svc := range services {
 		var tools []interface{}
 		_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
@@ -1078,6 +1091,7 @@ func (s *McpServiceService) GetServicesOverview(userID int64, isAdmin bool) (*dt
 			ToolsCount:    len(tools),
 			Status:        svc.Status,
 			CreatedAt:     svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			MarketplaceOffline: offline[svc.ID],
 		}
 
 		// running 口径:stdio = 池内会话已连接且进程树确实存活(连接标记可能滞后
@@ -1240,6 +1254,41 @@ func (s *McpServiceService) ListClonableServices(userID int64, page, pageSize in
 	return s.toServiceListItems(services), total, nil
 }
 
+// marketplaceOfflineSet 批量判定市场引用行的条目离线态(条目软删[默认作用域排除]
+// 或非启用),返回 serviceID→offline。读时计算不落库,条目状态变化即时生效;
+// 非市场行不在返回集(bool 零值 false 即未下架)。判定失败按未下架展示,
+// 用户点启用时仍会被 ErrMarketplaceItemOffline 拦截。
+func marketplaceOfflineSet(services []model.McpService) map[int64]bool {
+	ids := make([]int64, 0, len(services))
+	for i := range services {
+		if services[i].Source == "marketplace" && services[i].MarketplaceItemID != nil {
+			ids = append(ids, *services[i].MarketplaceItemID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	items, err := model.GetMarketplaceItemsByIDs(ids)
+	if err != nil {
+		return nil
+	}
+	online := make(map[int64]bool, len(items))
+	for _, it := range items {
+		online[it.ID] = it.Status == common.StatusEnabled
+	}
+	offline := make(map[int64]bool, len(ids))
+	for i := range services {
+		svc := &services[i]
+		if svc.Source != "marketplace" || svc.MarketplaceItemID == nil {
+			continue
+		}
+		if !online[*svc.MarketplaceItemID] { // 缺 id(条目已软删)或非启用
+			offline[svc.ID] = true
+		}
+	}
+	return offline
+}
+
 // toServiceListItems 把 McpService 列表统一转为列表项 DTO(解析 tools_cache 统计工具数)。
 func (s *McpServiceService) toServiceListItems(services []model.McpService) []dto.ServiceListItem {
 	items := make([]dto.ServiceListItem, len(services))
@@ -1315,9 +1364,10 @@ func (s *McpServiceService) toDetail(svc *model.McpService) *dto.ServiceDetail {
 		d.KeyMode = cfg.KeyMode
 		d.KeyCount, d.KeyEnabled = int(total), int(enabled)
 	}
-	// 市场引用服务带上条目 ID(前端跳转市场详情用)
+	// 市场引用服务带上条目 ID(前端跳转市场详情用)与条目下架态(已下架徽章/启用拦截)
 	if svc.Source == "marketplace" {
 		d.MarketplaceItemID = svc.MarketplaceItemID
+		d.MarketplaceOffline = marketplaceOfflineSet([]model.McpService{*svc})[svc.ID]
 	}
 	return d
 }

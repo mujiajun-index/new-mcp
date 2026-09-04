@@ -156,7 +156,8 @@ func QueryServiceRowsByMarketplaceItem(itemID int64, keyword string, offset, lim
 // (产品明确要求:管理员修改市场服务信息须同步所有已安装用户)。
 // 不同步项:name(引用行可能带 -2 冲突后缀)、transport_type(哨兵值 marketplace,
 // 真实 transport 调用时由 materializeMarketplace 注入)、config(平台托管不下发)、
-// status(用户自管,下架门控在调用侧按条目状态判断)。
+// status(status 同步仅经 DisableMarketplaceRefsByItems 单向下行,本函数永不触碰
+// ——RefreshItemSnapshots/批量标签等复用同一 map 机制,不能被 status 污染)。
 func UpdateMarketplaceRefsByItems(tx *gorm.DB, itemIDs []int64, updates map[string]interface{}) error {
 	if len(itemIDs) == 0 || len(updates) == 0 {
 		return nil
@@ -164,6 +165,33 @@ func UpdateMarketplaceRefsByItems(tx *gorm.DB, itemIDs []int64, updates map[stri
 	return tx.Model(&McpService{}).
 		Where("marketplace_item_id IN ? AND source = ?", itemIDs, "marketplace").
 		Updates(updates).Error
+}
+
+// DisableMarketplaceRefsByItems 管理端下架/软删市场项时调用:把该条目全部安装
+// 引用行置为禁用,并删除这些行在用户分组中的关联/工具/条目覆盖行(语义同用户手动
+// 禁用服务的 DeleteGroup*ByServiceID 系列)。引用行本身保留——用户侧显示"已下架",
+// 条目重新上架后可自行启用或从市场重新添加。单向下行:重新上架不同步回 status=1。
+// 须在事务内调用,与条目本体状态变更保持原子;空 ids 直接返回(幂等)。
+// 分组表删除走 IN 子查询而非先查 ID 再 IN:条目可有万级引用行,字面量 IN 会撞
+// SQLite 32766 参数悬崖(model/marketplace.go 分组筛选用同款三方言安全写法);
+// 每条 DELETE 单独新建子查询,勿跨语句复用 *gorm.DB。
+func DisableMarketplaceRefsByItems(tx *gorm.DB, itemIDs []int64) error {
+	if len(itemIDs) == 0 {
+		return nil
+	}
+	if err := tx.Model(&McpService{}).
+		Where("marketplace_item_id IN ? AND source = ?", itemIDs, "marketplace").
+		Update("status", common.StatusDisabled).Error; err != nil {
+		return err
+	}
+	for _, target := range []interface{}{&McpGroupService{}, &McpGroupTool{}, &McpGroupItem{}} {
+		sub := tx.Model(&McpService{}).Select("id").
+			Where("marketplace_item_id IN ? AND source = ?", itemIDs, "marketplace")
+		if err := tx.Where("service_id IN (?)", sub).Delete(target).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func GetServiceByID(userID, serviceID int64) (*McpService, error) {

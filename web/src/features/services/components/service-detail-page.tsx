@@ -380,6 +380,11 @@ export function ServiceDetailPage() {
                   {t('marketplace.platformHosted')}
                 </span>
               )}
+              {service.marketplace_offline && (
+                <span className="inline-flex items-center rounded-md bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive" title={t('services.marketplaceOfflineDesc')}>
+                  {t('services.marketplaceOffline')}
+                </span>
+              )}
               {isMultiKeyService && (
                 <span className="inline-flex items-center rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
                   {t('services.keys.multiKeyBadge', {
@@ -423,6 +428,11 @@ export function ServiceDetailPage() {
                     toggleStatusMutation.mutate(0)
                   }
                 } else {
+                  // 平台已下架的市场引用行不可启用(后端同样拦截,前端先拦避免无效请求)
+                  if (service.marketplace_offline) {
+                    toast.error(t('services.marketplaceOfflineEnableBlocked'))
+                    return
+                  }
                   toggleStatusMutation.mutate(1)
                 }
               }}
@@ -443,15 +453,17 @@ export function ServiceDetailPage() {
       </div>
 
       {service.source === 'marketplace' && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-primary">
-          <span className="font-medium">{t('marketplace.platformHosted')}</span>
-          <span className="text-primary/80">{t('marketplace.platformHostedDesc')}</span>
-          {/* 跳转市场详情(价格/快照等以市场页为准);条目缺 ID 时不渲染 */}
+        <div className={`flex flex-wrap items-center gap-2 rounded-xl border p-4 text-xs ${service.marketplace_offline ? 'border-destructive/20 bg-destructive/5 text-destructive' : 'border-primary/20 bg-primary/5 text-primary'}`}>
+          <span className="font-medium">{service.marketplace_offline ? t('services.marketplaceOffline') : t('marketplace.platformHosted')}</span>
+          <span className={service.marketplace_offline ? 'text-destructive/80' : 'text-primary/80'}>
+            {service.marketplace_offline ? t('services.marketplaceOfflineBanner') : t('marketplace.platformHostedDesc')}
+          </span>
+          {/* 跳转市场详情(价格/快照等以市场页为准;下架时作为重新添加启用入口);条目缺 ID 时不渲染 */}
           {service.marketplace_item_id != null && (
             <Link
               to="/marketplace/$id"
               params={{ id: String(service.marketplace_item_id) }}
-              className="ml-auto inline-flex items-center gap-1 font-medium underline-offset-2 hover:underline"
+              className={`ml-auto inline-flex items-center gap-1 font-medium underline-offset-2 hover:underline ${service.marketplace_offline ? 'text-destructive' : ''}`}
             >
               {t('marketplace.viewMarketDetail')}
               <ExternalLink className="h-3 w-3" />

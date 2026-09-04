@@ -57,6 +57,10 @@ var ErrBatchNothingToUpdate = errors.New("请至少选择要修改的字段:分�
 // source 类目为用户自行部署形态,平台侧无上游连接,快照由管理员通过编辑接口维护。
 var ErrOnlyInstantRefreshable = errors.New("仅开箱即用(平台托管)市场项支持刷新快照")
 
+// ErrMarketplaceItemOffline 市场条目已下架/删除:其安装引用行不可手动启用,
+// 条目重新上架或用户从市场重新添加后方可恢复。
+var ErrMarketplaceItemOffline = errors.New("平台已下架，无法启用")
+
 // validatePrice 校验价格非负且正值在 [0.001, 999](§5.5;0 为 free/inherit 合法值)。
 func validatePrice(price float64) error {
 	if price < 0 {
@@ -359,6 +363,9 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 	if req.Status != nil {
 		item.Status = *req.Status
 	}
+	// 下架(非启用)即联动:全部安装引用行禁用+清出用户分组。刻意不做"之前须为
+	// 启用"的过渡判断——存量已下架条目再保存一次禁用即触发全量清理(代替回填)。
+	disableRefs := req.Status != nil && *req.Status != common.StatusEnabled
 	if req.SortOrder != nil {
 		item.SortOrder = *req.SortOrder
 	}
@@ -389,8 +396,8 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 		}
 	}
 	// 分组绑定与条目本体同事务落库;展示/快照字段变更同事务批量同步到全部安装引用行
-	// (含覆盖用户自定义名称/描述/标签,产品确认的同步语义);踢会话与计费缓存失效留在
-	// 事务外(非事务副作用,回滚不应执行)
+	// (含覆盖用户自定义名称/描述/标签,产品确认的同步语义);下架联动(引用行禁用+清
+	// 分组)同事务;踢会话与计费缓存失效留在事务外(非事务副作用,回滚不应执行)
 	if err := model.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(item).Error; err != nil {
 			return err
@@ -399,7 +406,12 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 			return err
 		}
 		if req.GroupIDs != nil {
-			return model.ReplaceMarketplaceItemGroups(tx, item.ID, cleanGroupIDs)
+			if err := model.ReplaceMarketplaceItemGroups(tx, item.ID, cleanGroupIDs); err != nil {
+				return err
+			}
+		}
+		if disableRefs {
+			return model.DisableMarketplaceRefsByItems(tx, []int64{item.ID})
 		}
 		return nil
 	}); err != nil {
@@ -407,8 +419,9 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 	}
 	// 平台上游配置变更后,该市场项全部引用服务的池内会话仍带旧配置/旧凭证,
 	// 踢掉待下次调用按新配置重连(引用服务众多,不做预连,按需重连即可)。
-	// 进程模式切换(共享↔独占)同理并入同一次踢除。
-	if kickSessions && SessionPool != nil {
+	// 进程模式切换(共享↔独占)与下架(下架即停)同理并入同一次踢除——
+	// RemoveByMarketplaceItem 同时覆盖共享(条目键)与独占(行键)会话。
+	if (kickSessions || disableRefs) && SessionPool != nil {
 		SessionPool.RemoveByMarketplaceItem(item.ID)
 	}
 	billing.InvalidatePricingCacheItem(item.ID)
@@ -420,7 +433,8 @@ func (s *MarketplaceService) DeleteItem(itemID int64) error {
 	if err != nil {
 		return err
 	}
-	// 软删条目 + 同事务清掉分组绑定行与条目级秘钥池(避免悬空引用/孤儿秘钥行)
+	// 软删条目 + 同事务清掉分组绑定行与条目级秘钥池(避免悬空引用/孤儿秘钥行);
+	// 引用行同下架联动:禁用+清出用户分组(与 UpdateItem 下架同口径)
 	if err := model.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Delete(item).Error; err != nil {
 			return err
@@ -428,12 +442,16 @@ func (s *MarketplaceService) DeleteItem(itemID int64) error {
 		if err := model.DeleteMarketplaceItemGroupsByItemID(tx, itemID); err != nil {
 			return err
 		}
-		return tx.Where("item_id = ?", itemID).Delete(&model.MarketplaceItemKey{}).Error
+		if err := tx.Where("item_id = ?", itemID).Delete(&model.MarketplaceItemKey{}).Error; err != nil {
+			return err
+		}
+		return model.DisableMarketplaceRefsByItems(tx, []int64{itemID})
 	}); err != nil {
 		return err
 	}
-	// 硬删除(软删):已添加引用的 mcp_services 行保留(resolver 调用时会因 item 不可用而失败退款)。
-	// V2 提供显式级联清理 + 引用悬空检测(§11)。
+	// 软删条目:已添加引用的 mcp_services 行保留但已自动禁用+清出分组(用户侧显示
+	// 已下架,行保留供后续追溯);调用侧 materializeMarketplace 的 item 门控与
+	// 计费退款路径仍是兜底。
 	// 失效选择器快照(避免注册表残留明文,同服务删除侧)+ 踢掉该条目现存会话
 	bridge.KeySelectors.InvalidateItem(itemID)
 	if SessionPool != nil {
@@ -905,8 +923,15 @@ func (s *MarketplaceService) AddToMyServices(userID, itemID int64) (*dto.Install
 		return nil, fmt.Errorf("marketplace item not available")
 	}
 
-	// 去重:已存在引用则直接返回;下载计数为累计口径,重复添加同样 +1
+	// 去重:已存在引用则直接返回;下载计数为累计口径,重复添加同样 +1。
+	// 已有引用若处于禁用(如下架联动禁用后条目重新上架),重复添加即恢复启用
+	// (条目此时必为启用,上方状态门控已拦);分组关联不恢复,由用户重新勾选。
 	if existing, e := model.GetMarketplaceReferenceByUser(userID, itemID); e == nil && existing != nil {
+		if existing.Status != common.StatusEnabled {
+			if err := model.DB.Model(existing).Update("status", common.StatusEnabled).Error; err != nil {
+				return nil, err
+			}
+		}
 		_ = model.IncrementInstallCount(item.ID)
 		return &dto.InstallResult{ServiceID: existing.ID, Name: existing.Name}, nil
 	}

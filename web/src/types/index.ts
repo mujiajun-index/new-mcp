@@ -75,6 +75,8 @@ export interface ServiceListItem {
   tools_count: number
   status: number
   created_at: string
+  /** 市场引用行对应条目已下架/删除:显示已下架徽章并拦截启用 */
+  marketplace_offline?: boolean
 }
 
 export interface ServiceDetail {
@@ -103,6 +105,8 @@ export interface ServiceDetail {
   passive_connected: boolean
   /** 市场引用服务的条目 ID(跳转市场详情用;其余来源不返回) */
   marketplace_item_id?: number
+  /** 条目已下架/删除:显示已下架徽章并拦截启用 */
+  marketplace_offline?: boolean
 }
 
 export interface McpTool {
@@ -158,6 +162,8 @@ export interface ServicesOverviewItem {
   last_call_at?: number
   last_error_message?: string
   last_error_at?: number
+  /** 市场引用行对应条目已下架/删除 */
+  marketplace_offline?: boolean
 }
 
 // 管理端市场页:单个市场条目的平台级健康(同条目下全部用户引用行的真实调用

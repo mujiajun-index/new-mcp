@@ -38,6 +38,8 @@ type ServiceListItem struct {
 	ToolsCount   int    `json:"tools_count"`
 	Status       int    `json:"status"`
 	CreatedAt    string `json:"created_at"`
+	// 市场引用行对应条目已下架/删除(读时批量判定,不落库):前端显示已下架徽章并拦截启用
+	MarketplaceOffline bool `json:"marketplace_offline,omitempty"`
 }
 
 type ServiceDetail struct {
@@ -67,6 +69,8 @@ type ServiceDetail struct {
 	PassiveConnected bool                   `json:"passive_connected,omitempty"`
 	// 市场引用服务(source=marketplace)的条目 ID,前端跳转市场详情页用;其余来源不返回
 	MarketplaceItemID *int64 `json:"marketplace_item_id,omitempty"`
+	// 条目已下架/删除(读时判定,不落库):前端显示已下架徽章并拦截启用
+	MarketplaceOffline bool `json:"marketplace_offline,omitempty"`
 }
 
 // --- 多秘钥管理(/services/:id/keys) ---
@@ -180,6 +184,8 @@ type ServicesOverviewItem struct {
 	LastCallAt       int64          `json:"last_call_at,omitempty"`      // unix 秒,0 = 从未调用
 	LastErrorMessage string         `json:"last_error_message,omitempty"`
 	LastErrorAt      int64          `json:"last_error_at,omitempty"`     // unix 秒,0 = 无
+	// 市场引用行对应条目已下架/删除(读时批量判定,不落库)
+	MarketplaceOffline bool `json:"marketplace_offline,omitempty"`
 }
 
 // ServicesOverviewSummary 总览页顶部统计卡数据。CPUTotalPercent 为各 stdio 进程树

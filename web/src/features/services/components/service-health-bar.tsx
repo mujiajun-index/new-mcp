@@ -31,12 +31,14 @@ function timeAgo(t: ReturnType<typeof useTranslation>['t'], unix?: number): stri
   return t('services.overview.daysAgo', { count: Math.floor(diff / 86_400_000) })
 }
 
-// 非 stdio 状态徽章(对齐参考:点+文字 pill;绿=健康/琥珀=异常/灰=未知,红色只
-// 出现在色带插值里)。后端 health_status 实时推导(连接>窗口成败>未知)。
+// 非 stdio 状态徽章(对齐参考:点+文字 pill;绿=健康/琥珀=异常/灰=未知)。后端
+// health_status 实时推导(连接>窗口成败>未知);error 为平台级下架态(非健康语义,
+// 红色只在色带插值与下架标识中使用)。
 const STATUS_PILL = {
   healthy: { box: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', dot: 'bg-emerald-500' },
   unhealthy: { box: 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400', dot: 'bg-amber-500' },
   unknown: { box: 'border-border bg-muted text-muted-foreground', dot: 'bg-zinc-400 dark:bg-zinc-600' },
+  error: { box: 'border-destructive/40 bg-destructive/10 text-destructive', dot: 'bg-destructive' },
 } as const
 
 export function StatusPill({ kind, label }: { kind: keyof typeof STATUS_PILL; label: string }) {

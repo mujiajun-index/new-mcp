@@ -115,11 +115,16 @@ export function ServiceListPage() {
   }
 
   // 切换启用/禁用：禁用会从全部分组移除该服务及其工具，需二次确认；启用直接生效。
+  // 平台已下架的市场引用行不可启用（后端同样拦截，前端先拦避免无效请求）。
   const handleToggleStatus = (s: ServiceListItem) => {
     if (s.status === 1) {
       if (!confirm(t('services.disableConfirm', { name: s.display_name || s.name }))) return
       toggleMutation.mutate({ id: s.id, status: 0 })
     } else {
+      if (s.marketplace_offline) {
+        toast.error(t('services.marketplaceOfflineEnableBlocked'))
+        return
+      }
       toggleMutation.mutate({ id: s.id, status: 1 })
     }
   }
@@ -206,6 +211,11 @@ export function ServiceListPage() {
                         {s.source === 'marketplace' && (
                           <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
                             {t('marketplace.platformHosted')}
+                          </span>
+                        )}
+                        {s.marketplace_offline && (
+                          <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive" title={t('services.marketplaceOfflineDesc')}>
+                            {t('services.marketplaceOffline')}
                           </span>
                         )}
                       </div>
@@ -325,6 +335,11 @@ export function ServiceListPage() {
                           {s.source === 'marketplace' && (
                             <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary" title={t('marketplace.platformHostedDesc')}>
                               {t('marketplace.platformHosted')}
+                            </span>
+                          )}
+                          {s.marketplace_offline && (
+                            <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive" title={t('services.marketplaceOfflineDesc')}>
+                              {t('services.marketplaceOffline')}
                             </span>
                           )}
                         </div>

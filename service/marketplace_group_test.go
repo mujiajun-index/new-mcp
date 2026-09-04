@@ -20,10 +20,12 @@ func setupMarketplaceGroupTest(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 	model.DB = db
-	// McpService:UpdateItem 展示/快照字段变更会同事务同步安装引用行,须有表
+	// McpService:UpdateItem 展示/快照字段变更会同事务同步安装引用行,须有表;
+	// 用户分组四表:DeleteItem 下架联动会清引用行的分组关联行,须有表
 	if err := db.AutoMigrate(&model.Option{}, &model.MarketplaceItem{}, &model.MarketplaceGroup{},
 		&model.MarketplaceItemGroup{}, &model.MarketplaceItemKey{}, &model.McpToolPrice{},
-		&model.McpService{}); err != nil {
+		&model.McpService{}, &model.McpGroup{}, &model.McpGroupService{},
+		&model.McpGroupTool{}, &model.McpGroupItem{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	model.InitOptionMap()

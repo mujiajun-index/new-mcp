@@ -72,8 +72,11 @@ function ServiceCard({ s, hostTotal }: { s: ServicesOverviewItem; hostTotal: num
     dotCls = 'bg-emerald-500'
     dotTitle = t('services.statusBadgeEnabled')
   }
-  // 右侧状态徽章:启用/禁用两态;stdio 启用时不用徽章,启用态由绿色进程操作按钮承载
-  const pill = s.status !== 1
+  // 右侧状态徽章:平台下架态优先(红色已下架,优先于启用/禁用两态);stdio 启用时
+  // 不用徽章,启用态由绿色进程操作按钮承载
+  const pill = s.marketplace_offline
+    ? { kind: 'error' as const, label: t('services.marketplaceOffline') }
+    : s.status !== 1
     ? { kind: 'unknown' as const, label: t('services.statusBadgeDisabled') }
     : !isStdio
       ? { kind: 'healthy' as const, label: t('services.statusBadgeEnabled') }

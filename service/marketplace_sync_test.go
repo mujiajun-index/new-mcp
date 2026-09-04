@@ -12,7 +12,8 @@ import (
 )
 
 // setupMarketplaceSyncTest 初始化引用行同步测试环境:分组绑定测试环境之外补
-// mcp_services(安装引用行)与标签字典(tags 校验/字典同步用例)。
+// mcp_services(安装引用行)、标签字典(tags 校验/字典同步用例)与用户分组四表
+// (下架联动禁用+清分组用例)。
 func setupMarketplaceSyncTest(t *testing.T) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "t.db")), &gorm.Config{})
@@ -21,7 +22,9 @@ func setupMarketplaceSyncTest(t *testing.T) {
 	}
 	model.DB = db
 	if err := db.AutoMigrate(&model.Option{}, &model.MarketplaceItem{}, &model.MarketplaceGroup{},
-		&model.MarketplaceItemGroup{}, &model.MarketplaceTag{}, &model.McpService{}); err != nil {
+		&model.MarketplaceItemGroup{}, &model.MarketplaceTag{}, &model.McpService{},
+		&model.McpGroup{}, &model.McpGroupService{}, &model.McpGroupTool{}, &model.McpGroupItem{},
+		&model.MarketplaceItemKey{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	model.InitOptionMap()
@@ -196,5 +199,250 @@ func TestBatchSetGroupsTagsSyncsRefs(t *testing.T) {
 	// 全缺省=无操作,拒绝
 	if _, err := s.BatchSetGroupsTags(&dto.BatchGroupsTagsReq{IDs: []int64{item.ID}}); err == nil {
 		t.Fatalf("全缺省应拒绝(ErrBatchNothingToUpdate)")
+	}
+}
+
+// --- 下架联动:引用行自动禁用 + 分组清除 + 启用拦截 ---
+
+// newUserGroup 建一个用户分组并入库(endpoint_slug 仅为非空唯一,直接用名)。
+func newUserGroup(t *testing.T, userID int64, name string) *model.McpGroup {
+	t.Helper()
+	g := &model.McpGroup{UserID: userID, Name: name, EndpointSlug: name, Status: common.StatusEnabled}
+	if err := model.DB.Create(g).Error; err != nil {
+		t.Fatalf("create user group %s: %v", name, err)
+	}
+	return g
+}
+
+// seedGroupRows 给某服务在某分组里补齐三张关联表各一行(成员/工具覆盖/条目覆盖)。
+func seedGroupRows(t *testing.T, groupID, serviceID int64) {
+	t.Helper()
+	rows := []interface{}{
+		&model.McpGroupService{GroupID: groupID, ServiceID: serviceID, Enabled: true},
+		&model.McpGroupTool{GroupID: groupID, ServiceID: serviceID, ToolName: "tool_a", Enabled: true},
+		&model.McpGroupItem{GroupID: groupID, ServiceID: serviceID, ItemKind: "resource", ItemKey: "newmcp://x", Enabled: true},
+	}
+	for _, r := range rows {
+		if err := model.DB.Create(r).Error; err != nil {
+			t.Fatalf("seed group row (%T): %v", r, err)
+		}
+	}
+}
+
+// countGroupRows 数某服务在指定分组表中的关联行数。
+func countGroupRows(t *testing.T, table interface{}, serviceID int64) int64 {
+	t.Helper()
+	var n int64
+	if err := model.DB.Model(table).Where("service_id = ?", serviceID).Count(&n).Error; err != nil {
+		t.Fatalf("count %T: %v", table, err)
+	}
+	return n
+}
+
+// assertRefsPurged 断言引用行全部禁用且三张分组表清空,无关服务的关联行不动。
+func assertRefsPurged(t *testing.T, refIDs []int64, bystanderID int64) {
+	t.Helper()
+	for _, id := range refIDs {
+		if got := loadRef(t, id).Status; got != common.StatusDisabled {
+			t.Fatalf("ref %d 应已禁用: status=%d", id, got)
+		}
+		for _, table := range []interface{}{&model.McpGroupService{}, &model.McpGroupTool{}, &model.McpGroupItem{}} {
+			if n := countGroupRows(t, table, id); n != 0 {
+				t.Fatalf("ref %d 在 %T 仍有 %d 行残留", id, table, n)
+			}
+		}
+	}
+	for _, table := range []interface{}{&model.McpGroupService{}, &model.McpGroupTool{}, &model.McpGroupItem{}} {
+		if n := countGroupRows(t, table, bystanderID); n != 1 {
+			t.Fatalf("无关服务 %d 在 %T 的关联行被误删: n=%d", bystanderID, table, n)
+		}
+	}
+}
+
+// TestUpdateItemDisablePurgesRefsAndGroups 管理端下架须把全部安装引用行置禁用并
+// 清出用户分组(与手动禁用服务同语义);路由屏蔽真正依赖的就是这三张关联行。
+func TestUpdateItemDisablePurgesRefsAndGroups(t *testing.T) {
+	setupMarketplaceSyncTest(t)
+	item := newMarketItem(t, "item-1")
+	ref1 := newRefRow(t, 101, item, "item-1")
+	ref2 := newRefRow(t, 202, item, "item-1-2")
+	// 两个用户各自的分组 + 引用行关联;另有一个无关服务挂在同分组里,不得被误删
+	g1 := newUserGroup(t, 101, "G1")
+	g2 := newUserGroup(t, 202, "G2")
+	bystander := &model.McpService{UserID: 999, Name: "own", TransportType: "sse", Config: "{}", Source: "user", Status: common.StatusEnabled}
+	if err := model.DB.Create(bystander).Error; err != nil {
+		t.Fatalf("create bystander: %v", err)
+	}
+	seedGroupRows(t, g1.ID, ref1.ID)
+	seedGroupRows(t, g2.ID, ref2.ID)
+	seedGroupRows(t, g1.ID, bystander.ID)
+
+	s := &MarketplaceService{}
+	if err := s.UpdateItem(item.ID, &dto.UpdateMarketplaceItemReq{Status: new(common.StatusDisabled)}); err != nil {
+		t.Fatalf("disable item: %v", err)
+	}
+	assertRefsPurged(t, []int64{ref1.ID, ref2.ID}, bystander.ID)
+}
+
+// TestUpdateItemEnableKeepsRefsDisabled 重新上架不得自动恢复引用行(单向下行):
+// 用户须自行启用或从市场重新添加;分组关联同样不复活。
+func TestUpdateItemEnableKeepsRefsDisabled(t *testing.T) {
+	setupMarketplaceSyncTest(t)
+	item := newMarketItem(t, "item-1")
+	ref := newRefRow(t, 101, item, "item-1")
+	g := newUserGroup(t, 101, "G")
+	seedGroupRows(t, g.ID, ref.ID)
+
+	s := &MarketplaceService{}
+	if err := s.UpdateItem(item.ID, &dto.UpdateMarketplaceItemReq{Status: new(common.StatusDisabled)}); err != nil {
+		t.Fatalf("disable item: %v", err)
+	}
+	if err := s.UpdateItem(item.ID, &dto.UpdateMarketplaceItemReq{Status: new(common.StatusEnabled)}); err != nil {
+		t.Fatalf("re-enable item: %v", err)
+	}
+	if got := loadRef(t, ref.ID).Status; got != common.StatusDisabled {
+		t.Fatalf("重新上架不得自动恢复引用行: status=%d", got)
+	}
+	for _, table := range []interface{}{&model.McpGroupService{}, &model.McpGroupTool{}, &model.McpGroupItem{}} {
+		if n := countGroupRows(t, table, ref.ID); n != 0 {
+			t.Fatalf("分组关联不得复活(%T): n=%d", table, n)
+		}
+	}
+}
+
+// TestDeleteItemDisablesRefsAndPurgesGroups 删除条目(软删)同下架联动:引用行保留
+// 但禁用、分组清空,避免残留行把旧 tools_cache 泄入 mcp.search。
+func TestDeleteItemDisablesRefsAndPurgesGroups(t *testing.T) {
+	setupMarketplaceSyncTest(t)
+	item := newMarketItem(t, "item-1")
+	ref := newRefRow(t, 101, item, "item-1")
+	bystander := &model.McpService{UserID: 999, Name: "own", TransportType: "sse", Config: "{}", Source: "user", Status: common.StatusEnabled}
+	if err := model.DB.Create(bystander).Error; err != nil {
+		t.Fatalf("create bystander: %v", err)
+	}
+	g := newUserGroup(t, 101, "G")
+	seedGroupRows(t, g.ID, ref.ID)
+	seedGroupRows(t, g.ID, bystander.ID)
+
+	s := &MarketplaceService{}
+	if err := s.DeleteItem(item.ID); err != nil {
+		t.Fatalf("delete item: %v", err)
+	}
+	if _, err := model.GetMarketplaceItemByID(item.ID); err == nil {
+		t.Fatalf("条目应已软删")
+	}
+	// 引用行本身保留(供用户侧显示已下架),但已禁用+清分组
+	if got := loadRef(t, ref.ID).Status; got != common.StatusDisabled {
+		t.Fatalf("ref 应已禁用: status=%d", got)
+	}
+	for _, table := range []interface{}{&model.McpGroupService{}, &model.McpGroupTool{}, &model.McpGroupItem{}} {
+		if n := countGroupRows(t, table, ref.ID); n != 0 {
+			t.Fatalf("ref 在 %T 仍有 %d 行残留", table, n)
+		}
+		if n := countGroupRows(t, table, bystander.ID); n != 1 {
+			t.Fatalf("无关服务在 %T 的关联行被误删: n=%d", table, n)
+		}
+	}
+}
+
+// TestAddToMyServicesReenablesDisabledRef 条目启用时重复"添加到我的服务"须把已禁用
+// 引用行恢复启用;条目下架时添加直接拒绝。
+func TestAddToMyServicesReenablesDisabledRef(t *testing.T) {
+	setupMarketplaceSyncTest(t)
+	item := newMarketItem(t, "item-1")
+	ref := newRefRow(t, 101, item, "item-1")
+	if err := model.DB.Model(ref).Update("status", common.StatusDisabled).Error; err != nil {
+		t.Fatalf("disable ref: %v", err)
+	}
+
+	s := &MarketplaceService{}
+	res, err := s.AddToMyServices(101, item.ID)
+	if err != nil {
+		t.Fatalf("re-add: %v", err)
+	}
+	if res.ServiceID != ref.ID {
+		t.Fatalf("去重应返回原引用行: got %d want %d", res.ServiceID, ref.ID)
+	}
+	if got := loadRef(t, ref.ID).Status; got != common.StatusEnabled {
+		t.Fatalf("重复添加应恢复启用: status=%d", got)
+	}
+
+	// 条目下架时添加直接拒绝(去重分支之前的状态门控)
+	if err := s.UpdateItem(item.ID, &dto.UpdateMarketplaceItemReq{Status: new(common.StatusDisabled)}); err != nil {
+		t.Fatalf("disable item: %v", err)
+	}
+	if err := model.DB.Model(ref).Update("status", common.StatusDisabled).Error; err != nil {
+		t.Fatalf("disable ref again: %v", err)
+	}
+	if _, err := s.AddToMyServices(101, item.ID); err == nil || err.Error() != "marketplace item not available" {
+		t.Fatalf("下架条目应拒绝添加: %v", err)
+	}
+	if got := loadRef(t, ref.ID).Status; got != common.StatusDisabled {
+		t.Fatalf("拒绝添加不得改动引用行: status=%d", got)
+	}
+}
+
+// TestUpdateServiceEnableRejectedWhenItemOffline 平台下架/删除的市场引用行不可手动
+// 启用(ErrMarketplaceItemOffline);条目启用时启用正常。
+func TestUpdateServiceEnableRejectedWhenItemOffline(t *testing.T) {
+	setupMarketplaceSyncTest(t)
+	item := newMarketItem(t, "item-1")
+	ref := newRefRow(t, 101, item, "item-1")
+	svc := &McpServiceService{}
+
+	// 条目启用:启用引用行正常
+	if err := svc.Update(101, ref.ID, &dto.UpdateServiceReq{Status: new(1)}); err != nil {
+		t.Fatalf("启用(条目在线)不应报错: %v", err)
+	}
+
+	// 条目下架:拒绝
+	ms := &MarketplaceService{}
+	if err := ms.UpdateItem(item.ID, &dto.UpdateMarketplaceItemReq{Status: new(common.StatusDisabled)}); err != nil {
+		t.Fatalf("disable item: %v", err)
+	}
+	if err := svc.Update(101, ref.ID, &dto.UpdateServiceReq{Status: new(1)}); err != ErrMarketplaceItemOffline {
+		t.Fatalf("下架条目应拒绝启用: %v", err)
+	}
+
+	// 条目软删:同样拒绝
+	if err := model.DB.Delete(&model.MarketplaceItem{}, item.ID).Error; err != nil {
+		t.Fatalf("soft delete item: %v", err)
+	}
+	if err := svc.Update(101, ref.ID, &dto.UpdateServiceReq{Status: new(1)}); err != ErrMarketplaceItemOffline {
+		t.Fatalf("软删条目应拒绝启用: %v", err)
+	}
+}
+
+// TestResolveEnabledServicesForGroupsExcludesDisabled 路由解析兜底:服务行非启用的
+// 分组成员不得进入配对结果(防残留关联行把禁用服务泄入 mcp.search/网关路由)。
+func TestResolveEnabledServicesForGroupsExcludesDisabled(t *testing.T) {
+	setupMarketplaceSyncTest(t)
+	item := newMarketItem(t, "item-1")
+	ref := newRefRow(t, 101, item, "item-1")
+	g := newUserGroup(t, 101, "G")
+	if err := model.AddServicesToGroup(g.ID, []int64{ref.ID}); err != nil {
+		t.Fatalf("add to group: %v", err)
+	}
+
+	if err := model.DB.Model(ref).Update("status", common.StatusDisabled).Error; err != nil {
+		t.Fatalf("disable ref: %v", err)
+	}
+	pairs, err := model.ResolveEnabledServicesForGroups([]model.McpGroup{*g})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(pairs) != 0 {
+		t.Fatalf("禁用服务不得进入路由配对: %d 对", len(pairs))
+	}
+
+	if err := model.DB.Model(ref).Update("status", common.StatusEnabled).Error; err != nil {
+		t.Fatalf("enable ref: %v", err)
+	}
+	pairs, err = model.ResolveEnabledServicesForGroups([]model.McpGroup{*g})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(pairs) != 1 || pairs[0].Service.ID != ref.ID {
+		t.Fatalf("启用服务应进入路由配对: %+v", pairs)
 	}
 }
