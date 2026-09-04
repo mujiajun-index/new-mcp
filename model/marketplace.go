@@ -272,6 +272,7 @@ func BatchSetMarketplaceItemsTags(tx *gorm.DB, ids []int64, tags string) (int64,
 // --- 市场项 tags 串同步(标签字典改名/禁用/删除时维护引用) ---
 // 市场项 Tags 存的是逗号拼接的标签名:LIKE 仅作候选预筛(通配符只会放宽不会漏),
 // Go 侧按逗号整词精确匹配,避免"AI"误伤"AI助手"。
+// 变更同时会同步覆盖全部安装引用行(mcp_services source=marketplace)的 tags。
 
 func marketplaceItemsContainingTag(tx *gorm.DB, name string) ([]MarketplaceItem, error) {
 	var items []MarketplaceItem
@@ -280,7 +281,7 @@ func marketplaceItemsContainingTag(tx *gorm.DB, name string) ([]MarketplaceItem,
 }
 
 // ReplaceMarketplaceTagName 标签字典改名后同步市场项 tags(整词替换 old→new;
-// 同行去重,避免项上原有新名时替换后出现 "new,new")。
+// 同行去重,避免项上原有新名时替换后出现 "new,new"),并同步到全部安装引用行。
 func ReplaceMarketplaceTagName(tx *gorm.DB, oldName, newName string) error {
 	items, err := marketplaceItemsContainingTag(tx, oldName)
 	if err != nil {
@@ -309,12 +310,17 @@ func ReplaceMarketplaceTagName(tx *gorm.DB, oldName, newName string) error {
 			Update("tags", strings.Join(kept, ",")).Error; err != nil {
 			return err
 		}
+		// 引用行 tags 是安装时快照,条目变更同事务同步(与 UpdateItem 同口径)
+		if err := UpdateMarketplaceRefsByItems(tx, []int64{it.ID}, map[string]interface{}{"tags": strings.Join(kept, ",")}); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 // RemoveMarketplaceTagName 标签禁用/删除后从市场项 tags 摘除该词,维持
-// "市场项 tags ⊆ 启用标签字典"不变量(否则存量引用项再次保存会因校验失败)。
+// "市场项 tags ⊆ 启用标签字典"不变量(否则存量引用项再次保存会因校验失败),
+// 并同步到全部安装引用行。
 func RemoveMarketplaceTagName(tx *gorm.DB, name string) error {
 	items, err := marketplaceItemsContainingTag(tx, name)
 	if err != nil {
@@ -339,6 +345,10 @@ func RemoveMarketplaceTagName(tx *gorm.DB, name string) error {
 		}
 		if err := tx.Model(&MarketplaceItem{}).Where("id = ?", it.ID).
 			Update("tags", strings.Join(kept, ",")).Error; err != nil {
+			return err
+		}
+		// 引用行 tags 是安装时快照,条目变更同事务同步(与 UpdateItem 同口径)
+		if err := UpdateMarketplaceRefsByItems(tx, []int64{it.ID}, map[string]interface{}{"tags": strings.Join(kept, ",")}); err != nil {
 			return err
 		}
 	}

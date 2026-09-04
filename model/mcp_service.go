@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/mujkjk/newmcp/common"
+	"gorm.io/gorm"
 )
 
 type McpService struct {
@@ -143,6 +144,26 @@ func QueryServiceRowsByMarketplaceItem(itemID int64, keyword string, offset, lim
 	err := q.Select("id, user_id, name, display_name, status").
 		Order("id ASC").Offset(offset).Limit(limit).Find(&rows).Error
 	return rows, total, err
+}
+
+// UpdateMarketplaceRefsByItems 把市场条目的展示/快照字段变更批量同步到全部
+// 安装引用行(source=marketplace 且 marketplace_item_id 命中所列条目)。
+// updates 为列名→新值 map(display_name/description/icon_url/tags/tools_cache/
+// tools_updated_at/resources_cache/prompts_cache/server_info/protocol_version),
+// 与 GORM Updates(map) 同语义,零值字符串照写(支持清空)。
+// 须在事务内调用,与条目本体更新保持原子;空 ids/空 updates 直接返回(幂等)。
+// 注意:管理端同步会覆盖用户对引用行 DisplayName/Description/Tags 的自定义编辑
+// (产品明确要求:管理员修改市场服务信息须同步所有已安装用户)。
+// 不同步项:name(引用行可能带 -2 冲突后缀)、transport_type(哨兵值 marketplace,
+// 真实 transport 调用时由 materializeMarketplace 注入)、config(平台托管不下发)、
+// status(用户自管,下架门控在调用侧按条目状态判断)。
+func UpdateMarketplaceRefsByItems(tx *gorm.DB, itemIDs []int64, updates map[string]interface{}) error {
+	if len(itemIDs) == 0 || len(updates) == 0 {
+		return nil
+	}
+	return tx.Model(&McpService{}).
+		Where("marketplace_item_id IN ? AND source = ?", itemIDs, "marketplace").
+		Updates(updates).Error
 }
 
 func GetServiceByID(userID, serviceID int64) (*McpService, error) {

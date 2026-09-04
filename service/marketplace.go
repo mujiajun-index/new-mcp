@@ -282,20 +282,27 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 			return err
 		}
 	}
+	// 展示/快照字段的引用行同步集:条目改什么,全部安装引用行(source=marketplace)
+	// 同步什么。用户侧 mcp.search/tools/list 等读路径均取引用行快照,不同步即过期。
+	refUpdates := map[string]interface{}{}
 	if req.DisplayName != nil {
 		item.DisplayName = *req.DisplayName
+		refUpdates["display_name"] = item.DisplayName
 	}
 	if req.Description != nil {
 		item.Description = *req.Description
+		refUpdates["description"] = item.Description
 	}
 	if req.IconURL != nil {
 		item.IconURL = *req.IconURL
+		refUpdates["icon_url"] = item.IconURL
 	}
 	if req.Category != nil {
 		item.Category = *req.Category
 	}
 	if req.Tags != nil {
 		item.Tags = strings.Join(cleanTags, ",") // 干净列表:去空/去重,勿用原始入参
+		refUpdates["tags"] = item.Tags
 	}
 	if req.Version != nil {
 		item.Version = *req.Version
@@ -336,14 +343,18 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 	if req.ToolsSnapshot != nil {
 		b, _ := json.Marshal(req.ToolsSnapshot)
 		item.ToolsSnapshot = string(b)
+		refUpdates["tools_cache"] = item.ToolsSnapshot
+		refUpdates["tools_updated_at"] = time.Now()
 	}
 	if req.ResourcesSnapshot != nil {
 		b, _ := json.Marshal(req.ResourcesSnapshot)
 		item.ResourcesSnapshot = string(b)
+		refUpdates["resources_cache"] = item.ResourcesSnapshot
 	}
 	if req.PromptsSnapshot != nil {
 		b, _ := json.Marshal(req.PromptsSnapshot)
 		item.PromptsSnapshot = string(b)
+		refUpdates["prompts_cache"] = item.PromptsSnapshot
 	}
 	if req.Status != nil {
 		item.Status = *req.Status
@@ -377,9 +388,14 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 			return err
 		}
 	}
-	// 分组绑定与条目本体同事务落库;踢会话与计费缓存失效留在事务外(非事务副作用,回滚不应执行)
+	// 分组绑定与条目本体同事务落库;展示/快照字段变更同事务批量同步到全部安装引用行
+	// (含覆盖用户自定义名称/描述/标签,产品确认的同步语义);踢会话与计费缓存失效留在
+	// 事务外(非事务副作用,回滚不应执行)
 	if err := model.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(item).Error; err != nil {
+			return err
+		}
+		if err := model.UpdateMarketplaceRefsByItems(tx, []int64{item.ID}, refUpdates); err != nil {
 			return err
 		}
 		if req.GroupIDs != nil {
@@ -430,6 +446,9 @@ func (s *MarketplaceService) DeleteItem(itemID int64) error {
 // RefreshItemSnapshots 管理端手动刷新市场项快照:用平台托管的上游配置临时直连上游
 // (与服务详情「刷新工具」同源拉取),把 tools/resources/prompts 写回 marketplace_items 快照列。
 // 临时连接不落库、不入会话池,用完即关。
+// RefreshItemSnapshots 管理端"instant"类条目直连上游拉取最新工具/资源/提示快照
+// 落库。快照变更同事务批量同步到全部安装引用行(tools_updated_at 一并刷新),
+// 用户侧 tools/list、mcp.search 等读路径即时生效,无需各用户手动刷新。
 func (s *MarketplaceService) RefreshItemSnapshots(itemID int64) (*dto.MarketplaceRefreshResult, error) {
 	item, err := model.GetMarketplaceItemByID(itemID)
 	if err != nil {
@@ -473,7 +492,27 @@ func (s *MarketplaceService) RefreshItemSnapshots(itemID int64) (*dto.Marketplac
 			updates["server_info"] = string(b)
 		}
 	}
-	if err := model.DB.Model(&model.MarketplaceItem{}).Where("id = ?", item.ID).Updates(updates).Error; err != nil {
+	// 镜像同步集:条目写什么,引用行(tools_cache 等)同步什么;protocol_version/
+	// server_info 上游没给时不进 updates,引用行旧值同样保留
+	refUpdates := map[string]interface{}{
+		"tools_cache":      toolsJSON,
+		"tools_updated_at": time.Now(),
+		"resources_cache":  resourcesJSON,
+		"prompts_cache":    promptsJSON,
+	}
+	if v, ok := updates["protocol_version"]; ok {
+		refUpdates["protocol_version"] = v
+	}
+	if v, ok := updates["server_info"]; ok {
+		refUpdates["server_info"] = v
+	}
+	// 条目与全部安装引用行同事务同步,用户侧 tools/list、mcp.search 等读路径即时生效
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.MarketplaceItem{}).Where("id = ?", item.ID).Updates(updates).Error; err != nil {
+			return err
+		}
+		return model.UpdateMarketplaceRefsByItems(tx, []int64{item.ID}, refUpdates)
+	}); err != nil {
 		return nil, err
 	}
 
@@ -535,7 +574,8 @@ func (s *MarketplaceService) BatchUpdatePricing(items []dto.BatchPricingItem) (i
 // BatchSetGroupsTags 批量设置市场项分组/标签(替换语义):group_ids/tags 缺省=不动,
 // []=清空, [...]=对全部所选项设为同一值(与单项 UpdateItem 同口径)。
 // 只操作当前存在且未软删的项;返回受影响市场项数。纯分类信息变更,不涉及计费/
-// 上游配置,无需失效计费缓存或踢会话。
+// 上游配置,无需失效计费缓存或踢会话;tags 变更会同步覆盖全部安装引用行的
+// tags(与单项 UpdateItem 同口径,含覆盖用户自定义标签)。
 func (s *MarketplaceService) BatchSetGroupsTags(req *dto.BatchGroupsTagsReq) (int64, error) {
 	if req.GroupIDs == nil && req.Tags == nil {
 		return 0, ErrBatchNothingToUpdate
@@ -569,6 +609,10 @@ func (s *MarketplaceService) BatchSetGroupsTags(req *dto.BatchGroupsTagsReq) (in
 	if err := model.DB.Transaction(func(tx *gorm.DB) error {
 		if req.Tags != nil {
 			if _, err := model.BatchSetMarketplaceItemsTags(tx, ids, tagsStr); err != nil {
+				return err
+			}
+			// tags 同事务同步到全部安装引用行(引用行 tags 是安装时快照,展示口径与条目保持一致)
+			if err := model.UpdateMarketplaceRefsByItems(tx, ids, map[string]interface{}{"tags": tagsStr}); err != nil {
 				return err
 			}
 		}
