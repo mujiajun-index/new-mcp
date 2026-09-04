@@ -322,6 +322,8 @@ export interface RefreshToolsResult {
 export interface ServiceListParams extends ListParams {
   transport_type?: TransportType
   status?: number
+  /** source 维度筛选:「平台托管」选项传 marketplace(市场引用行) */
+  source?: string
 }
 
 // --- Groups ---

@@ -20,6 +20,8 @@ func ListServices(c *gin.Context) {
 		"transport_type": c.Query("transport_type"),
 		"status":         c.Query("status"),
 		"keyword":        c.Query("keyword"),
+		// source 维度筛选(列表页「平台托管」选项,marketplace=市场引用行)
+		"source":         c.Query("source"),
 	}
 
 	items, total, err := mcpServiceService.List(userID, page, pageSize, filters)

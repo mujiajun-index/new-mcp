@@ -6,6 +6,14 @@ import { getServices, deleteService, updateService, testService } from '../api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { LocalPager } from '@/components/local-pager'
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -13,6 +21,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { MobileListCard } from '@/components/ui/mobile-list-card'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useAuthStore } from '@/stores/auth-store'
+import { isAdminRole } from '@/lib/roles'
 import type { TransportType, ServiceListItem } from '@/types'
 import {
   Plus, Search, Server, Trash2, Zap, Loader2,
@@ -28,6 +38,16 @@ const transportIcons: Record<string, React.ComponentType<{ className?: string }>
   'passive-ws': Plug,
   'virtual': Zap,
 }
+
+// 类型筛选维度对齐总览视图:marketplace 非传输类型而是 source 维度(市场引用行);
+// stdio 选项与总览同口径,仅管理员可见(普通用户的 stdio 服务归平台进程托管,
+// 总览接口对其排除 stdio),普通用户含市场安装的 stdio 引用行也不提供该筛选项。
+type TypeFilter = 'all' | TransportType | 'marketplace'
+// 启用状态筛选(对应后端 status 位),与总览一致的三态下拉;管理页默认「全部」
+// (总览默认已启用是运维视角,管理页常要找禁用服务重新启用)
+type EnabledFilter = 'all' | 'enabled' | 'disabled'
+// 类型筛选可选项(顺序即下拉展示顺序,含虚拟服务)
+const TYPE_FILTERS: TransportType[] = ['stdio', 'sse', 'streamable-http', 'websocket', 'passive-ws', 'virtual']
 
 function useTransportLabel() {
   const { t } = useTranslation()
@@ -62,13 +82,26 @@ export function ServiceListPage() {
   const transportLabel = useTransportLabel()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
+  const { auth } = useAuthStore()
+  const isAdmin = isAdminRole(auth.user?.role)
   const [keyword, setKeyword] = useState('')
-  const [transportFilter, setTransportFilter] = useState<string>('')
   const [searchInput, setSearchInput] = useState('')
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
+  const [enabledFilter, setEnabledFilter] = useState<EnabledFilter>('all')
+  // 服务端分页:此前未传分页参数,后端默认只回前 20 条且无翻页控件,超出的服务不可见
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 20
 
   const { data, isLoading } = useQuery({
-    queryKey: ['services', keyword, transportFilter],
-    queryFn: () => getServices({ keyword: keyword || undefined, transport_type: (transportFilter || undefined) as TransportType | undefined }),
+    queryKey: ['services', keyword, typeFilter, enabledFilter, page],
+    queryFn: () => getServices({
+      keyword: keyword || undefined,
+      transport_type: typeFilter !== 'all' && typeFilter !== 'marketplace' ? typeFilter : undefined,
+      source: typeFilter === 'marketplace' ? 'marketplace' : undefined,
+      status: enabledFilter === 'all' ? undefined : enabledFilter === 'enabled' ? 1 : 0,
+      page,
+      page_size: PAGE_SIZE,
+    }),
   })
 
   const deleteMutation = useMutation({
@@ -108,10 +141,17 @@ export function ServiceListPage() {
   })
 
   const services: ServiceListItem[] = data?.data || []
+  const pagination = data?.pagination
+  const total = pagination?.total ?? services.length
+  const totalPages = Math.max(1, pagination?.total_pages ?? 1)
+  // 删除服务使总页数收缩时夹紧当前页,避免停留在空页
+  const safePage = Math.min(page, totalPages)
+  const hasFilter = Boolean(keyword || typeFilter !== 'all' || enabledFilter !== 'all')
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     setKeyword(searchInput)
+    setPage(1)
   }
 
   // 切换启用/禁用：禁用会从全部分组移除该服务及其工具，需二次确认；启用直接生效。
@@ -152,7 +192,7 @@ export function ServiceListPage() {
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Filters:筛选维度与交互对齐总览视图(搜索 + 类型下拉 + 启用状态下拉 + 计数) */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <form onSubmit={handleSearch} className="relative max-w-sm flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -163,24 +203,40 @@ export function ServiceListPage() {
             className="pl-9"
           />
         </form>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant={transportFilter === '' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setTransportFilter('')}
-          >
-            {t('services.filterAll')}
-          </Button>
-          {['stdio', 'sse', 'streamable-http', 'websocket', 'passive-ws'].map((tp) => (
-            <Button
-              key={tp}
-              variant={transportFilter === tp ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setTransportFilter(tp)}
-            >
-              {transportLabel(tp)}
-            </Button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+          <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v as TypeFilter); setPage(1) }}>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t('services.filterTypeAll')}</SelectItem>
+              {/* 末尾「市场」按 source=marketplace 过滤(非传输类型),同总览;
+                  stdio 仅管理员可见,同总览口径 */}
+              {[
+                ...(isAdmin ? TYPE_FILTERS : TYPE_FILTERS.filter((type) => type !== 'stdio')),
+                ...(['marketplace'] as const),
+              ].map((type) => (
+                <SelectItem key={type} value={type}>
+                  {type === 'marketplace' ? t('marketplace.platformHosted') : transportLabel(type)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={enabledFilter} onValueChange={(v) => { setEnabledFilter(v as EnabledFilter); setPage(1) }}>
+            <SelectTrigger className="w-28">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t('services.filterAll')}</SelectItem>
+              <SelectItem value="enabled">{t('services.filterEnabled')}</SelectItem>
+              <SelectItem value="disabled">{t('services.filterDisabled')}</SelectItem>
+            </SelectContent>
+          </Select>
+          {total > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {t('common.total')} {total} {t('common.items')}
+            </span>
+          )}
         </div>
       </div>
 
@@ -191,8 +247,9 @@ export function ServiceListPage() {
         ) : services.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <Server className="mb-3 h-10 w-10 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">{t('services.noServices')}</p>
-            <p className="mt-1 text-xs text-muted-foreground/60">{t('services.noServicesHint')}</p>
+            {/* 区分「还没有服务」与「筛选无结果」:后者提示调整筛选条件 */}
+            <p className="text-sm text-muted-foreground">{hasFilter ? t('services.noMatch') : t('services.noServices')}</p>
+            {!hasFilter && <p className="mt-1 text-xs text-muted-foreground/60">{t('services.noServicesHint')}</p>}
           </div>
         ) : isMobile ? (
           <div className="divide-y">
@@ -414,6 +471,11 @@ export function ServiceListPage() {
           </div>
         )}
       </div>
+
+      {/* 服务端分页:仅一页时不显示 */}
+      {total > PAGE_SIZE && (
+        <LocalPager total={total} page={safePage} totalPages={totalPages} onPage={setPage} />
+      )}
     </div>
   )
 }

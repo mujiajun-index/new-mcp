@@ -80,6 +80,9 @@ func ListServicesByUser(userID int64, offset, limit int, filters map[string]stri
 	if v, ok := filters["status"]; ok && v != "" {
 		query = query.Where("status = ?", v)
 	}
+	if v, ok := filters["source"]; ok && v != "" {
+		query = query.Where("source = ?", v)
+	}
 	if v, ok := filters["keyword"]; ok && v != "" {
 		query = query.Where("name LIKE ? OR display_name LIKE ? OR description LIKE ?", "%"+v+"%", "%"+v+"%", "%"+v+"%")
 	}
