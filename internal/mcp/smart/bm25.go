@@ -2,10 +2,11 @@ package smart
 
 import (
 	"math"
-	"regexp"
 	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/mozillazg/go-pinyin"
 )
 
 const (
@@ -155,40 +156,113 @@ func (idx *bm25Index) search(query string, offset, limit int) ([]SearchResult, i
 	return out, total
 }
 
+// pinyinArgs 无声调小写拼音参数(Normal 样式,每字取第一个读音);只读,可并发共享。
+var pinyinArgs = pinyin.NewArgs()
+
+// hanRunMaxJoinedPinyin 整段连写拼音只对长度 ≤ 此值的汉字 run 生成:整句中文的
+// 连写串没有检索价值,只会无谓膨胀索引(每字音节与二元连写不受此限)。
+const hanRunMaxJoinedPinyin = 8
+
+// tokenize 把文本切成检索 token,建索引(buildIndex)与查询(search)共用,保证
+// 两侧对称。拉丁/数字按连续段成一个 token;连续汉字段展开为三层:
+//  1. 单字 unigram —— 单字查询仍可命中;
+//  2. 相邻二元 bigram —— 中文查询精度:query「八字」优先命中含该词组的文档,
+//     而非只散见「字」的无关文档(如「文字识别」);
+//  3. 拼音形式(每字音节 + 二元连写 + 整段连写)—— 打通中英鸿沟:query「八字」
+//     产出 "bazi" 可命中纯英文目录 bazi-mcp,反向英文 query 命中中文描述亦然。
+//     无读音的生僻字该位置跳过;拼音 token 去重(与 unigram 的 tf 语义无关,
+//     重复音节只会虚增 docLens)。
+// 拼音层使汉字文档的 token 数约为字数的 3 倍,docLen 相应膨胀——百级文档规模下
+// 对 BM25 长度归一的影响可接受,换取跨语言召回。
 func tokenize(text string) []string {
 	text = strings.ToLower(text)
-	// Split CJK characters individually
 	var tokens []string
-	var current []rune
+	var current []rune // 拉丁/数字 run
+	var han []rune     // 汉字 run
 
-	for _, r := range text {
-		if unicode.Is(unicode.Han, r) {
-			if len(current) > 0 {
-				tokens = append(tokens, string(current))
-				current = nil
-			}
-			tokens = append(tokens, string(r))
-		} else if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			current = append(current, r)
-		} else {
-			if len(current) > 0 {
-				tokens = append(tokens, string(current))
-				current = nil
-			}
+	flushLatin := func() {
+		if len(current) > 0 {
+			tokens = append(tokens, string(current))
+			current = nil
 		}
 	}
-	if len(current) > 0 {
-		tokens = append(tokens, string(current))
+	flushHan := func() {
+		if len(han) > 0 {
+			tokens = append(tokens, hanRunTokens(han)...)
+			han = nil
+		}
 	}
 
-	// Filter short tokens
+	for _, r := range text {
+		switch {
+		case unicode.Is(unicode.Han, r):
+			flushLatin()
+			han = append(han, r)
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			flushHan()
+			current = append(current, r)
+		default:
+			flushLatin()
+			flushHan()
+		}
+	}
+	flushLatin()
+	flushHan()
+
+	// Filter short tokens(单汉字 3 字节,天然通过;单字母/数字被滤掉)
 	filtered := make([]string, 0, len(tokens))
 	for _, t := range tokens {
-		if len(t) >= 2 || regexp.MustCompile(`\p{Han}`).MatchString(t) {
+		if len(t) >= 2 || containsHan(t) {
 			filtered = append(filtered, t)
 		}
 	}
 	return filtered
+}
+
+// hanRunTokens 展开一段连续汉字(纯 Han run,无空格杂质)为三层 token,详见
+// tokenize 的层说明。
+func hanRunTokens(run []rune) []string {
+	n := len(run)
+	tokens := make([]string, 0, n*3)
+	for i, r := range run {
+		tokens = append(tokens, string(r))
+		if i+1 < n {
+			tokens = append(tokens, string(run[i:i+2]))
+		}
+	}
+
+	// 拼音层:逐字取第一个读音,无读音(生僻字/造字)记空串并跳过相关连写,
+	// 避免跨缺音位置拼出 "ba"+"pan" → "bapan" 这类假连写。
+	syllables := make([]string, n)
+	for i, r := range run {
+		if pys := pinyin.SinglePinyin(r, pinyinArgs); len(pys) > 0 {
+			syllables[i] = pys[0]
+		}
+	}
+
+	seen := make(map[string]bool)
+	addPinyin := func(s string) {
+		if s != "" && !seen[s] {
+			seen[s] = true
+			tokens = append(tokens, s)
+		}
+	}
+	allPresent := true
+	for _, s := range syllables {
+		if s == "" {
+			allPresent = false
+		}
+		addPinyin(s)
+	}
+	for i := 0; i+1 < n; i++ {
+		if syllables[i] != "" && syllables[i+1] != "" {
+			addPinyin(syllables[i] + syllables[i+1])
+		}
+	}
+	if n <= hanRunMaxJoinedPinyin && allPresent {
+		addPinyin(strings.Join(syllables, ""))
+	}
+	return tokens
 }
 
 func levenshtein(a, b string) int {

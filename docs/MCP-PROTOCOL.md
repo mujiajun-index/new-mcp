@@ -152,8 +152,8 @@ prompts/list 一致，均可被分组勾选禁用过滤，禁用条目不出现�
   `Found N items`；offset 越过总数时提示调低 offset。BM25 同分条目按文档序号
   破平（排序稳定），保证翻页时条目不在两页间漂移；
 - 0 结果时返回放宽条件的建议文案；query 仅含汉字（未附英文关键词）时改为点破
-  语言原因，引导附上英文重试（目录名称/描述以英文为主，中文分词与英文索引零重叠）；
-  query 已含英文关键词仍空结果则退回通用建议（语言已不是问题）。
+  语言原因，引导附上英文重试（分词已带拼音桥，仍空结果多为拼音兜不住的专有名词
+  缩写/非常规罗马化）；query 已含英文关键词仍空结果则退回通用建议（语言已不是问题）。
 
   提示词层面同步引导"双语关键词"：`mcp.search` 的 description、`query` 参数描述
   与智能模式 instructions 均要求非英文任务在原词旁附上英文翻译（如
@@ -733,7 +733,7 @@ API Key 的 `permissions` 字段示例:
 
 ### 8.2 BM25Okapi 自实现 (参考 mcp-gateway MiniSearch)
 
-参考 [eznix86/mcp-gateway](https://github.com/eznix86/mcp-gateway) 的 MiniSearch 实现，在 Go 中自实现轻量 BM25Okapi，零外部依赖。
+参考 [eznix86/mcp-gateway](https://github.com/eznix86/mcp-gateway) 的 MiniSearch 实现，在 Go 中自实现轻量 BM25Okapi。评分/索引零外部库，分词层为打通中英检索引入纯 Go 的 [go-pinyin](https://github.com/mozillazg/go-pinyin)（无 cgo）做拼音桥。
 
 **BM25Okapi 核心公式:**
 ```
@@ -957,32 +957,18 @@ func (idx *bm25Index) fuzzyExpand(term string) []string {
     return matched
 }
 
-// tokenize 分词: 小写 + 英文按空格拆分 + 中文逐字拆分
-// 参考 smart_gateway.py 的 _tokenize 实现，支持中英文混合
+// tokenize 分词: 小写 + 拉丁/数字按连续段一个 token + 汉字 run 三层展开。
+// 建索引与查询两侧共用同一分词，保证「八字」(→ 拼音 bazi) 与英文目录 bazi-mcp
+// 互相命中。汉字 run 的三层展开（以「八字排盘」为例）:
+//   1. 单字 unigram: 八 字 排 盘        —— 单字查询仍可命中
+//   2. 相邻二元 bigram: 八字 字排 排盘   —— 中文查询精度(优先命中词组而非散字)
+//   3. 拼音形式(go-pinyin,无声调小写): 每字音节 ba/zi/pai/pan、二元连写
+//      bazi/zipai/paipan、整段连写 bazipaipan(仅 ≤8 字 run) —— 打通中英鸿沟
 func tokenize(text string) []string {
     text = strings.ToLower(text)
-    var tokens []string
-    var buf strings.Builder
-    for _, r := range text {
-        if r >= 0x4E00 && r <= 0x9FFF { // CJK 统一汉字
-            if buf.Len() > 0 {
-                tokens = append(tokens, buf.String())
-                buf.Reset()
-            }
-            tokens = append(tokens, string(r))
-        } else if unicode.IsLetter(r) || unicode.IsDigit(r) {
-            buf.WriteRune(r)
-        } else {
-            if buf.Len() > 0 {
-                tokens = append(tokens, buf.String())
-                buf.Reset()
-            }
-        }
-    }
-    if buf.Len() > 0 {
-        tokens = append(tokens, buf.String())
-    }
-    return tokens
+    // 按 run 扫描: 汉字 run 交给 hanRunTokens 三层展开,其余逻辑与旧版一致
+    // (短 token 过滤: <2 字节且不含汉字的丢弃,单字母/数字被滤掉)
+    ...
 }
 ```
 
@@ -995,7 +981,8 @@ func tokenize(text string) []string {
 | 模糊匹配 | threshold 0.2 | Levenshtein ≤ 2 |
 | 前缀搜索 | 支持 | 支持 (fuzzyExpand 回退) |
 | 索引重建 | 全量销毁重建 | 按请求范围即时构建 |
-| 外部依赖 | 零 | 零 |
+| 外部依赖 | 零 | 评分零依赖;分词用 go-pinyin(拼音桥) |
+| 中文检索 | — | 单字+二元词组+拼音双向匹配 |
 
 ### 8.3 搜索流程
 
@@ -1087,7 +1074,7 @@ ORDER BY score
 LIMIT 20;
 ```
 
-中文分词可集成 [wangfenjin/simple](https://github.com/wangfenjin/simple) C 扩展（支持 jieba 分词 + 拼音搜索），或用 unicode61 unigram + 应用层预处理。索引大小预估：100K 文档约 25-50MB。
+中文分词与拼音检索已在应用层解决（汉字 run 单字 + 二元词组 + go-pinyin 拼音桥，见 8.2 节 tokenize）；切换 FTS5 只为规模化，分词可继续走应用层预处理，或集成 [wangfenjin/simple](https://github.com/wangfenjin/simple) C 扩展（jieba 分词 + 拼音搜索）。索引大小预估：100K 文档约 25-50MB。
 
 #### 未来扩展：MySQL FULLTEXT + ngram
 

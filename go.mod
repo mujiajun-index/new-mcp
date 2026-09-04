@@ -12,6 +12,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/minio/minio-go/v7 v7.2.1
 	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/mozillazg/go-pinyin v0.21.0
 	github.com/shirou/gopsutil/v4 v4.26.7
 	golang.org/x/crypto v0.51.0
 	golang.org/x/image v0.45.0

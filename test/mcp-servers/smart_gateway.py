@@ -63,24 +63,38 @@ REGISTRY = {
 # ── 简易 BM25 搜索 ──
 
 def _tokenize(text: str) -> list[str]:
-    """支持中英文混合分词: 英文按空格拆分，中文按单字拆分"""
+    """支持中英文混合分词: 英文按连续段、汉字按单字 + 相邻二元词组拆分。
+    (Go 侧 bm25.go 另有拼音桥层打通中英检索，测试替身保持最小依赖不引入 pypinyin)"""
     text = text.lower()
     tokens = []
     buf = ""
+    han = ""
+
+    def flush_buf():
+        nonlocal buf
+        if buf:
+            tokens.append(buf)
+            buf = ""
+
+    def flush_han():
+        nonlocal han
+        if han:
+            tokens.extend(han)  # unigram
+            tokens.extend(han[i : i + 2] for i in range(len(han) - 1))  # bigram
+            han = ""
+
     for ch in text:
         if '一' <= ch <= '鿿':
-            if buf:
-                tokens.append(buf)
-                buf = ""
-            tokens.append(ch)
+            flush_buf()
+            han += ch
         elif ch.isalnum():
+            flush_han()
             buf += ch
         else:
-            if buf:
-                tokens.append(buf)
-                buf = ""
-    if buf:
-        tokens.append(buf)
+            flush_buf()
+            flush_han()
+    flush_buf()
+    flush_han()
     return tokens
 
 

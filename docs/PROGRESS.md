@@ -214,7 +214,7 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）网关平台，采用 G
 | 3 | MCP WebSocket 端点 | `router/mcp_router.go` | 高 |
 | 4 | 被动 WebSocket 接入 | `internal/mcp/transport/passive_ws.go` | 高 |
 | 5 | SessionPool 空闲淘汰 + 健康检查 | `internal/mcp/bridge/session_pool.go` | 中 |
-| 6 | BM25 搜索优化 (中文分词改进) | `internal/mcp/smart/bm25.go` | 中 |
+| 6 | ~~BM25 搜索优化 (中文分词改进: 汉字二元词组 + go-pinyin 拼音桥)~~ | `internal/mcp/smart/bm25.go` | ~~中~~ ✅ |
 
 ### P1 — 前端待完善
 

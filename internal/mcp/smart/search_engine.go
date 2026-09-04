@@ -679,9 +679,10 @@ func FormatSearchResult(results []SearchResult, total, offset int, query string)
 		}
 		// 空结果不给线索会让模型放弃或反复瞎猜;按 AWS MCP tool design 的建议,
 		// 在失败点直接告诉它下一步怎么改("helpful errors can steer the next attempt")。
-		// 目录名称/描述基本都是英文,中文 query 分词后与英文索引天然零重叠——仅含
-		// 汉字(未附英文)时,泛泛的"换更宽泛的关键词"没用,要点破真正原因:附上英文
-		// 再搜。query 已带英文关键词仍空结果,说明语言不是问题,退回通用建议。
+		// 分词已带拼音桥(「八字」→ bazi),仅含汉字的 query 仍空结果,说明拼音兜
+		// 不住(专有名词缩写、非常规罗马化等)——此时泛泛的"换更宽泛的关键词"没用,
+		// 要点破真正原因:附上英文再搜。query 已带英文关键词仍空结果,说明语言不是
+		// 问题,退回通用建议。
 		if containsHan(query) && !containsLatinWord(query) {
 			return "No results. The catalog's names and descriptions are mostly English — add English keywords to the query and retry (e.g. \"网络工具\" → \"网络工具 [web search]\"). Also try broader keywords, set scope to \"all\", or remove the group filter. Call mcp.describe if you already know a service or tool name."
 		}

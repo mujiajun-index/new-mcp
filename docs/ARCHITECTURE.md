@@ -414,7 +414,7 @@ type SearchEngine struct {
 func (e *SearchEngine) Search(ctx context.Context, store Store, apiKeyID int64, query string, opts SearchOptions) ([]SearchResult, error)
 ```
 
-> 零外部依赖，BM25Okapi + 字段权重 + Levenshtein 模糊匹配。详见 MCP-PROTOCOL.md 第 8 节。
+> 评分零外部依赖，BM25Okapi + 字段权重 + Levenshtein 模糊匹配；分词层引入 go-pinyin 做拼音桥（「八字」↔ bazi 双向命中）。详见 MCP-PROTOCOL.md 第 8 节。
 
 ### 4.4 双模式分发器
 
@@ -695,7 +695,7 @@ OnAuthFailure(keyIndex int)                           // 401/403 熔断:落库+�
 | 前端构建 | Vite | 开发体验好，构建快 |
 | 状态管理 | Zustand | 比 Redux 轻量，适合中小项目 |
 | 工具暴露 | 双模式 (Direct + Smart) | Direct 适合工具少场景，Smart 适合大量工具/受限设备 |
-| 搜索引擎 | 自实现 BM25Okapi | 零依赖，搜索范围通过 API Key→分组 自然收敛到百级 |
+| 搜索引擎 | 自实现 BM25Okapi | 评分零依赖 + go-pinyin 拼音桥打通中英检索；搜索范围通过 API Key→分组 自然收敛到百级 |
 | 虚拟工具 | VirtualToolRegistry (进程内) | 绕过 SessionPool，支持 Vision/Camera 等非 MCP 协议工具 |
 | 视觉 API | OpenAI 兼容格式 | 一套客户端适配 OpenAI/GLM/Qwen/Ollama 等 |
 | 摄像头帧 | WebSocket 实时推流 + 内存缓存 | 浏览器端推流，后端仅缓存最新帧，被动响应 MCP 调用 |
