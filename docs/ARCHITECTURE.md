@@ -359,10 +359,11 @@ const (
 
 // SessionPool 管理到上游 MCP 服务器的连接池
 type SessionPool struct {
-    mu          sync.RWMutex
-    sessions    map[sessionKey]*McpSession  // 复合键:默认服务行键;共享市场 stdio 条目按条目键
-    idleTimeout time.Duration               // 空闲超时，默认 10 分钟
-    maxRetries  int                         // 最大重连次数，默认 5
+    mu           sync.RWMutex
+    sessions     map[sessionKey]*McpSession  // 复合键:默认服务行键;共享市场 stdio 条目按条目键
+    maxRetries   int                         // 最大重连次数，默认 5
+    connMu       sync.Mutex                  // 护 connectLocks
+    connectLocks map[sessionKey]*keyedMutex  // per-key 建连锁(引用计数归零即摘除)
 }
 
 // sessionKey 会话池键:自有服务/独占市场引用/非 stdio 市场引用按服务行键控
@@ -376,25 +377,31 @@ type sessionKey struct {
 // McpSession 代表一个到上游 MCP 服务器的活跃连接
 type McpSession struct {
     ServiceID   int64
+    Source      string    // 服务来源(user/admin/marketplace),计费 hook 判定用
     Adapter     TransportAdapter
     Tools       []Tool
     LastUsed    time.Time
     LastRefresh time.Time
-    Health      HealthStatus
-    failCount   int                   // 连续失败计数（用于熔断）
+    Health      string
+    failCount   int       // 连续失败计数
+    inUse       int       // 在途调用租约数(空闲回收判定 + 共享条目并发上限)
 }
 
 // GetOrConnect 获取已有 session 或按需创建新连接(按 sessionKeyFor(svc) 键控;
-// 共享条目管理员"启动"用 ID=0 的内存行预热,不落库)
+// 共享条目管理员"启动"用 ID=0 的内存行预热,不落库)。建连持 per-key 锁而非
+// 整池写锁:慢启动(npx 冷下载数十秒)只排队同条目首连,其他服务的查找/建连不受影响
 func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (*McpSession, error)
+
+// Acquire/AcquireSession 取会话并登记使用租约(release 归还);租约阻止空闲回收
+// 关掉在途请求正在用的平台 stdio 进程。共享条目租约数达上限时返回 ErrServiceBusy
+func (p *SessionPool) Acquire(ctx context.Context, svc *model.McpService) (*McpSession, func(), error)
 ```
 
 > **Session 生命周期管理**:
-> - **空闲淘汰**: stdio 子进程 session 空闲超过 `idleTimeout` 后自动关闭，释放系统资源
-> - **健康检查**: 每 60 秒 ping 所有活跃 session，失败标记为 unhealthy
-> - **自动重连**: unhealthy session 按指数退避重连（1s, 2s, 4s, ..., 最大 30s），连续失败 5 次后标记为 dead
-> - **熔断机制**: 连续 3 次 `Call()` 失败的 session 自动熔断，路由绕过该 session
-> - **线程安全**: TransportAdapter 的 `Call()` 方法必须支持并发调用
+> - **并发上限**: 共享市场 stdio 会话(itemID 键控)在途租约达 `SharedStdioMaxConcurrency`(默认 10,0=不限,每次实时读配置)时,新调用**快速失败**(不排队),返回 JSON-RPC `-32000 "服务名: 当前服务负载较高，请稍后重试"`——覆盖 tools/call、execute/execute_batch、resources/read、prompts/get、mcp.read 全路径。上限**每条目独立、全体用户合计**(共享条目全平台一条会话一个子进程);自有服务/独占市场 stdio 不受限
+> - **空闲回收**: `StartIdleReaper` 每分钟扫描(`router.StartBackgroundJobs` 拉起),市场 stdio 会话——共享条目与独占引用行都覆盖——无在途租约且超过 `SharedStdioIdleTimeoutMinutes`(默认 60 分钟,0=关闭)未使用即关闭子进程释放资源,下次调用冷启动重建;时长每轮扫描实时读配置(改配置无需重启),每次释放记 `[idle-reaper]` 日志(服务/条目标识+空闲时长)
+> - **健康回写**: 无主动 ping;调用失败风暴/恢复经 `model.ApplyHealthWriteBack` 回写服务行 `health_status`(手动测试共用同一路径)
+> - **线程安全**: TransportAdapter 的 `Call()` 方法必须支持并发调用(单 stdio 管道按 JSON-RPC 请求 id 多路复用)
 > - **进程模式切换**: 市场 stdio 条目共享↔独占切换(或平台上游配置变更)调用 `RemoveByMarketplaceItem` 踢掉该条目全部会话,下次调用按新键控/新配置重建
 
 ### 4.3 Smart 模式搜索引擎

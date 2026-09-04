@@ -4,14 +4,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import {
   adminListMarketplace, adminUpdateMarketplace, adminDeleteMarketplace,
-  adminBatchPricing, adminCloneMarketplace, adminListCloneSources,
+  adminBatchPricing, adminBatchSetGroupsTags, adminCloneMarketplace, adminListCloneSources,
   adminGetMarketplaceHealth,
 } from '../api'
 import { adminListMarketplaceGroups, adminListMarketplaceTags } from '@/features/admin/marketplace-categories/api'
 import { ServiceHealthBar } from '@/features/services/components/service-health-bar'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import { priceLabel, isExplicitlyPriced, PRICE_MAX, PRICE_MIN } from '@/lib/billing'
-import type { MarketplaceItemHealth } from '@/types'
+import type { BatchGroupsTagsReq, MarketplaceItemHealth } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -26,7 +26,7 @@ import { MobileListCard } from '@/components/ui/mobile-list-card'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { toast } from 'sonner'
 import {
-  Copy, Trash2, CheckSquare, Square, Tag, AlertTriangle, Store, Eye, Search,
+  Copy, Trash2, CheckSquare, Square, Tag, Tags, FolderTree, Check, AlertTriangle, Store, Eye, Search,
 } from 'lucide-react'
 
 export function AdminMarketplacePage() {
@@ -50,6 +50,8 @@ export function AdminMarketplacePage() {
 
   const [cloneOpen, setCloneOpen] = useState(false)
   const [batchOpen, setBatchOpen] = useState(false)
+  const [groupsOpen, setGroupsOpen] = useState(false)
+  const [tagsOpen, setTagsOpen] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-marketplace', page, keyword, status, category, groupId, tag],
@@ -130,6 +132,18 @@ export function AdminMarketplacePage() {
     onSuccess: () => {
       toast.success(t('common.success'))
       setBatchOpen(false)
+      setSelected(new Set())
+      queryClient.invalidateQueries({ queryKey: ['admin-marketplace'] })
+    },
+  })
+
+  // 批量设置分组/标签(替换语义,两个独立入口共用端点):ids 取整个选中集(含跨页),不按当前页过滤
+  const classifyMutation = useMutation({
+    mutationFn: (body: BatchGroupsTagsReq) => adminBatchSetGroupsTags(body),
+    onSuccess: () => {
+      toast.success(t('common.success'))
+      setGroupsOpen(false)
+      setTagsOpen(false)
       setSelected(new Set())
       queryClient.invalidateQueries({ queryKey: ['admin-marketplace'] })
     },
@@ -243,6 +257,12 @@ export function AdminMarketplacePage() {
           <span className="text-sm text-muted-foreground">{t('apiKeys.selected', { count: selected.size })}</span>
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setBatchOpen(true)}>
             <Tag className="h-3.5 w-3.5" />{t('marketplace.batchPricing')}
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setGroupsOpen(true)}>
+            <FolderTree className="h-3.5 w-3.5" />{t('marketplace.batchSetGroups')}
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setTagsOpen(true)}>
+            <Tags className="h-3.5 w-3.5" />{t('marketplace.batchSetTags')}
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>{t('apiKeys.clearSelection')}</Button>
         </div>
@@ -461,6 +481,24 @@ export function AdminMarketplacePage() {
         onConfirm={(batchItems) => batchMutation.mutate(batchItems)}
         pending={batchMutation.isPending}
       />
+      <BatchClassifyDialog
+        kind="groups"
+        open={groupsOpen}
+        onOpenChange={setGroupsOpen}
+        selectedCount={selected.size}
+        groups={groups}
+        onConfirm={(body) => classifyMutation.mutate({ ids: [...selected], ...body })}
+        pending={classifyMutation.isPending}
+      />
+      <BatchClassifyDialog
+        kind="tags"
+        open={tagsOpen}
+        onOpenChange={setTagsOpen}
+        selectedCount={selected.size}
+        tagsLib={tagsLib}
+        onConfirm={(body) => classifyMutation.mutate({ ids: [...selected], ...body })}
+        pending={classifyMutation.isPending}
+      />
     </div>
   )
 }
@@ -618,7 +656,7 @@ function CloneDialog({
             {t('marketplace.credentialReplaceHint')}
           </p>
         </div>
-        <DialogFooter>
+        <DialogFooter className="mt-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
           <Button disabled={pending || !form.from_service_id || !form.name.trim()} onClick={submit}>
             {t('marketplace.clone')}
@@ -690,9 +728,115 @@ function BatchDialog({
             </div>
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="mt-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
           <Button disabled={pending || selectedItems.length === 0} onClick={submit}>{t('common.save')}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// --- Batch classify dialog(批量设置分组/标签,替换语义:所选内容整体替换,空选=清空)---
+// 分组、标签两个独立入口共用本组件(kind 区分),chip 样式同详情页编辑表单。
+function BatchClassifyDialog({
+  kind, open, onOpenChange, selectedCount, groups, tagsLib, onConfirm, pending,
+}: {
+  kind: 'groups' | 'tags'
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  selectedCount: number
+  groups?: any[]
+  tagsLib?: any[]
+  onConfirm: (body: { group_ids?: number[]; tags?: string[] }) => void
+  pending: boolean
+}) {
+  const { t } = useTranslation()
+  const [selectedGroups, setSelectedGroups] = useState<number[]>([])
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
+
+  const toggleGroup = (id: number) =>
+    setSelectedGroups((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  const toggleTag = (name: string) =>
+    setSelectedTags((prev) => (prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]))
+
+  // 每次打开重置,避免残留上次的选择
+  useEffect(() => {
+    if (open) {
+      setSelectedGroups([])
+      setSelectedTags([])
+    }
+  }, [open])
+
+  const isGroups = kind === 'groups'
+  const dict: any[] = (isGroups ? groups : tagsLib) ?? []
+  const chosenCount = isGroups ? selectedGroups.length : selectedTags.length
+
+  const submit = () => {
+    // [] 显式发送=清空;未开启的字段不在此弹窗提交
+    if (isGroups) onConfirm({ group_ids: selectedGroups })
+    else onConfirm({ tags: selectedTags })
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t(isGroups ? 'marketplace.batchSetGroupsTitle' : 'marketplace.batchSetTagsTitle')}</DialogTitle>
+          <DialogDescription>{t('apiKeys.selected', { count: selectedCount })}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <p className="flex items-start gap-2 rounded-lg bg-amber-500/5 p-2.5 text-xs text-amber-700 dark:text-amber-300">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            {t(isGroups ? 'marketplace.batchSetGroupsHint' : 'marketplace.batchSetTagsHint')}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {dict.length === 0 && (
+              <p className="text-xs text-muted-foreground">{t(isGroups ? 'marketplace.noGroupsHint' : 'marketplace.noTagsHint')}</p>
+            )}
+            {isGroups
+              ? groups!.map((g) => {
+                  const selected = selectedGroups.includes(g.id)
+                  return (
+                    <button key={g.id} type="button" onClick={() => toggleGroup(g.id)}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                        selected ? 'border-primary bg-primary text-primary-foreground shadow-sm' : 'bg-muted/40 hover:bg-muted'}`}>
+                      {selected && <Check className="h-3 w-3 shrink-0" />}
+                      {g.name}
+                    </button>
+                  )
+                })
+              : tagsLib!.map((tag) => {
+                  const selected = selectedTags.includes(tag.name)
+                  return (
+                    <button key={tag.id} type="button" onClick={() => toggleTag(tag.name)}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                        selected
+                          ? tag.color ? 'shadow-sm' : 'border-primary bg-primary text-primary-foreground'
+                          : tag.color ? 'hover:opacity-80' : 'bg-muted/40 hover:bg-muted'}`}
+                      style={selected && tag.color
+                        ? { color: tag.color, backgroundColor: `${tag.color}33`, borderColor: tag.color }
+                        : !selected && tag.color
+                          ? { color: tag.color, backgroundColor: `${tag.color}1A`, borderColor: `${tag.color}55` }
+                          : undefined}>
+                      {selected
+                        ? <Check className="h-3 w-3 shrink-0" />
+                        : tag.color && <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: tag.color }} />}
+                      {tag.name}
+                    </button>
+                  )
+                })}
+          </div>
+          {chosenCount === 0 && dict.length > 0 && (
+            <p className="flex items-start gap-2 rounded-lg bg-amber-500/5 p-2.5 text-xs text-amber-700 dark:text-amber-300">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              {t(isGroups ? 'marketplace.batchClearGroupsWarning' : 'marketplace.batchClearTagsWarning')}
+            </p>
+          )}
+        </div>
+        <DialogFooter className="mt-4">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
+          <Button disabled={pending || selectedCount === 0} onClick={submit}>{t('common.save')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

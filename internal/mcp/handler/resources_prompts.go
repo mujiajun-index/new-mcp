@@ -203,7 +203,10 @@ func (h *GatewayHandler) acquireServiceByName(ctx context.Context, serviceName s
 		if err != nil {
 			return nil, nil, err
 		}
-		if release, ok := h.pool.AcquireSession(session); ok {
+		if release, ok, aerr := h.pool.AcquireSession(session); aerr != nil {
+			// 共享 stdio 并发上限命中不可重试,带服务名上抛
+			return nil, nil, fmt.Errorf("%s: %w", session.ServiceName, aerr)
+		} else if ok {
 			return session, release, nil
 		}
 	}
@@ -419,7 +422,7 @@ func (h *GatewayHandler) readUpstreamResource(ctx context.Context, reqID interfa
 
 	session, release, err := h.acquireServiceByName(ctx, serviceName, logCtx.UserID)
 	if err != nil {
-		return h.errorResponse(reqID, -32602, err.Error()), 0, serviceName, nil, 0
+		return h.errorResponse(reqID, acquireErrCode(err), err.Error()), 0, serviceName, nil, 0
 	}
 	defer release()
 
@@ -499,7 +502,7 @@ func (h *GatewayHandler) getUpstreamPrompt(ctx context.Context, reqID interface{
 
 	session, release, err := h.acquireServiceByName(ctx, serviceName, logCtx.UserID)
 	if err != nil {
-		return h.errorResponse(reqID, -32602, err.Error()), 0, serviceName, nil, 0
+		return h.errorResponse(reqID, acquireErrCode(err), err.Error()), 0, serviceName, nil, 0
 	}
 	defer release()
 

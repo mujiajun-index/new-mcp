@@ -98,7 +98,7 @@ NewMCP 当前已完成 V2 核心(MCP 网关、分组、市场、视觉/摄像头
 | D14 | 市场上架方式 | **克隆**(从自有服务深拷贝,无关联,凭证保留并提示替换)/ **手动添加**,均生成自包含 `marketplace_items` | 多管理员共享管理;市场用平台凭证承担上游成本 |
 | D15 | 自用模式 | `SelfUseModeEnabled`:**自用模式**可用全局默认价;**非自用(默认)**市场上架/启用必须显式定价 | 参考 new-api `operation_setting.SelfUseModeEnabled`;防止商业部署下服务误用默认价/免费上架 |
 | D16 | 虚拟服务 | 视觉/摄像头等**虚拟服务**(`transport_type='virtual'`,`source`∈{vision,camera})**仅自有配置、自己免费使用**,**不可上架市场**(手动添加/从自有服务克隆均拒绝 `transport_type='virtual'`) | 虚拟服务的 config/凭证绑定配置者私有资源(如 `vision_configs.ref_id`),无平台可托管的上游连接;属内置 handler,不应进入计费/市场流通 |
-| D17 | 市场 stdio 进程模式 | `marketplace_items.isolated_process`(仅 stdio 条目有意义,**反向命名**):`false`=**共享**(默认,全部安装用户共用平台侧一个 stdio 子进程)/`true`=**独占**(每个安装用户的引用行各一个进程)。无 DB default(bool 规范,克隆显式赋值),存量行零值 false=共享零回填;切换模式即踢掉该条目全部会话按新模式重建 | 共享防内存随安装数线性增长(无状态工具);独占保状态隔离(记忆存储类);共享暴露同套 env/文件系统视图,仅适合无状态服务,用户侧市场详情可见该标志 |
+| D17 | 市场 stdio 进程模式 | `marketplace_items.isolated_process`(仅 stdio 条目有意义,**反向命名**):`false`=**共享**(默认,全部安装用户共用平台侧一个 stdio 子进程)/`true`=**独占**(每个安装用户的引用行各一个进程)。无 DB default(bool 规范,克隆显式赋值),存量行零值 false=共享零回填;切换模式即踢掉该条目全部会话按新模式重建 | 共享防内存随安装数线性增长(无状态工具);独占保状态隔离(记忆存储类);共享暴露同套 env/文件系统视图,仅适合无状态服务,用户侧市场详情可见该标志;共享会话在途调用受 `SharedStdioMaxConcurrency` 上限保护(每条目独立/全体用户合计,默认 10,0=不限,超出返回 -32000 友好重试提示);共享与独占进程均支持空闲自动释放(`SharedStdioIdleTimeoutMinutes`,默认 60 分钟无调用即释放,下次调用冷启动) |
 
 ---
 
@@ -963,7 +963,7 @@ features/redemption-codes/
 | **精度** | 浮点价格 × QuotaPerUnit 换算 | 落库 decimal,内存换算 `round` 成整数后只动整数 |
 | **退款一致性** | 预扣成功但退款失败导致少退/多扣 | 退款幂等 + `billing_status` 状态机 + 对账任务(V2) |
 | **引用服务一致性** | 用户添加的市场引用 tools_cache 与平台项脱节 | V1 添加时快照 + 手动同步;V2 自动下发(任务 18) |
-| **平台 session 共享** | 同一 stdio 市场项多用户共享平台子进程(共享模式) | 会话池按条目键复用(D17);共享仅适合无状态工具,有状态服务用独占模式;条目平台健康按日志 `marketplace_item_id` 聚合,与键控无关 |
+| **平台 session 共享** | 同一 stdio 市场项多用户共享平台子进程(共享模式) | 会话池按条目键复用(D17);共享仅适合无状态工具,有状态服务用独占模式;并发由 `SharedStdioMaxConcurrency` 保护(全体用户合计,每条目独立,超出快速失败返回 -32000 友好提示);条目平台健康按日志 `marketplace_item_id` 聚合,与键控无关 |
 | **批量定价并发** | 批量改价期间正在调用的请求价格快照 | 改价后 `InvalidatePricingCache` 刷新;单次调用内价格已快照到 log |
 | **三库兼容** | 保留字 `group`/`key`、布尔默认值差异 | GORM map 条件 + `code` 替代 `key` + 布尔默认走代码而非 `default:1`([memory: db-reserved-words]) |
 | **计费阻塞主链路** | DB 扣减失败影响调用 | 默认 **FailOpen**(放行+记欠账),可配关闭 |

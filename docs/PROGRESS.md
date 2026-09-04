@@ -551,3 +551,30 @@ DATABASE.md(2.18 新表 + key_index 列 + ER/索引)、API.md(§4 六个 keys �
 | 凭证掩码 | ✅ | 服务详情响应 `config.headers/env` 掩码(复用 maskConfigCredentials,与市场管理详情同策);Update 落库前 mergeMaskedCredentials 回填未改动掩码;服务详情「连接配置」裸 JSON 卡移除 |
 | 前端 | ✅ | 秘钥卡片抽为通用组件(components/service-keys-card.tsx,KeysApi 注入);市场管理详情页集成卡片+徽章+上游配置卡多秘钥锁定;MarketplaceDetail 增 key_mode/key_count/key_enabled(仅 admin 详情回传) |
 | 测试 | ✅ | marketplace_keys_test.go(升降级/守卫/批量/克隆整拷)、service_config_mask_test.go(掩码+回填)、key_selector_test.go 增条目属主用例 |
+
+## 15. 平台 stdio 进程空闲自动释放(2026-09-03)
+
+> 市场平台托管的 stdio 子进程(共享/独占)一旦拉起便常驻,长时间无调用也占内存。
+> 新增空闲回收:超过可配置时长(默认 1 小时)无实际调用即自动释放进程,等待下次
+> 调用再冷启动拉起。
+
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| 会话池 | ✅ | `StartIdleReaper` 每分钟扫描,`ReleaseIdlePlatformStdio` 回收**无在途租约**且 `LastUsed` 早于 `SharedStdioIdleTimeoutMinutes`(默认 60,0=关闭自动释放)的市场 stdio 会话——共享条目与独占引用行**都覆盖**;时长每轮扫描实时读配置,管理端修改无需重启即生效;会话先出池再在锁外 `Close()`;每次释放记 `[idle-reaper]` 日志(服务/条目标识+空闲时长),返回回收数 |
+| 使用租约 | ✅ | `McpSession` 增 `inUse` 计数(`useMu` 护),`AcquireSession`/`Acquire` 登记租约并返回 release 归还;网关 tools/call、execute/execute_batch、resources/read、prompts/get、mcp.read 全路径在调上游期间持租约,回收器见在途即跳过,不会杀掉正在服务的进程;路由拿到会话与登记租约之间被回收的竞态由 2 次重试兜底(重走建连路径);后台缓存预热(refreshItemCachesWhenLeased)同样租约化 |
+| 后台任务 | ✅ | `router.StartBackgroundJobs` 拉起 reaper,ctx 取消即停 |
+| 设置 | ✅ | `SharedStdioIdleTimeoutMinutes` 默认 "60" + `validateNonNegativeInt` 校验;管理端维护页新增「平台 Stdio 空闲释放时长(分钟)」输入框(zh/en 文案) |
+
+## 16. 共享 stdio 并发上限 + per-key 建连锁(2026-09-03)
+
+> 共享条目全体用户复用一个平台子进程:并发洪峰下调用全部涌入单进程,挂起→超时后
+> 报原始 `context deadline exceeded`(无友好提示);且首连持整池写锁,npx 冷下载
+> (数十秒)会卡住**所有**服务的会话查找。本次:每条目并发上限快速失败+友好提示,
+> 建连锁改键级隔离慢启动。
+
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| 会话池 | ✅ | `acquireExisting` 登记租约时检查共享条目(itemID 键控)在途数,达 `SharedStdioMaxConcurrency`(默认 10,0=不限,每次实时读配置即时生效,**每条目独立、全体用户合计**)返回 `ErrServiceBusy` 哨兵(快速失败不排队);`AcquireSession` 签名扩为 `(func(), bool, error)`;`GetOrConnect` 改 per-key 建连锁(`connectLocks` 引用计数归零即摘除),建连期间不再持整池写锁,同条目并发首连排队、其他服务不受慢启动影响;后台缓存预热抢不到租约即跳过 |
+| 网关 | ✅ | 忙碌错误带服务名上抛(`"服务名: 当前服务负载较高，请稍后重试"`),`acquireErrCode` 映射 JSON-RPC `-32000`(其余维持 -32602);覆盖 tools/call、execute/execute_batch、resources/read、prompts/get、智能模式 mcp.read 全路径;resources/list 等聚合类沿用单服务失败降级跳过 |
+| 设置 | ✅ | `SharedStdioMaxConcurrency` 默认 10 + `validateNonNegativeInt` 校验;管理端维护页新增「平台共享 Stdio 并发上限」输入框,zh/en 文案明确计数口径(全体用户合计、各条目独立、0 不限) |
+| 测试 | ✅ | `session_pool_test.go`:共享条目超限报 `ErrServiceBusy`+释放恢复可租、自有/独占会话(serviceID 键控)不受限、上限 0 不限流、per-key 锁同键串行/异键并行/引用计数回收清空 |

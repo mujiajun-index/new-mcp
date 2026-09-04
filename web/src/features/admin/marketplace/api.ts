@@ -1,7 +1,7 @@
 import { api } from '@/lib/api'
 import type { KeysApi } from '@/components/service-keys-card'
 import type {
-  BatchPricingReq, CloneMarketplaceReq, MarketplaceEntryPrice, ProcessControlAction,
+  BatchGroupsTagsReq, BatchPricingReq, CloneMarketplaceReq, MarketplaceEntryPrice, ProcessControlAction,
   UpdateServiceKeysReq,
 } from '@/types'
 
@@ -73,6 +73,13 @@ export async function adminControlMarketplaceProcess(
 // 批量定价(§5.5):PUT /admin/marketplace/pricing/batch
 export async function adminBatchPricing(data: BatchPricingReq) {
   const res = await api.put('/admin/marketplace/pricing/batch', data)
+  return res.data
+}
+
+// 批量设置分组/标签(替换语义):PUT /admin/marketplace/groups-tags/batch
+// group_ids/tags 均可选:缺省=不动该字段;[]=清空;两者须至少传一个
+export async function adminBatchSetGroupsTags(data: BatchGroupsTagsReq) {
+  const res = await api.put('/admin/marketplace/groups-tags/batch', data)
   return res.data
 }
 

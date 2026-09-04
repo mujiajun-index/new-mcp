@@ -44,6 +44,15 @@ type BatchPricingItem struct {
 	PricePerCall float64 `json:"price_per_call" binding:"gte=0"`
 }
 
+// BatchGroupsTagsReq 批量设置市场项分组/标签(替换语义)。两个独立字段各自
+// 沿用 UpdateMarketplaceItemReq 口径:nil/缺省=不动;[]=清空;[...]=全量替换。
+// 两者须至少传一个(全缺省=无操作,拒绝)。
+type BatchGroupsTagsReq struct {
+	IDs      []int64  `json:"ids" binding:"required,min=1,dive,gte=1"`
+	GroupIDs []int64  `json:"group_ids"` // nil=不动;[]=清空;[...]=替换
+	Tags     []string `json:"tags"`     // nil=不动;[]=清空;[...]=替换
+}
+
 // CloneMarketplaceReq 从自有服务克隆上架(§11/D14):深拷贝 transport/config/auth/tools,与源服务无关联。
 type CloneMarketplaceReq struct {
 	FromServiceID int64   `json:"from_service_id" binding:"required"`

@@ -50,6 +50,9 @@ var ErrTagNotInDictionary = errors.New("标签不在标签库中,请先在标签
 // ErrGroupNotFound 市场分组不存在或未启用(§11)。
 var ErrGroupNotFound = errors.New("市场分组不存在或未启用")
 
+// ErrBatchNothingToUpdate 批量设置分组/标签时两个字段均缺省(无任何操作对象)。
+var ErrBatchNothingToUpdate = errors.New("请至少选择要修改的字段:分组或标签")
+
 // ErrOnlyInstantRefreshable 仅平台托管(instant)市场项支持手动刷新快照:
 // source 类目为用户自行部署形态,平台侧无上游连接,快照由管理员通过编辑接口维护。
 var ErrOnlyInstantRefreshable = errors.New("仅开箱即用(平台托管)市场项支持刷新快照")
@@ -527,6 +530,56 @@ func (s *MarketplaceService) BatchUpdatePricing(items []dto.BatchPricingItem) (i
 		billing.InvalidatePricingCacheItem(it.ID)
 	}
 	return affected, nil
+}
+
+// BatchSetGroupsTags 批量设置市场项分组/标签(替换语义):group_ids/tags 缺省=不动,
+// []=清空, [...]=对全部所选项设为同一值(与单项 UpdateItem 同口径)。
+// 只操作当前存在且未软删的项;返回受影响市场项数。纯分类信息变更,不涉及计费/
+// 上游配置,无需失效计费缓存或踢会话。
+func (s *MarketplaceService) BatchSetGroupsTags(req *dto.BatchGroupsTagsReq) (int64, error) {
+	if req.GroupIDs == nil && req.Tags == nil {
+		return 0, ErrBatchNothingToUpdate
+	}
+	var cleanTags []string
+	var cleanGroupIDs []int64
+	var err error
+	if req.Tags != nil {
+		if cleanTags, err = cleanAndValidateTags(req.Tags); err != nil {
+			return 0, err
+		}
+	}
+	if req.GroupIDs != nil {
+		if cleanGroupIDs, err = cleanAndValidateGroupIDs(req.GroupIDs); err != nil {
+			return 0, err
+		}
+	}
+	// 只对存在且未软删的项生效(软删行 GORM 自动排除);选区整体失效时 0 受影响,幂等成功
+	existing, err := model.GetMarketplaceItemsByIDs(req.IDs)
+	if err != nil {
+		return 0, err
+	}
+	if len(existing) == 0 {
+		return 0, nil
+	}
+	ids := make([]int64, 0, len(existing)) // 顺带去重请求里的重复 id
+	for _, it := range existing {
+		ids = append(ids, it.ID)
+	}
+	tagsStr := strings.Join(cleanTags, ",") // 清空时 cleanTags=nil → ""
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if req.Tags != nil {
+			if _, err := model.BatchSetMarketplaceItemsTags(tx, ids, tagsStr); err != nil {
+				return err
+			}
+		}
+		if req.GroupIDs != nil {
+			return model.BatchReplaceMarketplaceItemGroups(tx, ids, cleanGroupIDs)
+		}
+		return nil
+	}); err != nil {
+		return 0, err
+	}
+	return int64(len(ids)), nil
 }
 
 // entryKindLabel 条目种类的中文标签(校验错误文案用)。
