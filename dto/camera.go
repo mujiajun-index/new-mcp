@@ -1,32 +1,32 @@
 package dto
 
 type CreateCameraReq struct {
-	Name          string `json:"name" binding:"required,min=1,max=128"`
-	Description   string `json:"description"`
-	VisionConfigID int64 `json:"vision_config_id" binding:"required"`
+	Name           string `json:"name" binding:"required,min=1,max=128"`
+	Description    string `json:"description"`
+	VisionConfigID int64  `json:"vision_config_id" binding:"required"`
 }
 
 type UpdateCameraReq struct {
-	Name         *string `json:"name"`
-	Description  *string `json:"description"`
-	VisionConfigID *int64 `json:"vision_config_id"`
-	CaptureDesc  *string `json:"capture_desc"`
-	AnalyzeDesc  *string `json:"analyze_desc"`
-	Status       *int    `json:"status"`
+	Name           *string `json:"name"`
+	Description    *string `json:"description"`
+	VisionConfigID *int64  `json:"vision_config_id"`
+	CaptureDesc    *string `json:"capture_desc"`
+	AnalyzeDesc    *string `json:"analyze_desc"`
+	Status         *int    `json:"status"`
 }
 
 type CameraListItem struct {
-	ID                 int64  `json:"id"`
-	Name               string `json:"name"`
-	VisionConfigID     *int64 `json:"vision_config_id"`
-	VisionConfigName   string `json:"vision_config_name"`
-	AutoRegister       bool   `json:"auto_register"`
+	ID                  int64  `json:"id"`
+	Name                string `json:"name"`
+	VisionConfigID      *int64 `json:"vision_config_id"`
+	VisionConfigName    string `json:"vision_config_name"`
+	AutoRegister        bool   `json:"auto_register"`
 	RegisteredServiceID *int64 `json:"registered_service_id"`
-	Streaming          bool   `json:"streaming"`
-	HasStreamKey       bool   `json:"has_stream_key"`
-	StreamKeyExpiresAt string `json:"stream_key_expires_at"` // 空串=永久或未生成;不含密钥本身
-	Status             int    `json:"status"`
-	CreatedAt          string `json:"created_at"`
+	Streaming           bool   `json:"streaming"`
+	HasStreamKey        bool   `json:"has_stream_key"`
+	StreamKeyExpiresAt  string `json:"stream_key_expires_at"` // 空串=永久或未生成;不含密钥本身
+	Status              int    `json:"status"`
+	CreatedAt           string `json:"created_at"`
 }
 
 type CameraDetail struct {
@@ -36,16 +36,20 @@ type CameraDetail struct {
 	VisionConfigID      *int64 `json:"vision_config_id"`
 	VisionConfigName    string `json:"vision_config_name"`
 	AutoRegister        bool   `json:"auto_register"`
-	RegisteredServiceID *int64  `json:"registered_service_id"`
+	RegisteredServiceID *int64 `json:"registered_service_id"`
 	CaptureDesc         string `json:"capture_desc"`
 	AnalyzeDesc         string `json:"analyze_desc"`
-	ExtraConfig         string `json:"extra_config"`
-	Streaming           bool   `json:"streaming"`
-	HasStreamKey        bool   `json:"has_stream_key"`
-	StreamKeyExpiresAt  string `json:"stream_key_expires_at"` // 空串=永久或未生成;不含密钥本身
-	Status              int    `json:"status"`
-	CreatedAt           string `json:"created_at"`
-	UpdatedAt           string `json:"updated_at"`
+	// Factory defaults (model.DefaultCaptureDesc/DefaultAnalyzeDesc), served so
+	// the detail page's restore-default button uses the server as source of truth.
+	CaptureDescDefault string `json:"capture_desc_default"`
+	AnalyzeDescDefault string `json:"analyze_desc_default"`
+	ExtraConfig        string `json:"extra_config"`
+	Streaming          bool   `json:"streaming"`
+	HasStreamKey       bool   `json:"has_stream_key"`
+	StreamKeyExpiresAt string `json:"stream_key_expires_at"` // 空串=永久或未生成;不含密钥本身
+	Status             int    `json:"status"`
+	CreatedAt          string `json:"created_at"`
+	UpdatedAt          string `json:"updated_at"`
 }
 
 // StreamKeyReq 生成/重生成推流密钥的请求体

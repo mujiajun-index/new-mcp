@@ -3,12 +3,14 @@ import { useNavigate, useParams } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { getCamera, updateCamera, deleteCamera, enableCamera, disableCamera } from '../api'
+import type { UpdateCameraReq } from '../api'
 import { getVisionConfigs } from '@/features/vision/api'
 import type { VisionConfigListItem } from '@/features/vision/api'
 import { CameraStreamLinkDialog } from './camera-stream-link-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -30,7 +32,7 @@ import {
 import { toast } from 'sonner'
 import {
   ArrowLeft, Trash2, Pencil, X, Check, Loader2,
-  CirclePower, Camera, Wrench, Link2,
+  CirclePower, Camera, Wrench, Link2, RotateCcw, Save,
 } from 'lucide-react'
 
 export function CameraDetailPage() {
@@ -45,6 +47,10 @@ export function CameraDetailPage() {
     name: '',
     description: '',
     vision_config_id: '' as string,
+  })
+  // Tool descriptions are always editable and saved independently of the form
+  // above (same interaction as the vision config page's tool cards).
+  const [tools, setTools] = useState({
     capture_desc: '',
     analyze_desc: '',
   })
@@ -71,11 +77,18 @@ export function CameraDetailPage() {
         name: camera.name || '',
         description: camera.description || '',
         vision_config_id: camera.vision_config_id ? String(camera.vision_config_id) : '',
+      })
+    }
+  }, [camera, editing])
+
+  useEffect(() => {
+    if (camera) {
+      setTools({
         capture_desc: camera.capture_desc || '',
         analyze_desc: camera.analyze_desc || '',
       })
     }
-  }, [camera, editing])
+  }, [camera])
 
   const updateMutation = useMutation({
     mutationFn: () =>
@@ -83,8 +96,6 @@ export function CameraDetailPage() {
         name: form.name,
         description: form.description,
         vision_config_id: form.vision_config_id ? Number(form.vision_config_id) : undefined,
-        capture_desc: form.capture_desc,
-        analyze_desc: form.analyze_desc,
       }),
     onSuccess: () => {
       toast.success(t('cameras.detail.updateSuccess'))
@@ -93,6 +104,18 @@ export function CameraDetailPage() {
     },
     onError: () => {
       toast.error(t('cameras.detail.updateFailed'))
+    },
+  })
+
+  // Shared mutation for the two tool cards; `variables` tells which card is saving.
+  const toolMutation = useMutation({
+    mutationFn: (data: UpdateCameraReq) => updateCamera(cameraId, data),
+    onSuccess: () => {
+      toast.success(t('cameras.detail.toolUpdateSuccess'))
+      queryClient.invalidateQueries({ queryKey: ['cameras', id] })
+    },
+    onError: () => {
+      toast.error(t('cameras.detail.toolUpdateFailed'))
     },
   })
 
@@ -115,6 +138,9 @@ export function CameraDetailPage() {
 
   if (isLoading) return <div className="flex items-center justify-center py-20 text-muted-foreground">{t('common.loading')}</div>
   if (!camera) return <div className="flex items-center justify-center py-20 text-muted-foreground">{t('cameras.detail.notFound')}</div>
+
+  const savingCapture = toolMutation.isPending && toolMutation.variables?.capture_desc !== undefined
+  const savingAnalyze = toolMutation.isPending && toolMutation.variables?.analyze_desc !== undefined
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
@@ -276,19 +302,47 @@ export function CameraDetailPage() {
                 <p className="text-xs text-muted-foreground">capture_frame</p>
               </div>
             </div>
+
             <div className="space-y-2">
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">{t('cameras.detail.toolDesc')}</Label>
-                {editing ? (
-                  <Input
-                    value={form.capture_desc}
-                    onChange={(e) => setForm({ ...form, capture_desc: e.target.value })}
-                    placeholder={t('cameras.detail.screenshotToolDesc')}
-                  />
+              <Label className="text-xs">{t('cameras.detail.toolDesc')}</Label>
+              <Textarea
+                value={tools.capture_desc}
+                onChange={(e) => setTools({ ...tools, capture_desc: e.target.value })}
+                className="text-xs min-h-[80px]"
+                placeholder={t('cameras.detail.screenshotToolDesc')}
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              {tools.capture_desc !== camera.capture_desc_default && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 text-xs h-7"
+                  title={t('cameras.detail.restoreDefaultHint')}
+                  onClick={() => {
+                    setTools({ ...tools, capture_desc: camera.capture_desc_default })
+                    toast.info(t('cameras.detail.restoreDefaultHint'))
+                  }}
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  {t('cameras.detail.restoreDefault')}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 text-xs h-7"
+                disabled={savingCapture}
+                onClick={() => toolMutation.mutate({ capture_desc: tools.capture_desc })}
+              >
+                {savingCapture ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
                 ) : (
-                  <p className="text-sm">{camera.capture_desc || '-'}</p>
+                  <Save className="h-3 w-3" />
                 )}
-              </div>
+                {t('common.save')}
+              </Button>
             </div>
           </div>
 
@@ -303,19 +357,47 @@ export function CameraDetailPage() {
                 <p className="text-xs text-muted-foreground">analyze_frame</p>
               </div>
             </div>
+
             <div className="space-y-2">
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">{t('cameras.detail.toolDesc')}</Label>
-                {editing ? (
-                  <Input
-                    value={form.analyze_desc}
-                    onChange={(e) => setForm({ ...form, analyze_desc: e.target.value })}
-                    placeholder={t('cameras.detail.analyzeToolDesc')}
-                  />
+              <Label className="text-xs">{t('cameras.detail.toolDesc')}</Label>
+              <Textarea
+                value={tools.analyze_desc}
+                onChange={(e) => setTools({ ...tools, analyze_desc: e.target.value })}
+                className="text-xs min-h-[80px]"
+                placeholder={t('cameras.detail.analyzeToolDesc')}
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              {tools.analyze_desc !== camera.analyze_desc_default && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 text-xs h-7"
+                  title={t('cameras.detail.restoreDefaultHint')}
+                  onClick={() => {
+                    setTools({ ...tools, analyze_desc: camera.analyze_desc_default })
+                    toast.info(t('cameras.detail.restoreDefaultHint'))
+                  }}
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  {t('cameras.detail.restoreDefault')}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 text-xs h-7"
+                disabled={savingAnalyze}
+                onClick={() => toolMutation.mutate({ analyze_desc: tools.analyze_desc })}
+              >
+                {savingAnalyze ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
                 ) : (
-                  <p className="text-sm">{camera.analyze_desc || '-'}</p>
+                  <Save className="h-3 w-3" />
                 )}
-              </div>
+                {t('common.save')}
+              </Button>
             </div>
           </div>
         </div>

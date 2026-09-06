@@ -24,6 +24,8 @@ export interface CameraDetail {
   registered_service_id: number | null
   capture_desc: string
   analyze_desc: string
+  capture_desc_default: string
+  analyze_desc_default: string
   extra_config: string
   streaming: boolean
   has_stream_key: boolean

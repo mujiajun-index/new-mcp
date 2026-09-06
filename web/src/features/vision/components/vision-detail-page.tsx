@@ -31,6 +31,7 @@ import {
   CheckCircle2,
   List,
   Lock,
+  RotateCcw,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -466,7 +467,23 @@ export function VisionDetailPage() {
               />
             </div>
 
-            <div className="flex justify-end pt-1">
+            <div className="flex items-center justify-end gap-2 pt-1">
+              {tools.analyze_image_desc !== config.analyze_image_desc_default && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 text-xs h-7"
+                  disabled={toolMutation.isPending}
+                  title={t('vision.restoreDefaultHint')}
+                  onClick={() => {
+                    setTools({ analyze_image_desc: config.analyze_image_desc_default })
+                    toast.info(t('vision.restoreDefaultHint'))
+                  }}
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  {t('vision.restoreDefault')}
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"

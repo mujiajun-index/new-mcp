@@ -52,10 +52,13 @@ type VisionConfigDetail struct {
 	AutoRegister          bool   `json:"auto_register"`
 	RegisteredServiceID   *int64 `json:"registered_service_id"`
 	AnalyzeImageDesc      string `json:"analyze_image_desc"`
-	ExtraConfig           string `json:"extra_config"`
-	Status                int    `json:"status"`
-	CreatedAt             string `json:"created_at"`
-	UpdatedAt             string `json:"updated_at"`
+	// Factory default (model.DefaultAnalyzeImageDesc), served so the detail
+	// page's restore-default button uses the server as source of truth.
+	AnalyzeImageDescDefault string `json:"analyze_image_desc_default"`
+	ExtraConfig             string `json:"extra_config"`
+	Status                  int    `json:"status"`
+	CreatedAt               string `json:"created_at"`
+	UpdatedAt               string `json:"updated_at"`
 }
 
 type TestVisionReq struct {

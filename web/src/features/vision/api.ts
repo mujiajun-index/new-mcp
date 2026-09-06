@@ -25,6 +25,7 @@ export interface VisionConfigDetail {
   auto_register: boolean
   registered_service_id: number | null
   analyze_image_desc: string
+  analyze_image_desc_default: string
   extra_config: string
   status: number
   created_at: string

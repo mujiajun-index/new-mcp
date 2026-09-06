@@ -17,6 +17,14 @@ const (
 	AnalyzeToolName = "analyze_frame"
 )
 
+// Default tool descriptions — the restore-default source of truth for the
+// detail page's tool cards. The gorm default tags on Camera.CaptureDesc /
+// Camera.AnalyzeDesc must stay byte-identical to these constants.
+const (
+	DefaultCaptureDesc = "Capture a single still frame from the live camera feed and return it as an image. Best for: taking snapshots or capturing the current view. Returns: the captured frame as an image."
+	DefaultAnalyzeDesc = "Capture the current camera frame and run visual analysis on it. Best for: detecting objects, people, or events in the live feed. Returns: the analysis result for the current frame."
+)
+
 type Camera struct {
 	ID                 int64          `json:"id" gorm:"primaryKey;autoIncrement"`
 	UserID             int64          `json:"user_id" gorm:"not null;index"`

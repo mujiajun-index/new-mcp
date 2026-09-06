@@ -60,15 +60,15 @@ func (s *CameraService) Create(userID int64, req *dto.CreateCameraReq) (*dto.Cam
 	}
 
 	cam := &model.Camera{
-		UserID:        userID,
-		Name:          req.Name,
-		Description:   req.Description,
-		SourceType:    "webrtc",
-		SourceURL:     "browser",
+		UserID:         userID,
+		Name:           req.Name,
+		Description:    req.Description,
+		SourceType:     "webrtc",
+		SourceURL:      "browser",
 		VisionConfigID: &req.VisionConfigID,
-		AutoRegister:  false,
-		Status:        common.StatusEnabled,
-		ExtraConfig:   "{}",
+		AutoRegister:   false,
+		Status:         common.StatusEnabled,
+		ExtraConfig:    "{}",
 	}
 
 	if err := cam.Insert(); err != nil {
@@ -292,6 +292,8 @@ func (s *CameraService) toDetail(cam *model.Camera) *dto.CameraDetail {
 		RegisteredServiceID: cam.RegisteredServiceID,
 		CaptureDesc:         cam.CaptureDesc,
 		AnalyzeDesc:         cam.AnalyzeDesc,
+		CaptureDescDefault:  model.DefaultCaptureDesc,
+		AnalyzeDescDefault:  model.DefaultAnalyzeDesc,
 		ExtraConfig:         cam.ExtraConfig,
 		Streaming:           streaming,
 		HasStreamKey:        cam.StreamKey != "",
