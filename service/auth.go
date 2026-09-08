@@ -107,31 +107,34 @@ func (s *AuthService) Register(registerIP string, req *dto.RegisterReq) (*dto.Au
 }
 
 // grantInviteRewards 发放邀请奖励(对齐 new-api finishInsert 的邀请分支;无支付合规门禁)。
+// 前置条件:inviterID != 0(填了有效邀请码);未填或坏码一律不发,防止任意字符串白拿受邀者奖励。
 //   - 受邀者:QuotaForInvitee > 0 时直接进受邀者钱包 quota(IncreaseUserQuota);
-//   - 邀请者:inviterID != 0 且 QuotaForInviter > 0 时,进邀请者 aff_quota 待提取(RewardInviter)。
+//   - 邀请者:QuotaForInviter > 0 时,进邀请者 aff_quota 待提取(RewardInviter)。
 //
 // 奖励发放失败不阻断注册(仅记日志),与 new-api 的 _ = IncreaseUserQuota(...) 容错一致。
 func (s *AuthService) grantInviteRewards(user *model.User, inviterID int64, registerIP string) {
+	// 无有效邀请人(未填或坏码):受邀者、邀请人奖励均不发。
+	if inviterID == 0 {
+		return
+	}
 	if quotaForInvitee := model.GetOptionInt64("QuotaForInvitee"); quotaForInvitee > 0 {
 		_ = model.IncreaseUserQuota(user.ID, quotaForInvitee)
 		model.RecordSystemLog(user.ID, user.Username,
 			fmt.Sprintf("使用邀请码赠送 %s", model.FormatQuotaCurrency(quotaForInvitee)),
 			quotaForInvitee, registerIP, map[string]any{"type": "invitee_reward"})
 	}
-	if inviterID != 0 {
-		if quotaForInviter := model.GetOptionInt64("QuotaForInviter"); quotaForInviter > 0 {
-			if err := model.RewardInviter(inviterID, quotaForInviter); err != nil {
-				return
-			}
-			// 邀请人日志:取邀请人用户名,失败则留空(日志仍以邀请人 id 为 owner)。
-			inviterUsername := ""
-			if inviter, err := model.GetUserByID(inviterID); err == nil {
-				inviterUsername = inviter.Username
-			}
-			model.RecordSystemLog(inviterID, inviterUsername,
-				fmt.Sprintf("邀请用户赠送 %s(待提取)", model.FormatQuotaCurrency(quotaForInviter)),
-				quotaForInviter, registerIP, map[string]any{"type": "inviter_reward", "invitee_id": user.ID})
+	if quotaForInviter := model.GetOptionInt64("QuotaForInviter"); quotaForInviter > 0 {
+		if err := model.RewardInviter(inviterID, quotaForInviter); err != nil {
+			return
 		}
+		// 邀请人日志:取邀请人用户名,失败则留空(日志仍以邀请人 id 为 owner)。
+		inviterUsername := ""
+		if inviter, err := model.GetUserByID(inviterID); err == nil {
+			inviterUsername = inviter.Username
+		}
+		model.RecordSystemLog(inviterID, inviterUsername,
+			fmt.Sprintf("邀请用户赠送 %s(待提取)", model.FormatQuotaCurrency(quotaForInviter)),
+			quotaForInviter, registerIP, map[string]any{"type": "inviter_reward", "invitee_id": user.ID})
 	}
 }
 
