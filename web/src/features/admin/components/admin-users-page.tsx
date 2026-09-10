@@ -20,7 +20,7 @@ import { useSystemConfigStore } from '@/stores/system-config-store'
 import { cn } from '@/lib/utils'
 import { formatQuotaCurrency } from '@/lib/billing'
 import { toast } from 'sonner'
-import { Plus, Pencil, Search, ChevronLeft, ChevronRight, X, Eye, Scale, Trash2, RotateCcw } from 'lucide-react'
+import { Plus, Pencil, Search, ChevronLeft, ChevronRight, Eye, Scale, Trash2, RotateCcw } from 'lucide-react'
 
 export function AdminUsersPage() {
   const { t } = useTranslation()
@@ -42,6 +42,8 @@ export function AdminUsersPage() {
 
   const [showCreate, setShowCreate] = useState(false)
   const [editingUser, setEditingUser] = useState<any>(null)
+  // detailTarget:列表行(点击即开弹框,加载中也有反馈);detailUser:接口返回的详情数据
+  const [detailTarget, setDetailTarget] = useState<any>(null)
   const [detailUser, setDetailUser] = useState<AdminUserDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [form, setForm] = useState({
@@ -68,6 +70,15 @@ export function AdminUsersPage() {
   const [restoreUserTarget, setRestoreUserTarget] = useState<any>(null)
   // "已删除"视图:列表只列软删除用户,操作区只保留"恢复"
   const deletedView = statusFilter === 'deleted'
+
+  // 任一筛选条件生效时,筛选行右侧显示"重置"按钮
+  const hasActiveFilters = keyword !== '' || roleFilter !== 'all' || statusFilter !== 'all'
+  const resetFilters = () => {
+    setKeyword('')
+    setRoleFilter('all')
+    setStatusFilter('all')
+    setPage(1)
+  }
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-users', page, keyword, roleFilter, statusFilter],
@@ -147,9 +158,14 @@ export function AdminUsersPage() {
     onError: (err: any) => toast.error(err?.response?.data?.message || t('admin.users.restoreFailed')),
   })
 
+  const closeDetail = () => {
+    setDetailTarget(null)
+    setDetailUser(null)
+  }
+
   const startEdit = (user: any) => {
     setEditingUser(user)
-    setDetailUser(null)
+    closeDetail()
     setShowCreate(false)
     setForm({
       username: user.username || '',
@@ -167,7 +183,7 @@ export function AdminUsersPage() {
   const startCreate = () => {
     setShowCreate(true)
     setEditingUser(null)
-    setDetailUser(null)
+    closeDetail()
     resetForm()
   }
 
@@ -175,12 +191,15 @@ export function AdminUsersPage() {
     if (detailLoading) return
     setShowCreate(false)
     setEditingUser(null)
+    setDetailTarget(user)
+    setDetailUser(null)
     setDetailLoading(true)
     try {
       const res = await getAdminUserDetail(user.id)
       setDetailUser(res?.data ?? null)
     } catch {
-      // 错误由 axios 拦截器统一提示
+      // 错误由 axios 拦截器统一提示;失败时直接收起弹框
+      setDetailTarget(null)
     } finally {
       setDetailLoading(false)
     }
@@ -309,19 +328,28 @@ export function AdminUsersPage() {
             <SelectItem value="deleted">{t('admin.users.filterDeleted')}</SelectItem>
           </SelectContent>
         </Select>
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-9 gap-1.5 text-muted-foreground hover:text-foreground"
+            onClick={resetFilters}
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            {t('common.reset')}
+          </Button>
+        )}
       </div>
 
-      {/* Create / Edit form */}
-      {(showCreate || editingUser) && (
-        <div className="rounded-xl border bg-card p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">{editingUser ? t('admin.users.editTitle') : t('admin.users.createTitle')}</h2>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setShowCreate(false); setEditingUser(null); resetForm() }}>
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
+      {/* Create / Edit dialog */}
+      <Dialog open={showCreate || !!editingUser} onOpenChange={(v) => { if (!v) { setShowCreate(false); setEditingUser(null); resetForm() } }}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editingUser ? t('admin.users.editTitle') : t('admin.users.createTitle')}</DialogTitle>
+            <DialogDescription>{editingUser ? editingUser.username : t('admin.users.subtitle')}</DialogDescription>
+          </DialogHeader>
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('admin.users.username')}</label>
               {editingUser ? (
@@ -391,7 +419,7 @@ export function AdminUsersPage() {
             </div>
           </div>
 
-          <div className="flex justify-end gap-2">
+          <DialogFooter>
             <Button variant="outline" onClick={() => { setShowCreate(false); setEditingUser(null); resetForm() }}>{t('common.cancel')}</Button>
             <Button
               disabled={editingUser ? updateMutation.isPending : (!form.username.trim() || !form.password.trim())}
@@ -414,46 +442,50 @@ export function AdminUsersPage() {
             >
               {editingUser ? t('common.save') : t('common.create')}
             </Button>
-          </div>
-        </div>
-      )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      {/* Detail panel (read-only, admin-only audit fields) */}
-      {detailUser && (
-        <div className="rounded-xl border bg-card p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">{t('admin.users.detailTitle')}</h2>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setDetailUser(null)}>
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
+      {/* Detail dialog (read-only, admin-only audit fields) */}
+      <Dialog open={!!detailTarget} onOpenChange={(v) => { if (!v) closeDetail() }}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t('admin.users.detailTitle')}</DialogTitle>
+            <DialogDescription>{detailUser?.username ?? detailTarget?.username}</DialogDescription>
+          </DialogHeader>
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <DetailField label={t('admin.users.username')} value={detailUser.username} />
-            <DetailField label={t('admin.users.displayName')} value={detailUser.display_name || '-'} />
-            <DetailField label={t('admin.users.email')} value={detailUser.email || '-'} />
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">{t('admin.users.role')}</p>
-              <div>{roleLabel(detailUser.role)}</div>
+          {detailLoading ? (
+            <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">{t('common.loading')}</div>
+          ) : detailUser ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <DetailField label={t('admin.users.username')} value={detailUser.username} />
+              <DetailField label={t('admin.users.displayName')} value={detailUser.display_name || '-'} />
+              <DetailField label={t('admin.users.email')} value={detailUser.email || '-'} />
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">{t('admin.users.role')}</p>
+                <div>{roleLabel(detailUser.role)}</div>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">{t('admin.users.status')}</p>
+                <div>{statusLabel(detailUser.status)}</div>
+              </div>
+              <DetailField label={t('admin.users.groups')} value={detailUser.group || '-'} />
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">{t('admin.users.quota')}</p>
+                <div>{quotaCell(detailUser, 'w-[200px]')}</div>
+              </div>
+              <DetailField label={t('admin.users.table.calls')} value={String(detailUser.request_count)} />
+              <DetailField label={t('admin.users.remark')} value={detailUser.remark || '-'} />
+              <DetailField label={t('admin.users.registerTime')} value={fmtTime(detailUser.created_at)} />
+              <DetailField label={t('admin.users.registerIp')} value={detailUser.register_ip || '-'} />
+              <DetailField label={t('admin.users.lastLoginAt')} value={fmtTime(detailUser.last_login_at)} />
+              <DetailField label={t('admin.users.lastLoginIp')} value={detailUser.last_login_ip || '-'} />
             </div>
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">{t('admin.users.status')}</p>
-              <div>{statusLabel(detailUser.status)}</div>
-            </div>
-            <DetailField label={t('admin.users.groups')} value={detailUser.group || '-'} />
-            <div className="space-y-3">
-              <p className="text-xs text-muted-foreground">{t('admin.users.quota')}</p>
-              <div>{quotaCell(detailUser, 'w-[200px]')}</div>
-            </div>
-            <DetailField label={t('admin.users.table.calls')} value={String(detailUser.request_count)} />
-            <DetailField label={t('admin.users.remark')} value={detailUser.remark || '-'} />
-            <DetailField label={t('admin.users.registerTime')} value={fmtTime(detailUser.created_at)} />
-            <DetailField label={t('admin.users.registerIp')} value={detailUser.register_ip || '-'} />
-            <DetailField label={t('admin.users.lastLoginAt')} value={fmtTime(detailUser.last_login_at)} />
-            <DetailField label={t('admin.users.lastLoginIp')} value={detailUser.last_login_ip || '-'} />
-          </div>
-        </div>
-      )}
+          ) : (
+            <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">{t('common.noData')}</div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Table */}
       <div className="rounded-xl border bg-card">

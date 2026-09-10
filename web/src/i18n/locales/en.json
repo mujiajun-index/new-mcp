@@ -48,6 +48,7 @@
     "description": "Description",
     "createdAt": "Created At",
     "refresh": "Refresh",
+    "reset": "Reset",
     "paramRequired": "required"
   },
   "nav": {

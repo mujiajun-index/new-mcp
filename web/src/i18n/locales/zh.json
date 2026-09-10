@@ -48,6 +48,7 @@
     "description": "描述",
     "createdAt": "创建时间",
     "refresh": "刷新",
+    "reset": "重置",
     "paramRequired": "必填"
   },
   "nav": {
