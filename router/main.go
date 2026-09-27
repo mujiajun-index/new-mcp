@@ -51,6 +51,9 @@ func InitGateway() {
 	if n := (&service.CameraService{}).SyncAllRegisteredTools(); n > 0 {
 		log.Printf("[virtual] refreshed tools_cache for %d camera services", n)
 	}
+	if n := (&service.SystemOneService{}).SyncAllRegisteredTools(); n > 0 {
+		log.Printf("[virtual] refreshed tools_cache for %d System One services", n)
+	}
 
 	CloudManager = cloud.NewManager(SessionPool, toolRouter, GatewayHandler)
 	service.CloudManager = CloudManager
@@ -100,6 +103,8 @@ func loadVirtualServices() {
 			VirtualRegistry.Register(svc.ID, svc.UserID, svc.Name, config, virtual.VisionHandler)
 		case "camera":
 			VirtualRegistry.Register(svc.ID, svc.UserID, svc.Name, config, virtual.CameraHandler)
+		case "systemone":
+			VirtualRegistry.Register(svc.ID, svc.UserID, svc.Name, config, virtual.SystemOneHandler)
 		default:
 			log.Printf("[virtual] unknown virtual_type %q for service %d", virtualType, svc.ID)
 		}

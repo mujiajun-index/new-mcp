@@ -131,6 +131,16 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.POST("/vision/:id/enable", controller.EnableVisionConfig)
 		auth.POST("/vision/:id/disable", controller.DisableVisionConfig)
 
+		// System One decision model configurations (Jev / CLM / Laya)
+		auth.GET("/system-one", controller.ListSystemOneConfigs)
+		auth.POST("/system-one", controller.CreateSystemOneConfig)
+		auth.POST("/system-one/test", controller.TestSystemOneConfig)
+		auth.GET("/system-one/:id", controller.GetSystemOneConfig)
+		auth.PUT("/system-one/:id", controller.UpdateSystemOneConfig)
+		auth.DELETE("/system-one/:id", controller.DeleteSystemOneConfig)
+		auth.POST("/system-one/:id/enable", controller.EnableSystemOneConfig)
+		auth.POST("/system-one/:id/disable", controller.DisableSystemOneConfig)
+
 		// Vision image upload (web UI / JWT path) → short-lived signed URL the
 		// caller passes to a vision tool's image_url. The MCP/API-key path is
 		// registered separately in the public group (gin forbids two middleware

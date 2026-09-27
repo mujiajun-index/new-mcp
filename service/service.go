@@ -312,7 +312,7 @@ func (s *McpServiceService) Delete(userID, serviceID int64) error {
 		return err
 	}
 	if svc.TransportType == "virtual" {
-		sourceLabel := map[string]string{"vision": "视觉", "camera": "摄像头"}[svc.Source]
+		sourceLabel := map[string]string{"vision": "视觉", "camera": "摄像头", "systemone": "System One"}[svc.Source]
 		if sourceLabel == "" {
 			sourceLabel = "对应"
 		}
