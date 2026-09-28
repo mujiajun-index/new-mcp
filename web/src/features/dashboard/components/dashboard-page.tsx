@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import dayjs from 'dayjs'
 import { useAuthStore } from '@/stores/auth-store'
 import { isAdminRole } from '@/lib/roles'
 import { Badge } from '@/components/ui/badge'
@@ -37,8 +38,14 @@ export function DashboardPage() {
 
   const { data: recentLogs } = useQuery({
     queryKey: ['dashboard-recent-logs'],
-    // type: 2 = LogTypeConsume(MCP 调用消费),过滤掉充值/管理/系统/登录等非调用日志
-    queryFn: () => getUserLogs({ page: 1, page_size: 5, type: 2 }),
+    // type: 2 = LogTypeConsume(MCP 调用消费);只取过去 24 小时内的最近 5 条调用。
+    queryFn: () => getUserLogs({
+      page: 1,
+      page_size: 6,
+      type: 2,
+      start_date: dayjs().subtract(24, 'hour').format('YYYY-MM-DD HH:mm:ss'),
+    }),
+    refetchInterval: 60 * 1000,
   })
 
   const stats = adminStats?.data

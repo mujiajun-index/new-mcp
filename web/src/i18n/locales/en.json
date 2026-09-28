@@ -123,7 +123,7 @@
     "totalConnections": "Cloud Connections",
     "todayCalls": "Today's Calls",
     "healthStatus": "Service Health",
-    "recentLogs": "Recent Calls",
+    "recentLogs": "Recent Calls (Last 24 Hours)",
     "quickActions": "Quick Actions",
     "addService": "Add Service",
     "addGroup": "Add Group",

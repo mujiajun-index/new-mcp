@@ -233,7 +233,7 @@ export const Route = createFileRoute('/_authenticated/admin')({
 ### 4.2 Dashboard `/dashboard`
 - 4 个统计卡片: 服务数 / 分组数 / 主动连接数 / 今日调用量
 - 服务健康状态列表 (实时显示各 MCP 服务健康/不健康)
-- 最近调用日志 (最近 10 条)
+- 最近调用日志 (过去 24 小时内的最近 6 条)
 - 快捷操作: 注册服务 / 创建分组 / 添加连接
 
 ### 4.3 MCP 服务列表 `/services`
