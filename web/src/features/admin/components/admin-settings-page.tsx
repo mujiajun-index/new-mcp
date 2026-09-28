@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { useSystemConfigStore } from '@/stores/system-config-store'
+import { SmartSearchSettings } from './smart-search-settings'
 import {
   Settings,
   Shield,
@@ -29,6 +30,7 @@ import {
   RefreshCw,
   ExternalLink,
   HardDrive,
+  Sparkles,
 } from 'lucide-react'
 
 interface SettingItem {
@@ -281,6 +283,10 @@ export function AdminSettingsPage() {
             <HardDrive className="h-3.5 w-3.5" />
             {t('settings.storage')}
           </TabsTrigger>
+          <TabsTrigger value="smartSearch" className="gap-1.5">
+            <Sparkles className="h-3.5 w-3.5" />
+            {t('settings.smartSearch')}
+          </TabsTrigger>
         </TabsList>
 
         {/* General */}
@@ -327,6 +333,10 @@ export function AdminSettingsPage() {
               </div>
             </div>
           </div>
+        </TabsContent>
+
+        <TabsContent value="smartSearch">
+          <SmartSearchSettings userGroups={userGroupOptions} />
         </TabsContent>
 
         {/* Auth */}

@@ -14,17 +14,26 @@ const (
 // 描述文案遵循的工具提示词最佳实践(Anthropic《Writing effective tools for AI
 // agents》/Tool Search Tool 文档、AWS MCP tool design 等):三段式(做什么/何时用/
 // 返回什么)、相似工具互相指路(when-NOT-to-use)、参数描述带示例、约束进 schema
-// 而非散文、只读元工具标 readOnlyHint。智能模式下这 5 个工具是仅有的常驻上下文
+// 而非散文、只读元工具标 readOnlyHint。智能模式下这 5 个核心工具是常驻上下文
 // 的工具定义,是 token 投放回报最高的位置。
-var MetaTools = []struct {
+type MetaTool struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description"`
 	InputSchema json.RawMessage        `json:"inputSchema"`
 	Annotations map[string]interface{} `json:"annotations,omitempty"`
-}{
+}
+
+var SemanticSearchTool = MetaTool{
+	Name:        "mcp.smart_search",
+	Description: "When the user directly asks a question or requests a task that may need an MCP tool, call this first with the user's natural-language intent, before mcp.search. Semantically evaluates every accessible tool in the selected scope without keyword filtering, and returns ranked tool IDs with relative Choice probabilities or no match. Use mcp.describe to inspect a result before calling it with mcp.execute. Use mcp.search for keyword lookup, catalog browsing, resources or prompts, or if no suitable tool is found.",
+	InputSchema: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","description":"Describe the user's task in natural language"},"limit":{"type":"integer","minimum":1,"maximum":10,"default":3},"group":{"type":"string","description":"Optional exact MCP group name within this API key's scope"}},"required":["query"]}`),
+	Annotations: map[string]interface{}{"readOnlyHint": true},
+}
+
+var MetaTools = []MetaTool{
 	{
 		Name:        "mcp.search",
-		Description: "Search the catalog of available MCP services, tools, resources, and prompts by keyword. Keywords are matched against item names, service names, and descriptions; Chinese keywords are bridged to the mostly-English catalog via automatic pinyin matching, though including English keywords alongside the task's own language still improves ranking — don't choose between them. Returns matching items with their exact IDs: tools as `service.toolName` (call via mcp.execute), resources as `newmcp://service/...` URIs and prompts as `service__promptName` (fetch via mcp.read), each with a short description and group. Results are paginated: the header reports the total match count and, when more pages exist, the exact `offset` to pass for the next page. Use this FIRST when you don't yet know which service or tool fits a task, or to see what exists (omit `query`). If you already know a service or tool name, use mcp.describe instead.",
+		Description: "Search the catalog of available MCP services, tools, resources, and prompts by keyword. Keywords are matched against item names, service names, and descriptions; Chinese keywords are bridged to the mostly-English catalog via automatic pinyin matching, though including English keywords alongside the task's own language still improves ranking — don't choose between them. Returns matching items with their exact IDs: tools as `service.toolName` (call via mcp.execute), resources as `newmcp://service/...` URIs and prompts as `service__promptName` (fetch via mcp.read), each with a short description and group. Results are paginated: the header reports the total match count and, when more pages exist, the exact `offset` to pass for the next page. Use this for keyword search or browsing (omit `query`). When mcp.smart_search is available, prefer it for natural-language intent matching. If you already know a service or tool name, use mcp.describe instead.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {

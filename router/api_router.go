@@ -205,9 +205,9 @@ func SetApiRouter(engine *gin.Engine) {
 		admin.GET("/marketplace/clone-sources", controller.AdminListCloneSources)
 		admin.GET("/marketplace/:id", controller.AdminGetMarketplaceItem)
 		admin.PUT("/marketplace/:id", controller.AdminUpdateMarketplaceItem)
-		admin.PUT("/marketplace/:id/entry-prices", controller.AdminSetMarketplaceEntryPrices) // 条目级定价(工具/资源/提示)
-		admin.POST("/marketplace/:id/refresh", controller.AdminRefreshMarketplaceItem) // 手动刷新快照(平台托管项)
-		admin.GET("/marketplace/:id/process", controller.AdminGetMarketplaceItemProcess)         // 进程视图(stdio:共享/独占)
+		admin.PUT("/marketplace/:id/entry-prices", controller.AdminSetMarketplaceEntryPrices)         // 条目级定价(工具/资源/提示)
+		admin.POST("/marketplace/:id/refresh", controller.AdminRefreshMarketplaceItem)                // 手动刷新快照(平台托管项)
+		admin.GET("/marketplace/:id/process", controller.AdminGetMarketplaceItemProcess)              // 进程视图(stdio:共享/独占)
 		admin.POST("/marketplace/:id/process/control", controller.AdminControlMarketplaceItemProcess) // 进程启停(共享=预热/独占=按安装行)
 		// 条目级多秘钥管理(一份池全局轮换;交互同 /services/:id/keys)
 		admin.GET("/marketplace/:id/keys", controller.AdminGetMarketplaceKeys)
@@ -238,6 +238,10 @@ func SetApiRouter(engine *gin.Engine) {
 		// Admin: System settings
 		admin.GET("/settings", controller.AdminGetSettings)
 		admin.PUT("/settings", controller.AdminUpdateSetting)
+		admin.GET("/settings/smart-search", controller.AdminGetSmartSearch)
+		admin.PUT("/settings/smart-search", controller.AdminUpdateSmartSearch)
+		admin.PATCH("/settings/smart-search/enabled", controller.AdminSetSmartSearchEnabled)
+		admin.POST("/settings/smart-search/test", controller.AdminTestSmartSearch)
 
 		// Admin: System info + update check (维护 Tab)
 		admin.GET("/system/info", controller.AdminGetSystemInfo)

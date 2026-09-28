@@ -28,11 +28,13 @@ NewMCP 支持两种 MCP 工具暴露模式，**通过端点路由驱动**：
 
 ### 1.2 Smart 模式（智能模式）
 
-只暴露 3~5 个元工具（Meta Tools），LLM 通过搜索→查看→执行渐进发现和调用工具。参考 [eznix86/mcp-gateway](https://github.com/eznix86/mcp-gateway)。
+通常暴露 5 个元工具（Meta Tools）；管理员启用智能搜索且用户分组获准时，还会暴露 `mcp.smart_search`。LLM 通过搜索→查看→执行渐进发现和调用工具。参考 [eznix86/mcp-gateway](https://github.com/eznix86/mcp-gateway)。
 
 - 适合: 工具数量多（20+）的场景、小智等受限设备
 - Token 消耗极低，永远只暴露几个元工具
 - 无 MCP 规模上限
+
+`mcp.smart_search` 接受 `query`（自然语言需求，必填）、`limit`（1–10，默认 3）和可选的 MCP `group`。它只比较当前 API Key 与端点可调用的工具，排除被禁用的工具。用 System One Choice 对工具做语义排序：默认每批 200 个工具并附加“都不合适”选项；超过一批时复排各批候选。返回的 `probability` 是最终 Choice 全部选项间的相对概率，并非工具能力的绝对概率；概率为 0 的工具不会列出。`no_match_probability` 给出最终“都不合适”选项的相对概率，`choice_confidence` 是上游报告的决策置信度，`evaluated_tool_count` 和 `finalist_count` 分别表示可用工具总数与最终复排数。模型选中“都不合适”时返回空结果；上游失败时返回错误。工具只负责推荐，调用前仍应使用 `mcp.describe` 查看参数。
 
 ### 1.3 模式选择
 

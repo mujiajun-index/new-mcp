@@ -70,7 +70,7 @@ NewMCP is a unified MCP (Model Context Protocol) service management platform. It
 ### 🧠 Smart Discovery
 
 - **Direct Mode** — Expose all tools from registered services
-- **Smart Mode** — Progressive tool discovery via BM25 search algorithm
+- **Smart Mode** — Progressive BM25 tool discovery, with optional Jev/CLM/Laya semantic search
 - **Tool Namespace** — Automatic namespacing (`{ServiceName}__{toolName}`) to avoid conflicts
 
 ### ☁️ Device Integration

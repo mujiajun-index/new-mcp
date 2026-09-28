@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/internal/mcp/smart"
+	"github.com/mujkjk/newmcp/internal/mcp/systemone"
 	"github.com/mujkjk/newmcp/internal/mcp/transport"
 	"github.com/mujkjk/newmcp/internal/mcp/virtual"
 	"github.com/mujkjk/newmcp/model"
@@ -189,14 +191,17 @@ func (h *GatewayHandler) handleInitialize(req *JSONRPCRequest, logCtx *LogContex
 			// 智能模式再前置一段发现工作流:instructions 是 Tier-2 通道(部分客户端
 			// 注入 system prompt、部分忽略),工具描述(Tier-1)已各自携带链路信息,
 			// 这里只兜底教全局顺序。
-			"instructions": smartModeInstructions(h.nativeItemsAllowed(logCtx)),
+			"instructions": h.smartModeInstructions(logCtx),
 		},
 	}
 }
 
-// smartInstructionsText 教智能模式的渐进发现工作流(search→describe→execute/read),
-// 只在智能模式返回,避免直连模式下指向不存在的元工具。
-const smartInstructionsText = "This gateway aggregates many MCP services behind 5 discovery tools. Workflow: mcp.search with task keywords in English plus the task language (English-dominant catalog — for non-English tasks query both) to find services/tools/resources/prompts; mcp.describe on a service name or \"service.toolName\" to inspect parameters; mcp.execute with tool_id \"service.toolName\" to call a tool; mcp.execute_batch to run several independent calls concurrently in one request — e.g. batch-controlling several switches or devices at once (never batch calls where one needs another's result or hits the same target in order); mcp.read with a newmcp://<service>/<uri> or <service>__<promptName> to fetch a resource or render a prompt. Describe a tool before executing it rather than guessing arguments."
+// 智能模式的渐进发现工作流只在该模式返回，避免直连模式下指向不存在的元工具。
+const smartWorkflowAfterDiscoveryText = "mcp.describe on a service name or \"service.toolName\" to inspect parameters; mcp.execute with tool_id \"service.toolName\" to call a tool; mcp.execute_batch to run several independent calls concurrently in one request — e.g. batch-controlling several switches or devices at once (never batch calls where one needs another's result or hits the same target in order); mcp.read with a newmcp://<service>/<uri> or <service>__<promptName> to fetch a resource or render a prompt. Describe a tool before executing it rather than guessing arguments."
+
+const smartInstructionsText = "This gateway aggregates many MCP services behind 5 core discovery tools. Workflow: mcp.search with task keywords in English plus the task language (English-dominant catalog — for non-English tasks query both) to find services/tools/resources/prompts; " + smartWorkflowAfterDiscoveryText
+
+const semanticSmartInstructionsText = "This gateway aggregates many MCP services behind core discovery tools. Workflow: when the user directly asks a question or requests a task that may need an MCP tool, call mcp.smart_search FIRST with the user's natural-language intent, before mcp.search. Use mcp.search for keyword catalog lookup, browsing, resources or prompts, or when smart_search finds no suitable tool; " + smartWorkflowAfterDiscoveryText
 
 const visionInstructionsText = "To analyze a LOCAL image: if it is small (roughly <= 10KB), inline it as base64 directly to analyze_image; otherwise call upload_image with local_path to get an upload_command matched to your OS (curl.exe on Windows PowerShell where bare `curl` is an alias for Invoke-WebRequest; curl elsewhere) + image_url, run it via your shell (no API key needed), then call analyze_image with the image_url. Never paste large image base64 into tool arguments."
 
@@ -205,6 +210,16 @@ func smartModeInstructions(nativeAllowed bool) string {
 		return visionInstructionsText
 	}
 	return smartInstructionsText + "\n\n" + visionInstructionsText
+}
+
+func (h *GatewayHandler) smartModeInstructions(logCtx *LogContext) string {
+	instructions := smartModeInstructions(h.nativeItemsAllowed(logCtx))
+	if !h.nativeItemsAllowed(logCtx) {
+		if _, allowed, err := h.smartSearchAvailability(logCtx); err == nil && allowed {
+			instructions = semanticSmartInstructionsText + "\n\n" + visionInstructionsText
+		}
+	}
+	return instructions
 }
 
 func (h *GatewayHandler) handleToolsList(ctx context.Context, req *JSONRPCRequest, logCtx *LogContext) *JSONRPCResponse {
@@ -225,7 +240,7 @@ func (h *GatewayHandler) handleToolsList(ctx context.Context, req *JSONRPCReques
 				Result:  map[string]interface{}{"tools": tools},
 			}
 		}
-		return h.smartToolsResponse(req.ID)
+		return h.smartToolsResponse(req.ID, logCtx)
 	}
 
 	// /mcp/group/:slug — mode from group config; slug resolves within the
@@ -256,7 +271,7 @@ func (h *GatewayHandler) handleToolsList(ctx context.Context, req *JSONRPCReques
 			Result:  map[string]interface{}{"tools": tools},
 		}
 	default:
-		return h.smartToolsResponse(req.ID)
+		return h.smartToolsResponse(req.ID, logCtx)
 	}
 }
 
@@ -296,6 +311,9 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 	case "mcp.search":
 		originalToolName = "mcp.search"
 		resp = h.handleSearch(ctx, req.ID, logCtx, params.Arguments)
+	case "mcp.smart_search":
+		originalToolName = "mcp.smart_search"
+		resp = h.handleSmartSearch(ctx, req.ID, logCtx, params.Arguments)
 	case "mcp.describe":
 		originalToolName = "mcp.describe"
 		resp = h.handleDescribe(ctx, req.ID, logCtx, params.Arguments)
@@ -1282,12 +1300,134 @@ func (h *GatewayHandler) recordLogs(logs []*model.McpCallLog, userID int64) {
 	}
 }
 
-func (h *GatewayHandler) smartToolsResponse(id interface{}) *JSONRPCResponse {
+func (h *GatewayHandler) smartToolsResponse(id interface{}, logCtx *LogContext) *JSONRPCResponse {
+	tools := append([]smart.MetaTool(nil), smart.MetaTools...)
+	if _, allowed, err := h.smartSearchAvailability(logCtx); err == nil && allowed {
+		tools = append([]smart.MetaTool{smart.SemanticSearchTool}, tools...)
+	} else if err != nil {
+		return h.errorResponse(id, -32603, "Failed to load smart search configuration")
+	}
 	return &JSONRPCResponse{
 		JSONRPC: "2.0",
 		ID:      id,
-		Result:  map[string]interface{}{"tools": smart.MetaTools},
+		Result:  map[string]interface{}{"tools": tools},
 	}
+}
+
+func (h *GatewayHandler) smartSearchAvailability(logCtx *LogContext) (*model.SmartSearchConfig, bool, error) {
+	c, err := model.GetSmartSearchConfig()
+	if err != nil {
+		return nil, false, err
+	}
+	if h.nativeItemsAllowed(logCtx) {
+		return c, false, nil
+	}
+	allowed, err := model.SmartSearchAllowed(c, logCtx.UserID)
+	return c, allowed, err
+}
+
+func (h *GatewayHandler) handleSmartSearch(ctx context.Context, id interface{}, logCtx *LogContext, args json.RawMessage) *JSONRPCResponse {
+	c, allowed, err := h.smartSearchAvailability(logCtx)
+	if err != nil {
+		return h.errorResponse(id, -32603, "Smart search configuration unavailable")
+	}
+	if !allowed {
+		return h.errorResponse(id, -32602, "Smart search is not available for this connection")
+	}
+	var in struct {
+		Query string `json:"query"`
+		Group string `json:"group"`
+		Limit int    `json:"limit"`
+	}
+	if err := json.Unmarshal(args, &in); err != nil || strings.TrimSpace(in.Query) == "" || len(in.Query) > 4096 {
+		return h.errorResponse(id, -32602, "query must be 1 to 4096 characters")
+	}
+	if in.Limit == 0 {
+		in.Limit = 3
+	}
+	if in.Limit < 1 || in.Limit > 10 {
+		return h.errorResponse(id, -32602, "limit must be between 1 and 10")
+	}
+	info, err := bridge.ResolveApiKeyInfo(logCtx.ApiKeyID)
+	if err != nil {
+		return h.errorResponse(id, -32602, "Invalid API key")
+	}
+	groups, err := bridge.GetGroupsForApiKey(info)
+	if err != nil {
+		return h.errorResponse(id, -32603, "Failed to resolve accessible groups")
+	}
+	groupName := in.Group
+	if logCtx.GroupSlug != "" {
+		group, err := model.GetGroupBySlug(logCtx.UserID, logCtx.GroupSlug)
+		if err != nil || !bridge.HasGroupAccess(info, group.Name) {
+			return h.errorResponse(id, -32602, "Group is not accessible")
+		}
+		if groupName != "" && groupName != group.Name {
+			return h.errorResponse(id, -32602, "Requested group is outside this endpoint")
+		}
+		groupName = group.Name
+	}
+	if groupName != "" {
+		filtered := make([]model.McpGroup, 0, 1)
+		for _, group := range groups {
+			if group.Name == groupName {
+				filtered = append(filtered, group)
+			}
+		}
+		if len(filtered) == 0 {
+			return h.errorResponse(id, -32602, "Requested group is not accessible")
+		}
+		groups = filtered
+	}
+	candidates, err := smart.SemanticCandidates(groups)
+	if err != nil {
+		return h.errorResponse(id, -32603, "Failed to load available tools")
+	}
+	if len(candidates) == 0 {
+		return h.smartSearchResult(id, smart.SemanticRankResult{NoMatch: true}, 0)
+	}
+	key, err := common.Decrypt(c.APIKey)
+	if err != nil {
+		return h.errorResponse(id, -32603, "Cannot read smart search credential")
+	}
+	client, err := systemone.NewClient(c.Provider, c.EndpointURL, key, c.ModelName)
+	if err != nil {
+		return h.errorResponse(id, -32603, "Smart search connection is invalid")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	decision, err := smart.SemanticRank(ctx, client, in.Query, candidates, in.Limit, c.BatchSize, c.Concurrency)
+	if err != nil {
+		return h.errorResponse(id, -32603, "Smart search decision failed: "+err.Error())
+	}
+	return h.smartSearchResult(id, decision, len(candidates))
+}
+
+func (h *GatewayHandler) smartSearchResult(id interface{}, decision smart.SemanticRankResult, evaluatedCount int) *JSONRPCResponse {
+	results := make([]smart.SemanticCandidate, 0, len(decision.Matches))
+	for _, candidate := range decision.Matches {
+		candidate.Probability = roundSmartSearchProbability(candidate.Probability)
+		if candidate.Probability > 0 {
+			results = append(results, candidate)
+		}
+	}
+	result := map[string]any{
+		"matches": results, "no_match": decision.NoMatch || len(results) == 0,
+		"evaluated_tool_count": evaluatedCount, "finalist_count": decision.FinalistCount,
+		"probability_meaning": "relative Choice probability among all final options, including no match; not an absolute success probability",
+	}
+	if decision.NoMatchProbability != nil {
+		result["no_match_probability"] = roundSmartSearchProbability(*decision.NoMatchProbability)
+	}
+	if decision.ChoiceConfidence != nil {
+		result["choice_confidence"] = roundSmartSearchProbability(*decision.ChoiceConfidence)
+	}
+	b, _ := json.Marshal(result)
+	return &JSONRPCResponse{JSONRPC: "2.0", ID: id, Result: map[string]any{"content": []map[string]any{{"type": "text", "text": string(b)}}}}
+}
+
+func roundSmartSearchProbability(p float64) float64 {
+	return math.Round(p*10000) / 10000
 }
 
 func truncate(s string, maxLen int) string {
