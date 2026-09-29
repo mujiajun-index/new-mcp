@@ -1,10 +1,10 @@
 package smart
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 	"unicode"
 
@@ -505,8 +505,8 @@ func FormatDescribeResult(results []map[string]interface{}, includeSchema bool) 
 						}
 						if includeSchema {
 							if schema, ok := tm["inputSchema"]; ok && schema != nil {
-								sb.WriteString("Parameters:\n")
-								sb.WriteString(formatSchemaParams(schema))
+								sb.WriteString("Input schema (JSON Schema):\n")
+								sb.WriteString(formatInputSchema(schema))
 							}
 						}
 					}
@@ -590,8 +590,8 @@ func FormatDescribeResult(results []map[string]interface{}, includeSchema bool) 
 			}
 			if includeSchema {
 				if schema, ok := r["inputSchema"]; ok && schema != nil {
-					sb.WriteString("Parameters:\n")
-					sb.WriteString(formatSchemaParams(schema))
+					sb.WriteString("Input schema (JSON Schema):\n")
+					sb.WriteString(formatInputSchema(schema))
 				}
 			}
 		}
@@ -599,9 +599,10 @@ func FormatDescribeResult(results []map[string]interface{}, includeSchema bool) 
 	return sb.String()
 }
 
-// formatSchemaParams parses a JSON Schema object and formats properties as:
-//   - paramName (type, required/optional): description
-func formatSchemaParams(schema interface{}) string {
+// formatInputSchema preserves the complete schema, including nested maps,
+// array items, references and constraints. A top-level parameter summary loses
+// the structure callers need to construct valid arguments for complex tools.
+func formatInputSchema(schema interface{}) string {
 	// Most callers pass a json.RawMessage ([]byte) straight from the service cache;
 	// skip the marshal round-trip in that common case.
 	var raw []byte
@@ -620,47 +621,12 @@ func formatSchemaParams(schema interface{}) string {
 		raw = b
 	}
 
-	var parsed struct {
-		Properties map[string]struct {
-			Type        string `json:"type"`
-			Description string `json:"description"`
-		} `json:"properties"`
-		Required []string `json:"required"`
-	}
-	if err := json.Unmarshal(raw, &parsed); err != nil {
+	// Indent raw JSON without decoding numeric constraints through float64.
+	var formatted bytes.Buffer
+	if err := json.Indent(&formatted, raw, "", "  "); err != nil {
 		return ""
 	}
-
-	requiredSet := make(map[string]bool, len(parsed.Required))
-	for _, r := range parsed.Required {
-		requiredSet[r] = true
-	}
-
-	var sb strings.Builder
-	// Deterministic order via sorted keys
-	keys := make([]string, 0, len(parsed.Properties))
-	for k := range parsed.Properties {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	for _, k := range keys {
-		p := parsed.Properties[k]
-		reqLabel := "optional"
-		if requiredSet[k] {
-			reqLabel = "required"
-		}
-		typeStr := p.Type
-		if typeStr == "" {
-			typeStr = "any"
-		}
-		fmt.Fprintf(&sb, "- %s (%s, %s)", k, typeStr, reqLabel)
-		if p.Description != "" {
-			fmt.Fprintf(&sb, ": %s", p.Description)
-		}
-		sb.WriteString("\n")
-	}
-	return sb.String()
+	return "```json\n" + formatted.String() + "\n```\n"
 }
 
 // FormatSearchResult 把搜索结果格式化为按类型分节的紧凑文本(mcp.search 的 text
