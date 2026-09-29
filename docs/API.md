@@ -341,8 +341,9 @@ GET /api/v1/services?page=1&page_size=20&sort=created_at&order=desc
 | api_key | API Key 认证 | `{"X-API-Key": "<用户输入>"}` |
 | bearer | Bearer Token 认证 | `{"Authorization": "Bearer <用户输入>"}` |
 | custom | 自定义请求头 | `{"<用户输入Key>": "<用户输入Value>"}` |
+| query_param | URL 参数认证 | `auth_config.query_param_name` 指定参数名；单秘钥值位于 `config.url` |
 
-> 认证信息会自动写入 `config.headers`，由后端 Transport Adapter 在每次 HTTP 请求时携带。
+> Header 认证写入 `config.headers`；URL 参数认证按指定参数名写入每次上游请求。单秘钥 URL 参数值在详情接口中掩码回显。
 
 **多秘钥（可选，仅 streamable-http / sse）:** 传 `key_mode` + `auth_keys` 直接建池,
 此时认证值不进 `config.headers`,由秘钥池按策略逐请求注入:
@@ -360,6 +361,21 @@ GET /api/v1/services?page=1&page_size=20&sort=created_at&order=desc
 
 > `key_mode`: `random` | `polling`。上限 100 把、单把 ≤8KB。上游 401/403 自动禁用对应
 > key 并落系统日志;调用日志记录所用序号 `key_index`。详见 `docs/MULTI-KEY.md`。
+
+URL 参数多秘钥示例（池内只填参数值，共用基础 URL）：
+
+```json
+{
+  "transport_type": "streamable-http",
+  "config": { "url": "https://example.com/mcp/?region=cn" },
+  "auth_type": "query_param",
+  "auth_config": { "query_param_name": "tavilyApiKey" },
+  "key_mode": "polling",
+  "auth_keys": ["key-a", "key-b"]
+}
+```
+
+创建时若 URL 已含目标参数，该参数值会先收编为第 1 把秘钥，再与 `auth_keys` 去重；保存的基础 URL 不再包含该参数。
 
 **config 格式按 transport_type 不同:**
 
@@ -557,6 +573,7 @@ passive-ws (被动连接):
 
 > `status`: 1=启用 2=手动禁用 3=自动禁用(上游 401/403)。`sort_order` 即调用日志
 > `key_index`。
+> URL 参数模式返回 `auth_type: "query_param"`、`query_param_name`，此时 `header_name` 为空。
 
 ### PUT /services/:id/keys
 批量更新秘钥（追加 / 替换）。
@@ -591,6 +608,9 @@ passive-ws (被动连接):
 > | `random` | `polling`。单→多时 `config.headers` 里须已有目标头的值(收编为首把秘钥);
 > `header_name` 缺省按 auth_type 推导(api_key→`X-API-Key`、bearer→`Authorization`,
 > custom 必填);多秘钥模式下不可更换注入头。切换即失效运行时选择器并踢会话重建。
+> URL 参数认证传 `{"key_mode":"polling","query_param_name":"tavilyApiKey"}`；
+> 现有 URL 须恰含一个非空目标参数，切换时收编为首把秘钥并从基础 URL 移除。
+> 多→单写回 URL 参数。服务即使原先标为 `none`，也可指定该字段转换。
 
 ### 市场条目级秘钥池(admin)
 
@@ -602,6 +622,7 @@ passive-ws (被动连接):
   与服务级同口径;
 - 单→多时收编的是**平台上游模板**(`config_template`)里的认证头,多→单写回模板;
   `header_name` 缺省按模板 headers 反推(`Authorization`/`X-API-Key`/首个自定义头);
+- URL 参数模式同样使用 `query_param_name`，从模板 URL 收编首把秘钥，多→单写回模板 URL；
 - 池/模式变更与删除条目会踢掉该条目全部引用会话。
 
 ---

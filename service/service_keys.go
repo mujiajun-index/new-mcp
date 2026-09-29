@@ -11,6 +11,7 @@ import (
 	"github.com/mujkjk/newmcp/dto"
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/model"
+	"gorm.io/gorm"
 )
 
 // --- 多秘钥管理(/api/services/:id/keys) ---
@@ -25,6 +26,39 @@ func (s *McpServiceService) applyCreateMultiKey(svc *model.McpService, req *dto.
 	}
 	if svc.AuthType == "none" || svc.AuthType == "" {
 		return fmt.Errorf("请先选择认证方式再启用多秘钥")
+	}
+	if svc.AuthType == "query_param" {
+		name, _ := req.AuthConfig["query_param_name"].(string)
+		if err := validateQueryParamName(name); err != nil {
+			return err
+		}
+		var config map[string]interface{}
+		if err := json.Unmarshal([]byte(svc.Config), &config); err != nil {
+			return err
+		}
+		raw, _ := config["url"].(string)
+		if hasQueryCredential(raw, name) {
+			base, first, err := takeQueryCredential(raw, name)
+			if err != nil {
+				return err
+			}
+			config["url"] = base
+			req.AuthKeys = append([]string{first}, req.AuthKeys...)
+		} else if _, _, err := parseAuthURL(raw); err != nil {
+			return err
+		}
+		clean, err := model.CleanKeyValues(req.AuthKeys)
+		if err != nil {
+			return err
+		}
+		if len(clean) == 0 {
+			return fmt.Errorf("多秘钥模式至少需要一把秘钥")
+		}
+		req.AuthKeys = clean
+		b, _ := json.Marshal(config)
+		svc.Config = string(b)
+		svc.AuthConfig = rewriteQueryAuthKeyConfig(svc.AuthConfig, req.KeyMode, name)
+		return nil
 	}
 	clean, err := model.CleanKeyValues(req.AuthKeys)
 	if err != nil {
@@ -118,11 +152,12 @@ func (s *McpServiceService) ListKeys(userID, serviceID int64) (*dto.ServiceKeysR
 		return nil, err
 	}
 	resp := &dto.ServiceKeysResp{
-		KeyMode:       cfg.KeyMode,
-		HeaderName:    cfg.HeaderName,
-		AuthType:      svc.AuthType,
-		TransportType: svc.TransportType,
-		Keys:          make([]dto.ServiceKeyItem, 0, len(keys)),
+		KeyMode:        cfg.KeyMode,
+		HeaderName:     cfg.HeaderName,
+		QueryParamName: cfg.QueryParamName,
+		AuthType:       svc.AuthType,
+		TransportType:  svc.TransportType,
+		Keys:           make([]dto.ServiceKeyItem, 0, len(keys)),
 	}
 	for _, k := range keys {
 		item := dto.ServiceKeyItem{
@@ -269,7 +304,7 @@ func (s *McpServiceService) UpdateKeyConfig(userID, serviceID int64, req *dto.Up
 			return nil, err
 		}
 	} else {
-		if err := upgradeToMultiKey(svc, req.KeyMode, req.HeaderName); err != nil {
+		if err := upgradeToMultiKey(svc, req.KeyMode, req.HeaderName, req.QueryParamName); err != nil {
 			return nil, err
 		}
 	}
@@ -280,7 +315,14 @@ func (s *McpServiceService) UpdateKeyConfig(userID, serviceID int64, req *dto.Up
 // upgradeToMultiKey 单→多(或已多秘钥时切换策略 random↔polling):单→多时推导目标头,
 // 把 config.headers 里的现有认证值收编为首把秘钥并从 headers 移除该头;策略切换
 // 沿用既有注入头,不接受更换。
-func upgradeToMultiKey(svc *model.McpService, mode, reqHeader string) error {
+func upgradeToMultiKey(svc *model.McpService, mode, reqHeader string, queryParam ...string) error {
+	reqQuery := ""
+	if len(queryParam) > 0 {
+		reqQuery = queryParam[0]
+	}
+	if reqQuery != "" || svc.AuthType == "query_param" {
+		return upgradeToMultiQueryKey(svc, mode, reqQuery)
+	}
 	if svc.AuthType == "none" || svc.AuthType == "" {
 		return fmt.Errorf("认证方式为「无需认证」时不支持多秘钥")
 	}
@@ -341,6 +383,9 @@ func upgradeToMultiKey(svc *model.McpService, mode, reqHeader string) error {
 // downgradeToMultiKey 反向:首选启用秘钥写回 config.headers,清空秘钥池。
 func downgradeToSingleKey(svc *model.McpService) error {
 	cfg := svc.ParseAuthKeyConfig()
+	if cfg.QueryParamName != "" {
+		return downgradeToSingleQueryKey(svc, cfg.QueryParamName)
+	}
 	keys, err := model.ListKeysByService(svc.ID)
 	if err != nil {
 		return err
@@ -392,9 +437,109 @@ func rewriteAuthKeyConfig(authConfigJSON, mode, headerName string) string {
 	} else {
 		m["key_mode"] = mode
 		m["header_name"] = headerName
+		delete(m, "query_param_name")
 	}
 	b, _ := json.Marshal(m)
 	return string(b)
+}
+
+func rewriteQueryAuthKeyConfig(authConfigJSON, mode, name string) string {
+	var m map[string]interface{}
+	_ = json.Unmarshal([]byte(authConfigJSON), &m)
+	if m == nil {
+		m = map[string]interface{}{}
+	}
+	if mode == "" {
+		delete(m, "key_mode")
+	} else {
+		m["key_mode"] = mode
+	}
+	delete(m, "header_name")
+	m["query_param_name"] = name
+	b, _ := json.Marshal(m)
+	return string(b)
+}
+
+func upgradeToMultiQueryKey(svc *model.McpService, mode, reqName string) error {
+	cfg := svc.ParseAuthKeyConfig()
+	if svc.IsMultiKey() {
+		if cfg.QueryParamName == "" || (reqName != "" && reqName != cfg.QueryParamName) {
+			return fmt.Errorf("多秘钥模式下不可更换认证参数")
+		}
+		svc.AuthConfig = rewriteQueryAuthKeyConfig(svc.AuthConfig, mode, cfg.QueryParamName)
+		return svc.Update()
+	}
+	if svc.AuthType != "none" && svc.AuthType != "query_param" {
+		return fmt.Errorf("请先切换为 URL 参数认证")
+	}
+	if reqName == "" {
+		reqName = cfg.QueryParamName
+	}
+	if err := validateQueryParamName(reqName); err != nil {
+		return err
+	}
+	var config map[string]interface{}
+	if err := json.Unmarshal([]byte(svc.Config), &config); err != nil {
+		return err
+	}
+	raw, _ := config["url"].(string)
+	base, first, err := takeQueryCredential(raw, reqName)
+	if err != nil {
+		return err
+	}
+	config["url"] = base
+	b, _ := json.Marshal(config)
+	svc.Config = string(b)
+	svc.AuthType = "query_param"
+	svc.AuthConfig = rewriteQueryAuthKeyConfig(svc.AuthConfig, mode, reqName)
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("service_id = ?", svc.ID).Delete(&model.McpServiceKey{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&model.McpServiceKey{ServiceID: svc.ID, SortOrder: 1, Value: first, Status: common.StatusEnabled}).Error; err != nil {
+			return err
+		}
+		return tx.Save(svc).Error
+	})
+}
+
+func downgradeToSingleQueryKey(svc *model.McpService, name string) error {
+	keys, err := model.ListKeysByService(svc.ID)
+	if err != nil {
+		return err
+	}
+	pick := ""
+	for _, k := range keys {
+		if k.Status == common.StatusEnabled {
+			pick = k.Value
+			break
+		}
+	}
+	if pick == "" && len(keys) > 0 {
+		pick = keys[0].Value
+	}
+	if pick == "" {
+		return fmt.Errorf("秘钥池为空,无法切回单秘钥")
+	}
+	var config map[string]interface{}
+	if err := json.Unmarshal([]byte(svc.Config), &config); err != nil {
+		return err
+	}
+	raw, _ := config["url"].(string)
+	updated, err := putQueryCredential(raw, name, pick)
+	if err != nil {
+		return err
+	}
+	config["url"] = updated
+	b, _ := json.Marshal(config)
+	svc.Config = string(b)
+	svc.AuthConfig = rewriteQueryAuthKeyConfig(svc.AuthConfig, "", name)
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(svc).Error; err != nil {
+			return err
+		}
+		return tx.Where("service_id = ?", svc.ID).Delete(&model.McpServiceKey{}).Error
+	})
 }
 
 // applyBearerPrefix / stripBearerPrefix 在 bearer 认证下补/剥 "Bearer " 前缀:

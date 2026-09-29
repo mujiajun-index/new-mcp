@@ -10,40 +10,40 @@ import (
 )
 
 type McpService struct {
-	ID                int64      `json:"id" gorm:"primaryKey;autoIncrement"`
-	UserID            int64      `json:"user_id" gorm:"not null;uniqueIndex:idx_svc_user_name"`
-	Name              string     `json:"name" gorm:"size:128;not null;uniqueIndex:idx_svc_user_name"`
-	DisplayName       string     `json:"display_name" gorm:"size:255"`
-	Description       string     `json:"description" gorm:"type:text"`
-	TransportType     string     `json:"transport_type" gorm:"size:32;not null;index"`
-	Config            string     `json:"config" gorm:"type:varchar(4096);default:'{}'"`
-	PassiveToken      string     `json:"-" gorm:"column:passive_token;size:512"`
-	PassiveConnected  bool       `json:"passive_connected" gorm:"default:false"`
-	AuthType          string     `json:"auth_type" gorm:"size:32;default:none"`
-	AuthConfig        string     `json:"auth_config" gorm:"type:varchar(4096);default:'{}'"`
-	ToolsCache        string     `json:"tools_cache" gorm:"type:text"`
-	ToolsUpdatedAt    *time.Time `json:"tools_updated_at"`
-	ResourcesCache    string     `json:"resources_cache" gorm:"type:text"`
-	PromptsCache      string     `json:"prompts_cache" gorm:"type:text"`
-	HealthStatus      string     `json:"health_status" gorm:"size:16;default:unknown;index"`
-	LastHealthCheck   *time.Time `json:"last_health_check"`
-	ServerInfo        string     `json:"server_info" gorm:"type:text"`
-	ProtocolVersion   string     `json:"protocol_version" gorm:"size:32"`
-	IconURL           string     `json:"icon_url" gorm:"size:512"`
-	Tags              string     `json:"tags" gorm:"size:512"`
-	Visibility        string     `json:"visibility" gorm:"size:16;default:private;index"`
-	Source            string     `json:"source" gorm:"size:16;default:user"`
+	ID               int64      `json:"id" gorm:"primaryKey;autoIncrement"`
+	UserID           int64      `json:"user_id" gorm:"not null;uniqueIndex:idx_svc_user_name"`
+	Name             string     `json:"name" gorm:"size:128;not null;uniqueIndex:idx_svc_user_name"`
+	DisplayName      string     `json:"display_name" gorm:"size:255"`
+	Description      string     `json:"description" gorm:"type:text"`
+	TransportType    string     `json:"transport_type" gorm:"size:32;not null;index"`
+	Config           string     `json:"config" gorm:"type:varchar(4096);default:'{}'"`
+	PassiveToken     string     `json:"-" gorm:"column:passive_token;size:512"`
+	PassiveConnected bool       `json:"passive_connected" gorm:"default:false"`
+	AuthType         string     `json:"auth_type" gorm:"size:32;default:none"`
+	AuthConfig       string     `json:"auth_config" gorm:"type:varchar(4096);default:'{}'"`
+	ToolsCache       string     `json:"tools_cache" gorm:"type:text"`
+	ToolsUpdatedAt   *time.Time `json:"tools_updated_at"`
+	ResourcesCache   string     `json:"resources_cache" gorm:"type:text"`
+	PromptsCache     string     `json:"prompts_cache" gorm:"type:text"`
+	HealthStatus     string     `json:"health_status" gorm:"size:16;default:unknown;index"`
+	LastHealthCheck  *time.Time `json:"last_health_check"`
+	ServerInfo       string     `json:"server_info" gorm:"type:text"`
+	ProtocolVersion  string     `json:"protocol_version" gorm:"size:32"`
+	IconURL          string     `json:"icon_url" gorm:"size:512"`
+	Tags             string     `json:"tags" gorm:"size:512"`
+	Visibility       string     `json:"visibility" gorm:"size:16;default:private;index"`
+	Source           string     `json:"source" gorm:"size:16;default:user"`
 	// 平台健康按日志表 marketplace_item_id 聚合,不枚举本表引用行;此索引供
 	// 按 item 定位引用行/回填 item 归属的点查(如按条目踢会话、启停市场服务)
-	MarketplaceItemID *int64     `json:"marketplace_item_id" gorm:"index"`
+	MarketplaceItemID *int64 `json:"marketplace_item_id" gorm:"index"`
 	// SharedProcess 内存态标记(gorm:"-"):市场共享 stdio 条目(isolated_process=false)
 	// 物化时置 true,会话池据此把会话键从服务行 ID 换成条目 ID——全部安装用户共用
 	// 同一个平台子进程。不落库;引用行落库值恒为 false,真实配置在 marketplace_items。
-	SharedProcess bool       `json:"-" gorm:"-"`
-	SortOrder     int        `json:"sort_order" gorm:"default:0"`
-	Status            int        `json:"status" gorm:"default:1"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
+	SharedProcess bool      `json:"-" gorm:"-"`
+	SortOrder     int       `json:"sort_order" gorm:"default:0"`
+	Status        int       `json:"status" gorm:"default:1"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 func (McpService) TableName() string { return "mcp_services" }
@@ -51,8 +51,9 @@ func (McpService) TableName() string { return "mcp_services" }
 // AuthKeyConfig 是 AuthConfig 列中与多秘钥相关的配置段(该列还承载展示性字段
 // key/token 等,解析时只取这两个字段,写回由 service 层整体保留其余键)。
 type AuthKeyConfig struct {
-	KeyMode    string `json:"key_mode,omitempty"`    // ""=单秘钥;random | polling
-	HeaderName string `json:"header_name,omitempty"` // 多秘钥注入的目标头名
+	KeyMode        string `json:"key_mode,omitempty"`         // ""=单秘钥;random | polling
+	HeaderName     string `json:"header_name,omitempty"`      // 多秘钥注入的目标头名
+	QueryParamName string `json:"query_param_name,omitempty"` // URL 参数认证的目标参数名
 }
 
 // ParseAuthKeyConfig 解析 AuthConfig 里的多秘钥配置;空/坏 JSON 返回零值。

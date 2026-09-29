@@ -28,6 +28,7 @@ import {
   Activity, Power, Play, Ban, Square, RotateCw, Layers, MemoryStick, Search, User, Users, Download,
 } from 'lucide-react'
 import type { MarketplaceDetail, MarketplaceEntryPrice, AuthType, MarketplaceItemProcess, MarketplaceItemProcessInstance, ProcessControlAction } from '@/types'
+import { queryNames, withQueryValue, withoutQueryValue } from '@/lib/query-auth'
 
 // AdminMarketplaceDetailPage 市场项详情 + 编辑(§11)。上半只读概览,下半编辑表单(调 adminUpdateMarketplace)。
 export function AdminMarketplaceDetailPage() {
@@ -127,7 +128,7 @@ export function AdminMarketplaceDetailPage() {
   const keysCardVisible =
     item.category === 'instant' &&
     (item.transport_type === 'sse' || item.transport_type === 'streamable-http') &&
-    (isMultiItem || Object.keys(itemHeaders).length > 0)
+    (isMultiItem || Object.keys(itemHeaders).length > 0 || queryNames(String(item.config_template?.url || '')).length > 0)
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
@@ -231,6 +232,7 @@ export function AdminMarketplaceDetailPage() {
         <ServiceKeysCard
           id={Number(id)}
           api={marketplaceKeysApi(Number(id))}
+          queryCandidates={queryNames(String(item.config_template?.url || ''))}
           onModeChanged={() => queryClient.invalidateQueries({ queryKey: ['admin-marketplace-detail', id] })}
         />
       )}
@@ -522,6 +524,8 @@ type UpstreamForm = {
   bearer_token: string
   custom_header_key: string
   custom_header_value: string
+  query_param_name: string
+  query_key: string
 }
 
 // UpstreamConfigCard 平台托管项的上游连接配置:默认折叠,展开可查看并以服务详情同款交互编辑
@@ -535,6 +539,7 @@ function UpstreamConfigCard({ item, queryId }: { item: MarketplaceDetail; queryI
   const [form, setForm] = useState<UpstreamForm>({
     url: '', env: '', auth_type: 'none',
     api_key: '', bearer_token: '', custom_header_key: '', custom_header_value: '',
+    query_param_name: '', query_key: '',
   })
 
   const cfg = (item.config_template || {}) as Record<string, unknown>
@@ -561,7 +566,9 @@ function UpstreamConfigCard({ item, queryId }: { item: MarketplaceDetail; queryI
     let bearerToken = ''
     let customKey = ''
     let customValue = ''
-    if (headers['X-API-Key']) {
+    if (item.query_param_name) {
+      authType = 'query_param'
+    } else if (headers['X-API-Key']) {
       authType = 'api_key'
       apiKey = headers['X-API-Key']
     } else if (headers['Authorization']?.startsWith('Bearer ')) {
@@ -583,6 +590,8 @@ function UpstreamConfigCard({ item, queryId }: { item: MarketplaceDetail; queryI
       bearer_token: bearerToken,
       custom_header_key: customKey,
       custom_header_value: customValue,
+      query_param_name: item.query_param_name || '',
+      query_key: '',
     })
   }, [item, editing])
 
@@ -601,6 +610,8 @@ function UpstreamConfigCard({ item, queryId }: { item: MarketplaceDetail; queryI
       headers = { ...originalHeaders }
     } else if (form.auth_type === 'none') {
       headers = {}
+    } else if (form.auth_type === 'query_param') {
+      headers = {}
     } else if (hasNewAuth) {
       headers = {}
       if (form.auth_type === 'api_key') headers['X-API-Key'] = form.api_key
@@ -615,7 +626,9 @@ function UpstreamConfigCard({ item, queryId }: { item: MarketplaceDetail; queryI
         return { command: cfg.command, args: Array.isArray(cfg.args) ? cfg.args : [], env: parseEnvText(form.env) }
       case 'sse':
       case 'streamable-http':
-        return { url: form.url, headers }
+        return { url: form.auth_type === 'query_param'
+          ? withQueryValue(form.url, form.query_param_name, form.query_key)
+          : withoutQueryValue(form.url, item.query_param_name || ''), headers }
       case 'websocket':
       case 'passive-ws':
         return { url: form.url }
@@ -629,6 +642,7 @@ function UpstreamConfigCard({ item, queryId }: { item: MarketplaceDetail; queryI
     { value: 'api_key', label: t('services.authApiKey') },
     { value: 'bearer', label: t('services.authBearer') },
     { value: 'custom', label: t('services.authCustom') },
+    { value: 'query_param', label: t('services.authQueryParam') },
   ]
 
   const canSave = isStdio ? !!cfg.command : form.url.trim().length > 0
@@ -694,7 +708,7 @@ function UpstreamConfigCard({ item, queryId }: { item: MarketplaceDetail; queryI
                   <p className="pt-1 text-xs text-muted-foreground">{t('services.keys.manageInCardBelow')}</p>
                 ) : (
                 <div className="flex flex-wrap gap-2 pt-1">
-                  {authOptions.map((opt) => (
+                  {authOptions.filter((opt) => opt.value !== 'query_param' || item.transport_type === 'sse' || item.transport_type === 'streamable-http').map((opt) => (
                     <button
                       key={opt.value}
                       type="button"
@@ -740,6 +754,13 @@ function UpstreamConfigCard({ item, queryId }: { item: MarketplaceDetail; queryI
                 </div>
               </div>
             )}
+            {editing && !isMulti && form.auth_type === 'query_param' && (
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label className="text-xs text-muted-foreground">{t('services.keys.queryNameLabel')}</Label>
+                <Input value={form.query_param_name} onChange={(e) => setForm({ ...form, query_param_name: e.target.value })} placeholder="tavilyApiKey" />
+                <Input value={form.query_key} onChange={(e) => setForm({ ...form, query_key: e.target.value })} placeholder={t('services.placeholderKeepUnchanged')} autoComplete="off" />
+              </div>
+            )}
           </div>
 
           {editing ? (
@@ -747,7 +768,7 @@ function UpstreamConfigCard({ item, queryId }: { item: MarketplaceDetail; queryI
               <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
                 <X className="h-3.5 w-3.5 mr-1.5" />{t('common.cancel')}
               </Button>
-              <Button size="sm" onClick={() => updateMutation.mutate({ config_template: buildConfig() })}
+              <Button size="sm" onClick={() => updateMutation.mutate({ config_template: buildConfig(), query_param_name: isMulti ? undefined : (form.auth_type === 'query_param' ? form.query_param_name.trim() : '') })}
                 disabled={!canSave || updateMutation.isPending}>
                 {updateMutation.isPending
                   ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />

@@ -118,7 +118,7 @@ export async function adminUpdateMarketplaceKeys(id: number, data: UpdateService
 }
 
 // 条目模式切换:单↔多、随机↔轮询
-export async function adminUpdateMarketplaceKeyConfig(id: number, data: { key_mode: 'single' | 'random' | 'polling'; header_name?: string }) {
+export async function adminUpdateMarketplaceKeyConfig(id: number, data: { key_mode: 'single' | 'random' | 'polling'; header_name?: string; query_param_name?: string }) {
   const res = await api.put(`/admin/marketplace/${id}/keys/config`, data)
   return res.data
 }

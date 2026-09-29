@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -38,7 +39,8 @@ type SDKAdapter struct {
 
 // dynamicSlot 描述多秘钥注入位置与供值来源。
 type dynamicSlot struct {
-	target string // 目标头名(Authorization / X-API-Key / 自定义)
+	target string // 目标头名或 URL 参数名
+	query  bool
 	dyn    DynamicAuth
 }
 
@@ -50,6 +52,14 @@ type AdapterOption func(*SDKAdapter)
 func WithDynamicAuth(targetHeader string, dyn DynamicAuth) AdapterOption {
 	return func(a *SDKAdapter) {
 		a.dyn = &dynamicSlot{target: targetHeader, dyn: dyn}
+	}
+}
+
+// WithDynamicQueryAuth 在发送每个 HTTP 请求前设置 URL 查询参数，选择和熔断
+// 仍复用与 Header 认证相同的秘钥池。
+func WithDynamicQueryAuth(paramName string, dyn DynamicAuth) AdapterOption {
+	return func(a *SDKAdapter) {
+		a.dyn = &dynamicSlot{target: paramName, query: true, dyn: dyn}
 	}
 }
 
@@ -402,6 +412,14 @@ func envToSlice(env map[string]string) []string {
 // dyn 非 nil 时启用多秘钥动态注入(见 headerRoundTripper)。
 func httpClientWithHeaders(headers map[string]string, dyn *dynamicSlot) *http.Client {
 	client := &http.Client{Timeout: 30 * time.Second}
+	if dyn != nil && dyn.query {
+		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			if len(via) > 0 && (req.URL.Scheme != via[0].URL.Scheme || req.URL.Host != via[0].URL.Host) {
+				return fmt.Errorf("URL 参数认证不允许跨来源重定向")
+			}
+			return nil
+		}
+	}
 	// 空对象 arguments 兜底对所有上游生效(见 emptyObjectArgsRoundTripper),
 	// 自定义 header 再包在外层。
 	var rt http.RoundTripper = &emptyObjectArgsRoundTripper{base: http.DefaultTransport}
@@ -483,10 +501,11 @@ type headerRoundTripper struct {
 	dyn *dynamicSlot
 	// 无 ctx 指定的请求(后台 GET 流、会话 DELETE 等)沿用最近一次 POST 选的
 	// key,保证无归因请求与上一操作用同一把 key。
-	lastMu  sync.Mutex
-	lastIdx int
-	lastVal string
-	lastSet bool
+	lastMu      sync.Mutex
+	lastIdx     int
+	lastVal     string
+	lastSet     bool
+	lastFromGet bool // SSE 初始 GET 选的 key 需供握手 POST 沿用一次
 }
 
 func (h *headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -500,16 +519,25 @@ func (h *headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 
 	var idx int
 	var val string
+	pickedForGet := false
 	if c, ok := authChoiceFrom(req.Context()); ok {
 		// 逻辑调用已选定:key 全程一致(精确归因到 mcp_call_logs.key_index)。
 		idx, val = c.index, c.value
 	} else if req.Method == http.MethodPost {
-		// 后台 POST(initialize/通知/缓存刷新):现选一把。
-		i, v, err := h.dyn.dyn.Pick()
-		if err != nil {
-			return nil, fmt.Errorf("secret pool: %w", err)
+		// SSE 初始 GET 已选 key 时，握手 POST 沿用同一把；其他后台 POST 现选。
+		h.lastMu.Lock()
+		if h.lastFromGet && h.lastSet {
+			idx, val = h.lastIdx, h.lastVal
+			h.lastFromGet = false
 		}
-		idx, val = i, v
+		h.lastMu.Unlock()
+		if val == "" {
+			i, v, err := h.dyn.dyn.Pick()
+			if err != nil {
+				return nil, fmt.Errorf("secret pool: %w", err)
+			}
+			idx, val = i, v
+		}
 	} else {
 		// GET/SSE 流/DELETE:沿用最近值;从未选过(如 SSE 首 GET)则现选。
 		h.lastMu.Lock()
@@ -523,18 +551,53 @@ func (h *headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 				return nil, fmt.Errorf("secret pool: %w", err)
 			}
 			idx, val = i, v
+			pickedForGet = true
 		}
 	}
-	// 动态值在静态 headers 之后 Set:覆盖同名静态头,防御两处并存。
-	clone.Header.Set(h.dyn.target, val)
+	if h.dyn.query {
+		q := clone.URL.Query()
+		q.Set(h.dyn.target, val)
+		clone.URL.RawQuery = q.Encode()
+	} else {
+		// 动态值在静态 headers 之后 Set:覆盖同名静态头,防御两处并存。
+		clone.Header.Set(h.dyn.target, val)
+	}
 	if req.Method == http.MethodPost {
 		h.lastMu.Lock()
 		h.lastIdx, h.lastVal, h.lastSet = idx, val, true
+		h.lastFromGet = false
+		h.lastMu.Unlock()
+	} else if pickedForGet {
+		h.lastMu.Lock()
+		h.lastIdx, h.lastVal, h.lastSet, h.lastFromGet = idx, val, true, true
 		h.lastMu.Unlock()
 	}
 	resp, err := h.base.RoundTrip(clone)
+	if err != nil && h.dyn.query {
+		// 底层网络错误有时会包含完整请求 URL；避免把查询参数里的密钥
+		// 透传到服务测试结果、调用日志或管理界面。
+		return nil, &redactedQueryError{cause: err, value: val}
+	}
 	if err == nil && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
 		h.dyn.dyn.OnAuthFailure(idx)
+		if pickedForGet {
+			h.lastMu.Lock()
+			h.lastSet, h.lastFromGet = false, false
+			h.lastMu.Unlock()
+		}
 	}
 	return resp, err
 }
+
+type redactedQueryError struct {
+	cause error
+	value string
+}
+
+func (e *redactedQueryError) Error() string {
+	message := e.cause.Error()
+	message = strings.ReplaceAll(message, url.QueryEscape(e.value), "[REDACTED]")
+	return strings.ReplaceAll(message, e.value, "[REDACTED]")
+}
+
+func (e *redactedQueryError) Unwrap() error { return e.cause }

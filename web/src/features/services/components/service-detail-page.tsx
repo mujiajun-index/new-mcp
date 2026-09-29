@@ -21,6 +21,7 @@ import {
   Pencil, X, Check, Loader2, ChevronDown, ChevronRight, FlaskConical, Ban, Play, ExternalLink,
 } from 'lucide-react'
 import type { McpTool, McpResource, McpResourceTemplate, McpPrompt, AuthType, UpdateServiceReq, ServiceProcessStat } from '@/types'
+import { queryNames, withQueryValue, withoutQueryValue } from '@/lib/query-auth'
 
 // parseEnv / envToString: 与注册页一致，环境变量用「每行 KEY=value」文本表示，
 // 而非 JSON。编辑 stdio 服务时仅环境变量可编辑，命令/参数只读。
@@ -95,6 +96,7 @@ export function ServiceDetailPage() {
     { value: 'api_key', label: t('services.authApiKey') },
     { value: 'bearer', label: t('services.authBearer') },
     { value: 'custom', label: t('services.authCustom') },
+    { value: 'query_param', label: t('services.authQueryParam') },
   ]
 
   const [editing, setEditing] = useState(false)
@@ -114,6 +116,8 @@ export function ServiceDetailPage() {
     bearer_token: '',
     custom_header_key: '',
     custom_header_value: '',
+    query_param_name: '',
+    query_key: '',
   })
 
   const { data, isLoading } = useQuery({
@@ -234,6 +238,8 @@ export function ServiceDetailPage() {
       let customValue = ''
       if (isMulti) {
         authType = service.auth_type
+      } else if (service.auth_type === 'query_param') {
+        authType = 'query_param'
       } else if (headers['X-API-Key']) {
         authType = 'api_key'
         apiKey = headers['X-API-Key']
@@ -259,6 +265,8 @@ export function ServiceDetailPage() {
         bearer_token: bearerToken,
         custom_header_key: customKey,
         custom_header_value: customValue,
+        query_param_name: service.query_param_name || '',
+        query_key: '',
       })
     }
   }, [service, editing])
@@ -282,6 +290,8 @@ export function ServiceDetailPage() {
     } else if (form.auth_type === 'none') {
       // 切换为无需认证时，清除已保存的认证 headers
       headers = {}
+    } else if (form.auth_type === 'query_param') {
+      headers = {}
     } else if (hasNewAuth) {
       headers = {}
       if (form.auth_type === 'api_key') headers['X-API-Key'] = form.api_key
@@ -302,7 +312,9 @@ export function ServiceDetailPage() {
         }
       case 'sse':
       case 'streamable-http':
-        return { url: form.url, headers }
+        return { url: form.auth_type === 'query_param'
+          ? withQueryValue(form.url, form.query_param_name, form.query_key)
+          : withoutQueryValue(form.url, service?.query_param_name || ''), headers }
       case 'websocket':
       case 'passive-ws':
         return { url: form.url }
@@ -313,6 +325,7 @@ export function ServiceDetailPage() {
 
   function buildAuthConfig(): Record<string, unknown> {
     switch (form.auth_type) {
+      case 'query_param': return { query_param_name: form.query_param_name.trim() }
       case 'api_key': return { key: form.api_key }
       case 'bearer': return { token: form.bearer_token }
       case 'custom':
@@ -327,7 +340,7 @@ export function ServiceDetailPage() {
   const canSave = (() => {
     if (!service) return false
     if (service.transport_type === 'stdio') return !!(service.config as Record<string, unknown>)?.command
-    return form.url.trim().length > 0
+    return form.url.trim().length > 0 && (form.auth_type !== 'query_param' || !!form.query_param_name.trim())
   })()
 
   if (isLoading) {
@@ -350,7 +363,7 @@ export function ServiceDetailPage() {
     service.source !== 'marketplace' &&
     !isVirtual &&
     (service.transport_type === 'sse' || service.transport_type === 'streamable-http') &&
-    service.auth_type !== 'none'
+    (service.auth_type !== 'none' || queryNames(String(service.config?.url || '')).length > 0)
   const stdioConfig = ((service.config as Record<string, unknown>) || {})
   const virtualSource = isVirtual ? sourceLabels[service.source] : null
 
@@ -578,7 +591,7 @@ export function ServiceDetailPage() {
                 isMultiKeyService ? (
                   /* 多秘钥:认证类型由秘钥池承载,锁定切换(改类型请先切回单秘钥) */
                   <div className="flex flex-wrap items-center gap-2 pt-1">
-                    {authOptions.map((opt) => (
+                    {authOptions.filter((opt) => opt.value !== 'query_param' || service.transport_type === 'sse' || service.transport_type === 'streamable-http').map((opt) => (
                       <button
                         key={opt.value}
                         type="button"
@@ -596,7 +609,7 @@ export function ServiceDetailPage() {
                   </div>
                 ) : (
                   <div className="flex flex-wrap gap-2 pt-1">
-                    {authOptions.map((opt) => (
+                    {authOptions.filter((opt) => opt.value !== 'query_param' || service.transport_type === 'sse' || service.transport_type === 'streamable-http').map((opt) => (
                       <button
                         key={opt.value}
                         type="button"
@@ -648,6 +661,13 @@ export function ServiceDetailPage() {
                 </div>
               </div>
             )}
+            {editing && form.auth_type === 'query_param' && (
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label className="text-xs text-muted-foreground">{t('services.keys.queryNameLabel')}</Label>
+                <Input value={form.query_param_name} onChange={(e) => setForm({ ...form, query_param_name: e.target.value })} placeholder="tavilyApiKey" />
+                <Input value={form.query_key} onChange={(e) => setForm({ ...form, query_key: e.target.value })} placeholder={t('services.placeholderKeepUnchanged')} autoComplete="off" />
+              </div>
+            )}
             {editing && form.auth_type !== 'none' && (
               <p className="text-xs text-muted-foreground sm:col-span-2">{t('services.headerKeepUnchanged')}</p>
             )}
@@ -679,6 +699,7 @@ export function ServiceDetailPage() {
         <ServiceKeysCard
           id={serviceId}
           api={serviceKeysApi(serviceId)}
+          queryCandidates={queryNames(String(service.config?.url || ''))}
           onModeChanged={() => queryClient.invalidateQueries({ queryKey: ['service', id] })}
         />
       )}
@@ -922,4 +943,6 @@ type EditForm = {
   bearer_token: string
   custom_header_key: string
   custom_header_value: string
+  query_param_name: string
+  query_key: string
 }

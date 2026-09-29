@@ -1168,6 +1168,10 @@ func (h *GatewayHandler) materializeMarketplaceConfig(svc *model.McpService) err
 	if svc.TransportType == "" || svc.TransportType == "marketplace" {
 		svc.TransportType = item.TransportType
 	}
+	if item.ParseAuthKeyConfig().QueryParamName != "" {
+		svc.AuthType = "query_param"
+		svc.AuthConfig = item.AuthConfig
+	}
 	// 共享 stdio 条目:会话池按条目键控(全部安装用户复用一个平台子进程);
 	// 与 service 侧 materializeMarketplace 同步设置。
 	svc.SharedProcess = item.TransportType == "stdio" && !item.IsolatedProcess

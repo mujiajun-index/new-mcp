@@ -6,7 +6,7 @@ type CreateServiceReq struct {
 	Description   string                 `json:"description"`
 	TransportType string                 `json:"transport_type" binding:"required,oneof=stdio sse streamable-http websocket passive-ws"`
 	Config        map[string]interface{} `json:"config"`
-	AuthType      string                 `json:"auth_type" binding:"omitempty,oneof=none api_key bearer custom"`
+	AuthType      string                 `json:"auth_type" binding:"omitempty,oneof=none api_key bearer custom query_param"`
 	AuthConfig    map[string]interface{} `json:"auth_config"`
 	// 多秘钥(仅 streamable-http/sse):KeyMode 为 random/polling 时 AuthKeys 必填,
 	// 认证头值不再写入 config.headers,由秘钥池按策略注入。
@@ -43,19 +43,20 @@ type ServiceListItem struct {
 }
 
 type ServiceDetail struct {
-	ID               int64                  `json:"id"`
-	Name             string                 `json:"name"`
-	DisplayName      string                 `json:"display_name"`
-	Description      string                 `json:"description"`
-	TransportType    string                 `json:"transport_type"`
-	Source           string                 `json:"source"`
-	Config           map[string]interface{} `json:"config"`
-	AuthType         string                 `json:"auth_type"`
+	ID             int64                  `json:"id"`
+	Name           string                 `json:"name"`
+	DisplayName    string                 `json:"display_name"`
+	Description    string                 `json:"description"`
+	TransportType  string                 `json:"transport_type"`
+	Source         string                 `json:"source"`
+	Config         map[string]interface{} `json:"config"`
+	AuthType       string                 `json:"auth_type"`
+	QueryParamName string                 `json:"query_param_name,omitempty"`
 	// 多秘钥:key_mode 为 random/polling 时认证头由秘钥池按策略注入,
 	// KeyCount/KeyEnabled 为池内总数与启用数。
-	KeyMode    string `json:"key_mode"`            // ""=单秘钥;random|polling
-	KeyCount   int    `json:"key_count,omitempty"` // 多秘钥模式下的池内秘钥总数
-	KeyEnabled int    `json:"key_enabled,omitempty"`
+	KeyMode          string                 `json:"key_mode"`            // ""=单秘钥;random|polling
+	KeyCount         int                    `json:"key_count,omitempty"` // 多秘钥模式下的池内秘钥总数
+	KeyEnabled       int                    `json:"key_enabled,omitempty"`
 	HealthStatus     string                 `json:"health_status"`
 	LastHealthCheck  string                 `json:"last_health_check"`
 	ToolsCache       []interface{}          `json:"tools_cache"`
@@ -87,8 +88,9 @@ type ServiceKeyItem struct {
 
 // ServiceKeysResp 秘钥池视图:配置 + 池列表 + 启用统计。
 type ServiceKeysResp struct {
-	KeyMode        string           `json:"key_mode"`    // ""=单秘钥;random|polling
-	HeaderName     string           `json:"header_name"` // 多秘钥注入目标头
+	KeyMode        string           `json:"key_mode"`         // ""=单秘钥;random|polling
+	HeaderName     string           `json:"header_name"`      // 多秘钥注入目标头
+	QueryParamName string           `json:"query_param_name"` // URL 参数注入目标
 	AuthType       string           `json:"auth_type"`
 	TransportType  string           `json:"transport_type"`
 	Total          int              `json:"total"`
@@ -123,8 +125,9 @@ type BatchServiceKeysReq struct {
 // 现有 config.headers 中的认证值收编为首把秘钥;multi→single:首选启用秘钥写回
 // config.headers 并清空秘钥池。
 type UpdateServiceKeyConfigReq struct {
-	KeyMode    string `json:"key_mode" binding:"required,oneof=single random polling"`
-	HeaderName string `json:"header_name" binding:"omitempty,max=255"`
+	KeyMode        string `json:"key_mode" binding:"required,oneof=single random polling"`
+	HeaderName     string `json:"header_name" binding:"omitempty,max=255"`
+	QueryParamName string `json:"query_param_name" binding:"omitempty,max=255"`
 }
 
 // ServiceProcessStat 是 stdio 服务子进程(整棵进程树)的资源占用快照。
@@ -160,30 +163,30 @@ type HealthBucket struct {
 // 健康字段仅非 stdio 服务填充(由 mcp_call_logs 真实调用聚合,见
 // service/health_snapshot.go),stdio 行不带。
 type ServicesOverviewItem struct {
-	ID            int64   `json:"id"`
-	Name          string  `json:"name"`
-	DisplayName   string  `json:"display_name"`
-	TransportType string  `json:"transport_type"`
-	Source        string  `json:"source"`
+	ID            int64  `json:"id"`
+	Name          string `json:"name"`
+	DisplayName   string `json:"display_name"`
+	TransportType string `json:"transport_type"`
+	Source        string `json:"source"`
 	// HealthStatus:stdio 为进程实测口径,非 stdio 为实时被动推导(连接>窗口成败>未知),
 	// 不依赖库里仅在调用后回写的标记。
-	HealthStatus string  `json:"health_status"`
-	Status       int     `json:"status"`
-	ToolsCount   int     `json:"tools_count"`
-	CreatedAt    string  `json:"created_at"`
-	Running      bool    `json:"running"`
-	PID          int     `json:"pid,omitempty"`
-	ProcessCount int     `json:"process_count,omitempty"`
-	MemoryRSS    uint64  `json:"memory_rss_bytes,omitempty"` // 树 RSS;进度条分母用 summary.host_memory_total_bytes
-	CPUPercent   float64 `json:"cpu_percent,omitempty"`      // 树累计 CPU/生存期,可 >100%(多核)
-	UptimeSeconds int64  `json:"uptime_seconds,omitempty"`
+	HealthStatus  string  `json:"health_status"`
+	Status        int     `json:"status"`
+	ToolsCount    int     `json:"tools_count"`
+	CreatedAt     string  `json:"created_at"`
+	Running       bool    `json:"running"`
+	PID           int     `json:"pid,omitempty"`
+	ProcessCount  int     `json:"process_count,omitempty"`
+	MemoryRSS     uint64  `json:"memory_rss_bytes,omitempty"` // 树 RSS;进度条分母用 summary.host_memory_total_bytes
+	CPUPercent    float64 `json:"cpu_percent,omitempty"`      // 树累计 CPU/生存期,可 >100%(多核)
+	UptimeSeconds int64   `json:"uptime_seconds,omitempty"`
 
 	// 非 stdio 服务:近 200 分钟(20 桶 × 10 分钟,旧→新)真实调用成败 + 窗口内最近
 	// 一次调用时间 + 窗口内最近一次失败(悬停可见,不占布局)
-	HealthBuckets    []HealthBucket `json:"health_buckets,omitempty"`    // 恒 20 项
-	LastCallAt       int64          `json:"last_call_at,omitempty"`      // unix 秒,0 = 从未调用
+	HealthBuckets    []HealthBucket `json:"health_buckets,omitempty"` // 恒 20 项
+	LastCallAt       int64          `json:"last_call_at,omitempty"`   // unix 秒,0 = 从未调用
 	LastErrorMessage string         `json:"last_error_message,omitempty"`
-	LastErrorAt      int64          `json:"last_error_at,omitempty"`     // unix 秒,0 = 无
+	LastErrorAt      int64          `json:"last_error_at,omitempty"` // unix 秒,0 = 无
 	// 市场引用行对应条目已下架/删除(读时批量判定,不落库)
 	MarketplaceOffline bool `json:"marketplace_offline,omitempty"`
 }
@@ -197,7 +200,7 @@ type ServicesOverviewSummary struct {
 	ProcessTotal    int     `json:"process_total"` // stdio 运行树的进程数总和
 	MemoryRSSTotal  uint64  `json:"memory_rss_bytes_total"`
 	CPUTotalPercent float64 `json:"cpu_percent_total"`
-	HealthyCount    int     `json:"healthy_count"` // 实时健康数(stdio=进程存活;非stdio=连接中或窗口内有成功),健康率由前端计算
+	HealthyCount    int     `json:"healthy_count"`           // 实时健康数(stdio=进程存活;非stdio=连接中或窗口内有成功),健康率由前端计算
 	HostMemoryTotal uint64  `json:"host_memory_total_bytes"` // 主机物理内存总量(gopsutil),内存条分母
 }
 
@@ -208,8 +211,9 @@ type ServicesOverview struct {
 }
 
 type TestConnectionReq struct {
-	TransportType string                 `json:"transport_type" binding:"required,oneof=stdio sse streamable-http websocket passive-ws"`
-	Config        map[string]interface{} `json:"config"`
+	TransportType  string                 `json:"transport_type" binding:"required,oneof=stdio sse streamable-http websocket passive-ws"`
+	Config         map[string]interface{} `json:"config"`
+	QueryParamName string                 `json:"query_param_name"`
 }
 
 // PrepareStdioReq drives the pre-flight detect/install step for a stdio service.

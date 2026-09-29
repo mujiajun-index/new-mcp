@@ -32,7 +32,7 @@ type keyEntry struct {
 	Status    int
 }
 
-// KeySelector 持有某服务/市场条目的秘钥池快照,按随机/轮询策略供认证头值,并在上游
+// KeySelector 持有某服务/市场条目的秘钥池快照,按随机/轮询策略供认证值,并在上游
 // 401/403 时熔断对应秘钥。进程内与会话生命周期解耦:池编辑后 Invalidate,
 // 下次建连按新池重建;轮询游标为内存态,进程重启归零(仅影响轮换起点,无害)。
 // 实现 transport.DynamicAuth,由 headerRoundTripper 按上游请求调用。
@@ -40,7 +40,8 @@ type KeySelector struct {
 	owner   int64  // serviceID 或 itemID(按 kind)
 	kind    string // selectorKindService | selectorKindItem:熔断落库与日志文案分流
 	svcName string // 日志展示名(服务 name / 条目 display_name)
-	target  string // 目标头名
+	target  string // 目标头或 URL 参数名
+	query   bool   // true=目标是 URL 参数
 	bearer  bool   // 值是否加 "Bearer " 前缀
 	mode    string // common.KeyModeRandom | common.KeyModePolling
 
@@ -49,8 +50,9 @@ type KeySelector struct {
 	cursor int // 轮询游标(keys 下标,指向下一次选择位置)
 }
 
-// HeaderName 返回注入目标头名(CreateAdapter 接线用)。
-func (s *KeySelector) HeaderName() string { return s.target }
+// TargetName 返回注入目标头或 URL 参数名(CreateAdapter 接线用)。
+func (s *KeySelector) TargetName() string { return s.target }
+func (s *KeySelector) IsQueryParam() bool { return s.query }
 
 // Pick 按策略返回一把启用秘钥:池内序号(1 起)+ 完整头值。
 // 随机=启用集合均匀抽取;轮询=从游标起找下一个启用并推进游标。
@@ -179,7 +181,7 @@ func (r *keySelectorRegistry) Get(svc *model.McpService) *KeySelector {
 	if svc.TransportType != common.TransportStreamableHTTP && svc.TransportType != common.TransportSSE {
 		return nil
 	}
-	if cfg.HeaderName == "" {
+	if (svc.AuthType == "query_param" && cfg.QueryParamName == "") || (svc.AuthType != "query_param" && cfg.HeaderName == "") {
 		return nil
 	}
 	r.mu.Lock()
@@ -203,9 +205,13 @@ func (r *keySelectorRegistry) Get(svc *model.McpService) *KeySelector {
 		kind:    selectorKindService,
 		svcName: svc.Name,
 		target:  cfg.HeaderName,
+		query:   svc.AuthType == "query_param",
 		bearer:  svc.AuthType == "bearer",
 		mode:    cfg.KeyMode,
 		keys:    entries,
+	}
+	if sel.query {
+		sel.target = cfg.QueryParamName
 	}
 	r.m[svc.ID] = sel
 	return sel
@@ -232,7 +238,7 @@ func (r *keySelectorRegistry) getItem(itemID int64) *KeySelector {
 	if item.TransportType != common.TransportStreamableHTTP && item.TransportType != common.TransportSSE {
 		return nil
 	}
-	if cfg.HeaderName == "" {
+	if cfg.HeaderName == "" && cfg.QueryParamName == "" {
 		return nil
 	}
 	keys, err := model.ListKeysByItem(itemID)
@@ -248,9 +254,13 @@ func (r *keySelectorRegistry) getItem(itemID int64) *KeySelector {
 		kind:    selectorKindItem,
 		svcName: item.DisplayName,
 		target:  cfg.HeaderName,
+		query:   cfg.QueryParamName != "",
 		bearer:  cfg.Bearer,
 		mode:    cfg.KeyMode,
 		keys:    entries,
+	}
+	if sel.query {
+		sel.target = cfg.QueryParamName
 	}
 	r.items[itemID] = sel
 	return sel

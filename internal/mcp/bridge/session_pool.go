@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"sync"
 	"time"
 
@@ -538,7 +539,36 @@ func dynamicAuthOptions(svc *model.McpService) []transport.AdapterOption {
 	if sel == nil {
 		return nil
 	}
-	return []transport.AdapterOption{transport.WithDynamicAuth(sel.HeaderName(), sel)}
+	if sel.IsQueryParam() {
+		return []transport.AdapterOption{transport.WithDynamicQueryAuth(sel.TargetName(), sel)}
+	}
+	return []transport.AdapterOption{transport.WithDynamicAuth(sel.TargetName(), sel)}
+}
+
+type fixedQueryAuth struct{ value string }
+
+func (a fixedQueryAuth) Pick() (int, string, error) { return 0, a.value, nil }
+func (a fixedQueryAuth) OnAuthFailure(int)          {}
+
+// 单密钥 URL 参数认证也需逐请求注入：SSE 返回的 POST 端点不一定保留初始
+// GET URL 的查询参数。只在内存中从静态 URL 提取，不更改库内单密钥配置。
+func staticQueryOption(svc *model.McpService, raw string) (string, []transport.AdapterOption) {
+	name := svc.ParseAuthKeyConfig().QueryParamName
+	if svc.AuthType != "query_param" || name == "" {
+		return raw, nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw, nil
+	}
+	q := u.Query()
+	values := q[name]
+	if len(values) != 1 || values[0] == "" {
+		return raw, nil
+	}
+	delete(q, name)
+	u.RawQuery = q.Encode()
+	return u.String(), []transport.AdapterOption{transport.WithDynamicQueryAuth(name, fixedQueryAuth{value: values[0]})}
 }
 
 func CreateAdapter(svc *model.McpService) transport.TransportAdapter {
@@ -571,21 +601,29 @@ func CreateAdapter(svc *model.McpService) transport.TransportAdapter {
 
 	case transport.TypeStreamableHTTP:
 		url, _ := config["url"].(string)
+		opts := dynamicAuthOptions(svc)
+		if len(opts) == 0 {
+			url, opts = staticQueryOption(svc, url)
+		}
 		headers, _ := config["headers"].(map[string]interface{})
 		h := make(map[string]string)
 		for k, v := range headers {
 			h[k], _ = v.(string)
 		}
-		return transport.NewStreamableHTTPAdapter(svc.ID, url, h, dynamicAuthOptions(svc)...)
+		return transport.NewStreamableHTTPAdapter(svc.ID, url, h, opts...)
 
 	case transport.TypeSSE:
 		url, _ := config["url"].(string)
+		opts := dynamicAuthOptions(svc)
+		if len(opts) == 0 {
+			url, opts = staticQueryOption(svc, url)
+		}
 		headers, _ := config["headers"].(map[string]interface{})
 		h := make(map[string]string)
 		for k, v := range headers {
 			h[k], _ = v.(string)
 		}
-		return transport.NewSSEAdapter(svc.ID, url, h, dynamicAuthOptions(svc)...)
+		return transport.NewSSEAdapter(svc.ID, url, h, opts...)
 
 	default:
 		return nil

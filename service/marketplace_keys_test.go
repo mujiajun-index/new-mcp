@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -11,6 +12,54 @@ import (
 	"github.com/mujkjk/newmcp/model"
 	"gorm.io/gorm"
 )
+
+func TestItemQueryKeyUpgradeAndDowngrade(t *testing.T) {
+	setupItemKeysTest(t)
+	item := newItemWithTemplate(t, "query_item", common.TransportStreamableHTTP,
+		`{"url":"https://example.test/mcp?region=cn&tavilyApiKey=first","headers":{}}`)
+	if err := upgradeItemToMultiKey(item, common.KeyModePolling, "", "tavilyApiKey"); err != nil {
+		t.Fatal(err)
+	}
+	if !item.IsMultiKey() || item.ParseAuthKeyConfig().QueryParamName != "tavilyApiKey" {
+		t.Fatal("query mode not saved")
+	}
+	if strings.Contains(plainItemConfig(item)["url"].(string), "first") {
+		t.Fatal("credential remained in template URL")
+	}
+	keys, err := model.ListKeysByItem(item.ID)
+	if err != nil || len(keys) != 1 || keys[0].Value != "first" {
+		t.Fatalf("keys: %+v %v", keys, err)
+	}
+	if err := downgradeItemToSingleKey(item); err != nil {
+		t.Fatal(err)
+	}
+	if !hasQueryCredential(plainItemConfig(item)["url"].(string), "tavilyApiKey") {
+		t.Fatal("single query credential not restored")
+	}
+	detail, err := (&MarketplaceService{}).GetItemByID(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(detail.ConfigTemplate["url"].(string), "first") {
+		t.Fatal("item detail exposed query credential")
+	}
+}
+
+func TestCloneQueryAuthConfig(t *testing.T) {
+	svc := &model.McpService{
+		AuthType: "query_param", AuthConfig: `{"key_mode":"polling","query_param_name":"tavilyApiKey"}`,
+		Config: `{"url":"https://example.test/mcp?region=cn"}`,
+	}
+	config, err := stripAuthHeaderConfig(svc)
+	if err != nil || config != svc.Config {
+		t.Fatalf("clone config=%q err=%v", config, err)
+	}
+	item := &model.MarketplaceItem{AuthConfig: itemAuthConfigFromService(svc)}
+	parsed := item.ParseAuthKeyConfig()
+	if parsed.KeyMode != "polling" || parsed.QueryParamName != "tavilyApiKey" || parsed.HeaderName != "" {
+		t.Fatalf("clone auth config: %+v", parsed)
+	}
+}
 
 // setupItemKeysTest 初始化条目级秘钥测试环境:TempDir sqlite + 相关表。
 func setupItemKeysTest(t *testing.T) {
@@ -253,10 +302,10 @@ func TestCloneFromServiceCarriesKeyPool(t *testing.T) {
 	// 多秘钥 bearer 源服务(手工构造已切换完成的形态)
 	svc := &model.McpService{
 		UserID: 7, Name: "multi-src", TransportType: common.TransportStreamableHTTP,
-		Config: `{"url":"https://up.example/mcp","headers":{"X-Other":"v"}}`,
-		AuthType: "bearer",
+		Config:     `{"url":"https://up.example/mcp","headers":{"X-Other":"v"}}`,
+		AuthType:   "bearer",
 		AuthConfig: `{"key_mode":"polling","header_name":"Authorization"}`,
-		Status: common.StatusEnabled,
+		Status:     common.StatusEnabled,
 	}
 	if err := model.DB.Create(svc).Error; err != nil {
 		t.Fatalf("create src service: %v", err)
@@ -300,7 +349,7 @@ func TestCloneFromServiceCarriesKeyPool(t *testing.T) {
 	// 单秘钥源:行为不变(模板原样,条目无池、无多秘钥配置)
 	single := &model.McpService{
 		UserID: 7, Name: "single-src", TransportType: common.TransportStreamableHTTP,
-		Config: `{"url":"https://up.example/mcp","headers":{"X-API-Key":"sk-1-1234567890"}}`,
+		Config:   `{"url":"https://up.example/mcp","headers":{"X-API-Key":"sk-1-1234567890"}}`,
 		AuthType: "api_key", Status: common.StatusEnabled,
 	}
 	if err := model.DB.Create(single).Error; err != nil {

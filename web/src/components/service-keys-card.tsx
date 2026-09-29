@@ -34,7 +34,7 @@ function statusBadge(t: (k: string) => string, status: number) {
 export interface KeysApi {
   list: () => Promise<{ data?: ServiceKeysResp }>
   updateKeys: (data: UpdateServiceKeysReq) => Promise<{ data?: UpdateServiceKeysResult }>
-  updateConfig: (data: { key_mode: 'single' | 'random' | 'polling'; header_name?: string }) => Promise<unknown>
+  updateConfig: (data: { key_mode: 'single' | 'random' | 'polling'; header_name?: string; query_param_name?: string }) => Promise<unknown>
   setKeyStatus: (keyID: number, status: 'enabled' | 'disabled') => Promise<unknown>
   deleteKey: (keyID: number) => Promise<unknown>
   batch: (action: 'enable_all' | 'delete_disabled') => Promise<unknown>
@@ -47,11 +47,12 @@ export interface KeysApi {
  * onModeChanged:模式/池变化后失效宿主页面的详情查询(徽章与认证区联动)。
  */
 export function ServiceKeysCard({
-  id, api, onModeChanged,
+  id, api, onModeChanged, queryCandidates = [],
 }: {
   id: number
   api: KeysApi
   onModeChanged: () => void
+  queryCandidates?: string[]
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -63,6 +64,8 @@ export function ServiceKeysCard({
   const [downgradeConfirm, setDowngradeConfirm] = useState(false)
   const [deleteDisabledConfirm, setDeleteDisabledConfirm] = useState(false)
   const [customHeader, setCustomHeader] = useState('')
+  const [queryName, setQueryName] = useState('')
+  const [pendingTarget, setPendingTarget] = useState<'header' | 'query'>('header')
   // 待启用/待禁用的策略暂存:custom 单→多时先填注入头
   const [pendingMode, setPendingMode] = useState<'random' | 'polling' | null>(null)
 
@@ -82,7 +85,7 @@ export function ServiceKeysCard({
   }
 
   const modeMutation = useMutation({
-    mutationFn: (payload: { key_mode: 'single' | 'random' | 'polling'; header_name?: string }) =>
+    mutationFn: (payload: { key_mode: 'single' | 'random' | 'polling'; header_name?: string; query_param_name?: string }) =>
       api.updateConfig(payload),
     onSuccess: (_res, payload) => {
       toast.success(payload.key_mode === 'single' ? t('services.keys.downgraded') : t('services.keys.modeSwitched'))
@@ -129,11 +132,22 @@ export function ServiceKeysCard({
   // 单→多:custom 认证需指定注入头——端点响应里已带 header_name(服务侧来自
   // auth_config 落库、条目侧来自模板反推)则直接切换;否则弹框让用户填写
   function requestUpgrade(mode: 'random' | 'polling') {
+    if (resp?.auth_type === 'query_param') {
+      modeMutation.mutate({ key_mode: mode, query_param_name: resp.query_param_name })
+      return
+    }
+    if (resp?.auth_type === 'none' && queryCandidates.length > 0) {
+      setPendingTarget('query')
+      setQueryName(queryCandidates[0] || '')
+      setPendingMode(mode)
+      return
+    }
     if (resp?.auth_type === 'custom' && !isMulti) {
       if (resp?.header_name) {
         modeMutation.mutate({ key_mode: mode, header_name: resp.header_name })
         return
       }
+      setPendingTarget('header')
       setPendingMode(mode)
       return
     }
@@ -142,6 +156,11 @@ export function ServiceKeysCard({
 
   function confirmUpgrade() {
     if (!pendingMode) return
+    if (pendingTarget === 'query') {
+      if (!queryName.trim()) { toast.error(t('services.keys.queryNameRequired')); return }
+      modeMutation.mutate({ key_mode: pendingMode, query_param_name: queryName.trim() })
+      return
+    }
     if (!customHeader.trim()) {
       toast.error(t('services.keys.headerNameRequired'))
       return
@@ -229,10 +248,10 @@ export function ServiceKeysCard({
           </div>
           <p className="text-xs text-muted-foreground">
             {resp?.key_mode === 'random' ? t('services.keys.modeRandomHint') : t('services.keys.modePollingHint')}
-            {t('services.keys.headerLabel')}
-            {resp?.header_name && (
+            {resp?.query_param_name ? t('services.keys.queryLabel') : t('services.keys.headerLabel')}
+            {(resp?.query_param_name || resp?.header_name) && (
               <code className="ml-1 rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-primary dark:bg-primary/20">
-                {resp.header_name}
+                {resp.query_param_name || resp.header_name}
               </code>
             )}
           </p>
@@ -389,12 +408,13 @@ export function ServiceKeysCard({
       <Dialog open={pendingMode !== null} onOpenChange={(open) => !open && setPendingMode(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('services.keys.headerNameDialogTitle')}</DialogTitle>
-            <DialogDescription>{t('services.keys.headerNameHint')}</DialogDescription>
+            <DialogTitle>{t(pendingTarget === 'query' ? 'services.keys.queryNameDialogTitle' : 'services.keys.headerNameDialogTitle')}</DialogTitle>
+            <DialogDescription>{t(pendingTarget === 'query' ? 'services.keys.queryNameHint' : 'services.keys.headerNameHint')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label>{t('services.keys.headerNameLabel')}</Label>
-            <Input placeholder="X-Custom-Auth" value={customHeader} onChange={(e) => setCustomHeader(e.target.value)} />
+            <Label>{t(pendingTarget === 'query' ? 'services.keys.queryNameLabel' : 'services.keys.headerNameLabel')}</Label>
+            <Input placeholder={pendingTarget === 'query' ? 'tavilyApiKey' : 'X-Custom-Auth'} value={pendingTarget === 'query' ? queryName : customHeader} onChange={(e) => pendingTarget === 'query' ? setQueryName(e.target.value) : setCustomHeader(e.target.value)} list={pendingTarget === 'query' ? `query-candidates-${id}` : undefined} />
+            {pendingTarget === 'query' && <datalist id={`query-candidates-${id}`}>{queryCandidates.map((name) => <option key={name} value={name} />)}</datalist>}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPendingMode(null)}>{t('common.cancel')}</Button>

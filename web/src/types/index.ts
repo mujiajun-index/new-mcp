@@ -60,7 +60,7 @@ export interface ProfileResp {
 
 // --- Services ---
 export type TransportType = 'stdio' | 'sse' | 'streamable-http' | 'websocket' | 'passive-ws' | 'virtual'
-export type AuthType = 'none' | 'api_key' | 'bearer' | 'custom'
+export type AuthType = 'none' | 'api_key' | 'bearer' | 'custom' | 'query_param'
 
 export interface ServiceListItem {
   id: number
@@ -88,6 +88,7 @@ export interface ServiceDetail {
   source: string
   config: Record<string, unknown>
   auth_type: AuthType
+  query_param_name?: string
   /** 多秘钥:key_mode 为 random/polling 时认证头由秘钥池按策略注入 */
   key_mode?: string
   key_count?: number
@@ -256,6 +257,7 @@ export interface ServiceKeysResp {
   /** ""=单秘钥;random|polling */
   key_mode: string
   header_name: string
+  query_param_name: string
   auth_type: AuthType
   transport_type: TransportType
   total: number
@@ -629,6 +631,7 @@ export interface MarketplaceDetail {
   key_mode?: string
   key_count?: number
   key_enabled?: number
+  query_param_name?: string
 }
 
 // 条目级定价(§5.2 条目维度):工具/资源/提示单独设价。

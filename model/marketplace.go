@@ -10,39 +10,39 @@ import (
 )
 
 type MarketplaceItem struct {
-	ID                   int64          `json:"id" gorm:"primaryKey;autoIncrement"`
-	AdminID              int64          `json:"admin_id" gorm:"not null"`
-	Name                 string         `json:"name" gorm:"size:128;not null;uniqueIndex"`
-	DisplayName          string         `json:"display_name" gorm:"size:255"`
-	Description          string         `json:"description" gorm:"type:text"`
-	IconURL              string         `json:"icon_url" gorm:"size:512"`
-	Category             string         `json:"category" gorm:"size:32;not null;index"`
-	Tags                 string         `json:"tags" gorm:"size:512"`
-	Version              string         `json:"version" gorm:"size:32;default:1.0.0"`
-	TransportType        string         `json:"transport_type" gorm:"size:32"`
+	ID            int64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	AdminID       int64  `json:"admin_id" gorm:"not null"`
+	Name          string `json:"name" gorm:"size:128;not null;uniqueIndex"`
+	DisplayName   string `json:"display_name" gorm:"size:255"`
+	Description   string `json:"description" gorm:"type:text"`
+	IconURL       string `json:"icon_url" gorm:"size:512"`
+	Category      string `json:"category" gorm:"size:32;not null;index"`
+	Tags          string `json:"tags" gorm:"size:512"`
+	Version       string `json:"version" gorm:"size:32;default:1.0.0"`
+	TransportType string `json:"transport_type" gorm:"size:32"`
 	// 独占进程(仅 stdio 条目有意义):false=共享——全部安装用户共用平台侧一个 stdio
 	// 子进程;true=独占——每个安装用户的引用行各一个进程(记忆存储等有状态服务)。
 	// bool 不设 default(GORM 规范),CloneFromService 显式赋值,存量行零值 false=共享;
 	// 非 stdio 条目读写两侧均忽略该字段。
-	IsolatedProcess      bool           `json:"isolated_process"`
-	ConfigTemplate       string         `json:"config_template" gorm:"type:varchar(4096);default:'{}'"`
+	IsolatedProcess bool   `json:"isolated_process"`
+	ConfigTemplate  string `json:"config_template" gorm:"type:varchar(4096);default:'{}'"`
 	// 条目级多秘钥配置段({"key_mode","header_name","bearer"}),与 mcp_services.AuthConfig
 	// 同语义;空串=单秘钥(模板 headers 存凭证)。type:text:本表 varchar 预算已贴近
 	// MySQL 行宽上限,新字符串大列一律 TEXT(TEXT 不可带 default)。
-	AuthConfig           string         `json:"auth_config" gorm:"type:text"`
-	AuthInstructions     string         `json:"auth_instructions" gorm:"type:text"`
-	RepoURL              string         `json:"repo_url" gorm:"size:1024"`
-	InstallGuide         string         `json:"install_guide" gorm:"type:text"`
-	ConfigTemplateSource string         `json:"config_template_source" gorm:"type:varchar(4096);default:'{}'"`
-	RequiredEnv          string         `json:"required_env" gorm:"type:varchar(4096);default:'[]'"`
-	InstallCount         int            `json:"install_count" gorm:"default:0"`
-	RatingAvg            float64        `json:"rating_avg" gorm:"type:decimal(2,1);default:0.0"`
-	RatingCount          int            `json:"rating_count" gorm:"default:0"`
-	ToolsSnapshot        string         `json:"tools_snapshot" gorm:"type:text"`
+	AuthConfig           string  `json:"auth_config" gorm:"type:text"`
+	AuthInstructions     string  `json:"auth_instructions" gorm:"type:text"`
+	RepoURL              string  `json:"repo_url" gorm:"size:1024"`
+	InstallGuide         string  `json:"install_guide" gorm:"type:text"`
+	ConfigTemplateSource string  `json:"config_template_source" gorm:"type:varchar(4096);default:'{}'"`
+	RequiredEnv          string  `json:"required_env" gorm:"type:varchar(4096);default:'[]'"`
+	InstallCount         int     `json:"install_count" gorm:"default:0"`
+	RatingAvg            float64 `json:"rating_avg" gorm:"type:decimal(2,1);default:0.0"`
+	RatingCount          int     `json:"rating_count" gorm:"default:0"`
+	ToolsSnapshot        string  `json:"tools_snapshot" gorm:"type:text"`
 	// 资源/提示快照:形态与 mcp_services 的 resources_cache({"resources":[],"templates":[]})、prompts_cache(裸数组)一致,
 	// 克隆上架时从源服务拷贝,市场详情页展示、安装/同步时回填引用行
-	ResourcesSnapshot    string         `json:"resources_snapshot" gorm:"type:text"`
-	PromptsSnapshot      string         `json:"prompts_snapshot" gorm:"type:text"`
+	ResourcesSnapshot string `json:"resources_snapshot" gorm:"type:text"`
+	PromptsSnapshot   string `json:"prompts_snapshot" gorm:"type:text"`
 	// 上游握手信息:克隆上架时从源服务拷贝、手动刷新快照时从临时直连捕获。
 	// server_info 为 JSON({"name":...,"version":...}),protocol_version 为协商出的协议版本。
 	// text 而非 varchar(4096):本表 varchar 预算已贴近 MySQL 65535 行上限,再加大 varchar 会迁移失败
@@ -55,11 +55,11 @@ type MarketplaceItem struct {
 	// 商业化:0=按次计费,1=仅订阅用户可用(V2);V1 固定 false
 	SubscriptionOnly bool `json:"subscription_only" gorm:"default:false"`
 	// 市场分组归属见 marketplace_item_groups 关联表(多对多);category 为 instant/source 部署形态,两概念独立
-	Status               int            `json:"status" gorm:"default:1;index"`
-	SortOrder            int            `json:"sort_order" gorm:"default:0"`
-	CreatedAt            time.Time      `json:"created_at"`
-	UpdatedAt            time.Time      `json:"updated_at"`
-	DeletedAt            gorm.DeletedAt `json:"-" gorm:"index"`
+	Status    int            `json:"status" gorm:"default:1;index"`
+	SortOrder int            `json:"sort_order" gorm:"default:0"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 func (MarketplaceItem) TableName() string { return "marketplace_items" }
@@ -67,9 +67,10 @@ func (MarketplaceItem) TableName() string { return "marketplace_items" }
 // ItemAuthKeyConfig 是条目 AuthConfig 里的多秘钥配置段。比服务版 AuthKeyConfig
 // 多一个 Bearer 位:条目没有 AuthType,值补/剥 "Bearer " 前缀的依据显式落库。
 type ItemAuthKeyConfig struct {
-	KeyMode    string `json:"key_mode,omitempty"`    // ""=单秘钥;random | polling
-	HeaderName string `json:"header_name,omitempty"` // 多秘钥注入的目标头名
-	Bearer     bool   `json:"bearer,omitempty"`      // true=注入值加 "Bearer " 前缀
+	KeyMode        string `json:"key_mode,omitempty"`         // ""=单秘钥;random | polling
+	HeaderName     string `json:"header_name,omitempty"`      // 多秘钥注入的目标头名
+	QueryParamName string `json:"query_param_name,omitempty"` // URL 参数认证的目标参数名
+	Bearer         bool   `json:"bearer,omitempty"`           // true=注入值加 "Bearer " 前缀
 }
 
 // ParseAuthKeyConfig 解析条目 AuthConfig 的多秘钥配置;空/坏 JSON 返回零值。

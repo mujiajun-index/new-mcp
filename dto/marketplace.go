@@ -4,28 +4,29 @@ package dto
 // 注:市场项创建仅支持"从自有服务克隆上架"(CloneMarketplaceReq),无手动创建。
 
 type UpdateMarketplaceItemReq struct {
-	DisplayName          *string                `json:"display_name"`
-	Description          *string                `json:"description"`
-	IconURL              *string                `json:"icon_url"`
-	Category             *string                `json:"category"`
+	DisplayName *string `json:"display_name"`
+	Description *string `json:"description"`
+	IconURL     *string `json:"icon_url"`
+	Category    *string `json:"category"`
 	// 分组绑定(多对多):nil/缺省=不动;[]=清空;[...]=全量替换(同 Tags 语义)
-	GroupIDs             []int64                `json:"group_ids"`
-	Tags                 []string               `json:"tags"`
-	Version              *string                `json:"version"`
-	TransportType        *string                `json:"transport_type"`
-	ConfigTemplate       map[string]interface{} `json:"config_template"`
-	AuthInstructions     *string                `json:"auth_instructions"`
-	RepoURL              *string                `json:"repo_url"`
-	InstallGuide         *string                `json:"install_guide"`
-	ConfigTemplateSource map[string]interface{} `json:"config_template_source"`
-	RequiredEnv          []string               `json:"required_env"`
-	ToolsSnapshot        []interface{}          `json:"tools_snapshot"`
+	GroupIDs             []int64                 `json:"group_ids"`
+	Tags                 []string                `json:"tags"`
+	Version              *string                 `json:"version"`
+	TransportType        *string                 `json:"transport_type"`
+	ConfigTemplate       map[string]interface{}  `json:"config_template"`
+	QueryParamName       *string                 `json:"query_param_name"`
+	AuthInstructions     *string                 `json:"auth_instructions"`
+	RepoURL              *string                 `json:"repo_url"`
+	InstallGuide         *string                 `json:"install_guide"`
+	ConfigTemplateSource map[string]interface{}  `json:"config_template_source"`
+	RequiredEnv          []string                `json:"required_env"`
+	ToolsSnapshot        []interface{}           `json:"tools_snapshot"`
 	ResourcesSnapshot    *map[string]interface{} `json:"resources_snapshot"` // {"resources":[],"templates":[]}
-	PromptsSnapshot      *[]interface{}         `json:"prompts_snapshot"`
-	Status               *int                   `json:"status"`
-	SortOrder            *int                   `json:"sort_order"`
+	PromptsSnapshot      *[]interface{}          `json:"prompts_snapshot"`
+	Status               *int                    `json:"status"`
+	SortOrder            *int                    `json:"sort_order"`
 	// 下载数允许管理端手工修正(展示统计,非强约束;不可为负)
-	InstallCount         *int                   `json:"install_count" binding:"omitempty,gte=0"`
+	InstallCount *int `json:"install_count" binding:"omitempty,gte=0"`
 	// 独占进程(仅 stdio 条目生效):切换共享↔独占会踢掉该条目全部池内会话按新模式重建
 	IsolatedProcess *bool `json:"isolated_process"`
 	// 商业化定价:启用/上架时非自用模式须显式定价(§5.6)
@@ -50,7 +51,7 @@ type BatchPricingItem struct {
 type BatchGroupsTagsReq struct {
 	IDs      []int64  `json:"ids" binding:"required,min=1,dive,gte=1"`
 	GroupIDs []int64  `json:"group_ids"` // nil=不动;[]=清空;[...]=替换
-	Tags     []string `json:"tags"`     // nil=不动;[]=清空;[...]=替换
+	Tags     []string `json:"tags"`      // nil=不动;[]=清空;[...]=替换
 }
 
 // CloneMarketplaceReq 从自有服务克隆上架(§11/D14):深拷贝 transport/config/auth/tools,与源服务无关联。
@@ -105,8 +106,8 @@ type MarketplaceItemHealth struct {
 // 的固定形态)+ 全量运行实例的资源概述(不随分页/筛选变化)。万级安装时一次只回
 // 一页,用户名只对当前页反查。
 type MarketplaceItemProcess struct {
-	Isolated bool                             `json:"isolated"`
-	Shared   *ServiceProcessStat              `json:"shared,omitempty"`
+	Isolated bool                `json:"isolated"`
+	Shared   *ServiceProcessStat `json:"shared,omitempty"`
 	// 独占模式:当前页实例
 	Instances []MarketplaceItemProcessInstance `json:"instances,omitempty"`
 	// 独占模式:全部运行实例的资源概述(运行数/进程合计/RSS 合计/CPU 合计,多核可超 100%)
@@ -123,10 +124,10 @@ type MarketplaceItemProcess struct {
 
 // MarketplaceItemProcessInstance 独占条目下某个安装用户的进程实例(引用行粒度)。
 type MarketplaceItemProcessInstance struct {
-	ServiceID int64              `json:"service_id"`
-	UserID    int64              `json:"user_id"`
-	Username  string             `json:"username"`
-	Name      string             `json:"name"`
+	ServiceID int64  `json:"service_id"`
+	UserID    int64  `json:"user_id"`
+	Username  string `json:"username"`
+	Name      string `json:"name"`
 	// 引用行启用状态(禁用行不可拉起进程)
 	Status int                `json:"status"`
 	Stat   ServiceProcessStat `json:"stat"`
@@ -163,19 +164,19 @@ type MarketplaceListItem struct {
 }
 
 type MarketplaceDetail struct {
-	ID                   int64                  `json:"id"`
-	Name                 string                 `json:"name"`
-	DisplayName          string                 `json:"display_name"`
-	Description          string                 `json:"description"`
-	IconURL              string                 `json:"icon_url"`
-	Category             string                 `json:"category"`
-	GroupIDs             []int64                `json:"group_ids"`
-	GroupNames           []string               `json:"group_names"`
-	Tags                 []string               `json:"tags"`
-	Version              string                 `json:"version"`
-	TransportType        string                 `json:"transport_type"`
+	ID            int64    `json:"id"`
+	Name          string   `json:"name"`
+	DisplayName   string   `json:"display_name"`
+	Description   string   `json:"description"`
+	IconURL       string   `json:"icon_url"`
+	Category      string   `json:"category"`
+	GroupIDs      []int64  `json:"group_ids"`
+	GroupNames    []string `json:"group_names"`
+	Tags          []string `json:"tags"`
+	Version       string   `json:"version"`
+	TransportType string   `json:"transport_type"`
 	// 独占进程(仅 stdio 条目有意义):false=共享(全部安装用户共用平台子进程)
-	IsolatedProcess      bool                   `json:"isolated_process"`
+	IsolatedProcess bool `json:"isolated_process"`
 	// 平台上游连接配置(config_template 解密):url/command/args 等结构明文,headers/env 的凭证值
 	// 为首尾掩码(如 sk-A...x9z),明文凭证不离开服务端。仅 admin 详情(GetItemByID)回传供编辑,
 	// 保存时掩码原样传回由后端回填明文;公开浏览(GetPublished)绝不携带。
@@ -187,18 +188,18 @@ type MarketplaceDetail struct {
 	RequiredEnv          []string               `json:"required_env"`
 	InstallCount         int                    `json:"install_count"`
 	// 广场排序值:大者靠前,相同时按 install_count 降序
-	SortOrder            int                    `json:"sort_order"`
-	RatingAvg            float64                `json:"rating_avg"`
-	RatingCount          int                    `json:"rating_count"`
-	ToolsSnapshot        []interface{}          `json:"tools_snapshot"`
-	ResourcesSnapshot    map[string]interface{} `json:"resources_snapshot"` // {"resources":[],"templates":[]}
-	PromptsSnapshot      []interface{}          `json:"prompts_snapshot"`
+	SortOrder         int                    `json:"sort_order"`
+	RatingAvg         float64                `json:"rating_avg"`
+	RatingCount       int                    `json:"rating_count"`
+	ToolsSnapshot     []interface{}          `json:"tools_snapshot"`
+	ResourcesSnapshot map[string]interface{} `json:"resources_snapshot"` // {"resources":[],"templates":[]}
+	PromptsSnapshot   []interface{}          `json:"prompts_snapshot"`
 	// 上游握手信息(克隆/刷新时捕获):真实 serverInfo 与协商协议版本
 	ServerInfo      map[string]interface{} `json:"server_info"`
 	ProtocolVersion string                 `json:"protocol_version"`
-	Status               int                    `json:"status"`
-	CreatedAt            string                 `json:"created_at"`
-	UpdatedAt            string                 `json:"updated_at"`
+	Status          int                    `json:"status"`
+	CreatedAt       string                 `json:"created_at"`
+	UpdatedAt       string                 `json:"updated_at"`
 	// 商业化定价
 	BillingType  string  `json:"billing_type"`
 	PricePerCall float64 `json:"price_per_call"`
@@ -207,15 +208,16 @@ type MarketplaceDetail struct {
 	EntryPrices []MarketplaceEntryPrice `json:"entry_prices"`
 	// 条目级多秘钥(random|polling;空=单秘钥)。仅 admin 详情(GetItemByID)填充,
 	// 公开浏览(GetPublished)不携带;管理页徽章与秘钥卡片可见性判断用。
-	KeyMode    string `json:"key_mode,omitempty"`
-	KeyCount   int    `json:"key_count,omitempty"`
-	KeyEnabled int    `json:"key_enabled,omitempty"`
+	KeyMode        string `json:"key_mode,omitempty"`
+	QueryParamName string `json:"query_param_name,omitempty"`
+	KeyCount       int    `json:"key_count,omitempty"`
+	KeyEnabled     int    `json:"key_enabled,omitempty"`
 }
 
 // --- User: Install from marketplace ---
 
 type InstallFromMarketplaceReq struct {
-	ItemID      int64  `json:"item_id" binding:"required"`
+	ItemID       int64  `json:"item_id" binding:"required"`
 	NameOverride string `json:"name_override"`
 }
 

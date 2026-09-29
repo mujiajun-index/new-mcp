@@ -10,6 +10,7 @@ import (
 	"github.com/mujkjk/newmcp/dto"
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/model"
+	"gorm.io/gorm"
 )
 
 // --- 条目级多秘钥管理(/admin/marketplace/:id/keys) ---
@@ -58,6 +59,9 @@ func inferTemplateAuth(cfg map[string]interface{}) (authType, headerName string)
 
 // headerAuthType 按注入头名推导认证类型展示(条目无 AuthType,多秘钥态用)。
 func headerAuthType(headerName string) string {
+	if headerName == "" {
+		return "none"
+	}
 	switch headerName {
 	case "Authorization":
 		return "bearer"
@@ -83,9 +87,104 @@ func rewriteItemAuthKeyConfig(authConfigJSON, mode, headerName string, bearer bo
 		m["key_mode"] = mode
 		m["header_name"] = headerName
 		m["bearer"] = bearer
+		delete(m, "query_param_name")
 	}
 	b, _ := json.Marshal(m)
 	return string(b)
+}
+
+func rewriteItemQueryAuthConfig(authConfigJSON, mode, name string) string {
+	var m map[string]interface{}
+	_ = json.Unmarshal([]byte(authConfigJSON), &m)
+	if m == nil {
+		m = map[string]interface{}{}
+	}
+	if mode == "" {
+		delete(m, "key_mode")
+	} else {
+		m["key_mode"] = mode
+	}
+	delete(m, "header_name")
+	delete(m, "bearer")
+	if name == "" {
+		delete(m, "query_param_name")
+	} else {
+		m["query_param_name"] = name
+	}
+	b, _ := json.Marshal(m)
+	return string(b)
+}
+
+func upgradeItemToMultiQueryKey(item *model.MarketplaceItem, mode, reqName string) error {
+	cfg := item.ParseAuthKeyConfig()
+	if item.IsMultiKey() {
+		if cfg.QueryParamName == "" || (reqName != "" && reqName != cfg.QueryParamName) {
+			return fmt.Errorf("多秘钥模式下不可更换认证参数")
+		}
+		item.AuthConfig = rewriteItemQueryAuthConfig(item.AuthConfig, mode, cfg.QueryParamName)
+		return item.Update()
+	}
+	if reqName == "" {
+		reqName = cfg.QueryParamName
+	}
+	if err := validateQueryParamName(reqName); err != nil {
+		return err
+	}
+	config := plainItemConfig(item)
+	raw, _ := config["url"].(string)
+	base, first, err := takeQueryCredential(raw, reqName)
+	if err != nil {
+		return err
+	}
+	config["url"] = base
+	b, _ := json.Marshal(config)
+	item.ConfigTemplate = encryptConfigTemplate(string(b))
+	item.AuthConfig = rewriteItemQueryAuthConfig(item.AuthConfig, mode, reqName)
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("item_id = ?", item.ID).Delete(&model.MarketplaceItemKey{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&model.MarketplaceItemKey{ItemID: item.ID, SortOrder: 1, Value: first, Status: common.StatusEnabled}).Error; err != nil {
+			return err
+		}
+		return tx.Save(item).Error
+	})
+}
+
+func downgradeItemToSingleQueryKey(item *model.MarketplaceItem, name string) error {
+	keys, err := model.ListKeysByItem(item.ID)
+	if err != nil {
+		return err
+	}
+	pick := ""
+	for _, k := range keys {
+		if k.Status == common.StatusEnabled {
+			pick = k.Value
+			break
+		}
+	}
+	if pick == "" && len(keys) > 0 {
+		pick = keys[0].Value
+	}
+	if pick == "" {
+		return fmt.Errorf("秘钥池为空,无法切回单秘钥")
+	}
+	config := plainItemConfig(item)
+	raw, _ := config["url"].(string)
+	updated, err := putQueryCredential(raw, name, pick)
+	if err != nil {
+		return err
+	}
+	config["url"] = updated
+	b, _ := json.Marshal(config)
+	item.ConfigTemplate = encryptConfigTemplate(string(b))
+	item.AuthConfig = rewriteItemQueryAuthConfig(item.AuthConfig, "", name)
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(item).Error; err != nil {
+			return err
+		}
+		return tx.Where("item_id = ?", item.ID).Delete(&model.MarketplaceItemKey{}).Error
+	})
 }
 
 // invalidateItemRuntime 条目池/模式变更后:失效选择器快照、踢该条目全部引用会话。
@@ -129,11 +228,15 @@ func (s *MarketplaceService) ListKeys(itemID int64) (*dto.ServiceKeysResp, error
 		authType, _ = inferTemplateAuth(plainItemConfig(item))
 	}
 	resp := &dto.ServiceKeysResp{
-		KeyMode:       cfg.KeyMode,
-		HeaderName:    cfg.HeaderName,
-		AuthType:      authType,
-		TransportType: item.TransportType,
-		Keys:          make([]dto.ServiceKeyItem, 0, len(keys)),
+		KeyMode:        cfg.KeyMode,
+		HeaderName:     cfg.HeaderName,
+		QueryParamName: cfg.QueryParamName,
+		AuthType:       authType,
+		TransportType:  item.TransportType,
+		Keys:           make([]dto.ServiceKeyItem, 0, len(keys)),
+	}
+	if cfg.QueryParamName != "" {
+		resp.AuthType = "query_param"
 	}
 	for _, k := range keys {
 		keyItem := dto.ServiceKeyItem{
@@ -279,7 +382,7 @@ func (s *MarketplaceService) UpdateKeyConfig(itemID int64, req *dto.UpdateServic
 			return nil, err
 		}
 	} else {
-		if err := upgradeItemToMultiKey(item, req.KeyMode, req.HeaderName); err != nil {
+		if err := upgradeItemToMultiKey(item, req.KeyMode, req.HeaderName, req.QueryParamName); err != nil {
 			return nil, err
 		}
 	}
@@ -291,7 +394,14 @@ func (s *MarketplaceService) UpdateKeyConfig(itemID int64, req *dto.UpdateServic
 // 模板 headers 反推(Authorization/X-API-Key/首个自定义头),把模板现有认证值收编为
 // 首把秘钥并从模板剥掉该头;bearer 位按库内值是否带 "Bearer " 前缀推导后显式落库,
 // 注入形态与切换前一致。策略切换沿用既有注入头,不接受更换。
-func upgradeItemToMultiKey(item *model.MarketplaceItem, mode, reqHeader string) error {
+func upgradeItemToMultiKey(item *model.MarketplaceItem, mode, reqHeader string, queryParam ...string) error {
+	reqQuery := ""
+	if len(queryParam) > 0 {
+		reqQuery = queryParam[0]
+	}
+	if reqQuery != "" || item.ParseAuthKeyConfig().QueryParamName != "" {
+		return upgradeItemToMultiQueryKey(item, mode, reqQuery)
+	}
 	cfg := item.ParseAuthKeyConfig()
 	singleToMulti := !item.IsMultiKey()
 
@@ -340,6 +450,9 @@ func upgradeItemToMultiKey(item *model.MarketplaceItem, mode, reqHeader string) 
 // 补前缀写回模板 headers,清条目多秘钥配置并清池。
 func downgradeItemToSingleKey(item *model.MarketplaceItem) error {
 	cfg := item.ParseAuthKeyConfig()
+	if cfg.QueryParamName != "" {
+		return downgradeItemToSingleQueryKey(item, cfg.QueryParamName)
+	}
 	keys, err := model.ListKeysByItem(item.ID)
 	if err != nil {
 		return err
@@ -382,6 +495,22 @@ func downgradeItemToSingleKey(item *model.MarketplaceItem) error {
 // 凭证值只存条目池(模板不再含该头)。
 func stripAuthHeaderConfig(svc *model.McpService) (string, error) {
 	cfg := svc.ParseAuthKeyConfig()
+	if cfg.QueryParamName != "" {
+		var config map[string]interface{}
+		if err := json.Unmarshal([]byte(svc.Config), &config); err != nil {
+			return "", err
+		}
+		raw, _ := config["url"].(string)
+		if hasQueryCredential(raw, cfg.QueryParamName) {
+			base, _, err := takeQueryCredential(raw, cfg.QueryParamName)
+			if err != nil {
+				return "", err
+			}
+			config["url"] = base
+		}
+		b, err := json.Marshal(config)
+		return string(b), err
+	}
 	if cfg.HeaderName == "" {
 		return "", fmt.Errorf("源服务多秘钥配置缺少注入头,无法克隆")
 	}
@@ -404,9 +533,10 @@ func stripAuthHeaderConfig(svc *model.McpService) (string, error) {
 func itemAuthConfigFromService(svc *model.McpService) string {
 	cfg := svc.ParseAuthKeyConfig()
 	b, _ := json.Marshal(model.ItemAuthKeyConfig{
-		KeyMode:    cfg.KeyMode,
-		HeaderName: cfg.HeaderName,
-		Bearer:     svc.AuthType == "bearer",
+		KeyMode:        cfg.KeyMode,
+		HeaderName:     cfg.HeaderName,
+		QueryParamName: cfg.QueryParamName,
+		Bearer:         svc.AuthType == "bearer",
 	})
 	return string(b)
 }

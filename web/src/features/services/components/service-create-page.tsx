@@ -14,6 +14,7 @@ import type { TransportType, AuthType, TestResult, PrepareStdioResult } from '@/
 import { useAuthStore } from '@/stores/auth-store'
 import { isAdminRole } from '@/lib/roles'
 import { maskSecret } from '../lib/mask-secret'
+import { queryValue, withQueryValue } from '@/lib/query-auth'
 
 type CommandChoice = 'npx' | 'uvx' | 'custom'
 type InstallStatus = 'idle' | 'ready' | 'failed'
@@ -78,6 +79,7 @@ const authOptions: { value: AuthType; labelKey: string }[] = [
   { value: 'api_key', labelKey: 'services.authApiKey' },
   { value: 'bearer', labelKey: 'services.authBearer' },
   { value: 'custom', labelKey: 'services.authCustom' },
+  { value: 'query_param', labelKey: 'services.authQueryParam' },
 ]
 
 export function ServiceCreatePage() {
@@ -119,6 +121,8 @@ export function ServiceCreatePage() {
     bearer_token: '',
     custom_header_key: '',
     custom_header_value: '',
+    query_param_name: '',
+    query_key: '',
   })
 
   const steps = [
@@ -132,7 +136,8 @@ export function ServiceCreatePage() {
     mutationFn: () => {
       const config = buildConfig()
       const authConfig = buildAuthConfig()
-      const multi = form.key_mode !== 'single' && form.auth_type !== 'none'
+      const multi = form.key_mode !== 'single' && form.auth_type !== 'none' &&
+        (form.transport_type === 'streamable-http' || form.transport_type === 'sse')
       return createService({
         name: form.name,
         display_name: form.display_name || undefined,
@@ -155,14 +160,16 @@ export function ServiceCreatePage() {
   const testMutation = useMutation({
     mutationFn: async () => {
       // 多秘钥:逐把换认证头测试(复用现有 test-connection 接口,不改后端)
-      if (form.key_mode !== 'single' && form.auth_type !== 'none' && form.auth_keys.length > 0) {
+      const queryURLKey = form.auth_type === 'query_param' ? queryValue(form.url, form.query_param_name) : ''
+      const testKeys = [...new Set([queryURLKey, ...form.auth_keys].filter(Boolean))]
+      if (form.key_mode !== 'single' && form.auth_type !== 'none' && multiKeySupported && testKeys.length > 0) {
         const results: KeyTestResult[] = []
-        for (let i = 0; i < form.auth_keys.length; i++) {
-          const secret = form.auth_keys[i] || ''
+        for (let i = 0; i < testKeys.length; i++) {
+          const secret = testKeys[i] || ''
           const config = buildConfig(secret)
           let r: { connected: boolean; error?: string; tools_count: number; latency_ms: number }
           try {
-            const testRes = await testConnection({ transport_type: form.transport_type, config })
+            const testRes = await testConnection({ transport_type: form.transport_type, config, query_param_name: form.auth_type === 'query_param' ? form.query_param_name : undefined })
             r = testRes.data as TestResult
           } catch (e) {
             const err = e as { response?: { data?: { message?: string } }; message?: string }
@@ -174,7 +181,7 @@ export function ServiceCreatePage() {
         return
       }
       const config = buildConfig()
-      const testRes = await testConnection({ transport_type: form.transport_type, config })
+      const testRes = await testConnection({ transport_type: form.transport_type, config, query_param_name: form.auth_type === 'query_param' ? form.query_param_name : undefined })
       setTestResult(testRes.data as TestResult)
     },
   })
@@ -245,6 +252,7 @@ export function ServiceCreatePage() {
   function multiKeyHeaderName(): string {
     if (form.auth_type === 'api_key') return 'X-API-Key'
     if (form.auth_type === 'bearer') return 'Authorization'
+    if (form.auth_type === 'query_param') return ''
     return form.custom_header_key.trim()
   }
 
@@ -274,7 +282,9 @@ export function ServiceCreatePage() {
         }
       case 'sse':
       case 'streamable-http':
-        return { url: form.url, headers }
+        return { url: form.auth_type === 'query_param' && withAuth
+          ? withQueryValue(form.url, form.query_param_name, multiKeyKey ?? form.query_key)
+          : form.url, headers }
       case 'websocket':
       case 'passive-ws':
         return { url: form.url }
@@ -284,6 +294,7 @@ export function ServiceCreatePage() {
   }
 
   function buildAuthConfig(): Record<string, unknown> {
+    if (form.auth_type === 'query_param') return { query_param_name: form.query_param_name.trim() }
     if (isMultiKey) {
       // 多秘钥:key_mode 由请求字段传,这里只带注入头名(custom 必填,其余后端也能兜底)
       const headerName = multiKeyHeaderName()
@@ -327,7 +338,8 @@ export function ServiceCreatePage() {
     }
     if (step === 2 && isMultiKey) {
       if (form.auth_type === 'custom' && !form.custom_header_key.trim()) return false
-      return form.auth_keys.length > 0
+      if (form.auth_type === 'query_param' && !form.query_param_name.trim()) return false
+      return form.auth_keys.length > 0 || (form.auth_type === 'query_param' && !!queryValue(form.url, form.query_param_name))
     }
     return true
   }
@@ -541,7 +553,7 @@ export function ServiceCreatePage() {
           <div className="space-y-2">
             <Label>{t('services.authMethod')}</Label>
             <div className="flex flex-wrap gap-2">
-              {authOptions.map((opt) => (
+              {authOptions.filter((opt) => opt.value !== 'query_param' || multiKeySupported).map((opt) => (
                 <button
                   key={opt.value}
                   type="button"
@@ -583,6 +595,14 @@ export function ServiceCreatePage() {
                 <Input placeholder="Value" value={form.custom_header_value} onChange={(e) => setForm({ ...form, custom_header_value: e.target.value })} />
               </div>
               <p className="text-xs text-muted-foreground">{t('services.authHeaderTip', { header: `{ "Key": "Value" }` })}</p>
+            </div>
+          )}
+          {form.auth_type === 'query_param' && (
+            <div className="space-y-2">
+              <Label>{t('services.keys.queryNameLabel')}</Label>
+              <Input placeholder="tavilyApiKey" value={form.query_param_name} onChange={(e) => setForm({ ...form, query_param_name: e.target.value })} />
+              <p className="text-xs text-muted-foreground">{t('services.keys.queryNameHint')}</p>
+              {!isMultiKey && <Input placeholder={t('services.keys.queryValuePlaceholder')} value={form.query_key} onChange={(e) => setForm({ ...form, query_key: e.target.value })} autoComplete="off" />}
             </div>
           )}
 

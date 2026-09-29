@@ -324,8 +324,59 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 			_ = json.Unmarshal([]byte(item.ConfigTemplate), &stored)
 		}
 		mergeMaskedCredentials(req.ConfigTemplate, stored)
+		if name := item.ParseAuthKeyConfig().QueryParamName; name != "" {
+			incomingURL, _ := req.ConfigTemplate["url"].(string)
+			storedURL, _ := stored["url"].(string)
+			req.ConfigTemplate["url"] = mergeMaskedQueryCredential(incomingURL, storedURL, name)
+			if item.IsMultiKey() && hasQueryCredential(req.ConfigTemplate["url"].(string), name) {
+				return fmt.Errorf("多秘钥服务 URL 不可包含认证参数 %s", name)
+			}
+		}
 		b, _ := json.Marshal(req.ConfigTemplate)
 		item.ConfigTemplate = encryptConfigTemplate(string(b)) // 平台凭证加密落库
+	}
+	if req.QueryParamName != nil {
+		if item.IsMultiKey() {
+			return fmt.Errorf("多秘钥模式下不可更换认证参数")
+		}
+		oldName := item.ParseAuthKeyConfig().QueryParamName
+		name := *req.QueryParamName
+		if name != "" && (item.TransportType != common.TransportStreamableHTTP && item.TransportType != common.TransportSSE) {
+			return fmt.Errorf("URL 参数认证仅支持 streamable-http / SSE 条目")
+		}
+		if name == "" {
+			item.AuthConfig = rewriteItemQueryAuthConfig(item.AuthConfig, "", "")
+			if oldName != "" {
+				cfg := plainItemConfig(item)
+				raw, _ := cfg["url"].(string)
+				cfg["url"] = dropQueryCredential(raw, oldName)
+				b, _ := json.Marshal(cfg)
+				item.ConfigTemplate = encryptConfigTemplate(string(b))
+			}
+		} else {
+			if err := validateQueryParamName(name); err != nil {
+				return err
+			}
+			if oldName != "" && oldName != name {
+				cfg := plainItemConfig(item)
+				raw, _ := cfg["url"].(string)
+				updated, err := renameQueryCredential(raw, oldName, name)
+				if err != nil {
+					return err
+				}
+				cfg["url"] = updated
+				b, _ := json.Marshal(cfg)
+				item.ConfigTemplate = encryptConfigTemplate(string(b))
+			}
+			item.AuthConfig = rewriteItemQueryAuthConfig(item.AuthConfig, "", name)
+		}
+	}
+	if name := item.ParseAuthKeyConfig().QueryParamName; name != "" && !item.IsMultiKey() {
+		cfg := plainItemConfig(item)
+		raw, _ := cfg["url"].(string)
+		if _, _, err := takeQueryCredential(raw, name); err != nil {
+			return err
+		}
 	}
 	if req.AuthInstructions != nil {
 		item.AuthInstructions = *req.AuthInstructions
@@ -374,7 +425,7 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 	}
 	// 独占进程切换(仅 stdio 条目):会话池键控方式改变(行键↔条目键),旧会话必须
 	// 踢掉按新模式重建,否则共享→独占后旧共享进程仍被全体复用、反向则旧行进程残留。
-	kickSessions := req.ConfigTemplate != nil
+	kickSessions := req.ConfigTemplate != nil || req.QueryParamName != nil
 	if req.IsolatedProcess != nil && item.TransportType == string(transport.TypeStdio) && item.IsolatedProcess != *req.IsolatedProcess {
 		item.IsolatedProcess = *req.IsolatedProcess
 		kickSessions = true
@@ -486,6 +537,10 @@ func (s *MarketplaceService) RefreshItemSnapshots(itemID int64) (*dto.Marketplac
 	}
 	if plain, dErr := common.Decrypt(item.ConfigTemplate); dErr == nil && plain != "" {
 		tmp.Config = plain
+	}
+	if item.ParseAuthKeyConfig().QueryParamName != "" {
+		tmp.AuthType = "query_param"
+		tmp.AuthConfig = item.AuthConfig
 	}
 	adapter := bridge.CreateAdapter(tmp)
 	if adapter == nil {
@@ -801,6 +856,8 @@ func (s *MarketplaceService) CloneFromService(adminID int64, req *dto.CloneMarke
 		cloneConfig = stripped
 		itemAuthConfig = itemAuthConfigFromService(svc)
 		carryKeyPool = true
+	} else if svc.AuthType == "query_param" {
+		itemAuthConfig = itemAuthConfigFromService(svc)
 	}
 
 	item := &model.MarketplaceItem{
@@ -815,20 +872,20 @@ func (s *MarketplaceService) CloneFromService(adminID int64, req *dto.CloneMarke
 		IsolatedProcess: req.IsolatedProcess && svc.TransportType == string(transport.TypeStdio),
 		ConfigTemplate:  encryptConfigTemplate(cloneConfig), // 克隆源凭证并加密;前端提示替换为平台凭证
 		// 条目级多秘钥配置段(仅多秘钥源克隆时非空;单秘钥源保持空=单秘钥模板)
-		AuthConfig:         itemAuthConfig,
-		AuthInstructions:   svc.AuthType,
+		AuthConfig:           itemAuthConfig,
+		AuthInstructions:     svc.AuthType,
 		ConfigTemplateSource: svc.AuthConfig,
-		RequiredEnv:   "[]",
-		ToolsSnapshot: svc.ToolsCache,
+		RequiredEnv:          "[]",
+		ToolsSnapshot:        svc.ToolsCache,
 		// 资源/提示快照一并拷贝(形态同 services.resources_cache/prompts_cache)
 		ResourcesSnapshot: svc.ResourcesCache,
 		PromptsSnapshot:   svc.PromptsCache,
 		// 上游握手信息从源服务拷贝(源服务已连接过即有值;否则待手动刷新补齐)
 		ServerInfo:      svc.ServerInfo,
 		ProtocolVersion: svc.ProtocolVersion,
-		BillingType:   billingType,
-		PricePerCall:  req.PricePerCall,
-		Status:        common.StatusEnabled,
+		BillingType:     billingType,
+		PricePerCall:    req.PricePerCall,
+		Status:          common.StatusEnabled,
 	}
 	if item.DisplayName == "" {
 		item.DisplayName = svc.DisplayName
@@ -905,7 +962,13 @@ func (s *MarketplaceService) GetItemByID(itemID int64) (*dto.MarketplaceDetail, 
 	_ = json.Unmarshal([]byte(plain), &cfg)
 	detail.ConfigTemplate = maskConfigCredentials(cfg)
 	// 条目级多秘钥状态(仅 admin 详情,公开浏览 toDetail 不填)
-	detail.KeyMode = item.ParseAuthKeyConfig().KeyMode
+	authCfg := item.ParseAuthKeyConfig()
+	detail.KeyMode = authCfg.KeyMode
+	detail.QueryParamName = authCfg.QueryParamName
+	if authCfg.QueryParamName != "" {
+		raw, _ := cfg["url"].(string)
+		detail.ConfigTemplate["url"] = maskQueryCredential(raw, authCfg.QueryParamName)
+	}
 	total, enabled := model.CountItemKeys(itemID)
 	detail.KeyCount, detail.KeyEnabled = int(total), int(enabled)
 	return detail, nil
@@ -957,18 +1020,18 @@ func (s *MarketplaceService) AddToMyServices(userID, itemID int64) (*dto.Install
 	}
 
 	svc := &model.McpService{
-		UserID:            userID,
-		Name:              name,
-		DisplayName:       item.DisplayName,
-		Description:       item.Description,
-		TransportType:     "marketplace", // 哨兵值:resolver 见此改用平台 session(真实 transport 在调用时从 item 注入)
-		Config:            "{}",          // 空:不复制上游配置/凭证(平台托管)
-		ToolsCache:        item.ToolsSnapshot,
-		ResourcesCache:    item.ResourcesSnapshot,
-		PromptsCache:      item.PromptsSnapshot,
+		UserID:         userID,
+		Name:           name,
+		DisplayName:    item.DisplayName,
+		Description:    item.Description,
+		TransportType:  "marketplace", // 哨兵值:resolver 见此改用平台 session(真实 transport 在调用时从 item 注入)
+		Config:         "{}",          // 空:不复制上游配置/凭证(平台托管)
+		ToolsCache:     item.ToolsSnapshot,
+		ResourcesCache: item.ResourcesSnapshot,
+		PromptsCache:   item.PromptsSnapshot,
 		// 上游握手信息一并复制,用户侧服务详情无需等网关首次调用即有真实版本
-		ServerInfo:      item.ServerInfo,
-		ProtocolVersion: item.ProtocolVersion,
+		ServerInfo:        item.ServerInfo,
+		ProtocolVersion:   item.ProtocolVersion,
 		Source:            "marketplace",
 		MarketplaceItemID: &item.ID,
 		IconURL:           item.IconURL,
@@ -1009,9 +1072,9 @@ func (s *MarketplaceService) CreateReview(userID int64, req *dto.CreateReviewReq
 	}
 
 	review := &model.MarketplaceReview{
-		UserID:   userID,
-		ItemID:   req.ItemID,
-		Rating:   req.Rating,
+		UserID:     userID,
+		ItemID:     req.ItemID,
+		Rating:     req.Rating,
 		ReviewText: req.ReviewText,
 	}
 	if err := review.Insert(); err != nil {

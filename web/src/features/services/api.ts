@@ -36,7 +36,7 @@ export async function testService(id: number) {
   return res.data
 }
 
-export async function testConnection(data: { transport_type: string; config: Record<string, unknown> }) {
+export async function testConnection(data: { transport_type: string; config: Record<string, unknown>; query_param_name?: string }) {
   const res = await api.post('/services/test-connection', data)
   return res.data
 }
@@ -123,7 +123,7 @@ export async function updateServiceKeys(id: number, data: UpdateServiceKeysReq) 
 }
 
 // 模式切换:单↔多、随机↔轮询
-export async function updateServiceKeyConfig(id: number, data: { key_mode: 'single' | 'random' | 'polling'; header_name?: string }) {
+export async function updateServiceKeyConfig(id: number, data: { key_mode: 'single' | 'random' | 'polling'; header_name?: string; query_param_name?: string }) {
   const res = await api.put(`/services/${id}/keys/config`, data)
   return res.data
 }

@@ -55,17 +55,17 @@ func (s *McpServiceService) List(userID int64, page, pageSize int, filters map[s
 		_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
 
 		items[i] = dto.ServiceListItem{
-			ID:            svc.ID,
-			Name:          svc.Name,
-			DisplayName:   svc.DisplayName,
-			Description:   svc.Description,
-			TransportType: svc.TransportType,
-			Source:        svc.Source,
-			KeyMode:       svc.ParseAuthKeyConfig().KeyMode,
-			HealthStatus:  svc.HealthStatus,
-			ToolsCount:    len(tools),
-			Status:        svc.Status,
-			CreatedAt:     svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			ID:                 svc.ID,
+			Name:               svc.Name,
+			DisplayName:        svc.DisplayName,
+			Description:        svc.Description,
+			TransportType:      svc.TransportType,
+			Source:             svc.Source,
+			KeyMode:            svc.ParseAuthKeyConfig().KeyMode,
+			HealthStatus:       svc.HealthStatus,
+			ToolsCount:         len(tools),
+			Status:             svc.Status,
+			CreatedAt:          svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
 			MarketplaceOffline: offline[svc.ID],
 		}
 	}
@@ -113,6 +113,17 @@ func (s *McpServiceService) Create(userID int64, req *dto.CreateServiceReq) (*dt
 		if err := s.applyCreateMultiKey(svc, req); err != nil {
 			return nil, err
 		}
+	} else if svc.AuthType == "query_param" {
+		if svc.TransportType != common.TransportStreamableHTTP && svc.TransportType != common.TransportSSE {
+			return nil, fmt.Errorf("URL 参数认证仅支持 streamable-http / SSE 服务")
+		}
+		name := svc.ParseAuthKeyConfig().QueryParamName
+		var config map[string]interface{}
+		_ = json.Unmarshal([]byte(svc.Config), &config)
+		raw, _ := config["url"].(string)
+		if _, _, err := takeQueryCredential(raw, name); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := svc.Insert(); err != nil {
@@ -138,6 +149,18 @@ func (s *McpServiceService) Create(userID int64, req *dto.CreateServiceReq) (*dt
 
 // TestConnection 测试连接但不创建服务，用于注册前的预验证
 func (s *McpServiceService) TestConnection(req *dto.TestConnectionReq) (*dto.TestResult, error) {
+	if req.QueryParamName != "" {
+		if err := validateQueryParamName(req.QueryParamName); err != nil {
+			return nil, err
+		}
+		if req.TransportType != common.TransportStreamableHTTP && req.TransportType != common.TransportSSE {
+			return nil, fmt.Errorf("URL 参数认证仅支持 streamable-http / SSE 服务")
+		}
+		raw, _ := req.Config["url"].(string)
+		if _, _, err := takeQueryCredential(raw, req.QueryParamName); err != nil {
+			return nil, err
+		}
+	}
 	configJSON, _ := json.Marshal(req.Config)
 
 	// 构造临时 McpService 用于创建 adapter
@@ -145,6 +168,10 @@ func (s *McpServiceService) TestConnection(req *dto.TestConnectionReq) (*dto.Tes
 		ID:            -1,
 		TransportType: req.TransportType,
 		Config:        string(configJSON),
+	}
+	if req.QueryParamName != "" {
+		svc.AuthType = "query_param"
+		svc.AuthConfig = rewriteQueryAuthKeyConfig("", "", req.QueryParamName)
 	}
 
 	adapter := bridge.CreateAdapter(svc)
@@ -228,6 +255,21 @@ func (s *McpServiceService) Update(userID, serviceID int64, req *dto.UpdateServi
 	if err != nil {
 		return err
 	}
+	if svc.IsMultiKey() {
+		if req.AuthType != nil && *req.AuthType != svc.AuthType {
+			return fmt.Errorf("多秘钥模式下不可更换认证类型")
+		}
+		if req.AuthConfig != nil {
+			return fmt.Errorf("多秘钥模式下不可直接更改认证配置")
+		}
+	}
+	oldQueryName := ""
+	if svc.AuthType == "query_param" {
+		if svc.TransportType != common.TransportStreamableHTTP && svc.TransportType != common.TransportSSE {
+			return fmt.Errorf("URL 参数认证仅支持 streamable-http / SSE 服务")
+		}
+		oldQueryName = svc.ParseAuthKeyConfig().QueryParamName
+	}
 	// 平台下架/删除的市场引用行不可手动启用(软删条目被默认作用域排除,e!=nil 同为
 	// 下架);条目重新上架或用户从市场重新添加后方可恢复。只按 ==StatusEnabled 判断:
 	// 前端禁用发的是 0 而非 2,勿用 ==2 反推。
@@ -251,6 +293,11 @@ func (s *McpServiceService) Update(userID, serviceID int64, req *dto.UpdateServi
 		stored := map[string]interface{}{}
 		_ = json.Unmarshal([]byte(svc.Config), &stored)
 		mergeMaskedCredentials(req.Config, stored)
+		if oldQueryName != "" {
+			incomingURL, _ := req.Config["url"].(string)
+			storedURL, _ := stored["url"].(string)
+			req.Config["url"] = mergeMaskedQueryCredential(incomingURL, storedURL, oldQueryName)
+		}
 		configJSON, _ := json.Marshal(req.Config)
 		svc.Config = string(configJSON)
 	}
@@ -260,6 +307,41 @@ func (s *McpServiceService) Update(userID, serviceID int64, req *dto.UpdateServi
 	if req.AuthConfig != nil {
 		authConfigJSON, _ := json.Marshal(req.AuthConfig)
 		svc.AuthConfig = string(authConfigJSON)
+	}
+	if oldQueryName != "" && svc.AuthType != "query_param" {
+		var config map[string]interface{}
+		_ = json.Unmarshal([]byte(svc.Config), &config)
+		if config != nil {
+			raw, _ := config["url"].(string)
+			config["url"] = dropQueryCredential(raw, oldQueryName)
+			b, _ := json.Marshal(config)
+			svc.Config = string(b)
+		}
+	}
+	if svc.AuthType == "query_param" {
+		name := svc.ParseAuthKeyConfig().QueryParamName
+		if err := validateQueryParamName(name); err != nil {
+			return err
+		}
+		var config map[string]interface{}
+		_ = json.Unmarshal([]byte(svc.Config), &config)
+		raw, _ := config["url"].(string)
+		if !svc.IsMultiKey() && oldQueryName != "" && oldQueryName != name {
+			raw, err = renameQueryCredential(raw, oldQueryName, name)
+			if err != nil {
+				return err
+			}
+			config["url"] = raw
+			b, _ := json.Marshal(config)
+			svc.Config = string(b)
+		}
+		if svc.IsMultiKey() {
+			if hasQueryCredential(raw, name) {
+				return fmt.Errorf("多秘钥服务 URL 不可包含认证参数 %s", name)
+			}
+		} else if _, _, err := takeQueryCredential(raw, name); err != nil {
+			return err
+		}
 	}
 	if req.Tags != nil {
 		svc.Tags = strings.Join(req.Tags, ",")
@@ -294,8 +376,9 @@ func (s *McpServiceService) Update(userID, serviceID int64, req *dto.UpdateServi
 	// tools_cache 并预热连接。AuthConfig 不喂给 adapter、DisplayName/Description/Tags 为展示字段，均无需重连;
 	// 但多秘钥的 AuthType(bearer 前缀)是选择器输入,变更时一并失效重连。
 	// 同请求里一并禁用的服务不重连——禁用即停,重连会把刚停的进程又拉起来。
-	if (req.Config != nil || req.AuthType != nil) && SessionPool != nil {
-		if req.AuthType != nil {
+	queryConfigChanged := oldQueryName != svc.ParseAuthKeyConfig().QueryParamName
+	if (req.Config != nil || req.AuthType != nil || queryConfigChanged) && SessionPool != nil {
+		if req.AuthType != nil || queryConfigChanged {
 			bridge.KeySelectors.Invalidate(serviceID)
 		}
 		SessionPool.Remove(serviceID)
@@ -436,6 +519,10 @@ func (s *McpServiceService) materializeMarketplace(svc *model.McpService) error 
 	}
 	if svc.TransportType == "" || svc.TransportType == "marketplace" {
 		svc.TransportType = item.TransportType
+	}
+	if item.ParseAuthKeyConfig().QueryParamName != "" {
+		svc.AuthType = "query_param"
+		svc.AuthConfig = item.AuthConfig
 	}
 	// 共享 stdio 条目:会话池按条目键控(全部安装用户复用一个平台子进程);
 	// 非 stdio/独占条目保持行键控。仅此处与网关 materializeMarketplaceConfig 设置。
@@ -1082,15 +1169,15 @@ func (s *McpServiceService) GetServicesOverview(userID int64, isAdmin bool) (*dt
 		_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
 
 		item := dto.ServicesOverviewItem{
-			ID:            svc.ID,
-			Name:          svc.Name,
-			DisplayName:   svc.DisplayName,
-			TransportType: svc.TransportType,
-			Source:        svc.Source,
-			HealthStatus:  svc.HealthStatus,
-			ToolsCount:    len(tools),
-			Status:        svc.Status,
-			CreatedAt:     svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			ID:                 svc.ID,
+			Name:               svc.Name,
+			DisplayName:        svc.DisplayName,
+			TransportType:      svc.TransportType,
+			Source:             svc.Source,
+			HealthStatus:       svc.HealthStatus,
+			ToolsCount:         len(tools),
+			Status:             svc.Status,
+			CreatedAt:          svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
 			MarketplaceOffline: offline[svc.ID],
 		}
 
@@ -1337,26 +1424,31 @@ func (s *McpServiceService) toDetail(svc *model.McpService) *dto.ServiceDetail {
 	}
 
 	d := &dto.ServiceDetail{
-		ID:              svc.ID,
-		Name:            svc.Name,
-		DisplayName:     svc.DisplayName,
-		Description:     svc.Description,
-		TransportType:   svc.TransportType,
-		Source:          svc.Source,
+		ID:            svc.ID,
+		Name:          svc.Name,
+		DisplayName:   svc.DisplayName,
+		Description:   svc.Description,
+		TransportType: svc.TransportType,
+		Source:        svc.Source,
 		// 凭证掩码(与市场管理详情同策):headers/env 的值只出首尾掩码,明文不出服务端;
 		// 编辑保存时未改动的掩码值由 Update 经 mergeMaskedCredentials 回填还原。
-		Config:          maskConfigCredentials(config),
-		AuthType:        svc.AuthType,
-		HealthStatus:    svc.HealthStatus,
-		LastHealthCheck: lastHealthCheck,
-		ToolsCache:      toolsCache,
-		ToolsUpdatedAt:  toolsUpdatedAt,
-		ServerInfo:      serverInfo,
-		ProtocolVersion: svc.ProtocolVersion,
-		Tags:            tags,
-		Status:          svc.Status,
-		CreatedAt:       svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		Config:           maskConfigCredentials(config),
+		AuthType:         svc.AuthType,
+		QueryParamName:   svc.ParseAuthKeyConfig().QueryParamName,
+		HealthStatus:     svc.HealthStatus,
+		LastHealthCheck:  lastHealthCheck,
+		ToolsCache:       toolsCache,
+		ToolsUpdatedAt:   toolsUpdatedAt,
+		ServerInfo:       serverInfo,
+		ProtocolVersion:  svc.ProtocolVersion,
+		Tags:             tags,
+		Status:           svc.Status,
+		CreatedAt:        svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		PassiveConnected: svc.PassiveConnected,
+	}
+	if svc.AuthType == "query_param" {
+		raw, _ := config["url"].(string)
+		d.Config["url"] = maskQueryCredential(raw, svc.ParseAuthKeyConfig().QueryParamName)
 	}
 	// 多秘钥:模式 + 池内统计(徽章/详情页秘钥管理卡片用)
 	if cfg := svc.ParseAuthKeyConfig(); cfg.KeyMode != "" {
