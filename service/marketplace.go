@@ -475,11 +475,14 @@ func (s *MarketplaceService) RefreshItemSnapshots(itemID int64) (*dto.Marketplac
 	if item.Category != "instant" {
 		return nil, ErrOnlyInstantRefreshable
 	}
-	// 物化平台上游连接配置(与 materializeMarketplace 一致:解密 config_template、还原真实 transport)
+	// 物化平台上游连接配置(与 materializeMarketplace 一致:解密 config_template、还原真实 transport)。
+	// 临时行也必须带市场归属,CreateAdapter 才会从条目级秘钥池注入认证头。
 	tmp := &model.McpService{
-		Name:          item.Name,
-		TransportType: item.TransportType,
-		Config:        item.ConfigTemplate,
+		Name:              item.Name,
+		TransportType:     item.TransportType,
+		Config:            item.ConfigTemplate,
+		Source:            "marketplace",
+		MarketplaceItemID: &item.ID,
 	}
 	if plain, dErr := common.Decrypt(item.ConfigTemplate); dErr == nil && plain != "" {
 		tmp.Config = plain
