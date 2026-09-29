@@ -114,11 +114,17 @@ func (s *SystemOneService) Update(userID, id int64, req *dto.SystemOneConfigReq)
 func systemOneTools() string {
 	tool := []map[string]interface{}{{
 		"name":        "evaluate",
-		"description": "Evaluate observed state using a System One decision model (Jev, CLM or Laya). Returns typed answers and actual model probabilities, not prose. Ask narrow questions, provide evidence rather than your conclusion. noul is yes/no probability; choice selects among named options; score rates ordered levels. Use items for independent records (up to 500); min_confidence can abstain for noul or choice. Include a no-match choice when appropriate. Confidence measures probability concentration, not guaranteed correctness.",
+		"description": "Evaluate observed state using a System One decision model (Jev, CLM or Laya). You MUST provide questions and at least one of: non-null state or a non-empty items object. Both may be provided: state then supplies shared context for each item. Returns typed answers and actual model probabilities, not prose. Ask narrow questions, provide evidence rather than your conclusion. noul is yes/no probability; choice selects among named options; score rates ordered levels. Use items for independent records (up to 500); min_confidence can abstain for noul or choice. Include a no-match choice when appropriate. Confidence measures probability concentration, not guaranteed correctness.",
 		"inputSchema": map[string]interface{}{
 			"type": "object", "required": []string{"questions"},
+			"anyOf": []map[string]interface{}{
+				{"required": []string{"state"}, "properties": map[string]interface{}{
+					"state": map[string]interface{}{"not": map[string]interface{}{"type": "null"}},
+				}},
+				{"required": []string{"items"}},
+			},
 			"properties": map[string]interface{}{
-				"state": map[string]interface{}{"description": "Observed evidence and relevant background as text or structured JSON. Required unless items is set."},
+				"state": map[string]interface{}{"description": "Observed evidence and relevant background as text or structured JSON. You MUST provide non-null state unless a non-empty items object is supplied. When both are provided, state is shared context for each item."},
 				"questions": map[string]interface{}{"type": "object", "description": "Question ID to typed judgment; IDs are not sent to the model, so instructions must be self-contained.",
 					"additionalProperties": map[string]interface{}{"type": "object", "required": []string{"type", "instructions"}, "properties": map[string]interface{}{
 						"type":           map[string]interface{}{"type": "string", "enum": []string{"noul", "choice", "score"}},
@@ -126,7 +132,7 @@ func systemOneTools() string {
 						"criteria":       map[string]interface{}{"description": "noul: optional true/false map; choice: option-to-description map; score: ordered array of levels."},
 						"min_confidence": map[string]interface{}{"type": "number", "minimum": 0, "maximum": 1, "description": "For noul/choice, mark low-confidence answers uncertain; choice becomes __uncertain__."},
 					}}},
-				"items":              map[string]interface{}{"type": "object", "description": "Optional item ID to record map; each item is evaluated independently, up to 500."},
+				"items":              map[string]interface{}{"type": "object", "minProperties": 1, "maxProperties": 500, "description": "Item ID to record map; each item is evaluated independently. You MUST provide items unless non-null state is supplied. If provided, items must contain 1 to 500 entries, even when state is also provided. State supplies shared context when both are provided."},
 				"model":              map[string]interface{}{"type": "string", "description": "Optional per-call model override."},
 				"include_item_usage": map[string]interface{}{"type": "boolean", "description": "Keep model and usage in each item response."},
 			},
