@@ -1,20 +1,23 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { createService, testConnection, prepareStdio } from '../api'
+import { createService, getService, testConnection, prepareStdio } from '../api'
+import { PassiveEndpointCard } from './passive-endpoint-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { SectionCard } from '@/components/section-card'
+import { ToolItem } from '@/components/tool-params'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { ArrowLeft, ArrowRight, Check, Loader2, Zap, RefreshCw } from 'lucide-react'
-import type { TransportType, AuthType, TestResult, PrepareStdioResult } from '@/types'
+import type { TransportType, AuthType, TestResult, PrepareStdioResult, ServiceDetail } from '@/types'
 import { useAuthStore } from '@/stores/auth-store'
 import { isAdminRole } from '@/lib/roles'
 import { maskSecret } from '../lib/mask-secret'
-import { queryValue, withQueryValue } from '@/lib/query-auth'
+import { queryValue, withQueryValue, withoutQueryValue } from '@/lib/query-auth'
 
 type CommandChoice = 'npx' | 'uvx' | 'custom'
 type InstallStatus = 'idle' | 'ready' | 'failed'
@@ -94,6 +97,7 @@ export function ServiceCreatePage() {
   const [step, setStep] = useState(0)
   const [testResult, setTestResult] = useState<TestResult | null>(null)
   const [keyTestResults, setKeyTestResults] = useState<KeyTestResult[]>([])
+  const [createdService, setCreatedService] = useState<ServiceDetail | null>(null)
   const [form, setForm] = useState({
     name: '',
     display_name: '',
@@ -125,7 +129,11 @@ export function ServiceCreatePage() {
     query_key: '',
   })
 
-  const steps = [
+  const isPassive = form.transport_type === 'passive-ws'
+  const steps = isPassive ? [
+    t('services.create.stepNameBasic'),
+    t('services.create.stepNameTransport'),
+  ] : [
     t('services.create.stepNameBasic'),
     t('services.create.stepNameTransport'),
     t('services.create.stepNameAuth'),
@@ -144,18 +152,27 @@ export function ServiceCreatePage() {
         description: form.description || undefined,
         transport_type: form.transport_type,
         config,
-        auth_type: form.auth_type === 'none' ? undefined : form.auth_type,
-        auth_config: Object.keys(authConfig).length > 0 ? authConfig : undefined,
+        auth_type: isPassive ? 'none' : form.auth_type === 'none' ? undefined : form.auth_type,
+        auth_config: !isPassive && Object.keys(authConfig).length > 0 ? authConfig : undefined,
         key_mode: multi && form.key_mode !== 'single' ? form.key_mode : undefined,
         auth_keys: multi ? form.auth_keys : undefined,
         tags: form.tags.length > 0 ? form.tags : undefined,
       })
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
       toast.success(t('services.serviceCreated'))
-      navigate({ to: '/services' })
+      if (isPassive) setCreatedService(res.data as ServiceDetail)
+      else navigate({ to: '/services' })
     },
   })
+
+  const { data: passiveData } = useQuery({
+    queryKey: ['service', String(createdService?.id)],
+    queryFn: () => getService(createdService!.id),
+    enabled: !!createdService,
+    refetchInterval: 5000,
+  })
+  const passiveService = (passiveData?.data as ServiceDetail | undefined) || createdService
 
   const testMutation = useMutation({
     mutationFn: async () => {
@@ -244,6 +261,23 @@ export function ServiceCreatePage() {
     }
   }
 
+  function onTransportChange(transport: TransportType) {
+    const supportsPool = transport === 'streamable-http' || transport === 'sse'
+    const clearAuth = transport === 'passive-ws' || (!supportsPool && form.auth_type === 'query_param')
+    setForm({
+      ...form,
+      transport_type: transport,
+      url: clearAuth ? withoutQueryValue(form.url, form.query_param_name) : form.url,
+      auth_type: clearAuth ? 'none' : form.auth_type,
+      key_mode: supportsPool ? form.key_mode : 'single',
+      auth_keys: supportsPool ? form.auth_keys : [],
+      auth_keys_input: supportsPool ? form.auth_keys_input : '',
+      ...(clearAuth ? { api_key: '', bearer_token: '', custom_header_key: '', custom_header_value: '', query_param_name: '', query_key: '' } : {}),
+    })
+    setTestResult(null)
+    setKeyTestResults([])
+  }
+
   // 多秘钥仅这两类 HTTP 传输支持(stdio 的 env 无法按请求轮换)
   const multiKeySupported = form.transport_type === 'streamable-http' || form.transport_type === 'sse'
   const isMultiKey = form.key_mode !== 'single' && form.auth_type !== 'none' && multiKeySupported
@@ -286,14 +320,16 @@ export function ServiceCreatePage() {
           ? withQueryValue(form.url, form.query_param_name, multiKeyKey ?? form.query_key)
           : form.url, headers }
       case 'websocket':
+        return { url: form.url, headers }
       case 'passive-ws':
-        return { url: form.url }
+        return {}
       default:
         return {}
     }
   }
 
   function buildAuthConfig(): Record<string, unknown> {
+    if (isPassive) return {}
     if (form.auth_type === 'query_param') return { query_param_name: form.query_param_name.trim() }
     if (isMultiKey) {
       // 多秘钥:key_mode 由请求字段传,这里只带注入头名(custom 必填,其余后端也能兜底)
@@ -333,6 +369,7 @@ export function ServiceCreatePage() {
   const canNext = () => {
     if (step === 0) return form.name.trim().length > 0 && SERVICE_NAME_RE.test(form.name)
     if (step === 1) {
+      if (isPassive) return true
       if (form.transport_type === 'stdio') return readyForCurrentInputs
       return form.url.trim().length > 0
     }
@@ -352,12 +389,12 @@ export function ServiceCreatePage() {
         </Button>
         <div>
           <h1 className="text-xl font-semibold">{t('services.registerNew')}</h1>
-          <p className="text-sm text-muted-foreground">{t('services.create.step', { current: step + 1, total: steps.length })} — {steps[step]}</p>
+          {!createdService && <p className="text-sm text-muted-foreground">{t('services.create.step', { current: step + 1, total: steps.length })} — {steps[step]}</p>}
         </div>
       </div>
 
       {/* Step indicators */}
-      <div className="flex gap-2">
+      {!createdService && <div className="flex gap-2">
         {steps.map((_, i) => (
           <div
             key={i}
@@ -366,10 +403,29 @@ export function ServiceCreatePage() {
             }`}
           />
         ))}
-      </div>
+      </div>}
+
+      {passiveService && (
+        <>
+          <PassiveEndpointCard service={passiveService} />
+          <SectionCard title={t('services.toolsList', { count: passiveService.tools_cache?.length || 0 })}>
+            {passiveService.tools_cache?.length ? (
+              <div className="space-y-2">
+                {passiveService.tools_cache.map((tool) => (
+                  <ToolItem key={tool.name} name={tool.name} description={tool.description} schema={tool.inputSchema} />
+                ))}
+              </div>
+            ) : <p className="py-4 text-center text-sm text-muted-foreground">{t('services.passive.toolsWaiting')}</p>}
+          </SectionCard>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => navigate({ to: '/services' })}>{t('services.passive.connectLater')}</Button>
+            <Button onClick={() => navigate({ to: '/services/$id', params: { id: String(passiveService.id) } })}>{t('services.detail')}</Button>
+          </div>
+        </>
+      )}
 
       {/* Step 0: Basic info */}
-      {step === 0 && (
+      {!createdService && step === 0 && (
         <div className="space-y-4 rounded-xl border bg-card p-6">
           <div className="space-y-2">
             <Label htmlFor="name">{t('services.create.serviceIdentifierRequired')}</Label>
@@ -392,7 +448,7 @@ export function ServiceCreatePage() {
       )}
 
       {/* Step 1: Transport config */}
-      {step === 1 && (
+      {!createdService && step === 1 && (
         <div className="space-y-4 rounded-xl border bg-card p-6">
           <div className="space-y-2">
             <Label>{t('services.transportType')}</Label>
@@ -401,7 +457,8 @@ export function ServiceCreatePage() {
                 <button
                   key={opt.value}
                   type="button"
-                  onClick={() => setForm({ ...form, transport_type: opt.value })}
+                  disabled={createMutation.isPending}
+                  onClick={() => onTransportChange(opt.value)}
                   className={`rounded-lg border p-3 text-left transition-all ${
                     form.transport_type === opt.value
                       ? 'border-primary bg-primary/5 ring-1 ring-primary'
@@ -536,11 +593,13 @@ export function ServiceCreatePage() {
                 )}
               </div>
             </>
+          ) : isPassive ? (
+            <p className="text-sm text-muted-foreground">{t('services.passive.createHint')}</p>
           ) : (
             <>
               <div className="space-y-2">
                 <Label htmlFor="url">{t('services.serviceUrlRequired')}</Label>
-                <Input id="url" placeholder="https://example.com/mcp" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
+                <Input id="url" placeholder={form.transport_type === 'websocket' ? 'wss://example.com/mcp' : 'https://example.com/mcp'} value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
               </div>
             </>
           )}
@@ -548,7 +607,7 @@ export function ServiceCreatePage() {
       )}
 
       {/* Step 2: Auth config */}
-      {step === 2 && (
+      {!createdService && !isPassive && step === 2 && (
         <div className="space-y-4 rounded-xl border bg-card p-6">
           <div className="space-y-2">
             <Label>{t('services.authMethod')}</Label>
@@ -687,7 +746,7 @@ export function ServiceCreatePage() {
       )}
 
       {/* Step 3: Test & confirm */}
-      {step === 3 && (
+      {!createdService && !isPassive && step === 3 && (
         <div className="space-y-4 rounded-xl border bg-card p-6">
           <p className="text-sm text-muted-foreground">
             {form.transport_type === 'stdio' && readyForCurrentInputs
@@ -764,8 +823,8 @@ export function ServiceCreatePage() {
       )}
 
       {/* Navigation */}
-      <div className="flex justify-between">
-        <Button variant="outline" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}>
+      {!createdService && <div className="flex justify-between">
+        <Button variant="outline" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0 || createMutation.isPending}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           {t('services.create.prevStep')}
         </Button>
@@ -775,7 +834,13 @@ export function ServiceCreatePage() {
             <ArrowRight className="h-4 w-4 ml-2" />
           </Button>
         )}
-      </div>
+        {isPassive && step === 1 && (
+          <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending} className="gap-2">
+            {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            {t('services.passive.generateEndpoint')}
+          </Button>
+        )}
+      </div>}
     </div>
   )
 }

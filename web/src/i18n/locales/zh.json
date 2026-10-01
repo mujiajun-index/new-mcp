@@ -521,14 +521,27 @@
       "sse": "SSE",
       "streamable-http": "Streamable HTTP",
       "websocket": "WebSocket",
-      "passive-ws": "Passive WS"
+      "passive-ws": "被动 WebSocket 接入"
     },
     "transportDescs": {
       "streamable-http": "MCP 推荐的 HTTP 传输方式",
       "sse": "Server-Sent Events，适合远程 HTTP 服务",
       "stdio": "本地命令行启动，适合自建部署",
       "websocket": "全双工通信，适合实时场景",
-      "passive-ws": "被动 WebSocket 接入"
+      "passive-ws": "生成接入点，由本地 MCP 服务主动连接平台"
+    },
+    "passive": {
+      "endpoint": "接入点地址",
+      "endpointHint": "将本地 MCP 服务连接至此地址，连接成功后工具会自动同步。",
+      "createHint": "生成接入点后，将本地 MCP 服务连接至该地址即可注册工具，无需填写上游 URL 或认证配置。",
+      "generateEndpoint": "生成接入点",
+      "connected": "已连接",
+      "waiting": "等待服务接入",
+      "toolsWaiting": "等待本地 MCP 服务接入，工具将在连接成功后自动显示",
+      "connectLater": "稍后接入",
+      "resetEndpoint": "重置接入地址",
+      "resetConfirm": "确定重置接入地址？旧地址将立即失效，当前连接会断开，需要使用新地址重新接入。",
+      "resetSuccess": "接入地址已重置"
     },
     "healthStatus": "健康状态",
     "protocolVersion": "协议版本",

@@ -28,6 +28,10 @@ var ErrExplicitPricingRequired = errors.New("非自用模式下,市场上架/启
 // 平台托管服务运行。与定价/自用模式无关的上架硬约束(D16/§11)。
 var ErrVirtualServiceNotListable = errors.New("虚拟服务(视觉/摄像头等)仅支持自有配置免费使用,不可上架到服务市场")
 
+// Passive endpoints belong to one service row; cloning their empty outbound
+// configuration cannot create an independent marketplace upstream connection.
+var ErrPassiveServiceNotListable = errors.New("被动 WebSocket 接入点仅绑定当前服务，不支持克隆或上架到服务市场")
+
 // ErrServiceNotOwned 克隆上架的源服务不属于当前管理员(§11):管理员只能上架自己账户下的自有服务,
 // 不得克隆/上架其他用户的服务。
 var ErrServiceNotOwned = errors.New("无权克隆该服务:仅可克隆自己账户下的自有服务")
@@ -265,6 +269,9 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 	item, err := model.GetMarketplaceItemByID(itemID)
 	if err != nil {
 		return err
+	}
+	if req.TransportType != nil && *req.TransportType == common.TransportPassiveWS {
+		return ErrPassiveServiceNotListable
 	}
 	// 校验(仅对传入字段,§11/§5.5)
 	if req.PricePerCall != nil {
@@ -826,6 +833,9 @@ func (s *MarketplaceService) CloneFromService(adminID int64, req *dto.CloneMarke
 	// 克隆后无法作为平台托管服务运行。
 	if svc.TransportType == "virtual" {
 		return nil, ErrVirtualServiceNotListable
+	}
+	if svc.TransportType == common.TransportPassiveWS {
+		return nil, ErrPassiveServiceNotListable
 	}
 	if err := validatePrice(req.PricePerCall); err != nil {
 		return nil, err

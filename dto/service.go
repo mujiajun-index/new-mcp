@@ -67,7 +67,7 @@ type ServiceDetail struct {
 	Status           int                    `json:"status"`
 	CreatedAt        string                 `json:"created_at"`
 	PassiveURL       string                 `json:"passive_url,omitempty"`
-	PassiveConnected bool                   `json:"passive_connected,omitempty"`
+	PassiveConnected bool                   `json:"passive_connected"`
 	// 市场引用服务(source=marketplace)的条目 ID,前端跳转市场详情页用;其余来源不返回
 	MarketplaceItemID *int64 `json:"marketplace_item_id,omitempty"`
 	// 条目已下架/删除(读时判定,不落库):前端显示已下架徽章并拦截启用

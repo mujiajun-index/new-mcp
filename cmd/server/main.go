@@ -38,6 +38,7 @@ func main() {
 	engine.Use(middleware.CORS())
 
 	router.SetRouter(engine)
+	defer router.StopGateway()
 
 	// Start cloud connections (XiaoZhi, custom WSS)
 	router.StartCloudConnections()
@@ -72,6 +73,7 @@ func main() {
 	}
 
 	router.StopCloudConnections()
-	model.CloseDB()
+	router.StopBackgroundJobs()
+	router.StopGateway()
 	log.Println("Server exited")
 }

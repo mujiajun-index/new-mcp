@@ -60,6 +60,9 @@ func InitGateway() {
 	service.SessionPool = SessionPool
 	service.VirtualRegistry = VirtualRegistry
 	service.CameraStreamMgr = CameraStream
+	if err := service.InitializePassiveServices(); err != nil {
+		log.Fatalf("[passive-ws] initialize services: %v", err)
+	}
 
 	initUploadStorage()
 }
@@ -192,6 +195,13 @@ func StartCloudConnections() {
 func StopCloudConnections() {
 	if CloudManager != nil {
 		CloudManager.StopAll()
+	}
+}
+
+// StopGateway closes local and remote service sessions before the database.
+func StopGateway() {
+	if SessionPool != nil {
+		SessionPool.CloseAll()
 	}
 }
 

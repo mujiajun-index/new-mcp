@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/internal/mcp/installer"
 	"github.com/mujkjk/newmcp/internal/mcp/transport"
 	"github.com/mujkjk/newmcp/model"
@@ -25,6 +26,8 @@ type McpSession struct {
 	MarketplaceItemID *int64
 	Adapter           transport.TransportAdapter
 	Tools             []transport.Tool
+	toolsMu           sync.RWMutex
+	refreshMu         sync.Mutex
 	LastUsed          time.Time
 	LastRefresh       time.Time
 	Health            string
@@ -36,6 +39,21 @@ type McpSession struct {
 // ErrServiceBusy 共享市场 stdio 会话并发达到上限时返回。调用方应转成
 // "负载较高,请稍后重试"的友好响应(errors.Is 判定)。
 var ErrServiceBusy = errors.New("当前服务负载较高，请稍后重试")
+
+var ErrPassiveNotConnected = errors.New("等待本地 MCP 服务接入")
+var ErrSessionPoolClosed = errors.New("MCP session pool is closed")
+
+type toolRefresher interface {
+	RefreshTools(context.Context) error
+}
+
+type toolsChangeObserver interface {
+	SetToolsChangedHandler(func())
+}
+
+type sessionDoneObserver interface {
+	Done() <-chan struct{}
+}
 
 // keyedMutex 按 sessionKey 键控的建连互斥锁,引用计数归零后从池中摘除。
 type keyedMutex struct {
@@ -51,6 +69,7 @@ type SessionPool struct {
 	// 排队同键请求,不再持整池写锁卡住其他服务的会话查找与建连。
 	connMu       sync.Mutex
 	connectLocks map[sessionKey]*keyedMutex
+	closed       bool
 }
 
 // sessionKey 会话池键:默认按服务行键控(自有服务/独占市场引用一行一会话);
@@ -81,6 +100,15 @@ func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (
 	key := sessionKeyFor(svc)
 	if session := p.connectedSession(key); session != nil {
 		return session, nil
+	}
+	p.mu.RLock()
+	closed := p.closed
+	p.mu.RUnlock()
+	if closed {
+		return nil, ErrSessionPoolClosed
+	}
+	if svc.TransportType == common.TransportPassiveWS {
+		return nil, ErrPassiveNotConnected
 	}
 
 	// 同键建连互斥:拿到 key 锁后 double check,仍无会话才真正建连。
@@ -117,35 +145,164 @@ func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (
 		}
 	}
 
-	session := &McpSession{
-		key:               key,
+	session := newSession(svc, adapter)
+	if err := p.publishSessionLocked(session); err != nil {
+		_ = adapter.Close()
+		return nil, err
+	}
+	return session, nil
+}
+
+func newSession(svc *model.McpService, adapter transport.TransportAdapter) *McpSession {
+	return &McpSession{
+		key:               sessionKeyFor(svc),
 		ServiceID:         svc.ID,
 		ServiceName:       svc.Name,
 		UserID:            svc.UserID,
 		Source:            svc.Source,
 		MarketplaceItemID: svc.MarketplaceItemID,
 		Adapter:           adapter,
-		Tools:             adapter.GetTools(),
+		Tools:             cloneTools(adapter.GetTools()),
 		LastUsed:          time.Now(),
 		LastRefresh:       time.Now(),
 		Health:            "healthy",
 	}
+}
 
-	// 池锁只护 map 写入(建连期间不再持有)。建连耗时窗口内若发生条目配置
-	// 变更踢会话(RemoveByMarketplaceItem),本写入无法感知,极小概率留下旧
-	// 配置会话——由空闲回收兜底,下次空闲释放后按新配置重建。
+// WithServiceLock serializes service credentials/status mutations with passive
+// attachment and cache publication. Remove does not take this lock itself.
+func (p *SessionPool) WithServiceLock(serviceID int64, fn func() error) error {
+	return p.withSessionLock(sessionKey{serviceID: serviceID}, fn)
+}
+
+func (p *SessionPool) withSessionLock(key sessionKey, fn func() error) error {
+	km := p.lockConnect(key)
+	defer p.unlockConnect(key, km)
+	return fn()
+}
+
+// AttachPassiveLocked publishes an already initialized inbound MCP server. The
+// caller must hold WithServiceLock and revalidate the current token/status in
+// that lock immediately before calling this method.
+func (p *SessionPool) AttachPassiveLocked(svc *model.McpService, adapter transport.TransportAdapter) (*McpSession, error) {
+	if svc.TransportType != common.TransportPassiveWS || svc.Status != common.StatusEnabled {
+		return nil, errors.New("被动 MCP 服务不存在或已禁用")
+	}
+	if adapter == nil || adapter.GetType() != transport.TypePassiveWS || !adapter.IsConnected() {
+		return nil, ErrPassiveNotConnected
+	}
+	session := newSession(svc, adapter)
+	if err := p.publishSessionLocked(session); err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
+// publishSessionLocked requires the session's connection lock. Adapter.Close
+// always runs outside the map lock; observers may themselves inspect the pool.
+func (p *SessionPool) publishSessionLocked(session *McpSession) error {
+	passive := session.Adapter.GetType() == transport.TypePassiveWS
+	var updates map[string]interface{}
+	if passive {
+		var err error
+		updates, err = sessionRowUpdates(session, session.ToolsSnapshot())
+		if err != nil {
+			return err
+		}
+	}
 	p.mu.Lock()
-	p.sessions[key] = session
+	if p.closed {
+		p.mu.Unlock()
+		return ErrSessionPoolClosed
+	}
+	if passive {
+		if !session.Adapter.IsConnected() {
+			p.mu.Unlock()
+			return ErrPassiveNotConnected
+		}
+		// The old session stays current until the replacement's catalog is
+		// durable. The map lock also excludes shutdown while committing it.
+		if err := persistSessionUpdates(session, updates); err != nil {
+			p.mu.Unlock()
+			return err
+		}
+	}
+	old := p.sessions[session.key]
+	p.sessions[session.key] = session
 	p.mu.Unlock()
+	if old != nil && old != session {
+		closeSession(old)
+	}
 
 	// 共享条目预热用的是内存行(ID=0,不落库):跳过 DB 回写与缓存预热,
 	// 引用行的 tools/握手信息由真实调用路径或刷新补齐。
-	if svc.ID != 0 {
-		updateSessionRow(session, adapter)
+	if session.ServiceID != 0 {
+		if !passive {
+			if err := p.updateSessionRowLocked(session); err != nil {
+				log.Printf("[mcp] service %d catalog persistence failed: %v", session.ServiceID, err)
+			}
+		}
 		go p.refreshItemCachesWhenLeased(session)
 	}
+	p.observeSession(session)
+	return nil
+}
 
-	return session, nil
+func cloneTools(tools []transport.Tool) []transport.Tool {
+	out := make([]transport.Tool, len(tools))
+	copy(out, tools)
+	for i := range out {
+		out[i].InputSchema = append(json.RawMessage(nil), out[i].InputSchema...)
+	}
+	return out
+}
+
+// ToolsSnapshot returns a detached copy safe for concurrent list-change events.
+func (s *McpSession) ToolsSnapshot() []transport.Tool {
+	s.toolsMu.RLock()
+	defer s.toolsMu.RUnlock()
+	return cloneTools(s.Tools)
+}
+
+func (s *McpSession) setTools(tools []transport.Tool) {
+	s.toolsMu.Lock()
+	s.Tools = cloneTools(tools)
+	s.toolsMu.Unlock()
+}
+
+func (p *SessionPool) observeSession(session *McpSession) {
+	if observer, ok := session.Adapter.(toolsChangeObserver); ok {
+		observer.SetToolsChangedHandler(func() {
+			// The SDK has already refreshed its snapshot. Never block its handler
+			// on the service lock: a credential mutation may be closing the SDK.
+			go func() {
+				if err := p.withSessionLock(session.key, func() error { return p.syncToolsLocked(session) }); err != nil {
+					log.Printf("[mcp] service %d tools cache refresh failed: %v", session.ServiceID, err)
+				}
+			}()
+		})
+	}
+	if observer, ok := session.Adapter.(sessionDoneObserver); ok {
+		go func() {
+			<-observer.Done()
+			_ = p.withSessionLock(session.key, func() error {
+				p.removeIfCurrent(session)
+				return nil
+			})
+		}()
+	}
+}
+
+func (p *SessionPool) removeIfCurrent(session *McpSession) {
+	p.mu.Lock()
+	if p.sessions[session.key] != session {
+		p.mu.Unlock()
+		return
+	}
+	delete(p.sessions, session.key)
+	p.markPassiveOfflineLocked(session)
+	p.mu.Unlock()
+	closeSession(session)
 }
 
 // connectedSession 返回键控会话(须已连接),命中即刷新使用时间;无可用会话返回 nil。
@@ -327,15 +484,31 @@ func (p *SessionPool) ReleaseIdlePlatformStdio(timeout time.Duration) int {
 	return len(victims)
 }
 
-// updateSessionRow 连接成功后把 tools 缓存 + 上游握手信息回写服务行。
-func updateSessionRow(session *McpSession, adapter transport.TransportAdapter) {
+// updateSessionRowLocked requires the session's connection lock and only writes
+// while the exact session is still current. Replaced sockets cannot overwrite
+// their successor's tools or connection state.
+func (p *SessionPool) updateSessionRowLocked(session *McpSession) error {
+	updates, err := sessionRowUpdates(session, session.ToolsSnapshot())
+	if err != nil {
+		return err
+	}
+	return p.writeSessionUpdatesLocked(session, updates)
+}
+
+func sessionRowUpdates(session *McpSession, tools []transport.Tool) (map[string]interface{}, error) {
+	adapter := session.Adapter
 	now := time.Now()
+	toolsData, err := json.Marshal(tools)
+	if err != nil {
+		return nil, fmt.Errorf("encode MCP tools catalog: %w", err)
+	}
 	updates := map[string]interface{}{
 		"tools_updated_at": now,
 		"health_status":    "healthy",
+		"tools_cache":      string(toolsData),
 	}
-	if toolsData, err := json.Marshal(session.Tools); err == nil {
-		updates["tools_cache"] = string(toolsData)
+	if adapter.GetType() == transport.TypePassiveWS {
+		updates["passive_connected"] = true
 	}
 	// 上游握手拿到的真实协议版本/serverInfo 一并落库;拿不到时不动旧值
 	if v := adapter.GetProtocolVersion(); v != "" {
@@ -346,17 +519,112 @@ func updateSessionRow(session *McpSession, adapter transport.TransportAdapter) {
 			updates["server_info"] = string(b)
 		}
 	}
-	model.DB.Model(&model.McpService{}).Where("id = ?", session.ServiceID).Updates(updates)
+	return updates, nil
+}
+
+func persistSessionUpdates(session *McpSession, updates map[string]interface{}) error {
+	if session.ServiceID == 0 {
+		return nil // shared marketplace stdio prewarm has no service row
+	}
+	if model.DB == nil {
+		return errors.New("MCP service database is unavailable")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	result := model.DB.WithContext(ctx).Model(&model.McpService{}).Where("id = ?", session.ServiceID).Updates(updates)
+	if result.Error != nil {
+		return fmt.Errorf("persist MCP service catalog: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		// MySQL may report no changed rows for an identical snapshot. Distinguish
+		// that from a deleted service before rejecting the publication.
+		var count int64
+		if err := model.DB.WithContext(ctx).Model(&model.McpService{}).
+			Where("id = ?", session.ServiceID).Count(&count).Error; err != nil {
+			return fmt.Errorf("check MCP service catalog row: %w", err)
+		}
+		if count == 0 {
+			return errors.New("MCP service row no longer exists")
+		}
+	}
+	return nil
+}
+
+func (p *SessionPool) writeSessionUpdatesLocked(session *McpSession, updates map[string]interface{}) error {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.closed || p.sessions[session.key] != session || !session.Adapter.IsConnected() {
+		return errors.New("MCP service session was replaced or disconnected")
+	}
+	return persistSessionUpdates(session, updates)
+}
+
+func (p *SessionPool) syncToolsLocked(session *McpSession) error {
+	p.mu.RLock()
+	current := !p.closed && p.sessions[session.key] == session
+	p.mu.RUnlock()
+	if !current || !session.Adapter.IsConnected() {
+		return nil // late notifications from a detached session are harmless
+	}
+	tools := session.Adapter.GetTools()
+	updates, err := sessionRowUpdates(session, tools)
+	if err != nil {
+		return err
+	}
+	if err := p.writeSessionUpdatesLocked(session, updates); err != nil {
+		return err
+	}
+	session.setTools(tools)
+	session.useMu.Lock()
+	session.LastRefresh = time.Now()
+	session.useMu.Unlock()
+	return nil
+}
+
+// RefreshTools rediscovers tools on an existing connection and publishes the
+// snapshot only if that connection is still current. Call outside WithServiceLock.
+func (p *SessionPool) RefreshTools(ctx context.Context, session *McpSession) error {
+	if session == nil {
+		return errors.New("MCP service session is unavailable")
+	}
+	session.refreshMu.Lock()
+	defer session.refreshMu.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	if refresher, ok := session.Adapter.(toolRefresher); ok {
+		if err := refresher.RefreshTools(ctx); err != nil {
+			return err
+		}
+	}
+	var current bool
+	err := p.withSessionLock(session.key, func() error {
+		p.mu.RLock()
+		current = !p.closed && p.sessions[session.key] == session && session.Adapter.IsConnected()
+		p.mu.RUnlock()
+		if !current {
+			return errors.New("MCP service session was replaced or disconnected")
+		}
+		return p.syncToolsLocked(session)
+	})
+	if err != nil {
+		return err
+	}
+	p.RefreshItemCaches(ctx, session)
+	return nil
 }
 
 // RefreshItemCaches 拉取上游 resources/templates/prompts 并回写 mcp_services 缓存列。
 // 服务详情/分组勾选 UI 读这些缓存;上游未声明能力时对应列表为空。
 func (p *SessionPool) RefreshItemCaches(ctx context.Context, session *McpSession) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	resourcesJSON := fetchResourcesCache(ctx, session.Adapter)
 	promptsJSON := fetchPromptsCache(ctx, session.Adapter)
-	model.DB.Model(&model.McpService{}).Where("id = ?", session.ServiceID).Updates(map[string]interface{}{
-		"resources_cache": resourcesJSON,
-		"prompts_cache":   promptsJSON,
+	_ = p.withSessionLock(session.key, func() error {
+		return p.writeSessionUpdatesLocked(session, map[string]interface{}{
+			"resources_cache": resourcesJSON,
+			"prompts_cache":   promptsJSON,
+		})
 	})
 }
 
@@ -463,33 +731,64 @@ func (p *SessionPool) GetByNameForUser(serviceName string, userID int64) *McpSes
 
 func (p *SessionPool) Remove(serviceID int64) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	key := sessionKey{serviceID: serviceID}
-	if s, ok := p.sessions[key]; ok {
-		s.Adapter.Close()
+	s := p.sessions[key]
+	if s != nil {
 		delete(p.sessions, key)
+		p.markPassiveOfflineLocked(s)
 	}
+	p.mu.Unlock()
+	if s != nil {
+		closeSession(s)
+	}
+}
+
+func (p *SessionPool) markPassiveOfflineLocked(session *McpSession) {
+	if session.Adapter.GetType() == transport.TypePassiveWS && model.DB != nil {
+		model.DB.Model(&model.McpService{}).Where("id = ?", session.ServiceID).Updates(map[string]interface{}{
+			"passive_connected": false,
+			"health_status":     common.HealthUnknown,
+		})
+	}
+}
+
+func closeSession(session *McpSession) {
+	if observer, ok := session.Adapter.(toolsChangeObserver); ok {
+		observer.SetToolsChangedHandler(nil)
+	}
+	_ = session.Adapter.Close()
 }
 
 // RemoveByMarketplaceItem 踢掉某市场项全部引用服务的池内会话(市场项平台上游配置变更后调用),
 // 下次调用时按新 config_template 重新物化连接。只清内存池,不查 DB:无引用的项自然无会话可踢。
 func (p *SessionPool) RemoveByMarketplaceItem(itemID int64) {
+	var victims []*McpSession
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	for id, s := range p.sessions {
 		if s.MarketplaceItemID != nil && *s.MarketplaceItemID == itemID {
-			s.Adapter.Close()
 			delete(p.sessions, id)
+			p.markPassiveOfflineLocked(s)
+			victims = append(victims, s)
 		}
+	}
+	p.mu.Unlock()
+	for _, s := range victims {
+		closeSession(s)
 	}
 }
 
 func (p *SessionPool) CloseAll() {
+	var victims []*McpSession
 	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.closed = true
 	for id, s := range p.sessions {
-		s.Adapter.Close()
 		delete(p.sessions, id)
+		p.markPassiveOfflineLocked(s)
+		victims = append(victims, s)
+	}
+	p.mu.Unlock()
+	for _, s := range victims {
+		closeSession(s)
 	}
 }
 
@@ -497,7 +796,7 @@ func (p *SessionPool) FindByToolName(toolName string) *McpSession {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	for _, s := range p.sessions {
-		for _, t := range s.Tools {
+		for _, t := range s.ToolsSnapshot() {
 			if t.Name == toolName {
 				return s
 			}
@@ -513,7 +812,7 @@ func (p *SessionPool) FindByToolNameForUser(toolName string, userID int64) *McpS
 		if s.UserID != userID {
 			continue
 		}
-		for _, t := range s.Tools {
+		for _, t := range s.ToolsSnapshot() {
 			if t.Name == toolName {
 				return s
 			}
@@ -624,6 +923,15 @@ func CreateAdapter(svc *model.McpService) transport.TransportAdapter {
 			h[k], _ = v.(string)
 		}
 		return transport.NewSSEAdapter(svc.ID, url, h, opts...)
+
+	case transport.TypeWebSocket:
+		url, _ := config["url"].(string)
+		headers, _ := config["headers"].(map[string]interface{})
+		h := make(map[string]string, len(headers))
+		for k, v := range headers {
+			h[k], _ = v.(string)
+		}
+		return transport.NewWebSocketAdapter(svc.ID, url, h)
 
 	default:
 		return nil

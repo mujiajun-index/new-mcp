@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
 	"github.com/mujkjk/newmcp/service"
+	"gorm.io/gorm"
 )
 
 var mcpServiceService = &service.McpServiceService{}
@@ -21,7 +23,7 @@ func ListServices(c *gin.Context) {
 		"status":         c.Query("status"),
 		"keyword":        c.Query("keyword"),
 		// source 维度筛选(列表页「平台托管」选项,marketplace=市场引用行)
-		"source":         c.Query("source"),
+		"source": c.Query("source"),
 	}
 
 	items, total, err := mcpServiceService.List(userID, page, pageSize, filters)
@@ -89,6 +91,17 @@ func DeleteService(c *gin.Context) {
 	common.Success(c, nil)
 }
 
+func ResetPassiveToken(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	detail, err := mcpServiceService.ResetPassiveToken(userID, id)
+	if err != nil {
+		common.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	common.Success(c, detail)
+}
+
 func TestService(c *gin.Context) {
 	userID := c.GetInt64("user_id")
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -146,7 +159,11 @@ func RefreshTools(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 	resp, err := mcpServiceService.RefreshTools(userID, id)
 	if err != nil {
-		common.Error(c, http.StatusNotFound, "服务不存在")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			common.Error(c, http.StatusNotFound, "服务不存在")
+		} else {
+			common.Error(c, http.StatusBadRequest, err.Error())
+		}
 		return
 	}
 	common.Success(c, resp)

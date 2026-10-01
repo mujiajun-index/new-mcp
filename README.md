@@ -54,7 +54,7 @@ NewMCP is a unified MCP (Model Context Protocol) service management platform. It
 |---------|-------------|
 | 📋 Service Registry | Register MCP services with automatic tool discovery via `tools/list` |
 | 🗂️ Group Management | Organize services into groups with independent MCP endpoints |
-| 🌐 MCP Gateway | Unified Streamable HTTP and WebSocket endpoints for all services |
+| 🌐 MCP Gateway | Unified HTTP endpoints for all registered services |
 | 🔀 Protocol Bridging | Bridge between stdio, SSE, HTTP, WebSocket and passive connections |
 | 🔑 Dual Auth | JWT user authentication + API Key for MCP client access |
 | 🛡️ Role-Based Access | Admin/User role management with permission controls |
@@ -64,8 +64,10 @@ NewMCP is a unified MCP (Model Context Protocol) service management platform. It
 - **stdio** — Standard input/output transport
 - **SSE** — Server-Sent Events
 - **Streamable HTTP** — HTTP-based MCP transport
-- **WebSocket** — Full-duplex WebSocket connections
-- **Passive** — Client-initiated connections (e.g., XiaoZhi devices)
+- **WebSocket** — NewMCP connects to an upstream `ws://` / `wss://` MCP service
+- **Passive WebSocket access** — Register a service to generate an endpoint; a local MCP server connects through its WebSocket bridge and publishes its tools
+
+Passive endpoints use `ServerAddress` to generate a WS or WSS URL with an independent access credential. Each endpoint represents one MCP service; the latest successfully initialized connection replaces the previous one. The service page shows the endpoint, connection status, tool sync and credential reset. See [API](./docs/API.md) and [deployment](./docs/DEPLOY.md) for connection and proxy requirements.
 
 ### 🧠 Smart Discovery
 
@@ -87,7 +89,7 @@ NewMCP is a unified MCP (Model Context Protocol) service management platform. It
 ┌─────────────┐     ┌─────────────────────────────┐     ┌──────────────┐
 │  MCP Clients │────▶│       NewMCP Gateway         │────▶│ MCP Services │
 │  (Claude,etc)│◀────│  /mcp  /mcp/group/{slug}    │◀────│ (stdio/SSE/  │
-└─────────────┘     │  /mcp/ws  /mcp/ws/group/...  │     │  HTTP/WS)    │
+└─────────────┘     │        /smart/mcp            │     │  HTTP/WS)    │
                     └─────────────────────────────┘     └──────────────┘
                            │
                     ┌──────┴──────┐
@@ -111,9 +113,8 @@ NewMCP exposes MCP tools through a unified gateway supporting two **tool exposur
 | `POST /mcp` | Streamable HTTP | Direct (fixed) | Aggregates all groups bound to the API Key, dedupes and exposes every tool (`serviceName__toolName`) |
 | `POST /smart/mcp` | Streamable HTTP | Smart (fixed) | Aggregates all groups, exposes only 5 meta-tools for progressive discovery |
 | `POST /mcp/group/{slug}` | Streamable HTTP | Per-group `expose_mode` | Endpoint-driven; each group configured independently |
-| `GET /mcp/ws` | WebSocket | Direct (fixed) | Same as `POST /mcp` |
-| `GET /smart/mcp/ws` | WebSocket | Smart (fixed) | Same as `POST /smart/mcp` |
-| `GET /mcp/ws/group/{slug}` | WebSocket | Per-group `expose_mode` | Endpoint-driven |
+
+Client gateway WebSocket routes (`/mcp/ws`, `/smart/mcp/ws`, `/mcp/ws/group/{slug}`) are reserved and currently return `501`. Upstream WebSocket registration and inbound `/mcp/passive/` access are supported independently.
 
 - **Direct mode** — exposes all tools at once. Suited for LLM clients with a large tool surface (Claude Code, Cursor).
 - **Smart mode** — exposes only 5 meta-tools (`mcp.search` / `mcp.describe` / `mcp.execute` / `mcp.execute_batch` / `mcp.read`); the client discovers tools progressively via search → describe → execute, and runs independent calls concurrently through `mcp.execute_batch`. Suited for context-limited devices (e.g. XiaoZhi) or very large tool sets.

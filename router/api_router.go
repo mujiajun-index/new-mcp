@@ -62,6 +62,7 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.DELETE("/services/:id", controller.DeleteService)
 		auth.POST("/services/:id/test", controller.TestService)
 		auth.POST("/services/:id/refresh-tools", controller.RefreshTools)
+		auth.POST("/services/:id/passive-token/reset", controller.ResetPassiveToken)
 		auth.GET("/services/:id/tools", controller.GetServiceTools)
 		auth.POST("/services/:id/tools/call", controller.CallServiceTool)
 		auth.GET("/services/:id/resources", controller.GetServiceResources)

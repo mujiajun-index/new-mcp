@@ -250,11 +250,12 @@ func ListServicesBySource(source string, offset, limit int) ([]McpService, int64
 }
 
 // ListClonableServices 返回指定管理员(userID)可用于"从自有服务克隆上架"的来源服务:该管理员账户下的真实
-// 自有服务(source=user/admin),自动排除 marketplace 引用与 vision/camera 虚拟服务。管理员只能上架自己
+// 自有服务,自动排除 marketplace 引用、虚拟服务与绑定单一接入点的被动 WebSocket 服务。管理员只能上架自己
 // 配置的服务,不触碰其他用户的服务(§11)。
 func ListClonableServices(userID int64, offset, limit int) ([]McpService, int64, error) {
 	var services []McpService
-	query := DB.Where("user_id = ? AND source IN ?", userID, []string{"user"})
+	query := DB.Where("user_id = ? AND source IN ?", userID, []string{"user"}).
+		Where("transport_type <> ?", common.TransportPassiveWS)
 	var total int64
 	if err := query.Model(&McpService{}).Count(&total).Error; err != nil {
 		return nil, 0, err

@@ -1,6 +1,6 @@
 # NewMCP API 接口文档
 
-> 版本: V1.0 | 状态: 草案 | 更新日期: 2026-05-11 (更新分组接口)
+> 版本: V1.0 | 状态: 草案 | 更新日期: 2026-10-01 (完善上游协议与被动接入)
 
 ## 1. 概述
 
@@ -409,16 +409,18 @@ streamable-http:
 websocket:
 ```json
 {
-    "url": "wss://remote-server.com/mcp"
+    "url": "wss://remote-server.com/mcp",
+    "headers": {}
 }
 ```
+> 主动连接支持 `ws://` / `wss://`，上游须通过 WebSocket 文本帧传递原始 MCP JSON-RPC 消息。
 
-passive-ws (被动连接):
+passive-ws (被动 WebSocket 接入):
 ```json
 {
 }
 ```
-> passive-ws 无需提供 URL，NewMCP 自动生成 WSS 接入点。返回结果中包含生成的接入 URL。
+> 无需提供 URL、命令或上游认证配置。NewMCP 根据系统设置 `ServerAddress` 生成接入地址：HTTPS 对应 WSS，HTTP 对应 WS。创建前须配置有效的服务器地址。
 
 **Response (passive-ws):** `201 Created`
 ```json
@@ -428,14 +430,16 @@ passive-ws (被动连接):
         "id": 1,
         "name": "remote-calculator",
         "transport_type": "passive-ws",
-        "passive_url": "wss://api.newmcp.pro/mcp/passive/?token=eyJhbGciOiJFUzI1NiIs...",
+        "passive_url": "wss://api.newmcp.pro/mcp/passive/?token=1.<random-secret>",
         "passive_connected": false,
         ...
     }
 }
 ```
 
-> 将 `passive_url` 复制到外部 MCP 服务配置中，外部服务连接后 NewMCP 自动发现工具。
+> 将 `passive_url` 配置到本地 MCP 服务的 WebSocket 桥接程序。每个接入点对应一个 MCP 服务；握手和工具发现成功后，平台自动同步目录。多个本地 MCP 服务应分别创建接入点。
+>
+> `token` 格式为 `<serviceID>.<random-secret>`，secret 为独立生成的 256 位随机凭证，在数据库中加密保存，与登录 JWT、网关 API Key 无关。完整接入地址即访问凭证，仅向服务所有者返回。
 
 **Response:** `201 Created`
 ```json
@@ -492,8 +496,15 @@ passive-ws (被动连接):
 ### DELETE /services/:id
 删除服务（软删除）。
 
+### POST /services/:id/passive-token/reset
+重置被动 WebSocket 服务的接入凭证。完整路径为 `/api/v1/services/:id/passive-token/reset`，使用服务所有者的用户认证，无需请求体。
+
+**Response:** `200 OK`，`data` 为更新后的 `ServiceDetail`，包含新的 `passive_url` 与 `passive_connected: false`。旧地址立即失效，当前连接断开，工具目录保留；本地桥接程序须改用新地址重新连接。非 `passive-ws` 服务或无效服务器地址返回 `400`。
+
 ### POST /services/:id/test
 测试服务连接。
+
+`passive-ws` 复用已接入的实时连接执行 MCP ping，不向接入地址反向拨号。尚未接入时返回 `connected: false` 和 `error: "等待服务接入"`；已接入时返回工具数量、协商协议版本与服务器信息。
 
 **Response:** `200 OK`
 ```json
@@ -513,6 +524,8 @@ passive-ws (被动连接):
 
 ### POST /services/:id/refresh-tools
 手动刷新工具目录。
+
+被动 WebSocket 服务通过当前连接重新执行 `tools/list` 并同步目录；离线时无法刷新。上游发送 `notifications/tools/list_changed` 时也会自动重新同步。
 
 **Response:** `200 OK`
 ```json
@@ -1627,23 +1640,25 @@ X-API-Key: <key>
 SSE 流 (服务端推送)。
 
 ### WebSocket /mcp/ws
-WebSocket MCP 传输。聚合 API Key 所有分组，**固定 Direct 模式**（同 POST /mcp）。
+预留的客户端网关路由，当前返回 `501 Not Implemented`；调用平台工具请使用 HTTP 网关端点。
 
 ### WebSocket /smart/mcp/ws
-Smart 模式 WebSocket MCP 传输。聚合 API Key 所有分组，**固定 Smart 模式**。
+预留的客户端网关路由，当前返回 `501 Not Implemented`。
 
 ### WebSocket /mcp/ws/group/{slug}
-分组 WebSocket MCP 传输。按分组的 `expose_mode` 决定模式（端点驱动）。
+预留的客户端网关路由，当前返回 `501 Not Implemented`。
 
 ### WebSocket /mcp/passive/
-被动接入端点。外部 MCP Server 连入注册工具。
+被动 WebSocket 接入端点。本地或外部 MCP Server 主动连入，NewMCP 作为 MCP Client 发现和调用工具。
 
 **连接参数:**
 ```
-wss://api.newmcp.pro/mcp/passive/?token=<PASSIVE_JWT>
+wss://api.newmcp.pro/mcp/passive/?token=<serviceID>.<random-secret>
 ```
 
-> 此 URL 由创建 `passive-ws` 类型服务时自动生成。外部 MCP Server 连入后，NewMCP 作为 MCP Client 发起 `initialize` → `tools/list`，自动发现并缓存工具。
+> URL 来自服务详情的 `passive_url`；`ServerAddress` 为 HTTP 时使用 `ws://`。只接受独立接入凭证，缺失或错误凭证返回 `401`，服务或所属用户禁用时返回 `403`。
+>
+> 通过 WebSocket 文本帧双向传递原始 MCP JSON-RPC 消息。官方 SDK 完成版本协商（兼容 `initialize` → `notifications/initialized`）和工具发现；接入成功后复用长连接执行 `tools/call`。同一服务的新连接成功初始化后替换旧连接，握手失败不会踢掉旧连接。停用、删除服务或重置凭证会关闭当前连接；重连后自动同步工具目录。
 
 ---
 

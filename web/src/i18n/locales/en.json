@@ -521,14 +521,27 @@
       "sse": "SSE",
       "streamable-http": "Streamable HTTP",
       "websocket": "WebSocket",
-      "passive-ws": "Passive WS"
+      "passive-ws": "Passive WebSocket access"
     },
     "transportDescs": {
       "streamable-http": "Recommended MCP HTTP transport",
       "sse": "Server-Sent Events, suitable for remote HTTP services",
       "stdio": "Local command-line startup, suitable for self-hosting",
       "websocket": "Full-duplex communication, suitable for real-time scenarios",
-      "passive-ws": "Passive WebSocket access"
+      "passive-ws": "Generate an endpoint for a local MCP service to connect to the platform"
+    },
+    "passive": {
+      "endpoint": "Access endpoint",
+      "endpointHint": "Connect your local MCP service to this address. Tools sync automatically after connection.",
+      "createHint": "Generate an endpoint and connect your local MCP service to register its tools. No upstream URL or authentication configuration is required.",
+      "generateEndpoint": "Generate endpoint",
+      "connected": "Connected",
+      "waiting": "Waiting for service connection",
+      "toolsWaiting": "Waiting for the local MCP service. Tools appear automatically after connection.",
+      "connectLater": "Connect later",
+      "resetEndpoint": "Reset endpoint",
+      "resetConfirm": "Reset the endpoint? The old address will stop working immediately and the current connection will close. Reconnect using the new address.",
+      "resetSuccess": "Endpoint reset"
     },
     "healthStatus": "Health Status",
     "protocolVersion": "Protocol Version",

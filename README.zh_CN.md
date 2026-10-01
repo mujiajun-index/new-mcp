@@ -55,7 +55,7 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）服务管理平台。�
 |------|------|
 | 📋 服务注册 | 注册 MCP 服务，通过 `tools/list` 自动发现工具 |
 | 🗂️ 分组管理 | 将服务组织到分组中，每个分组拥有独立的 MCP 端点 |
-| 🌐 MCP 网关 | 统一的 Streamable HTTP 和 WebSocket 端点，聚合所有服务 |
+| 🌐 MCP 网关 | 统一的 HTTP 端点，聚合所有已注册服务 |
 | 🔀 协议桥接 | 在 stdio、SSE、HTTP、WebSocket 和被动连接之间桥接 |
 | 🔑 双重认证 | JWT 用户认证 + API Key 用于 MCP 客户端访问 |
 | 🛡️ 角色权限 | 管理员/用户角色管理与权限控制 |
@@ -65,8 +65,10 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）服务管理平台。�
 - **stdio** — 标准输入/输出传输
 - **SSE** — 服务端推送事件
 - **Streamable HTTP** — 基于 HTTP 的 MCP 传输
-- **WebSocket** — 全双工 WebSocket 连接
-- **被动连接** — 客户端主动连接（如小智设备）
+- **WebSocket** — NewMCP 主动连接上游 `ws://` / `wss://` MCP 服务
+- **被动 WebSocket 接入** — 注册服务后生成接入地址，本地 MCP 服务通过 WebSocket 桥接程序主动连接并提供工具
+
+被动接入地址根据 `ServerAddress` 生成 WS 或 WSS 链接，使用独立接入凭证。每个端点对应一个 MCP 服务，最近成功初始化的连接替换旧连接。服务页面提供接入地址、连接状态、工具同步及凭证重置。连接与代理配置见 [API 文档](./docs/API.md) 和 [部署文档](./docs/DEPLOY.md)。
 
 ### 🧠 智能发现
 
@@ -88,7 +90,7 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）服务管理平台。�
 ┌─────────────┐     ┌─────────────────────────────┐     ┌──────────────┐
 │  MCP 客户端  │────▶│       NewMCP 网关            │────▶│  MCP 服务    │
 │ (Claude等)  │◀────│  /mcp  /mcp/group/{slug}    │◀────│ (stdio/SSE/  │
-└─────────────┘     │  /mcp/ws  /mcp/ws/group/...  │     │  HTTP/WS)    │
+└─────────────┘     │        /smart/mcp            │     │  HTTP/WS)    │
                     └─────────────────────────────┘     └──────────────┘
                            │
                     ┌──────┴──────┐
@@ -112,9 +114,8 @@ NewMCP 通过统一网关暴露 MCP 工具，支持两种**工具暴露模式**�
 | `POST /mcp` | Streamable HTTP | 固定 Direct | 聚合 API Key 绑定的所有分组，去重后暴露全部工具（`serviceName__toolName`） |
 | `POST /smart/mcp` | Streamable HTTP | 固定 Smart | 聚合所有分组，仅暴露 5 个元工具，渐进发现 |
 | `POST /mcp/group/{slug}` | Streamable HTTP | 由分组 `expose_mode` 决定 | 端点驱动，每个分组独立配置 |
-| `GET /mcp/ws` | WebSocket | 固定 Direct | 同 `POST /mcp` |
-| `GET /smart/mcp/ws` | WebSocket | 固定 Smart | 同 `POST /smart/mcp` |
-| `GET /mcp/ws/group/{slug}` | WebSocket | 由分组 `expose_mode` 决定 | 端点驱动 |
+
+客户端 WebSocket 网关路由（`/mcp/ws`、`/smart/mcp/ws`、`/mcp/ws/group/{slug}`）目前为预留接口，返回 `501`。上游 WebSocket 服务注册与 `/mcp/passive/` 被动接入分别可用。
 
 - **Direct（直连）模式** — 直接暴露所有工具，适合支持大量工具的 LLM 客户端（Claude Code、Cursor 等）。
 - **Smart（智能）模式** — 仅暴露 5 个元工具（`mcp.search` / `mcp.describe` / `mcp.execute` / `mcp.execute_batch` / `mcp.read`），客户端通过 搜索 → 查看 → 执行 渐进发现和调用工具；相互独立的调用可用 `mcp.execute_batch` 一次并发执行。适合上下文受限的设备（如小智）或工具量特别大的场景。

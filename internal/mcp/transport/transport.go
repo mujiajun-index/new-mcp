@@ -26,6 +26,12 @@ type ServerInfo struct {
 	Version string `json:"version"`
 }
 
+// ToolRefresher is optional: adapters that support live discovery publish a
+// complete new tools snapshot only after every page has been read successfully.
+type ToolRefresher interface {
+	RefreshTools(context.Context) error
+}
+
 // StdioProcessInfo 标识 stdio 传输拉起的本地子进程,供进程资源监控定位进程树。
 type StdioProcessInfo struct {
 	PID     int

@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useRouter } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
-import { getService, updateService, deleteService, testService, refreshTools, getServiceResources, getServicePrompts, getServiceProcessStat, serviceKeysApi } from '../api'
+import { getService, updateService, deleteService, testService, refreshTools, resetPassiveToken, getServiceResources, getServicePrompts, getServiceProcessStat, serviceKeysApi } from '../api'
+import { PassiveEndpointCard } from './passive-endpoint-card'
 import { StdioProcessControl } from './stdio-process-control'
 import { ServiceKeysCard } from '@/components/service-keys-card'
 import { ToolTestDialog } from './tool-test-dialog'
@@ -123,16 +124,19 @@ export function ServiceDetailPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['service', id],
     queryFn: () => getService(serviceId),
+    refetchInterval: (query) => query.state.data?.data?.transport_type === 'passive-ws' ? 5000 : false,
   })
 
   const { data: resourcesData } = useQuery({
     queryKey: ['service-resources', id],
     queryFn: () => getServiceResources(serviceId),
+    refetchInterval: data?.data?.transport_type === 'passive-ws' ? 5000 : false,
   })
 
   const { data: promptsData } = useQuery({
     queryKey: ['service-prompts', id],
     queryFn: () => getServicePrompts(serviceId),
+    refetchInterval: data?.data?.transport_type === 'passive-ws' ? 5000 : false,
   })
 
   // stdio 服务进程资源占用:仅 stdio 启用,5s 自动轮询,离开详情页(组件卸载)即停止
@@ -188,13 +192,24 @@ export function ServiceDetailPage() {
     },
   })
 
+  const resetPassiveMutation = useMutation({
+    mutationFn: () => resetPassiveToken(serviceId),
+    onSuccess: (res) => {
+      queryClient.setQueryData(['service', id], res)
+      queryClient.invalidateQueries({ queryKey: ['service', id] })
+      toast.success(t('services.passive.resetSuccess'))
+    },
+  })
+
   const updateMutation = useMutation({
     mutationFn: () => {
       const payload: UpdateServiceReq = {
         display_name: form.display_name,
         description: form.description,
-        config: buildConfig(),
       }
+      // 被动接入仅编辑展示信息；接入凭证由专用接口管理。
+      if (service?.transport_type === 'passive-ws') return updateService(serviceId, payload)
+      payload.config = buildConfig()
       const authConfig = buildAuthConfig()
       // 多秘钥服务:认证由秘钥池承载,不提交认证字段(避免覆盖 AuthConfig 里的
       // key_mode/header_name;切换认证类型须先在秘钥管理切回单秘钥)
@@ -316,8 +331,9 @@ export function ServiceDetailPage() {
           ? withQueryValue(form.url, form.query_param_name, form.query_key)
           : withoutQueryValue(form.url, service?.query_param_name || ''), headers }
       case 'websocket':
+        return { url: form.url, headers }
       case 'passive-ws':
-        return { url: form.url }
+        return {}
       default:
         return cfg
     }
@@ -339,6 +355,7 @@ export function ServiceDetailPage() {
 
   const canSave = (() => {
     if (!service) return false
+    if (service.transport_type === 'passive-ws') return true
     if (service.transport_type === 'stdio') return !!(service.config as Record<string, unknown>)?.command
     return form.url.trim().length > 0 && (form.auth_type !== 'query_param' || !!form.query_param_name.trim())
   })()
@@ -357,6 +374,7 @@ export function ServiceDetailPage() {
   const prompts: McpPrompt[] = promptsData?.data || []
   const isVirtual = service.transport_type === 'virtual'
   const isStdio = service.transport_type === 'stdio'
+  const isPassive = service.transport_type === 'passive-ws'
   const isMultiKeyService = service.key_mode === 'random' || service.key_mode === 'polling'
   // 秘钥管理卡片:自有 HTTP 类(sse/streamable-http)且有认证的服务
   const keysCardVisible =
@@ -500,6 +518,28 @@ export function ServiceDetailPage() {
         ))}
       </div>
 
+      {isPassive && (
+        <PassiveEndpointCard
+          service={service}
+          actions={(
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              disabled={editing || resetPassiveMutation.isPending}
+              onClick={() => {
+                if (confirm(t('services.passive.resetConfirm'))) resetPassiveMutation.mutate()
+              }}
+            >
+              {resetPassiveMutation.isPending
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <RefreshCw className="h-3.5 w-3.5" />}
+              {t('services.passive.resetEndpoint')}
+            </Button>
+          )}
+        />
+      )}
+
       {/* Server Info */}
       {service.server_info && Object.keys(service.server_info).length > 0 && (
         <div className="rounded-xl border bg-card p-5">
@@ -572,19 +612,20 @@ export function ServiceDetailPage() {
                   )}
                 </div>
               </>
-            ) : (
+            ) : !isPassive ? (
               /* HTTP/SSE/WS url */
               <div className="space-y-1.5 sm:col-span-2">
                 <Label className="text-xs text-muted-foreground">{t('services.serviceUrlRequired')}</Label>
                 {editing ? (
-                  <Input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://example.com/mcp" />
+                  <Input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder={service.transport_type === 'websocket' ? 'wss://example.com/mcp' : 'https://example.com/mcp'} />
                 ) : (
                   <code className="block text-sm break-all rounded-md bg-muted/50 px-3 py-2">{form.url || '-'}</code>
                 )}
               </div>
-            )}
+            ) : null}
 
             {/* Auth config */}
+            {!isPassive && <>
             <div className="space-y-1.5 sm:col-span-2">
               <Label className="text-xs text-muted-foreground">{t('services.authMethod')}</Label>
               {editing ? (
@@ -673,6 +714,7 @@ export function ServiceDetailPage() {
             )}
               </>
             )}
+            </>}
           </div>
 
           {/* Edit actions */}
@@ -760,7 +802,7 @@ export function ServiceDetailPage() {
           <div className="flex flex-col items-center py-8 text-center">
             <Server className="h-8 w-8 text-muted-foreground/30 mb-2" />
             <p className="text-sm text-muted-foreground">{t('services.noTools')}</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">{t('services.clickRefresh')}</p>
+            <p className="text-xs text-muted-foreground/60 mt-1">{isPassive && !service.passive_connected ? t('services.passive.toolsWaiting') : t('services.clickRefresh')}</p>
           </div>
         ) : (
           <div className="space-y-2">

@@ -51,6 +51,11 @@ export async function refreshTools(id: number) {
   return res.data
 }
 
+export async function resetPassiveToken(id: number) {
+  const res = await api.post(`/services/${id}/passive-token/reset`)
+  return res.data
+}
+
 export async function getServiceTools(id: number) {
   const res = await api.get(`/services/${id}/tools`)
   return res.data

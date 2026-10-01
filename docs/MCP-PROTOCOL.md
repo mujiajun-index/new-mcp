@@ -1,6 +1,6 @@
 # NewMCP 协议适配说明
 
-> 版本: V1.3 | 状态: 草案 | 更新日期: 2026-08-25
+> 版本: V1.3 | 状态: 草案 | 更新日期: 2026-10-01
 
 ## 1. 双模式网关架构
 
@@ -11,9 +11,8 @@ NewMCP 支持两种 MCP 工具暴露模式，**通过端点路由驱动**：
 | `POST /mcp` | 固定 Direct | 聚合 API Key 所有分组，去重后暴露全部工具（`serviceName__toolName`） |
 | `POST /smart/mcp` | 固定 Smart | 聚合 API Key 所有分组，仅暴露 5 个元工具，渐进发现 |
 | `POST /mcp/group/{slug}` | 由分组的 `expose_mode` 决定 | 端点驱动，每个分组独立配置 |
-| `WS /mcp/ws` | 固定 Direct | 同 POST /mcp |
-| `WS /smart/mcp/ws` | 固定 Smart | 同 POST /smart/mcp |
-| `WS /mcp/ws/group/{slug}` | 由分组的 `expose_mode` 决定 | 端点驱动 |
+
+客户端 WebSocket 网关路由 `/mcp/ws`、`/smart/mcp/ws`、`/mcp/ws/group/{slug}` 目前为占位实现，返回 `501`。下文的 `websocket` / `passive-ws` 是上游服务接入能力。
 
 > **Direct 主端点**: `/mcp` 暴露 API Key 绑定分组的全部工具（去重），适合 Claude Code、Cursor 等支持大量工具的 LLM 客户端。
 > **Smart 主端点**: `/smart/mcp` 仅暴露 5 个元工具，适合小智等上下文受限设备或工具量特别大的场景。
@@ -543,116 +542,42 @@ const (
 | SSE | sse | NewMCP → 远程 | 连接远程 SSE 端点 |
 | Streamable HTTP | streamable-http | NewMCP → 远程 | 连接远程 HTTP 端点 |
 | WebSocket | websocket | NewMCP → 远程 | 连接远程 WSS 端点 |
-| 被动连接 | passive-ws | 外部 → NewMCP | NewMCP 生成接入 URL，外部服务主动连入 |
+| 被动 WebSocket 接入 | passive-ws | 外部 → NewMCP | NewMCP 生成接入 URL，外部服务主动连入 |
 
-### 6.3 被动连接 (passive-ws) 实现
+### 6.3 被动 WebSocket 接入 (passive-ws)
 
-NewMCP 作为 MCP Client，接收外部 MCP Server 的连入:
+创建服务时选择 `passive-ws`，平台生成独立的接入地址。外部 MCP Server 或其本地桥接程序主动连接，NewMCP 作为 MCP Client 发现和调用工具：
 
 ```
-时序图: 外部 MCP 服务通过被动连接注册到 NewMCP
+本地 MCP Server/桥接程序 ──主动连接──> NewMCP /mcp/passive/
+                         <── MCP 版本协商、tools/list ──
+                         ── 服务器信息与工具目录 ──>
 
-┌──────────┐    ┌──────────┐    ┌──────────┐
-│外部 MCP  │    │NewMCP    │    │LLM 客户端│
-│Server    │    │Passive   │    │(Claude)  │
-└────┬─────┘    └────┬─────┘    └────┬─────┘
-     │               │               │
-     │ ① 用户在 NewMCP 创建 passive-ws 服务
-     │   获得 URL: wss://api.newmcp.pro/mcp/passive/?token=JWT
-     │               │               │
-     │ ② 外部服务连接 WSS 接入点      │
-     │──────────────>│               │
-     │               │               │
-     │ ③ NewMCP 作为 MCP Client       │
-     │   发送 initialize              │
-     │<──────────────│               │
-     │               │               │
-     │ ④ 外部服务响应 capabilities     │
-     │──────────────>│               │
-     │               │               │
-     │ ⑤ NewMCP 请求 tools/list      │
-     │<──────────────│               │
-     │               │               │
-     │ ⑥ 返回工具列表，缓存到 mcp_services
-     │──────────────>│               │
-     │               │               │
-     │               │ ⑦ LLM 客户端调用工具
-     │               │──────────────>│ (via gateway)
-     │               │               │
-     │ ⑧ 路由 tools/call              │
-     │<──────────────│               │
-     │               │               │
-     │ ⑨ 执行并返回   │               │
-     │──────────────>│               │
-     │               │──────────────>│
+LLM 客户端 ──HTTP 网关调用──> NewMCP ──同一 WS 连接 tools/call──> 本地 MCP Server
 ```
 
-**被动接入 URL 生成:**
+**接入地址与凭证：**
 
-```go
-// internal/mcp/transport/passive_ws.go
-
-type PassiveWSListener struct {
-    services    map[string]*PassiveSession  // key: service_name
-    mu          sync.RWMutex
-    jwtSecret   string
-    baseURL     string
-}
-
-// GenerateConnectURL 为 passive-ws 类型的服务生成接入 URL
-func (l *PassiveWSListener) GenerateConnectURL(serviceID int64, serviceName string, userID int64) string {
-    token := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
-        "serviceId":  serviceID,
-        "serviceName": serviceName,
-        "userId":     userID,
-        "purpose":    "mcp-endpoint",
-        "iat":        time.Now().Unix(),
-        "exp":        time.Now().Add(365 * 24 * time.Hour).Unix(),
-    })
-    tokenString, _ := token.SignedString(l.jwtSecret)
-    return fmt.Sprintf("%s/mcp/passive/?token=%s", l.baseURL, tokenString)
-}
+```
+wss://api.newmcp.pro/mcp/passive/?token=<serviceID>.<random-secret>
 ```
 
-**被动连接 WebSocket Handler:**
+- 接入 URL 根据系统设置 `ServerAddress` 生成，HTTPS → WSS、HTTP → WS；部署公网接入时须配置真实的 HTTPS 地址及 TLS 终止代理。
+- secret 是 32 字节（256 位）随机值，以 URL-safe Base64 表示并加密存入 `passive_token`，与登录 JWT 和网关 API Key 独立。接入地址仅向服务所有者返回。
+- 创建时无需 URL、命令或上游认证配置；固定 `config={}`、`auth_type=none`、`auth_config={}`。每个端点对应一个 MCP 服务，多个本地服务分别注册。被动接入服务不能克隆上架到市场，接入后的工具通过现有分组、API Key、Direct 和 Smart 流程使用。
+- `POST /api/v1/services/:id/passive-token/reset` 返回更新后的服务详情。旧凭证立即失效并关闭当前连接，随后用新地址重新接入。
 
-```go
-// 外部服务连入 wss://api.newmcp.pro/mcp/passive/?token=JWT
+**连接、调用与目录同步：**
 
-func (l *PassiveWSListener) HandleConnection(wsConn *websocket.Conn, tokenClaims jwt.MapClaims) {
-    serviceName := tokenClaims["serviceName"].(string)
-    serviceID := int64(tokenClaims["serviceId"].(float64))
-
-    session := &PassiveSession{
-        ServiceID:   serviceID,
-        ServiceName: serviceName,
-        Conn:        wsConn,
-    }
-
-    l.mu.Lock()
-    l.services[serviceName] = session
-    l.mu.Unlock()
-
-    // NewMCP 作为 MCP Client: 发送 initialize → 获取工具 → 缓存
-    session.Initialize()
-    tools := session.FetchTools()
-    toolCache.Update(serviceID, tools)
-
-    // 更新数据库状态
-    db.Model(&McpService{}).Where("id = ?", serviceID).
-        Updates(map[string]interface{}{
-            "passive_connected": 1,
-            "health_status":     "healthy",
-        })
-
-    // 进入消息循环 (等待 NewMCP 发起 tools/call)
-    session.MessageLoop()
-}
-```
+- WebSocket 文本帧直接携带 MCP JSON-RPC，没有额外消息包装或工具注册消息。官方 Go SDK 处理版本协商（包括旧版 `initialize` / `notifications/initialized`）、分页、请求 ID 和并发响应。
+- 新连接完成握手和工具发现后加入会话池，更新工具目录、协议版本及服务器信息。同一服务最近成功初始化的连接替换旧连接；新连接失败时旧连接仍可调用。
+- `tools/call`、资源与提示词调用复用当前连接。收到 `notifications/tools/list_changed` 或用户点击重新同步时，通过当前连接刷新工具目录。
+- 尚未接入时显示“等待服务接入”；测试接口不会主动拨号，已在线时通过当前连接执行 MCP ping。断线后目录保留，调用返回离线错误，重新接入后重新同步。
+- 停用、删除服务或重置凭证会关闭连接。平台重启将在线标记重置，保留接入凭证和目录，等待本地桥接程序重新连接。
 
 ### 6.4 适配器实现
 
-StreamableHTTPAdapter 和 WebSocketAdapter（主动连接远程）实现同前。
+stdio、SSE、Streamable HTTP、主动 WebSocket 和被动 WebSocket 都复用官方 SDK 的 `ClientSession`。WebSocket 传输适配器将文本帧映射到 SDK I/O 流，并维持 ping/pong 心跳。主动 WebSocket 支持 `ws://` / `wss://` 和静态认证请求头；SSE 使用旧版 MCP HTTP+SSE 的端点事件与消息 POST 流程。
 
 ### 6.5 Stdio stdout 容忍过滤
 
@@ -1113,10 +1038,8 @@ LIMIT 20;
 | `/mcp` | Streamable HTTP | 固定 Direct | 主网关，暴露 API Key 绑定分组全部工具 |
 | `/smart/mcp` | Streamable HTTP | 固定 Smart | Smart 网关，仅暴露 5 个元工具 |
 | `/mcp/group/{slug}` | Streamable HTTP | 按 group 配置 | 分组 MCP 端点 |
-| `/mcp/ws` | WebSocket | 固定 Direct | 主网关 WebSocket |
-| `/smart/mcp/ws` | WebSocket | 固定 Smart | Smart 网关 WebSocket |
-| `/mcp/ws/group/{slug}` | WebSocket | 按 group 配置 | 分组 WebSocket 端点 |
-| `/mcp/passive/` | WebSocket | 被动接入 | 外部 MCP 服务连入注册 (token 认证) |
+| `/mcp/ws`、`/smart/mcp/ws`、`/mcp/ws/group/{slug}` | WebSocket | 预留 | 客户端网关未实现，返回 `501` |
+| `/mcp/passive/` | WebSocket | 被动 WebSocket 接入 | 外部 MCP Server 连入，独立接入凭证认证 |
 
 Smart 模式下的 `tools/list` 永远返回 5 个元工具。
 Direct 模式下的 `tools/list` 返回聚合后的完整工具列表。

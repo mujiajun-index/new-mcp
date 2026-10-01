@@ -21,8 +21,8 @@ import (
 var clientImpl = &mcp.Implementation{Name: "newmcp", Version: "1.0.0"}
 
 // SDKAdapter 用官方 Go SDK（github.com/modelcontextprotocol/go-sdk）的
-// ClientSession 实现 TransportAdapter，统一支撑 streamable-http / stdio / sse
-// 三种客户端传输。协议握手（initialize、notifications/initialized）、
+// ClientSession 实现 TransportAdapter，统一支撑 HTTP、stdio、SSE 和主/被动
+// WebSocket 传输。协议握手（initialize、notifications/initialized）、
 // Mcp-Session-Id、SSE 解析、分页等全部交由 SDK 处理。
 type SDKAdapter struct {
 	typ             TransportType
@@ -32,9 +32,34 @@ type SDKAdapter struct {
 	protocolVersion string
 	serverInfo      *ServerInfo
 	connected       bool
+	closed          bool
+	connectCancel   context.CancelFunc
+	done            chan struct{}
+	doneOnce        sync.Once
+	toolsChanged    func()
+	refreshRequests chan struct{}
+	connectMu       sync.Mutex
+	refreshMu       sync.Mutex
 	// dyn 多秘钥动态注入槽位(nil = 静态 headers 行为,单秘钥/stdio)。
 	dyn *dynamicSlot
 	mu  sync.Mutex
+}
+
+func newSDKAdapter(typ TransportType) *SDKAdapter {
+	return &SDKAdapter{typ: typ, done: make(chan struct{}), refreshRequests: make(chan struct{}, 1)}
+}
+
+// Capture the physical connection so even SDK handshake failures that return
+// before publishing a ClientSession cannot leave an open socket or subprocess.
+type capturedTransport struct {
+	mcp.Transport
+	conn mcp.Connection
+}
+
+func (t *capturedTransport) Connect(ctx context.Context) (mcp.Connection, error) {
+	conn, err := t.Transport.Connect(ctx)
+	t.conn = conn
+	return conn, err
 }
 
 // dynamicSlot 描述多秘钥注入位置与供值来源。
@@ -67,7 +92,7 @@ func WithDynamicQueryAuth(paramName string, dyn DynamicAuth) AdapterOption {
 // 自定义鉴权 header（X-API-Key / Authorization / 自定义头）通过专属 http.Client 注入。
 func NewStreamableHTTPAdapter(serviceID int64, url string, headers map[string]string, opts ...AdapterOption) *SDKAdapter {
 	_ = serviceID
-	a := &SDKAdapter{typ: TypeStreamableHTTP}
+	a := newSDKAdapter(TypeStreamableHTTP)
 	for _, opt := range opts {
 		opt(a)
 	}
@@ -78,11 +103,11 @@ func NewStreamableHTTPAdapter(serviceID int64, url string, headers map[string]st
 // NewSSEAdapter 构造 SSE（2024-11-05）客户端传输。
 func NewSSEAdapter(serviceID int64, url string, headers map[string]string, opts ...AdapterOption) *SDKAdapter {
 	_ = serviceID
-	a := &SDKAdapter{typ: TypeSSE}
+	a := newSDKAdapter(TypeSSE)
 	for _, opt := range opts {
 		opt(a)
 	}
-	a.transport = &mcp.SSEClientTransport{Endpoint: url, HTTPClient: httpClientWithHeaders(headers, a.dyn)}
+	a.transport = &sseLifecycleTransport{inner: &mcp.SSEClientTransport{Endpoint: url, HTTPClient: httpClientWithHeaders(headers, a.dyn)}}
 	return a
 }
 
@@ -92,20 +117,63 @@ func NewSSEAdapter(serviceID int64, url string, headers map[string]string, opts 
 func NewStdioAdapter(serviceID int64, command string, args []string, env map[string]string) *SDKAdapter {
 	cmd := exec.Command(command, args...)
 	cmd.Env = append(os.Environ(), envToSlice(env)...)
-	return &SDKAdapter{
-		typ:       TypeStdio,
-		transport: NewStdioFilterTransport(cmd, stdioLogf(serviceID, command)),
-	}
+	a := newSDKAdapter(TypeStdio)
+	a.transport = NewStdioFilterTransport(cmd, stdioLogf(serviceID, command))
+	return a
 }
 
 func (a *SDKAdapter) Connect(ctx context.Context) error {
+	a.connectMu.Lock()
+	defer a.connectMu.Unlock()
 	a.mu.Lock()
-	defer a.mu.Unlock()
+	if a.closed {
+		a.mu.Unlock()
+		return fmt.Errorf("adapter is closed")
+	}
+	if a.connected {
+		a.mu.Unlock()
+		return nil
+	}
+	connectCtx, cancel := context.WithCancel(ctx)
+	a.connectCancel = cancel
+	a.mu.Unlock()
 
-	client := mcp.NewClient(clientImpl, nil)
-	sess, err := client.Connect(ctx, a.transport, nil)
+	client := mcp.NewClient(clientImpl, &mcp.ClientOptions{
+		ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) {
+			select {
+			case a.refreshRequests <- struct{}{}:
+			default:
+			}
+		},
+	})
+	// This adapter owns the persisted catalog snapshot. Disable the SDK's local
+	// tools TTL cache so an explicit refresh always re-reads the upstream, even
+	// when a modern server advertises a long TTL without sending notifications.
+	client.AddSendingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			result, err := next(ctx, method, req)
+			if method == "tools/list" && err == nil {
+				if list, ok := result.(*mcp.ListToolsResult); ok {
+					list.TTLMs = 0
+				}
+			}
+			return result, err
+		}
+	})
+	captured := &capturedTransport{Transport: a.transport}
+	sess, err := client.Connect(connectCtx, captured, nil)
 	if err != nil {
+		if captured.conn != nil {
+			_ = captured.conn.Close()
+		}
+		_ = a.Close()
 		return fmt.Errorf("connect: %w", err)
+	}
+	a.mu.Lock()
+	if a.closed {
+		a.mu.Unlock()
+		_ = sess.Close()
+		return fmt.Errorf("adapter is closed")
 	}
 	a.sess = sess
 
@@ -116,31 +184,115 @@ func (a *SDKAdapter) Connect(ctx context.Context) error {
 			a.serverInfo = &ServerInfo{Name: ir.ServerInfo.Name, Version: ir.ServerInfo.Version}
 		}
 	}
+	a.mu.Unlock()
+	go a.watchSession(sess)
 
-	// SDK 的 Tools 迭代器自动翻页，收集全部工具。取工具失败不视为致命错误，
-	// 与既有行为一致（连接成功但工具列表为空）。
-	tools := []Tool{}
-	for tool, err := range sess.Tools(ctx, nil) {
-		if err != nil {
-			break
-		}
-		tools = append(tools, sdkToolToTool(tool))
+	if err := a.RefreshTools(connectCtx); err != nil {
+		_ = a.Close()
+		return err
 	}
-	a.tools = tools
+	a.mu.Lock()
+	if a.closed || a.sess != sess {
+		a.mu.Unlock()
+		return fmt.Errorf("connection closed during tool discovery")
+	}
 	a.connected = true
+	a.mu.Unlock()
+	go a.refreshLoop()
 	return nil
 }
 
 func (a *SDKAdapter) Close() error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
+	a.closed = true
 	a.connected = false
-	if a.sess != nil {
-		err := a.sess.Close()
-		a.sess = nil
-		return err
+	sess, cancel := a.sess, a.connectCancel
+	a.sess, a.connectCancel = nil, nil
+	a.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	a.doneOnce.Do(func() { close(a.done) })
+	if sess != nil {
+		return sess.Close()
 	}
 	return nil
+}
+
+// Done closes on failed initialization, an explicit close, or peer disconnect.
+func (a *SDKAdapter) Done() <-chan struct{} { return a.done }
+
+// SetToolsChangedHandler observes a successfully refreshed tools snapshot. The
+// observer runs on the refresh worker, outside adapter locks and SDK handlers.
+func (a *SDKAdapter) SetToolsChangedHandler(handler func()) {
+	a.mu.Lock()
+	a.toolsChanged = handler
+	a.mu.Unlock()
+}
+
+func (a *SDKAdapter) watchSession(sess *mcp.ClientSession) {
+	_ = sess.Wait()
+	a.mu.Lock()
+	if a.sess != sess {
+		a.mu.Unlock()
+		return
+	}
+	a.sess = nil
+	a.connected, a.closed = false, true
+	cancel := a.connectCancel
+	a.connectCancel = nil
+	a.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	a.doneOnce.Do(func() { close(a.done) })
+}
+
+// RefreshTools leaves the old snapshot intact if any page fails.
+func (a *SDKAdapter) RefreshTools(ctx context.Context) error {
+	a.refreshMu.Lock()
+	defer a.refreshMu.Unlock()
+	sess, err := a.session()
+	if err != nil {
+		return err
+	}
+	tools := []Tool{}
+	if caps := upstreamCapability(sess); caps != nil && caps.Tools != nil {
+		for tool, err := range sess.Tools(ctx, nil) {
+			if err != nil {
+				return fmt.Errorf("list tools: %w", err)
+			}
+			tools = append(tools, sdkToolToTool(tool))
+		}
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.closed || a.sess != sess {
+		return fmt.Errorf("connection closed during tool discovery")
+	}
+	a.tools = tools
+	return nil
+}
+
+func (a *SDKAdapter) refreshLoop() {
+	for {
+		select {
+		case <-a.done:
+			return
+		case <-a.refreshRequests:
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			err := a.RefreshTools(ctx)
+			cancel()
+			if err == nil {
+				a.mu.Lock()
+				handler := a.toolsChanged
+				a.mu.Unlock()
+				if handler != nil {
+					handler()
+				}
+			}
+		}
+	}
 }
 
 func (a *SDKAdapter) Call(ctx context.Context, method string, params interface{}) (json.RawMessage, error) {
@@ -224,7 +376,9 @@ func (a *SDKAdapter) GetType() TransportType { return a.typ }
 func (a *SDKAdapter) GetTools() []Tool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.tools
+	tools := make([]Tool, len(a.tools))
+	copy(tools, a.tools)
+	return tools
 }
 
 func (a *SDKAdapter) GetProtocolVersion() string {
@@ -236,7 +390,11 @@ func (a *SDKAdapter) GetProtocolVersion() string {
 func (a *SDKAdapter) GetServerInfo() *ServerInfo {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.serverInfo
+	if a.serverInfo == nil {
+		return nil
+	}
+	info := *a.serverInfo
+	return &info
 }
 
 // GetStdioProcess 返回 stdio 传输拉起的子进程信息;其余传输类型/未启动返回 nil。
@@ -260,6 +418,15 @@ func (a *SDKAdapter) session() (*mcp.ClientSession, error) {
 		return nil, fmt.Errorf("not connected")
 	}
 	return a.sess, nil
+}
+
+// Ping checks a live session without replacing it or rediscovering tools.
+func (a *SDKAdapter) Ping(ctx context.Context) error {
+	sess, err := a.session()
+	if err != nil {
+		return err
+	}
+	return sess.Ping(ctx, nil)
 }
 
 // upstreamCapability 返回上游 initialize 声明的 ServerCapabilities;未拿到时为 nil。
@@ -411,7 +578,9 @@ func envToSlice(env map[string]string) []string {
 // 用于在 Streamable HTTP / SSE 传输上注入鉴权信息（SDK 传输本身不暴露 header 入口）。
 // dyn 非 nil 时启用多秘钥动态注入(见 headerRoundTripper)。
 func httpClientWithHeaders(headers map[string]string, dyn *dynamicSlot) *http.Client {
-	client := &http.Client{Timeout: 30 * time.Second}
+	// A total Client.Timeout also kills the hanging SSE GET and long tool
+	// responses. Callers bound operations with contexts; only headers are timed.
+	client := &http.Client{}
 	if dyn != nil && dyn.query {
 		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 			if len(via) > 0 && (req.URL.Scheme != via[0].URL.Scheme || req.URL.Host != via[0].URL.Host) {
@@ -422,7 +591,13 @@ func httpClientWithHeaders(headers map[string]string, dyn *dynamicSlot) *http.Cl
 	}
 	// 空对象 arguments 兜底对所有上游生效(见 emptyObjectArgsRoundTripper),
 	// 自定义 header 再包在外层。
-	var rt http.RoundTripper = &emptyObjectArgsRoundTripper{base: http.DefaultTransport}
+	base := http.DefaultTransport
+	if t, ok := base.(*http.Transport); ok {
+		bounded := t.Clone()
+		bounded.ResponseHeaderTimeout = 30 * time.Second
+		base = bounded
+	}
+	var rt http.RoundTripper = &emptyObjectArgsRoundTripper{base: base}
 	if len(headers) > 0 || dyn != nil {
 		rt = &headerRoundTripper{base: rt, headers: headers, dyn: dyn}
 	}

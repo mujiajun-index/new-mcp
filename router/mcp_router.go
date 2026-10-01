@@ -33,6 +33,9 @@ func SetMCPRouter(engine *gin.Engine, h *handler.GatewayHandler) {
 
 	// WebSocket - Group endpoint
 	engine.GET("/mcp/ws/group/:slug", middleware.APIKeyAuth(), middleware.RateLimit(), handleWebSocketWithSlug())
+
+	// Local MCP servers connect here; the gateway acts as their MCP client.
+	engine.GET("/mcp/passive/", HandlePassiveWebSocket)
 }
 
 func buildLogContext(c *gin.Context, exposeMode string) *handler.LogContext {

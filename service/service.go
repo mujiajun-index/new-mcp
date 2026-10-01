@@ -54,6 +54,9 @@ func (s *McpServiceService) List(userID int64, page, pageSize int, filters map[s
 		var tools []interface{}
 		_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
 
+		if svc.TransportType == common.TransportPassiveWS {
+			svc.HealthStatus = passiveHealth(&svc, passiveConnected(&svc))
+		}
 		items[i] = dto.ServiceListItem{
 			ID:                 svc.ID,
 			Name:               svc.Name,
@@ -107,6 +110,9 @@ func (s *McpServiceService) Create(userID int64, req *dto.CreateServiceReq) (*dt
 	if svc.AuthType == "" {
 		svc.AuthType = "none"
 	}
+	if err := preparePassiveService(svc, req); err != nil {
+		return nil, err
+	}
 
 	// 多秘钥创建(仅 HTTP 类传输):认证头值不入 config.headers,存秘钥池。
 	if req.KeyMode != "" {
@@ -138,9 +144,11 @@ func (s *McpServiceService) Create(userID int64, req *dto.CreateServiceReq) (*dt
 	}
 
 	// 异步加载工具
-	if SessionPool != nil {
+	if SessionPool != nil && svc.TransportType != common.TransportPassiveWS {
 		go func() {
-			SessionPool.GetOrConnect(context.Background(), svc)
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			SessionPool.GetOrConnect(ctx, svc)
 		}()
 	}
 
@@ -149,6 +157,9 @@ func (s *McpServiceService) Create(userID int64, req *dto.CreateServiceReq) (*dt
 
 // TestConnection 测试连接但不创建服务，用于注册前的预验证
 func (s *McpServiceService) TestConnection(req *dto.TestConnectionReq) (*dto.TestResult, error) {
+	if req.TransportType == common.TransportPassiveWS {
+		return &dto.TestResult{Connected: false, Error: "请先生成接入点，等待服务接入"}, nil
+	}
 	if req.QueryParamName != "" {
 		if err := validateQueryParamName(req.QueryParamName); err != nil {
 			return nil, err
@@ -178,6 +189,7 @@ func (s *McpServiceService) TestConnection(req *dto.TestConnectionReq) (*dto.Tes
 	if adapter == nil {
 		return &dto.TestResult{Connected: false, Error: "不支持的传输类型"}, nil
 	}
+	defer adapter.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -190,8 +202,6 @@ func (s *McpServiceService) TestConnection(req *dto.TestConnectionReq) (*dto.Tes
 			LatencyMs: time.Since(start).Milliseconds(),
 		}, nil
 	}
-	defer adapter.Close()
-
 	tools := adapter.GetTools()
 
 	return &dto.TestResult{
@@ -251,9 +261,20 @@ func (s *McpServiceService) GetByID(userID, serviceID int64) (*dto.ServiceDetail
 }
 
 func (s *McpServiceService) Update(userID, serviceID int64, req *dto.UpdateServiceReq) error {
+	return withServiceLock(serviceID, func() error { return s.update(userID, serviceID, req) })
+}
+
+func (s *McpServiceService) update(userID, serviceID int64, req *dto.UpdateServiceReq) error {
 	svc, err := model.GetServiceByID(userID, serviceID)
 	if err != nil {
 		return err
+	}
+	if svc.TransportType == common.TransportPassiveWS {
+		// Passive services have no outbound URL or authentication configuration.
+		copyReq := *req
+		copyReq.Config, copyReq.AuthType, copyReq.AuthConfig = nil, nil, nil
+		req = &copyReq
+		svc.Config, svc.AuthType, svc.AuthConfig = "{}", "none", "{}"
 	}
 	if svc.IsMultiKey() {
 		if req.AuthType != nil && *req.AuthType != svc.AuthType {
@@ -352,6 +373,11 @@ func (s *McpServiceService) Update(userID, serviceID int64, req *dto.UpdateServi
 	if err := svc.Update(); err != nil {
 		return err
 	}
+	// 禁用即停:先关闭连接/stdio 子进程,即使后续分组清理失败也不能继续调用。
+	// 重新启用后按需连接;被动服务等待本地重新接入。
+	if req.Status != nil && *req.Status != common.StatusEnabled && SessionPool != nil {
+		SessionPool.Remove(serviceID)
+	}
 	// 禁用服务（status 置为非启用值）时，从全部分组中移除该服务及其工具配置。
 	// 分组聚合工具时只看 group_service.enabled，不检查 service.status，仅置 0 无法隐藏，
 	// 必须删除 mcp_group_services / mcp_group_tools 中的关联行，否则分组仍会暴露已停用的服务。
@@ -364,11 +390,6 @@ func (s *McpServiceService) Update(userID, serviceID int64, req *dto.UpdateServi
 		}
 		if err := model.DeleteGroupItemsByServiceID(serviceID); err != nil {
 			return err
-		}
-		// 禁用即停:踢掉池内会话,stdio 子进程走完整终止序列(关 stdin → SIGTERM →
-		// SIGKILL → Wait)立即释放内存;重新启用后按需懒连接,不自动拉起。
-		if SessionPool != nil {
-			SessionPool.Remove(serviceID)
 		}
 	}
 	// 配置（command/args/env/registry/url/headers）变更后，运行中的连接/子进程仍带旧配置。
@@ -390,6 +411,10 @@ func (s *McpServiceService) Update(userID, serviceID int64, req *dto.UpdateServi
 }
 
 func (s *McpServiceService) Delete(userID, serviceID int64) error {
+	return withServiceLock(serviceID, func() error { return s.delete(userID, serviceID) })
+}
+
+func (s *McpServiceService) delete(userID, serviceID int64) error {
 	svc, err := model.GetServiceByID(userID, serviceID)
 	if err != nil {
 		return err
@@ -443,20 +468,28 @@ func (s *McpServiceService) RefreshTools(userID, serviceID int64) (*dto.RefreshT
 		return nil, nil
 	}
 
-	session, err := SessionPool.GetOrConnect(context.Background(), svc)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	session, release, err := SessionPool.Acquire(ctx, svc)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if session == nil {
 		return nil, nil
 	}
 
 	// 同步刷新资源/提示缓存:"刷新"按钮一并更新服务详情的资源/提示列表。
 	// 连接时的预热是异步的(不拖慢 tools/call 热路径),这里显式等它完成。
-	SessionPool.RefreshItemCaches(context.Background(), session)
+	if err := SessionPool.RefreshTools(ctx, session); err != nil {
+		return nil, err
+	}
 
 	// Re-read the service to get updated tools_cache
-	svc, _ = model.GetServiceByID(userID, serviceID)
+	svc, err = model.GetServiceByID(userID, serviceID)
+	if err != nil {
+		return nil, err
+	}
 	var tools []interface{}
 	_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
 
@@ -535,6 +568,9 @@ func (s *McpServiceService) Test(userID, serviceID int64) (*dto.TestResult, erro
 	if err != nil {
 		return nil, err
 	}
+	if svc.TransportType == common.TransportPassiveWS {
+		return s.testPassive(svc), nil
+	}
 
 	// 市场引用服务:注入平台上游配置/凭证后再测试连通性(与网关 materializeMarketplaceConfig 一致,§6.1)。
 	if svc.Source == "marketplace" && svc.MarketplaceItemID != nil {
@@ -553,6 +589,7 @@ func (s *McpServiceService) Test(userID, serviceID int64) (*dto.TestResult, erro
 
 	start := time.Now()
 	if err := adapter.Connect(ctx); err != nil {
+		_ = adapter.Close()
 		return &dto.TestResult{
 			Connected: false,
 			Error:     err.Error(),
@@ -1020,6 +1057,9 @@ func (s *McpServiceService) GetHealth(userID, serviceID int64) (map[string]inter
 	if err != nil {
 		return nil, err
 	}
+	if svc.TransportType == common.TransportPassiveWS {
+		svc.HealthStatus = passiveHealth(svc, passiveConnected(svc))
+	}
 	return map[string]interface{}{
 		"health_status":     svc.HealthStatus,
 		"last_health_check": svc.LastHealthCheck,
@@ -1229,6 +1269,16 @@ func (s *McpServiceService) GetServicesOverview(userID int64, isAdmin bool) (*dt
 			}
 		}
 
+		if svc.TransportType == common.TransportPassiveWS {
+			if item.HealthStatus == common.HealthHealthy {
+				resp.Summary.HealthyCount--
+			}
+			item.Running = svc.Status == common.StatusEnabled && connected
+			item.HealthStatus = passiveHealth(&svc, item.Running)
+			if item.HealthStatus == common.HealthHealthy {
+				resp.Summary.HealthyCount++
+			}
+		}
 		resp.Summary.ToolsTotal += item.ToolsCount
 		resp.Summary.ProcessTotal += item.ProcessCount
 		resp.Summary.MemoryRSSTotal += item.MemoryRSS
@@ -1307,14 +1357,19 @@ func (s *McpServiceService) CreateAdminService(adminID int64, req *dto.CreateSer
 	if svc.AuthType == "" {
 		svc.AuthType = "none"
 	}
+	if err := preparePassiveService(svc, req); err != nil {
+		return nil, err
+	}
 	if err := svc.Insert(); err != nil {
 		return nil, err
 	}
 
 	// 异步加载工具
-	if SessionPool != nil {
+	if SessionPool != nil && svc.TransportType != common.TransportPassiveWS {
 		go func() {
-			SessionPool.GetOrConnect(context.Background(), svc)
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			SessionPool.GetOrConnect(ctx, svc)
 		}()
 	}
 
@@ -1331,7 +1386,7 @@ func (s *McpServiceService) ListAdminServices(page, pageSize int) ([]dto.Service
 }
 
 // ListClonableServices 返回指定管理员(userID)可克隆上架的来源服务(其账户下 source=user/admin,
-// 自动排除虚拟服务与市场引用),供"从自有服务克隆"下拉使用(§11)。
+// 自动排除虚拟服务、被动接入与市场引用),供"从自有服务克隆"下拉使用(§11)。
 func (s *McpServiceService) ListClonableServices(userID int64, page, pageSize int) ([]dto.ServiceListItem, int64, error) {
 	offset := common.GetOffset(page, pageSize)
 	services, total, err := model.ListClonableServices(userID, offset, pageSize)
@@ -1382,6 +1437,9 @@ func (s *McpServiceService) toServiceListItems(services []model.McpService) []dt
 	for i, svc := range services {
 		var tools []interface{}
 		_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
+		if svc.TransportType == common.TransportPassiveWS {
+			svc.HealthStatus = passiveHealth(&svc, passiveConnected(&svc))
+		}
 		items[i] = dto.ServiceListItem{
 			ID:            svc.ID,
 			Name:          svc.Name,
@@ -1449,6 +1507,12 @@ func (s *McpServiceService) toDetail(svc *model.McpService) *dto.ServiceDetail {
 	if svc.AuthType == "query_param" {
 		raw, _ := config["url"].(string)
 		d.Config["url"] = maskQueryCredential(raw, svc.ParseAuthKeyConfig().QueryParamName)
+	}
+	if svc.TransportType == common.TransportPassiveWS {
+		d.Config, d.AuthType = map[string]interface{}{}, "none"
+		d.PassiveURL, _ = passiveURL(svc)
+		d.PassiveConnected = passiveConnected(svc)
+		d.HealthStatus = passiveHealth(svc, d.PassiveConnected)
 	}
 	// 多秘钥:模式 + 池内统计(徽章/详情页秘钥管理卡片用)
 	if cfg := svc.ParseAuthKeyConfig(); cfg.KeyMode != "" {

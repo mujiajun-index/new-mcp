@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -40,6 +41,40 @@ func startResourcePromptServer(t *testing.T) (url string, shutdown func()) {
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
 	httpSrv := httptest.NewServer(handler)
 	return httpSrv.URL, httpSrv.Close
+}
+
+func TestSDKAdapterManualToolRefreshIgnoresUpstreamTTL(t *testing.T) {
+	server := mcp.NewServer(&mcp.Implementation{Name: "ttl-upstream", Version: "1"}, nil)
+	mcp.AddTool(server, &mcp.Tool{Name: "initial"}, func(context.Context, *mcp.CallToolRequest, any) (*mcp.CallToolResult, any, error) {
+		return &mcp.CallToolResult{}, nil, nil
+	})
+	var name atomic.Value
+	name.Store("initial")
+	var calls atomic.Int32
+	server.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			if method != "tools/list" {
+				return next(ctx, method, req)
+			}
+			calls.Add(1)
+			return &mcp.ListToolsResult{Cacheable: mcp.Cacheable{TTLMs: 60000, CacheScope: "public"},
+				Tools: []*mcp.Tool{{Name: name.Load().(string), InputSchema: map[string]any{"type": "object"}}}}, nil
+		}
+	})
+	srv := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
+	defer srv.Close()
+	a := NewStreamableHTTPAdapter(1, srv.URL, nil)
+	if err := a.Connect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	name.Store("changed-without-notification")
+	if err := a.RefreshTools(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if tools := a.GetTools(); len(tools) != 1 || tools[0].Name != "changed-without-notification" || calls.Load() != 2 {
+		t.Fatalf("manual refresh reused SDK TTL cache: tools=%v listCalls=%d", tools, calls.Load())
+	}
 }
 
 // TestSDKAdapterResourcesPrompts 走真实 Streamable HTTP 传输,验证 adapter 的

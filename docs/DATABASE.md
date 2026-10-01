@@ -104,8 +104,8 @@ CREATE TABLE `mcp_services` (
     -- passive-ws:       {} (空，由 NewMCP 生成接入点 URL，外部服务连入)
     `config`           TEXT            NOT NULL DEFAULT '{}' COMMENT '连接配置 JSON',
 
-    -- 被动连接配置 (仅 transport_type=passive-ws 时有效)
-    `passive_token`    VARCHAR(512)    DEFAULT '' COMMENT '被动连接 JWT Token',
+    -- 被动 WebSocket 接入 (仅 transport_type=passive-ws 时有效)
+    `passive_token`    VARCHAR(512)    DEFAULT '' COMMENT '独立 256 位随机接入凭证的加密值，非 JWT',
     `passive_connected` TINYINT        DEFAULT 0 COMMENT '被动连接状态: 0=等待连入, 1=已连入',
 
     -- 认证配置
@@ -141,6 +141,10 @@ CREATE TABLE `mcp_services` (
     KEY `idx_deleted_at` (`deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP 服务注册表';
 ```
+
+`passive-ws` 固定保存 `config={}`、`auth_type=none`、`auth_config={}`。接入 URL 根据 `ServerAddress` 和服务 ID 动态生成，query 为 `token=<serviceID>.<random-secret>`；URL 本身不落库。每个服务保留一条有效连接，最近成功初始化的连接替换旧连接。
+
+`passive_connected` 是运行时连接状态的持久化快照，服务启动时重置为 false；凭证与工具目录继续保留。历史占位服务缺少凭证时自动补齐。重置接入地址会更换加密凭证并断开当前连接。
 
 ### 2.5 mcp_groups - MCP 分组表
 

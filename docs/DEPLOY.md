@@ -297,6 +297,8 @@ make build
 > [!NOTE]
 > MCP 端点地址由**系统设置**中的**服务器地址**（`ServerAddress`）决定，管理员可在后台运行时动态修改，无需配置环境变量。
 
+被动 WebSocket 接入也使用此设置：`https://newmcp.example.com` 生成 `wss://newmcp.example.com/mcp/passive/?token=...`，HTTP 地址生成 WS。公网部署请配置真实的 HTTPS 域名，在入口代理终止 TLS；仅填写 HTTPS 地址不会自动启用 TLS。创建被动接入服务前必须先设置有效的服务器地址。
+
 ---
 
 ## 3. 反向代理配置
@@ -308,8 +310,8 @@ server {
     listen 80;
     server_name newmcp.example.com;
 
-    # WebSocket 支持
-    location /mcp/ws {
+    # 被动 WebSocket 接入：保留 token 查询参数并允许长连接
+    location = /mcp/passive/ {
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -319,8 +321,8 @@ server {
         proxy_send_timeout 3600s;
     }
 
-    # SSE 支持 (Streamable HTTP)
-    location /mcp/ {
+    # HTTP MCP 网关与流式响应
+    location ~ ^/(smart/)?mcp(?:/|$) {
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
@@ -328,6 +330,7 @@ server {
         proxy_cache off;
         chunked_transfer_encoding on;
         proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
     }
 
     # REST API 和静态文件
@@ -340,6 +343,10 @@ server {
     }
 }
 ```
+
+上例为 HTTP 代理；公网 WSS 请将入口改为 `listen 443 ssl;` 并配置 `ssl_certificate`、`ssl_certificate_key`，或由前置负载均衡器终止 TLS。代理必须转发 WebSocket 的 `Upgrade` / `Connection` 头并保留 query，读写超时须允许长连接；客户端和服务器会发送 ping/pong 心跳。不要在代理访问日志中记录完整接入 URL 的 `token`。
+
+每个被动接入点对应一个服务，新连接成功初始化后替换旧连接。重置接入地址、停用或删除服务会关闭连接；本地桥接程序应支持断线重连，重置后须更新凭证。当前连接只保存在接收它的 NewMCP 进程内，多实例部署需要将该服务的管理、接入与调用流量路由到同一实例，或使用单实例部署。
 
 ---
 
