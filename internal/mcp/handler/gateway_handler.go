@@ -39,17 +39,20 @@ type JSONRPCResponse struct {
 type RPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+	Data    any    `json:"data,omitempty"`
 }
 
 type LogContext struct {
-	ApiKeyID   int64
-	UserID     int64
-	Username   string
-	ApiKeyName string
-	GroupSlug  string
-	ClientIP   string
-	UserAgent  string
-	ExposeMode string // "direct" or "smart"
+	ApiKeyID     int64
+	UserID       int64
+	Username     string
+	ApiKeyName   string
+	GroupSlug    string
+	ClientIP     string
+	UserAgent    string
+	ExposeMode   string // "direct" or "smart"
+	SessionID    string // Only handshake-era HTTP/WebSocket clients use sessions.
+	ConnectionID string // Private cancellation namespace for one WebSocket connection.
 }
 
 // 定价条目种类别名(billing.EntryKind*):本包内 billing 常被用作
@@ -97,6 +100,13 @@ type GatewayHandler struct {
 	searchEngine    *smart.SearchEngine
 	virtualRegistry *virtual.VirtualToolRegistry
 	billing         *billing.BillingService
+	streams         streamRegistry
+	legacy          legacyRegistry
+	eventState      gatewayEventState
+	logMu           sync.Mutex
+	logWG           sync.WaitGroup
+	logClosed       bool
+	workWG          sync.WaitGroup
 }
 
 func NewGatewayHandler(pool *bridge.SessionPool, toolRouter *bridge.ToolRouter, vr *virtual.VirtualToolRegistry) *GatewayHandler {
@@ -109,12 +119,47 @@ func NewGatewayHandler(pool *bridge.SessionPool, toolRouter *bridge.ToolRouter, 
 	}
 }
 
-func (h *GatewayHandler) HandleRequest(ctx context.Context, req *JSONRPCRequest, logCtx *LogContext) *JSONRPCResponse {
+func (h *GatewayHandler) HandleRequest(ctx context.Context, req *JSONRPCRequest, logCtx *LogContext) (resp *JSONRPCResponse) {
+	if failure := ValidateRequest(req); failure != nil {
+		return failure
+	}
+	taskDone, err := h.startGatewayTask()
+	if err != nil {
+		if req.ID == nil {
+			return nil
+		}
+		return rpcFailure(req.ID, -32603, err.Error(), nil)
+	}
+	defer taskDone()
+	defer func() { h.CompleteResponse(req, resp) }()
+	if req.ID != nil {
+		requestCtx, cancel := context.WithCancel(ctx)
+		remove, err := h.registerStream(logCtx, req.ID, cancel)
+		if err != nil {
+			cancel()
+			return rpcFailure(req.ID, -32013, err.Error(), nil)
+		}
+		defer remove()
+		ctx = requestCtx
+	}
 	switch req.Method {
+	case "server/discover":
+		return h.handleDiscover(req, logCtx)
 	case "initialize":
 		return h.handleInitialize(req, logCtx)
 	case "notifications/initialized":
 		return nil
+	case "notifications/cancelled":
+		h.cancelStream(req, logCtx)
+		return nil
+	case "ping":
+		return &JSONRPCResponse{JSONRPC: "2.0", ID: req.ID, Result: map[string]any{}}
+	case "resources/subscribe", "resources/unsubscribe":
+		return h.handleLegacyResourceSubscription(ctx, req, logCtx)
+	case "events/list", "events/poll", "events/subscribe", "events/unsubscribe":
+		return h.handleEvents(ctx, req, logCtx)
+	case "subscriptions/listen", "events/stream":
+		return h.errorResponse(req.ID, -32014, "This method requires a streaming transport")
 	case "tools/list":
 		return h.handleToolsList(ctx, req, logCtx)
 	case "tools/call":
@@ -130,6 +175,9 @@ func (h *GatewayHandler) HandleRequest(ctx context.Context, req *JSONRPCRequest,
 	case "prompts/get":
 		return h.handlePromptsGet(ctx, req, logCtx)
 	default:
+		if req.ID == nil {
+			return nil
+		}
 		return &JSONRPCResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
@@ -140,21 +188,23 @@ func (h *GatewayHandler) HandleRequest(ctx context.Context, req *JSONRPCRequest,
 
 // MCP 版本协商:与官方 TS/Go SDK 行为一致——客户端 initialize 请求的版本在
 // 支持列表内则原样回显,否则回落到本网关支持的最新版本(客户端不支持时可自行断开)。
-// 集合与 go-sdk v1.6.1 的 supportedProtocolVersions 保持同步。
+// Keep date revisions in sync with the official Go SDK.
 var supportedProtocolVersions = []string{
+	"2026-07-28",
 	"2025-11-25",
 	"2025-06-18",
 	"2025-03-26",
 	"2024-11-05",
 }
 
-const latestProtocolVersion = "2025-11-25"
+const latestProtocolVersion = "2026-07-28"
+const latestLegacyProtocolVersion = "2025-11-25"
 
 func negotiateProtocolVersion(requested string) string {
-	if slices.Contains(supportedProtocolVersions, requested) {
+	if requested != latestProtocolVersion && slices.Contains(supportedProtocolVersions, requested) {
 		return requested
 	}
-	return latestProtocolVersion
+	return latestLegacyProtocolVersion
 }
 
 func (h *GatewayHandler) handleInitialize(req *JSONRPCRequest, logCtx *LogContext) *JSONRPCResponse {
@@ -166,15 +216,7 @@ func (h *GatewayHandler) handleInitialize(req *JSONRPCRequest, logCtx *LogContex
 	// resources/prompts 能力仅直连模式声明:智能模式的契约是"只经元工具渐进发现"
 	// (mcp.search/mcp.describe/mcp.read),若声明能力,连接时自动枚举 resources/list
 	// 的客户端会绕过元工具把聚合结果全量拉进上下文,违背智能模式的初衷。
-	capabilities := map[string]interface{}{
-		"tools": map[string]interface{}{},
-	}
-	if h.nativeItemsAllowed(logCtx) {
-		// 未声明 subscribe/listChanged:网关的 HTTP 端点按请求生命周期工作,无法向
-		// 客户端推送变更通知,客户端应自行重新 list。
-		capabilities["resources"] = map[string]interface{}{}
-		capabilities["prompts"] = map[string]interface{}{}
-	}
+	capabilities := h.gatewayCapabilities(logCtx)
 
 	return &JSONRPCResponse{
 		JSONRPC: "2.0",
@@ -381,7 +423,7 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 
 	// 批量路径已逐项记日志(一次请求仍只递增一次请求数),不走下方单条汇总。
 	if batchLogs != nil {
-		go h.recordLogs(batchLogs, logCtx.UserID)
+		h.queueLog(func() { h.recordLogs(batchLogs, logCtx.UserID) })
 		return resp
 	}
 
@@ -434,7 +476,7 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 	if billing == nil && serviceID != 0 {
 		callLog.MarketplaceItemID = model.GetServiceMarketplaceItemID(serviceID)
 	}
-	go h.recordLog(callLog)
+	h.queueLog(func() { h.recordLog(callLog) })
 
 	return resp
 }
@@ -1281,6 +1323,19 @@ func (h *GatewayHandler) errorResponse(id interface{}, code int, message string)
 		ID:      id,
 		Error:   &RPCError{Code: code, Message: message},
 	}
+}
+
+// queueLog registers the write before spawning it so shutdown can drain logs
+// before the authorization database is closed.
+func (h *GatewayHandler) queueLog(write func()) {
+	h.logMu.Lock()
+	if h.logClosed {
+		h.logMu.Unlock()
+		return
+	}
+	h.logWG.Add(1)
+	h.logMu.Unlock()
+	go func() { defer h.logWG.Done(); write() }()
 }
 
 func (h *GatewayHandler) recordLog(log *model.McpCallLog) {

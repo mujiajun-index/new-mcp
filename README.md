@@ -63,8 +63,8 @@ NewMCP is a unified MCP (Model Context Protocol) service management platform. It
 
 - **stdio** — Standard input/output transport
 - **SSE** — Server-Sent Events
-- **Streamable HTTP** — HTTP-based MCP transport
-- **WebSocket** — NewMCP connects to an upstream `ws://` / `wss://` MCP service
+- **Streamable HTTP** — MCP `2026-07-28` requests and POST subscription streams, with legacy revisions through `2025-11-25` retained
+- **WebSocket** — Client gateway connections and active upstream `ws://` / `wss://` connections
 - **Passive WebSocket access** — Register a service to generate an endpoint; a local MCP server connects through its WebSocket bridge and publishes its tools
 
 Passive endpoints use `ServerAddress` to generate a WS or WSS URL with an independent access credential. Each endpoint represents one MCP service; the latest successfully initialized connection replaces the previous one. The service page shows the endpoint, connection status, tool sync and credential reset. See [API](./docs/API.md) and [deployment](./docs/DEPLOY.md) for connection and proxy requirements.
@@ -114,7 +114,11 @@ NewMCP exposes MCP tools through a unified gateway supporting two **tool exposur
 | `POST /smart/mcp` | Streamable HTTP | Smart (fixed) | Aggregates all groups, exposes only 5 meta-tools for progressive discovery |
 | `POST /mcp/group/{slug}` | Streamable HTTP | Per-group `expose_mode` | Endpoint-driven; each group configured independently |
 
-Client gateway WebSocket routes (`/mcp/ws`, `/smart/mcp/ws`, `/mcp/ws/group/{slug}`) are reserved and currently return `501`. Upstream WebSocket registration and inbound `/mcp/passive/` access are supported independently.
+Client gateway WebSocket routes (`/mcp/ws`, `/smart/mcp/ws`, `/mcp/ws/group/{slug}`) carry MCP JSON-RPC messages and subscription notifications. Upstream WebSocket registration and inbound `/mcp/passive/` access are also supported.
+
+The gateway supports the formal MCP revision `2026-07-28`: `server/discover`, per-request `_meta`, HTTP routing headers, `resultType`, and `subscriptions/listen`. Legacy clients can continue using `initialize` and GET SSE with `Mcp-Session-Id`. MCP revisions use date identifiers; JSON-RPC `2.0` and SDK v2 are separate version numbers.
+
+An experimental Events API provides `events/list`, `events/poll`, `events/stream`, `events/subscribe`, and `events/unsubscribe` for four gateway change events: `mcp.tools.list_changed`, `mcp.resources.list_changed`, `mcp.prompts.list_changed`, and `mcp.resources.updated`. It supports polling, push, and signed HTTPS webhooks within the API Key's authorized scope. Webhook subscriptions live in memory for at most five minutes and require refresh; reconnect and resubscribe after a restart. This implementation covers gateway catalog/resource changes; upstream business events require additional integration. Smart mode acknowledges only the standard notification filters it can honor, while experimental events use the authorized service scope. See [protocol details and curl examples](./docs/MCP-PROTOCOL.md#11-订阅与实验-events) and [API reference](./docs/API.md#11-mcp-协议端点).
 
 - **Direct mode** — exposes all tools at once. Suited for LLM clients with a large tool surface (Claude Code, Cursor).
 - **Smart mode** — exposes only 5 meta-tools (`mcp.search` / `mcp.describe` / `mcp.execute` / `mcp.execute_batch` / `mcp.read`); the client discovers tools progressively via search → describe → execute, and runs independent calls concurrently through `mcp.execute_batch`. Suited for context-limited devices (e.g. XiaoZhi) or very large tool sets.

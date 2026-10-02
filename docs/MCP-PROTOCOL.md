@@ -1,6 +1,8 @@
 # NewMCP 协议适配说明
 
-> 版本: V1.3 | 状态: 草案 | 更新日期: 2026-10-01
+> 版本: V1.4 | 更新日期: 2026-10-02 | 正式 MCP `2026-07-28` + NewMCP 实验 Events 扩展
+
+本文描述代码的协议能力。部署中的实例需要运行包含这些改动的构建；本文不表示现有实例已更新或重启。MCP 的正式版本使用日期标识，JSON-RPC `2.0` 与 SDK v2 不等同于“MCP 2.0”。
 
 ## 1. 双模式网关架构
 
@@ -12,7 +14,7 @@ NewMCP 支持两种 MCP 工具暴露模式，**通过端点路由驱动**：
 | `POST /smart/mcp` | 固定 Smart | 聚合 API Key 所有分组，仅暴露 5 个元工具，渐进发现 |
 | `POST /mcp/group/{slug}` | 由分组的 `expose_mode` 决定 | 端点驱动，每个分组独立配置 |
 
-客户端 WebSocket 网关路由 `/mcp/ws`、`/smart/mcp/ws`、`/mcp/ws/group/{slug}` 目前为占位实现，返回 `501`。下文的 `websocket` / `passive-ws` 是上游服务接入能力。
+客户端 WebSocket 网关路由 `/mcp/ws`、`/smart/mcp/ws`、`/mcp/ws/group/{slug}` 已支持 MCP JSON-RPC 请求、响应及订阅通知。下文的 `websocket` / `passive-ws` 是独立的上游服务接入能力。
 
 > **Direct 主端点**: `/mcp` 暴露 API Key 绑定分组的全部工具（去重），适合 Claude Code、Cursor 等支持大量工具的 LLM 客户端。
 > **Smart 主端点**: `/smart/mcp` 仅暴露 5 个元工具，适合小智等上下文受限设备或工具量特别大的场景。
@@ -1038,12 +1040,14 @@ LIMIT 20;
 | `/mcp` | Streamable HTTP | 固定 Direct | 主网关，暴露 API Key 绑定分组全部工具 |
 | `/smart/mcp` | Streamable HTTP | 固定 Smart | Smart 网关，仅暴露 5 个元工具 |
 | `/mcp/group/{slug}` | Streamable HTTP | 按 group 配置 | 分组 MCP 端点 |
-| `/mcp/ws`、`/smart/mcp/ws`、`/mcp/ws/group/{slug}` | WebSocket | 预留 | 客户端网关未实现，返回 `501` |
+| `/mcp/ws`、`/smart/mcp/ws`、`/mcp/ws/group/{slug}` | WebSocket | 与 HTTP 路由对应 | 客户端网关请求、响应及订阅通知 |
 | `/mcp/passive/` | WebSocket | 被动 WebSocket 接入 | 外部 MCP Server 连入，独立接入凭证认证 |
 
-Smart 模式下的 `tools/list` 永远返回 5 个元工具。
+Smart 模式下的 `tools/list` 返回 5 个核心元工具；获准使用语义搜索时还可返回 `mcp.smart_search`。
 Direct 模式下的 `tools/list` 返回聚合后的完整工具列表。
 被动接入端点 `/mcp/passive/` 供外部 MCP Server 连入，NewMCP 作为 MCP Client 发现和调用工具。
+
+三个 HTTP 端点均支持 POST 请求与 POST 订阅流；GET SSE 仅供携带 legacy session 的旧版客户端使用。现代协议用 `subscriptions/listen`，不使用 GET 或协议会话。WebSocket 是 NewMCP 的传输适配方式，通过文本帧传递 JSON-RPC，现代请求仍需 `_meta`，没有 HTTP POST 的镜像头要求。
 
 ---
 
@@ -1082,9 +1086,10 @@ Direct 模式下的 `tools/list` 返回聚合后的完整工具列表。
   （去重）；`/mcp/group/{slug}` 限定该分组并校验访问权。vision/camera 虚拟服务不参与。
 - 聚合并发连上游（上限 8）；**单个服务连接/拉取失败只跳过该服务**，不影响整体响应；
   范围解析失败（分组不存在/无权限）返回 JSON-RPC error。
-- 上游未声明 resources/prompts 能力时直接跳过（不发多余请求）；列表实时拉取不落库，
-  上游变更在下一次 list 即可见（网关不声明 `listChanged`，客户端自行重新 list）。
-- Smart 端点同样暴露资源/提示——资源枚举由客户端主动发起，不占用工具上下文。
+- 上游未声明 resources/prompts 能力时直接跳过（不发多余请求）；目录变化可通过订阅得知，
+  再重新请求相应列表。Smart 搜索使用的上游目录缓存由每会话后台任务合并刷新，通知转发与缓存落库之间可能存在短暂窗口；原生列表请求直接拉取上游。订阅只覆盖当前 API Key 与端点允许的范围。
+- Smart 端点通过 `mcp.search` / `mcp.describe` / `mcp.read` 渐进访问资源与提示，
+  不声明原生资源/提示列表能力，也不会在标准订阅 acknowledgment 中承诺这些过滤项。
 
 ### 10.3 分组内条目级启停（资源/提示勾选）
 
@@ -1110,17 +1115,211 @@ Direct 模式下的 `tools/list` 返回聚合后的完整工具列表。
 tools/call 不同——市场服务不扣费（`billing_status` 落默认 `skipped`）。
 `resources/list`、`prompts/list` 等枚举方法不记日志（与 `tools/list` 一致）。
 
-### 10.5 版本协商（initialize）
+### 10.5 正式版本与旧版兼容
 
-```json
-// 请求
-{"method": "initialize", "params": {"protocolVersion": "2025-06-18", ...}}
+网关支持 `2026-07-28`，同时保留 legacy `2025-11-25`、`2025-06-18`、`2025-03-26`、`2024-11-05`。现代请求可以直接调用，无需 `initialize` / `notifications/initialized`。`server/discover` 返回 `supportedVersions` 和当前端点的 `capabilities`，身份放在结果的 `_meta["io.modelcontextprotocol/serverInfo"]` 中。
 
-// 响应:请求版本在支持列表内则原样回显;否则回落最新支持版本(客户端不支持时自行断开)
-{"result": {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}, "resources": {}, "prompts": {}}, ...}}
+每个现代请求必须包含 `params._meta` 下的 `io.modelcontextprotocol/protocolVersion` 和 `io.modelcontextprotocol/clientCapabilities`；后者可为 `{}`。`clientInfo` 建议包含 `{name,version}`。成功结果包含 `resultType: "complete"`。发现、目录列表和资源读取结果包含必填缓存提示 `ttlMs: 0`、`cacheScope: "private"`，客户端不能跨 API Key 共享这些响应。服务器版本来自构建时注入的 `common.Version`。
+
+HTTP POST 的 `MCP-Protocol-Version`、`Mcp-Method` 必须分别匹配请求体协议版本、方法；`tools/call`、`prompts/get` 的 `Mcp-Name` 镜像 `params.name`，`resources/read` 镜像 `params.uri`。非 ASCII、控制字符、首尾空白或匹配编码标记的名称使用 `=?base64?<UTF-8 Base64>?=`。已有 `x-mcp-header` 工具参数注解时，对应参数还须镜像为 `Mcp-Param-*`。
+
+| 情况 | HTTP 状态 | JSON-RPC 错误 |
+|------|-----------|----------------|
+| 缺少必需 `_meta` 字段或参数无效 | `400` | `-32602` Invalid params |
+| 必需镜像头缺失、无效或与请求体不一致 | `400` | `-32020` HeaderMismatch |
+| 请求版本不支持 | `400` | `-32022`，`data: {requested, supported}` |
+| 缺少当前请求所需的客户端能力 | `400` | `-32021`，`data: {requiredCapabilities}` |
+| 方法不存在 | `404` | `-32601` Method not found |
+
+旧客户端继续使用 `initialize`，只协商 legacy 版本；请求现代日期也不会把 initialize 升为现代握手。HTTP initialize 响应通过 `Mcp-Session-Id` 返回旧会话句柄，后续 POST 与 GET SSE 应携带相同句柄。现代请求不创建会话。WebSocket 旧客户端仍可使用旧版握手。
+
+规范参考：[正式版本](https://github.com/modelcontextprotocol/modelcontextprotocol/releases/tag/2026-07-28)、[版本兼容](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/basic/versioning.mdx)、[Streamable HTTP](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/basic/transports/streamable-http.mdx)。
+
+---
+
+## 11. 订阅与实验 Events
+
+旧会话最长保留 30 分钟；过期后客户端需重新 initialize。浏览器 MCP Origin 默认允许配置的 `ServerAddress` 和当前回环地址；其他前端来源通过 `MCPAllowedOrigins`（逗号分隔的完整 Origin）配置。CORS 支持现代镜像头和 schema 声明的 `Mcp-Param-*` 预检。
+
+Go SDK 锁定到官方修复提交 `53effc04ea258b9ee618886702e03abc4306a160`（`v1.8.1-0.20261001080146-53effc04ea25`），覆盖资源退订误删列表通知订阅的回归。使用旧版 Go SDK 的外部上游服务仍需自行升级服务端实现。
+
+### 11.1 标准 `subscriptions/listen`
+
+现代客户端向现有 MCP 端点 POST `subscriptions/listen`，响应为持续打开的 SSE 流。`params.notifications` 可选择 `toolsListChanged`、`resourcesListChanged`、`promptsListChanged` 和 `resourceSubscriptions`（网关资源 URI 数组）。
+
+首条消息是 `notifications/subscriptions/acknowledged`，其中 `notifications` 为服务端实际承诺的过滤项子集。每条订阅通知的 `params._meta["io.modelcontextprotocol/subscriptionId"]` 等于原请求的 JSON-RPC `id`。Direct 模式可订阅授权范围的目录和资源；Smart 的标准目录是元工具列表，ack 不承诺原生资源/提示过滤项，也不会把上游工具变化当作元工具列表变化。始终检查 ack，不能假定请求的过滤项全部获准。
+
+```text
+data: {"jsonrpc":"2.0","method":"notifications/subscriptions/acknowledged","params":{"notifications":{"toolsListChanged":true},"_meta":{"io.modelcontextprotocol/subscriptionId":"listen-1"}}}
+
+data: {"jsonrpc":"2.0","method":"notifications/tools/list_changed","params":{"_meta":{"io.modelcontextprotocol/subscriptionId":"listen-1"}}}
+
 ```
 
-- 支持版本集合：`2025-11-25` / `2025-06-18` / `2025-03-26` / `2024-11-05`
-  （与 go-sdk v1.6.1 的 `supportedProtocolVersions` 保持同步），最新版本 `2025-11-25`。
-- 协商行为与官方 TS/Go SDK 及 Cherry Studio 一致。
-- `serverInfo.version` 取 `common.Version`（构建时由 VERSION 文件经 ldflags 注入）。
+关闭 HTTP 流即取消，服务端释放相关订阅。WebSocket 客户端可发送 `notifications/cancelled`，`params.requestId` 使用原请求 ID；断开连接也会清理连接所属订阅。上游断线、服务配置、分组范围或端点模式发生变化时，服务端结束当前流，客户端需重新订阅以获取新的 ack；已停用资源的更新在每次转发前过滤。订阅建立总超时为 20 秒，每流最多连接 64 个上游。服务端主动结束标准流时发送 `resultType: "complete"` 的最终结果。核心订阅的 keepalive 可以使用 SSE 注释；`Last-Event-ID` 不用于恢复现代标准订阅。[正式订阅规范](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/basic/patterns/subscriptions.mdx)
+
+### 11.2 NewMCP 实验 Events 范围
+
+`events/*` 参考官方工作组的 [Draft design sketch](https://github.com/modelcontextprotocol/experimental-ext-triggers-events/blob/main/docs/design-sketch-proposal.md)。它尚未成为正式核心协议。NewMCP 用自定义能力 `capabilities.extensions["io.newmcp/events"] = {"experimental": true}` 标识此实现，后续草案变动可能要求迁移。
+
+现代客户端调用 `events/*` 时，必须在每次请求的 `clientCapabilities.extensions` 中声明 `"io.newmcp/events": {}`，显式启用该实验扩展；未声明返回 `-32021`。
+
+当前事件来自网关的授权目录和上游 MCP 变更通知：
+
+| 事件名 | 含义 | `arguments` |
+|--------|------|-------------|
+| `mcp.tools.list_changed` | 授权工具目录变化 | 可选 `service`，省略为当前端点全部授权服务 |
+| `mcp.resources.list_changed` | 授权资源目录变化 | 可选 `service` |
+| `mcp.prompts.list_changed` | 授权提示词目录变化 | 可选 `service` |
+| `mcp.resources.updated` | 指定授权资源更新 | 必填 `uri`，使用 `newmcp://service/upstream-uri`；可从 URI 推导 `service` |
+
+Smart 客户端可通过实验 Events 订阅授权服务范围的变更，然后使用元工具重新发现或读取。API Key、端点分组、服务与条目启停共同约束订阅范围。当前实现不发现或转发任意上游 `events/*` 业务事件，例如 Slack 新消息或 GitHub PR 事件；这些需要单独增加事件源。
+
+| 方法 | 用途 |
+|------|------|
+| `events/list` | 获取当前四种事件描述、参数 Schema、载荷 Schema 和 delivery 模式 |
+| `events/poll` | 按事件与参数轮询；返回 `events`、`cursor`、`truncated`、`hasMore`、`nextPollMs` |
+| `events/stream` | 每个请求一条推送订阅；HTTP SSE 或 WebSocket 通知 |
+| `events/subscribe` | 注册或刷新 webhook 订阅 |
+| `events/unsubscribe` | 按原订阅键取消 webhook |
+
+Poll 和 push 无需先调用 `events/subscribe`。Push 用 `notifications/events/active` 确认订阅，随后发送 `notifications/events/event` 和带 cursor 的 `notifications/events/heartbeat`，取消方式与连接传输一致。事件包含 `{eventId,name,timestamp,data,cursor}`；客户端按 `eventId` 去重，并保存最近 cursor 用于后续 poll、重连或刷新。
+
+回放仅限进程内有界历史，受容量、保存时间及 `maxAgeMs` 限制；无法恢复的区间以 `truncated: true` 或 `gap` 通知表示。`cursor: null` 或省略 cursor 表示从现在开始；重启后旧历史不可恢复，客户端需重新建立订阅。它不是持久事件队列。
+
+### 11.3 Webhook 生命周期与验签
+
+Webhook callback 必须是公网 HTTPS URL。服务端在发送时重新校验地址、限制非公网目标并禁止跳转；订阅 API 使用当前 API Key 身份。初次激活前发送带签名的 `{type: "verification", challenge: "<nonce>"}`，接收端验证签名后用 `2xx` JSON `{challenge: "<same nonce>"}` 回应。
+
+客户端提供 `delivery.secret`，格式为 `whsec_` 加 24–64 字节随机值的 Base64。接收端提前保存 secret，以便验证首条 challenge。每条 POST 的头包含 `webhook-id`、`webhook-timestamp`（Unix 秒）、`webhook-signature`、`X-MCP-Subscription-Id`：
+
+```text
+key = Base64Decode(secret 去掉 whsec_ 前缀)
+signedBytes = UTF8(webhook-id + "." + webhook-timestamp + ".") + 原始 HTTP body bytes
+webhook-signature = "v1," + Base64(HMAC-SHA256(key, signedBytes))
+```
+
+在解析或处理载荷前验签，不要用重新序列化的 JSON 计算签名；检查五分钟时间窗口并按 `webhook-id` / `eventId` 去重。接收端接受并保存或转发事件后再返回 `2xx`。失败投递使用有限次数与时间窗口的退避重试；`410` 与 `413` 不重试该条事件。
+
+本实现的 webhook 订阅为内存状态，授予的有限 TTL 不超过五分钟，不提供无期限订阅。请求 `ttlMs` 是建议值，响应 `refreshBefore` 为实际到期时间；客户端应在其前重复同一 `events/subscribe` 续期，停止续期后过期。进程重启后需重新订阅，进程内回放不能弥补重启期间的事件。
+
+唯一订阅键为 `(API Key 身份, delivery.url, name, canonical JSON arguments)`。相同键的 subscribe 刷新 TTL 和可变字段；活跃订阅沿用服务端已确认的投递 cursor，不按刷新请求的旧 cursor 回退在途批次。已过期或重启后重建时，才按请求的 cursor 和 maxAgeMs 尝试回放；返回 `id` 为服务端生成的路由句柄。取消请求使用原来的 `name`、`arguments`、`delivery.url`，不能只提交返回 ID。
+
+控制载荷也使用相同签名：`verification` 用于首次验证；`{type:"gap",cursor:...}` 表示回放缺口；`{type:"terminated",error:...}` 表示订阅已结束。控制消息的 `webhook-id` 为 `msg_<type>_<random>`。
+
+### 11.4 完整 curl 示例
+
+以下示例使用 Bash、curl、jq；示例密钥通过环境变量提供。选择 `/mcp`、`/smart/mcp` 或 `/mcp/group/<slug>`，后续调用使用同一端点。资源 URI 与服务名应从当前授权目录取得。
+
+```bash
+export MCP_URL='http://localhost:3000/mcp'
+export MCP_API_KEY='<你的 API Key>'
+
+# 自动添加现代请求元数据和 HTTP 镜像头；第三个参数为需要镜像的名称/URI。
+mcp_rpc() {
+  local mcp_method="$1" mcp_params="$2"
+  local -a mcp_name_header=()
+  if [ -n "${3:-}" ]; then
+    mcp_name_header=(-H "Mcp-Name: $3")
+  fi
+  curl --no-buffer --silent --show-error "$MCP_URL" \
+    -H "X-API-Key: $MCP_API_KEY" \
+    -H 'Content-Type: application/json' \
+    -H 'Accept: application/json, text/event-stream' \
+    -H 'MCP-Protocol-Version: 2026-07-28' \
+    -H "Mcp-Method: $mcp_method" \
+    "${mcp_name_header[@]}" \
+    --data "$(jq -cn --arg method "$mcp_method" --argjson params "$mcp_params" '
+      {jsonrpc:"2.0",id:1,method:$method,params:($params + {
+        _meta:{
+          "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+          "io.modelcontextprotocol/clientCapabilities":{extensions:{"io.newmcp/events":{}}},
+          "io.modelcontextprotocol/clientInfo":{name:"curl-example",version:"1"}
+        }
+      })}')"
+}
+
+mcp_rpc server/discover '{}'
+mcp_rpc tools/list '{}'
+```
+
+打开标准订阅后，curl 持续输出 SSE；按 Ctrl+C 关闭并取消：
+
+```bash
+mcp_rpc subscriptions/listen \
+  '{"notifications":{"toolsListChanged":true,"resourcesListChanged":true,"promptsListChanged":true}}'
+```
+
+列举、轮询和推送实验事件。保存 poll 响应的 `.result.cursor`，下次 poll 带回；push 重连时带最近收到的 cursor：
+
+```bash
+mcp_rpc events/list '{}'
+mcp_rpc events/poll \
+  '{"name":"mcp.tools.list_changed","arguments":{},"cursor":null,"maxAgeMs":300000,"maxEvents":50}'
+
+export MCP_EVENT_CURSOR='<上次收到的 cursor>'
+mcp_rpc events/poll "$(jq -cn --arg cursor "$MCP_EVENT_CURSOR" \
+  '{name:"mcp.tools.list_changed",arguments:{},cursor:$cursor,maxAgeMs:300000,maxEvents:50}')"
+
+# 长连接，按 Ctrl+C 取消。
+mcp_rpc events/stream \
+  '{"name":"mcp.tools.list_changed","arguments":{},"cursor":null,"maxAgeMs":300000}'
+
+# 仅关注目录中指定资源；该URI需在当前端点的授权范围内。
+export MCP_RESOURCE_URI='<newmcp://服务名/上游资源URI>'
+mcp_rpc events/poll "$(jq -cn --arg uri "$MCP_RESOURCE_URI" \
+  '{name:"mcp.resources.updated",arguments:{uri:$uri},cursor:null}')"
+```
+
+Webhook 接收端应先准备好 HTTPS callback、secret 存储、验签和 challenge 回应。生成本地随机 secret，不把它写入共享文件或日志：
+
+```bash
+export MCP_CALLBACK_URL='https://receiver.example.com/hooks/newmcp'
+export MCP_WEBHOOK_SECRET="whsec_$(openssl rand -base64 32)"
+
+mcp_rpc events/subscribe "$(jq -cn \
+  --arg url "$MCP_CALLBACK_URL" --arg secret "$MCP_WEBHOOK_SECRET" '
+  {name:"mcp.tools.list_changed",arguments:{},
+   delivery:{mode:"webhook",url:$url,secret:$secret},
+   cursor:null,ttlMs:300000,maxAgeMs:300000}')"
+
+# 在响应 refreshBefore 到期前重复 subscribe；如已收到 cursor，在刷新时带回。
+mcp_rpc events/subscribe "$(jq -cn \
+  --arg url "$MCP_CALLBACK_URL" --arg secret "$MCP_WEBHOOK_SECRET" \
+  --arg cursor "$MCP_EVENT_CURSOR" '
+  {name:"mcp.tools.list_changed",arguments:{},
+   delivery:{mode:"webhook",url:$url,secret:$secret},
+   cursor:$cursor,ttlMs:300000,maxAgeMs:300000}')"
+
+mcp_rpc events/unsubscribe "$(jq -cn --arg url "$MCP_CALLBACK_URL" \
+  '{name:"mcp.tools.list_changed",arguments:{},delivery:{url:$url}}')"
+```
+
+旧客户端先初始化，捕获响应头中的 session，再通过 GET 订阅旧版通知流。此示例的 API Key 和端点与上文相同：
+
+```bash
+MCP_LEGACY_HEADERS=$(mktemp)
+curl --silent --show-error -D "$MCP_LEGACY_HEADERS" "$MCP_URL" \
+  -H "X-API-Key: $MCP_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'MCP-Protocol-Version: 2025-11-25' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"legacy-curl-example","version":"1"}}}'
+
+MCP_SESSION_ID=$(awk 'tolower($1)=="mcp-session-id:" {gsub("\r", "", $2); print $2}' "$MCP_LEGACY_HEADERS")
+rm -f "$MCP_LEGACY_HEADERS"
+
+curl --silent --show-error "$MCP_URL" \
+  -H "X-API-Key: $MCP_API_KEY" \
+  -H "Mcp-Session-Id: $MCP_SESSION_ID" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'MCP-Protocol-Version: 2025-11-25' \
+  --data '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+
+curl --no-buffer --silent --show-error "$MCP_URL" \
+  -H "X-API-Key: $MCP_API_KEY" \
+  -H "Mcp-Session-Id: $MCP_SESSION_ID" \
+  -H 'Accept: text/event-stream' \
+  -H 'MCP-Protocol-Version: 2025-11-25'
+```

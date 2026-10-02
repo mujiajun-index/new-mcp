@@ -1,6 +1,6 @@
 # NewMCP API 接口文档
 
-> 版本: V1.0 | 状态: 草案 | 更新日期: 2026-10-01 (完善上游协议与被动接入)
+> 版本: V1.1 | 更新日期: 2026-10-02 (正式 MCP `2026-07-28`、订阅与实验 Events)
 
 ## 1. 概述
 
@@ -1485,7 +1485,9 @@ canvas.toBlob(blob => {
 
 ## 11. MCP 协议端点
 
-这些端点遵循 MCP 协议规范，不使用上述 REST 响应格式。
+这些端点使用 MCP JSON-RPC，不使用上述 REST 响应格式，也不位于 `/api/v1` 下。客户端网关使用 API Key 认证（`X-API-Key` 或 `Authorization: Bearer <API_KEY>`）。本节描述代码支持的接口；部署中的实例需运行包含这些改动的构建。
+
+支持正式 `2026-07-28` 和 legacy `2025-11-25`、`2025-06-18`、`2025-03-26`、`2024-11-05`。MCP 版本按日期命名；消息中的 `jsonrpc: "2.0"` 不代表“MCP 2.0”。[完整 curl 示例](./MCP-PROTOCOL.md#114-完整-curl-示例)
 
 ### 双模式说明
 
@@ -1590,63 +1592,111 @@ canvas.toBlob(blob => {
 ### POST /mcp
 主网关端点 (Streamable HTTP)。聚合 API Key 绑定的所有分组，**固定 Direct 模式**，去重后暴露全部工具（`serviceName__toolName` 前缀）。
 
-**Headers:**
-```
+**现代请求 Headers:**
+```text
 Content-Type: application/json
 Accept: application/json, text/event-stream
-MCP-Protocol-Version: 2025-03-26
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/list
 X-API-Key: <key>
 ```
 
-**Request Body (JSON-RPC):**
+**Request Body:**
 ```json
 {
     "jsonrpc": "2.0",
     "id": 1,
     "method": "tools/list",
-    "params": {}
+    "params": {
+        "_meta": {
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+            "io.modelcontextprotocol/clientCapabilities": {},
+            "io.modelcontextprotocol/clientInfo": {"name": "api-example", "version": "1"}
+        }
+    }
 }
 ```
 
-**Response:** 返回 API Key 绑定分组的全部工具（去重后），工具名格式 `serviceName__toolName`。
+**Response:** `.result.tools` 返回 API Key 绑定分组的全部工具（去重后），工具名格式 `serviceName__toolName`；现代结果包含 `resultType: "complete"`、`ttlMs: 0`、`cacheScope: "private"` 和 `_meta["io.modelcontextprotocol/serverInfo"]`。
+
+每个现代请求都必须有 `_meta.protocolVersion` 和 `_meta.clientCapabilities` 的完整命名空间键；`clientInfo` 为建议字段。`MCP-Protocol-Version`、`Mcp-Method` 必须匹配请求体；`tools/call` 和 `prompts/get` 还需要匹配 `params.name` 的 `Mcp-Name`，`resources/read` 的 `Mcp-Name` 匹配 `params.uri`。名称不能直接表示为安全 ASCII 时使用 `=?base64?<UTF-8 Base64>?=`。工具的 `x-mcp-header` 参数注解对应 `Mcp-Param-*` 镜像头。
+
+现代请求无需 initialize 或 session。旧客户端继续走 `initialize` → `notifications/initialized`，只协商 legacy 版本，HTTP 初始化响应以 `Mcp-Session-Id` 返回会话，后续请求携带同一会话头。
 
 ### POST /smart/mcp
-Smart 网关端点 (Streamable HTTP)。聚合 API Key 绑定的所有分组，**固定 Smart 模式**，仅暴露 5 个元工具。
-
-**Headers:**
-```
-Content-Type: application/json
-Accept: application/json, text/event-stream
-MCP-Protocol-Version: 2025-03-26
-X-API-Key: <key>
-```
-
-**Request Body (JSON-RPC):**
-```json
-{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "tools/list",
-    "params": {}
-}
-```
-
-**Response:** 固定返回 5 个元工具 (`mcp.search`, `mcp.describe`, `mcp.execute`, `mcp.execute_batch`, `mcp.read`)，搜索范围覆盖该 API Key 所有绑定分组。
+Smart 网关端点 (Streamable HTTP)。聚合 API Key 绑定的所有分组，**固定 Smart 模式**。请求元数据与 headers 同 `/mcp`。`tools/list` 返回 5 个核心元工具 (`mcp.search`, `mcp.describe`, `mcp.execute`, `mcp.execute_batch`, `mcp.read`)，获准使用语义搜索时增加 `mcp.smart_search`。搜索范围覆盖该 API Key 所有绑定分组。
 
 ### POST /mcp/group/{slug}
 分组端点 (Streamable HTTP)。按分组的 `expose_mode` 决定模式（端点驱动）：`direct` 返回聚合工具，`smart` 返回元工具。
 
-### GET /mcp/group/{slug}
-SSE 流 (服务端推送)。
+### `server/discover`
+
+向上述任一 POST 端点发送现代 `server/discover` 请求，参数只需标准 `_meta`。响应包括 `supportedVersions`、该端点的 `capabilities`、`resultType` 与 `_meta["io.modelcontextprotocol/serverInfo"]`；可以在首次调用前发现能力。实验事件能力位于 `capabilities.extensions["io.newmcp/events"] = {"experimental": true}`，这不是正式核心能力。
+
+### `subscriptions/listen`（POST SSE）
+
+向上述 POST 端点发送 `subscriptions/listen`，参数包含标准 `_meta` 和 `notifications`：
+
+| 过滤项 | 类型 | 通知 |
+|--------|------|------|
+| `toolsListChanged` | boolean | `notifications/tools/list_changed` |
+| `resourcesListChanged` | boolean | `notifications/resources/list_changed` |
+| `promptsListChanged` | boolean | `notifications/prompts/list_changed` |
+| `resourceSubscriptions` | string[] | 所列网关 URI 的 `notifications/resources/updated` |
+
+HTTP 响应为 `text/event-stream`。首条 `notifications/subscriptions/acknowledged` 返回实际支持的过滤项子集，每条通知通过 `_meta["io.modelcontextprotocol/subscriptionId"]` 关联原请求 ID。Smart 模式不声明原生资源/提示能力，不在 ack 中承诺相应过滤项；其元工具目录不跟随上游工具列表变化。HTTP 客户端关闭流即取消；服务器主动结束时发送成功 completion 再关闭。现代标准订阅不支持 `Last-Event-ID` 回放。
+
+### GET /mcp、GET /smart/mcp、GET /mcp/group/{slug}
+
+旧版 SSE 通知流，仅供已 initialize 的 legacy 客户端使用。需要 API Key、`MCP-Protocol-Version`（legacy 日期）、`Mcp-Session-Id`（initialize 响应头中的会话）和 `Accept: text/event-stream`。旧版指定资源仍通过 `resources/subscribe` / `resources/unsubscribe` 管理。现代客户端使用 POST `subscriptions/listen`。
 
 ### WebSocket /mcp/ws
-预留的客户端网关路由，当前返回 `501 Not Implemented`；调用平台工具请使用 HTTP 网关端点。
+客户端 Direct 网关，通过 WebSocket 文本帧传递 JSON-RPC 请求、响应及订阅通知。连接握手使用 API Key 认证；现代消息包含标准 `_meta`，旧客户端可用 initialize。HTTP POST 镜像头不适用于 WebSocket 消息。
 
 ### WebSocket /smart/mcp/ws
-预留的客户端网关路由，当前返回 `501 Not Implemented`。
+客户端 Smart 网关，能力和授权范围与 `/smart/mcp` 对应。
 
 ### WebSocket /mcp/ws/group/{slug}
-预留的客户端网关路由，当前返回 `501 Not Implemented`。
+客户端分组网关，模式由分组 `expose_mode` 决定。`subscriptions/listen` 和 `events/stream` 的通知通过连接发送；`notifications/cancelled` 的 `requestId` 指向原流请求，连接关闭时也会清理所属流。
+
+### 实验 `events/*`
+
+现代客户端需在 `_meta["io.modelcontextprotocol/clientCapabilities"].extensions` 中声明 `"io.newmcp/events": {}`；未显式启用时返回 HTTP `400` / `-32021`。
+
+此实现参考尚在 Draft 阶段的 [Events proposal](https://github.com/modelcontextprotocol/experimental-ext-triggers-events/blob/main/docs/design-sketch-proposal.md)。事件只覆盖 NewMCP 网关目录与 MCP 资源更新，不代理任意上游业务事件。授权基于当前 API Key、端点分组、服务及条目启停；Smart 客户端也可在授权服务范围内使用。
+
+| 事件 | 参数 |
+|------|------|
+| `mcp.tools.list_changed` | `arguments.service` 可选 |
+| `mcp.resources.list_changed` | `arguments.service` 可选 |
+| `mcp.prompts.list_changed` | `arguments.service` 可选 |
+| `mcp.resources.updated` | `arguments.uri` 必填，`newmcp://service/upstream-uri`，可自动推导 service |
+
+| 方法 | 参数/结果 |
+|------|-----------|
+| `events/list` | 返回事件类型与 input/payload Schema、delivery 模式 |
+| `events/poll` | `name`、`arguments`、可选 `cursor`、`maxAgeMs`、`maxEvents`；结果含 `events`、`cursor`、`truncated`、`hasMore`、`nextPollMs` |
+| `events/stream` | `name`、`arguments`、可选 `cursor`、`maxAgeMs`；HTTP SSE 或 WebSocket active/event/heartbeat 通知 |
+| `events/subscribe` | `name`、`arguments`、`delivery: {mode:"webhook",url,secret}`、可选 `cursor`、`maxAgeMs`、`ttlMs`；返回服务端 `id`、`refreshBefore`、`cursor`、`truncated` |
+| `events/unsubscribe` | 原 `name`、`arguments`、`delivery: {url}`；按当前身份和原订阅键清理 |
+
+`events/subscribe` 仅用于 webhook；poll 直接请求，push 直接打开 stream。`cursor: null`（或省略）从现在开始，非空 cursor 请求进程内有界回放。历史缺失时 `truncated` / `gap` 表明缺口，重启会丢失历史和订阅。客户端须保存 cursor、按 eventId 去重并重建订阅。
+
+Webhook 要求公网 HTTPS callback 和客户端生成的 `whsec_` + Base64(24–64 随机字节) secret。激活前发送已签名 `verification` nonce，接收端验签后回 `2xx` JSON `{challenge:"<原nonce>"}`。每条投递都含 Standard Webhooks HMAC-SHA256 头及 `X-MCP-Subscription-Id`；签名覆盖 ID、Unix 秒时间戳和原始 body bytes。接收端在处理前验签、检查五分钟时间窗口、去重，保存或转发成功再返回 `2xx`。失败使用有限退避重试，`410` / `413` 不重试该事件。
+
+订阅状态在内存中，有限 TTL 最长五分钟；不授予无期限订阅。`refreshBefore` 是实际到期时间，客户端须在此前用相同键重发 subscribe 续期；重启后重新订阅。唯一键为 `(认证身份, url, name, canonical arguments)`，返回 ID 只用于路由，unsubscribe 不接受 ID 替代原键。签名格式、控制载荷及完整命令见[协议文档](./MCP-PROTOCOL.md#113-webhook-生命周期与验签)。
+
+### 现代 HTTP 协议错误
+
+| HTTP | JSON-RPC code | 场景 |
+|------|---------------|------|
+| `400` | `-32602` | 必需现代元数据缺失、参数无效 |
+| `400` | `-32020` | 缺失或不匹配的 HTTP 镜像头 |
+| `400` | `-32021` | 客户端能力不足，`data.requiredCapabilities` |
+| `400` | `-32022` | 版本不支持，`data.requested` / `data.supported` |
+| `404` | `-32601` | 未实现的方法 |
+
+实验事件错误使用 `-32011` NotFound、`-32012` Forbidden、`-32013` ResourceExhausted、`-32014` Unsupported、`-32015` CallbackEndpointError；callback 错误只返回分类（如 `timeout`、`challenge_failed`），不返回接收端响应正文。
 
 ### WebSocket /mcp/passive/
 被动 WebSocket 接入端点。本地或外部 MCP Server 主动连入，NewMCP 作为 MCP Client 发现和调用工具。

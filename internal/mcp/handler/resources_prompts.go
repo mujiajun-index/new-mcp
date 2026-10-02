@@ -614,7 +614,7 @@ func (h *GatewayHandler) recordConsumeLog(logCtx *LogContext, serviceID int64, s
 	if callLog.MarketplaceItemID == nil && serviceID != 0 {
 		callLog.MarketplaceItemID = model.GetServiceMarketplaceItemID(serviceID)
 	}
-	go h.recordLog(callLog)
+	h.queueLog(func() { h.recordLog(callLog) })
 }
 
 // handleMetaRead 智能模式元工具 mcp.read:经 tools/call 读资源或取提示。复用原生

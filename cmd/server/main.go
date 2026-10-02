@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -56,8 +60,12 @@ func main() {
 	addr := fmt.Sprintf(":%d", common.Port)
 	log.Printf("NewMCP server starting on %s", addr)
 
+	srv := &http.Server{
+		Addr: addr, Handler: engine,
+		BaseContext: func(net.Listener) context.Context { return srvCtx },
+	}
 	go func() {
-		if err := engine.Run(addr); err != nil {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("Server stopped: %v", err)
 			srvCancel()
 		}
@@ -72,6 +80,13 @@ func main() {
 	case <-srvCtx.Done():
 	}
 
+	// Cancel HTTP/SSE and hijacked WebSocket lifetimes before draining requests.
+	srvCancel()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("HTTP shutdown: %v", err)
+	}
+	shutdownCancel()
 	router.StopCloudConnections()
 	router.StopBackgroundJobs()
 	router.StopGateway()

@@ -34,7 +34,21 @@ type McpSession struct {
 	failCount         int
 	useMu             sync.Mutex
 	inUse             int
+	catalogCtx        context.Context
+	catalogCancel     context.CancelFunc
+	catalogDone       chan struct{}
+	catalogMu         sync.Mutex
+	catalogPending    catalogRefresh
+	catalogWake       chan struct{}
 }
+
+type catalogRefresh uint8
+
+const (
+	catalogTools catalogRefresh = 1 << iota
+	catalogResources
+	catalogPrompts
+)
 
 // ErrServiceBusy 共享市场 stdio 会话并发达到上限时返回。调用方应转成
 // "负载较高,请稍后重试"的友好响应(errors.Is 判定)。
@@ -154,6 +168,7 @@ func (p *SessionPool) GetOrConnect(ctx context.Context, svc *model.McpService) (
 }
 
 func newSession(svc *model.McpService, adapter transport.TransportAdapter) *McpSession {
+	catalogCtx, catalogCancel := context.WithCancel(context.Background())
 	return &McpSession{
 		key:               sessionKeyFor(svc),
 		ServiceID:         svc.ID,
@@ -166,6 +181,10 @@ func newSession(svc *model.McpService, adapter transport.TransportAdapter) *McpS
 		LastUsed:          time.Now(),
 		LastRefresh:       time.Now(),
 		Health:            "healthy",
+		catalogCtx:        catalogCtx,
+		catalogCancel:     catalogCancel,
+		catalogDone:       make(chan struct{}),
+		catalogWake:       make(chan struct{}, 1),
 	}
 }
 
@@ -234,15 +253,14 @@ func (p *SessionPool) publishSessionLocked(session *McpSession) error {
 		closeSession(old)
 	}
 
-	// 共享条目预热用的是内存行(ID=0,不落库):跳过 DB 回写与缓存预热,
-	// 引用行的 tools/握手信息由真实调用路径或刷新补齐。
+	// Shared prewarm sessions have no own service row. Their resource/prompt
+	// catalogs are published to installation rows by the catalog observer.
 	if session.ServiceID != 0 {
 		if !passive {
 			if err := p.updateSessionRowLocked(session); err != nil {
 				log.Printf("[mcp] service %d catalog persistence failed: %v", session.ServiceID, err)
 			}
 		}
-		go p.refreshItemCachesWhenLeased(session)
 	}
 	p.observeSession(session)
 	return nil
@@ -273,24 +291,161 @@ func (s *McpSession) setTools(tools []transport.Tool) {
 func (p *SessionPool) observeSession(session *McpSession) {
 	if observer, ok := session.Adapter.(toolsChangeObserver); ok {
 		observer.SetToolsChangedHandler(func() {
-			// The SDK has already refreshed its snapshot. Never block its handler
-			// on the service lock: a credential mutation may be closing the SDK.
-			go func() {
-				if err := p.withSessionLock(session.key, func() error { return p.syncToolsLocked(session) }); err != nil {
-					log.Printf("[mcp] service %d tools cache refresh failed: %v", session.ServiceID, err)
-				}
-			}()
+			// The SDK has already refreshed its snapshot. Coalesce invalidations
+			// without waiting for a service lock or spawning a goroutine per event.
+			session.queueCatalogRefresh(catalogTools)
 		})
 	}
+	go p.observeCatalog(session)
 	if observer, ok := session.Adapter.(sessionDoneObserver); ok {
 		go func() {
-			<-observer.Done()
+			select {
+			case <-observer.Done():
+			case <-session.catalogCtx.Done():
+				return
+			}
 			_ = p.withSessionLock(session.key, func() error {
 				p.removeIfCurrent(session)
 				return nil
 			})
 		}()
 	}
+}
+
+func (s *McpSession) queueCatalogRefresh(items catalogRefresh) {
+	if s.catalogCtx.Err() != nil {
+		return
+	}
+	s.catalogMu.Lock()
+	s.catalogPending |= items
+	s.catalogMu.Unlock()
+	select {
+	case s.catalogWake <- struct{}{}:
+	default:
+	}
+}
+
+// observeCatalog owns one worker and one list-only watcher per pooled session.
+// Resource URI subscriptions are deliberately left to the requesting streams.
+func (p *SessionPool) observeCatalog(session *McpSession) {
+	defer close(session.catalogDone)
+	if watcher, ok := session.Adapter.(transport.NotificationWatcher); ok {
+		// The watch retains the session lifetime rather than a setup deadline.
+		// Only cancel this watch if registration exceeds its setup budget.
+		watchCtx, cancelWatch := context.WithCancel(session.catalogCtx)
+		defer cancelWatch()
+		timer := time.AfterFunc(15*time.Second, cancelWatch)
+		stop, err := watcher.WatchNotifications(watchCtx, nil, func(n transport.Notification) {
+			switch n.Method {
+			case "notifications/resources/list_changed":
+				session.queueCatalogRefresh(catalogResources)
+			case "notifications/prompts/list_changed":
+				session.queueCatalogRefresh(catalogPrompts)
+			}
+		})
+		timer.Stop()
+		if stop != nil {
+			defer stop()
+		}
+		if err != nil && session.catalogCtx.Err() == nil {
+			log.Printf("[mcp] service %d catalog notification watch failed: %v", session.ServiceID, err)
+		}
+	}
+	if session.ServiceID != 0 || session.key.itemID != 0 {
+		session.queueCatalogRefresh(catalogResources | catalogPrompts)
+	}
+	retryDelay := time.Second
+	for {
+		select {
+		case <-session.catalogCtx.Done():
+			return
+		case <-session.catalogWake:
+		}
+		if session.catalogCtx.Err() != nil {
+			return
+		}
+		session.catalogMu.Lock()
+		items := session.catalogPending
+		session.catalogPending = 0
+		session.catalogMu.Unlock()
+		if retry := p.refreshCatalogWhenLeased(session, items); retry != 0 {
+			session.queueCatalogRefresh(retry)
+			timer := time.NewTimer(retryDelay)
+			select {
+			case <-session.catalogCtx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+			if retryDelay < 30*time.Second {
+				retryDelay *= 2
+				if retryDelay > 30*time.Second {
+					retryDelay = 30 * time.Second
+				}
+			}
+		} else {
+			retryDelay = time.Second
+		}
+	}
+}
+
+func (p *SessionPool) refreshCatalogWhenLeased(session *McpSession, items catalogRefresh) catalogRefresh {
+	// Background invalidations have the same shared-process concurrency budget
+	// as requests and never hold a lease for the lifetime of the watcher.
+	release, ok, err := p.AcquireSession(session)
+	if errors.Is(err, ErrServiceBusy) {
+		return items
+	}
+	if err != nil || !ok {
+		return 0
+	}
+	defer release()
+	session.refreshMu.Lock()
+	defer session.refreshMu.Unlock()
+	ctx, cancel := context.WithTimeout(session.catalogCtx, 15*time.Second)
+	defer cancel()
+	if ctx.Err() != nil {
+		return 0
+	}
+	var retry catalogRefresh
+	if items&catalogTools != 0 {
+		if err := p.withSessionLock(session.key, func() error { return p.syncToolsLocked(session) }); err != nil && ctx.Err() == nil {
+			log.Printf("[mcp] service %d tools cache refresh failed: %v", session.ServiceID, err)
+			retry |= catalogTools
+		}
+	}
+	updates := make(map[string]interface{}, 2)
+	if items&catalogResources != 0 && (session.ServiceID != 0 || session.key.itemID != 0) {
+		if data, err := fetchResourcesCacheResult(ctx, session.Adapter); err == nil {
+			updates["resources_cache"] = data
+		} else if ctx.Err() == nil {
+			log.Printf("[mcp] service %d resources cache refresh failed: %v", session.ServiceID, err)
+			retry |= catalogResources
+		}
+	}
+	if items&catalogPrompts != 0 && (session.ServiceID != 0 || session.key.itemID != 0) {
+		if data, err := fetchPromptsCacheResult(ctx, session.Adapter); err == nil {
+			updates["prompts_cache"] = data
+		} else if ctx.Err() == nil {
+			log.Printf("[mcp] service %d prompts cache refresh failed: %v", session.ServiceID, err)
+			retry |= catalogPrompts
+		}
+	}
+	if len(updates) != 0 && ctx.Err() == nil {
+		if err := p.withSessionLock(session.key, func() error { return p.writeCatalogUpdatesLocked(ctx, session, updates) }); err != nil && ctx.Err() == nil {
+			log.Printf("[mcp] service %d catalog cache persistence failed: %v", session.ServiceID, err)
+			retry |= items & (catalogResources | catalogPrompts)
+		}
+	}
+	if session.catalogCtx.Err() != nil {
+		return 0
+	}
+	if ctx.Err() != nil {
+		// A bounded network attempt may expire while the session remains live.
+		// Keep its invalidation pending for the same worker's next attempt.
+		return items
+	}
+	return retry
 }
 
 func (p *SessionPool) removeIfCurrent(session *McpSession) {
@@ -421,14 +576,6 @@ func (s *McpSession) markUsed() {
 	s.useMu.Unlock()
 }
 
-func (p *SessionPool) refreshItemCachesWhenLeased(session *McpSession) {
-	// 后台预热抢不到租约(并发上限/会话被移除)就跳过,缓存由下次真实调用补齐。
-	if release, ok, err := p.AcquireSession(session); err == nil && ok {
-		defer release()
-		p.RefreshItemCaches(context.Background(), session)
-	}
-}
-
 // StartIdleReaper checks every minute for idle platform-managed stdio sessions.
 // timeout is read for every sweep so an administrator's setting takes effect
 // without restarting the server.
@@ -477,7 +624,7 @@ func (p *SessionPool) ReleaseIdlePlatformStdio(timeout time.Duration) int {
 			target = fmt.Sprintf("shared item %d", session.key.itemID)
 		}
 		log.Printf("[idle-reaper] released marketplace stdio process %q (%s) after %s idle", session.ServiceName, target, idle)
-		if err := session.Adapter.Close(); err != nil {
+		if err := closeSession(session); err != nil {
 			log.Printf("[idle-reaper] close %q (%s) failed: %v", session.ServiceName, target, err)
 		}
 	}
@@ -559,6 +706,33 @@ func (p *SessionPool) writeSessionUpdatesLocked(session *McpSession, updates map
 	return persistSessionUpdates(session, updates)
 }
 
+// Shared marketplace processes serve many installation rows, including sessions
+// prewarmed with ServiceID=0. Publish only public catalogs to their enabled
+// references; the platform's connection configuration never belongs in them.
+func (p *SessionPool) writeCatalogUpdatesLocked(ctx context.Context, session *McpSession, updates map[string]interface{}) error {
+	if session.key.itemID == 0 {
+		return p.writeSessionUpdatesLocked(session, updates)
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.closed || p.sessions[session.key] != session || !session.Adapter.IsConnected() || ctx.Err() != nil {
+		return errors.New("MCP service session was replaced or disconnected")
+	}
+	if model.DB == nil {
+		return errors.New("MCP service database is unavailable")
+	}
+	// This helper may be reused by manual cache refresh, so allowlist its fields.
+	catalogs := make(map[string]interface{}, 2)
+	for _, field := range []string{"resources_cache", "prompts_cache"} {
+		if value, ok := updates[field]; ok {
+			catalogs[field] = value
+		}
+	}
+	return model.DB.WithContext(ctx).Model(&model.McpService{}).
+		Where("marketplace_item_id = ? AND source = ? AND status = ?", session.key.itemID, "marketplace", common.StatusEnabled).
+		Updates(catalogs).Error
+}
+
 func (p *SessionPool) syncToolsLocked(session *McpSession) error {
 	p.mu.RLock()
 	current := !p.closed && p.sessions[session.key] == session
@@ -609,63 +783,120 @@ func (p *SessionPool) RefreshTools(ctx context.Context, session *McpSession) err
 	if err != nil {
 		return err
 	}
-	p.RefreshItemCaches(ctx, session)
+	p.refreshItemCachesLocked(ctx, session)
 	return nil
 }
 
 // RefreshItemCaches 拉取上游 resources/templates/prompts 并回写 mcp_services 缓存列。
 // 服务详情/分组勾选 UI 读这些缓存;上游未声明能力时对应列表为空。
 func (p *SessionPool) RefreshItemCaches(ctx context.Context, session *McpSession) {
+	if session == nil {
+		return
+	}
+	session.refreshMu.Lock()
+	defer session.refreshMu.Unlock()
+	p.refreshItemCachesLocked(ctx, session)
+}
+
+func (p *SessionPool) refreshItemCachesLocked(ctx context.Context, session *McpSession) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	resourcesJSON := fetchResourcesCache(ctx, session.Adapter)
-	promptsJSON := fetchPromptsCache(ctx, session.Adapter)
+	updates := make(map[string]interface{}, 2)
+	if data, err := fetchResourcesCacheResult(ctx, session.Adapter); err == nil {
+		updates["resources_cache"] = data
+	}
+	if data, err := fetchPromptsCacheResult(ctx, session.Adapter); err == nil {
+		updates["prompts_cache"] = data
+	}
+	if ctx.Err() != nil || len(updates) == 0 {
+		return
+	}
 	_ = p.withSessionLock(session.key, func() error {
-		return p.writeSessionUpdatesLocked(session, map[string]interface{}{
-			"resources_cache": resourcesJSON,
-			"prompts_cache":   promptsJSON,
-		})
+		return p.writeCatalogUpdatesLocked(ctx, session, updates)
 	})
 }
 
 // fetchResourcesCache 合并静态资源与模板为 {"resources":[...],"templates":[...]}。
 func fetchResourcesCache(ctx context.Context, adapter transport.TransportAdapter) string {
+	// One-shot snapshots preserve the existing best-effort behavior. Persistent
+	// invalidations use the strict helper below to keep a good cache on failure.
 	combined := map[string]json.RawMessage{
 		"resources": json.RawMessage(`[]`),
 		"templates": json.RawMessage(`[]`),
 	}
 	if raw, err := adapter.ListResources(ctx); err == nil {
-		var m map[string]json.RawMessage
-		if json.Unmarshal(raw, &m) == nil && m["resources"] != nil {
-			combined["resources"] = m["resources"]
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) == nil && fields["resources"] != nil {
+			combined["resources"] = fields["resources"]
 		}
 	}
 	if raw, err := adapter.ListResourceTemplates(ctx); err == nil {
-		var m map[string]json.RawMessage
-		if json.Unmarshal(raw, &m) == nil && m["resourceTemplates"] != nil {
-			combined["templates"] = m["resourceTemplates"]
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) == nil && fields["resourceTemplates"] != nil {
+			combined["templates"] = fields["resourceTemplates"]
 		}
+	}
+	data, _ := json.Marshal(combined)
+	return string(data)
+}
+
+func fetchResourcesCacheResult(ctx context.Context, adapter transport.TransportAdapter) (string, error) {
+	combined := map[string]json.RawMessage{
+		"resources": json.RawMessage(`[]`),
+		"templates": json.RawMessage(`[]`),
+	}
+	raw, err := adapter.ListResources(ctx)
+	if err != nil {
+		return "", err
+	}
+	var resources map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &resources); err != nil {
+		return "", err
+	}
+	if resources["resources"] != nil {
+		combined["resources"] = resources["resources"]
+	}
+	raw, err = adapter.ListResourceTemplates(ctx)
+	if err != nil {
+		return "", err
+	}
+	var templates map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &templates); err != nil {
+		return "", err
+	}
+	if templates["resourceTemplates"] != nil {
+		combined["templates"] = templates["resourceTemplates"]
 	}
 	b, err := json.Marshal(combined)
 	if err != nil {
-		return `{"resources":[],"templates":[]}`
+		return "", err
 	}
-	return string(b)
+	return string(b), nil
 }
 
 // fetchPromptsCache 返回提示裸数组(与 tools_cache 的裸数组形态一致)。
 func fetchPromptsCache(ctx context.Context, adapter transport.TransportAdapter) string {
-	raw, err := adapter.ListPrompts(ctx)
+	data, err := fetchPromptsCacheResult(ctx, adapter)
 	if err != nil {
 		return "[]"
 	}
-	var m map[string]json.RawMessage
-	if json.Unmarshal(raw, &m) == nil && m["prompts"] != nil {
-		if b, err := json.Marshal(m["prompts"]); err == nil {
-			return string(b)
-		}
+	return data
+}
+
+func fetchPromptsCacheResult(ctx context.Context, adapter transport.TransportAdapter) (string, error) {
+	raw, err := adapter.ListPrompts(ctx)
+	if err != nil {
+		return "", err
 	}
-	return "[]"
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return "", err
+	}
+	if m["prompts"] != nil {
+		b, err := json.Marshal(m["prompts"])
+		return string(b), err
+	}
+	return "[]", nil
 }
 
 // FetchAdapterCaches 一次性拉取上游 tools/resources/prompts 缓存 JSON(形态与 mcp_services 缓存列一致)。
@@ -752,11 +983,14 @@ func (p *SessionPool) markPassiveOfflineLocked(session *McpSession) {
 	}
 }
 
-func closeSession(session *McpSession) {
+func closeSession(session *McpSession) error {
+	if session.catalogCancel != nil {
+		session.catalogCancel()
+	}
 	if observer, ok := session.Adapter.(toolsChangeObserver); ok {
 		observer.SetToolsChangedHandler(nil)
 	}
-	_ = session.Adapter.Close()
+	return session.Adapter.Close()
 }
 
 // RemoveByMarketplaceItem 踢掉某市场项全部引用服务的池内会话(市场项平台上游配置变更后调用),

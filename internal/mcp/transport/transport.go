@@ -32,6 +32,28 @@ type ToolRefresher interface {
 	RefreshTools(context.Context) error
 }
 
+type Notification struct {
+	Method string
+	Params json.RawMessage
+}
+
+// NotificationWatcher is optional, so adapters without subscriptions can still
+// serve ordinary requests. Repeated pending change notices may be coalesced.
+type NotificationWatcher interface {
+	WatchNotifications(ctx context.Context, resourceURIs []string, listener func(Notification)) (stop func(), err error)
+}
+
+type NotificationCapabilities struct {
+	ToolsListChanged     bool
+	PromptsListChanged   bool
+	ResourcesListChanged bool
+	ResourceSubscribe    bool
+}
+
+type NotificationCapabilitiesProvider interface {
+	NotificationCapabilities() NotificationCapabilities
+}
+
 // StdioProcessInfo 标识 stdio 传输拉起的本地子进程,供进程资源监控定位进程树。
 type StdioProcessInfo struct {
 	PID     int

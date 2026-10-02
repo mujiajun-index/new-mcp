@@ -63,7 +63,8 @@ func peekRPCMethod(c *gin.Context) string {
 	if c.Request == nil || c.Request.Body == nil {
 		return ""
 	}
-	body, err := io.ReadAll(c.Request.Body)
+	// Keep the peek bounded as well: it runs before the transport's body limit.
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, (16<<20)+1))
 	if err != nil {
 		return ""
 	}
@@ -73,6 +74,40 @@ func peekRPCMethod(c *gin.Context) string {
 	}
 	_ = common.Unmarshal(body, &m)
 	return m.Method
+}
+
+// ConsumeMCPToolQuota is shared by HTTP middleware and WebSocket messages, so
+// switching transports cannot bypass the existing per-user tool call limit.
+func ConsumeMCPToolQuota(userID int64, group string) (retryAfterSeconds, maximum int) {
+	if !model.GetOptionBool("RateLimitEnabled") {
+		return 0, 0
+	}
+	rule, _ := resolveRateLimitRule(group)
+	if rule.max <= 0 {
+		return 0, rule.max
+	}
+	key := fmt.Sprintf("u:%v:g:%s", userID, group)
+	now := time.Now()
+	rlMu.Lock()
+	defer rlMu.Unlock()
+	if entry, exists := rlRecords[key]; exists && now.Before(entry.expireAt) {
+		entry.count++
+		if entry.count > rule.max {
+			wait := int(entry.expireAt.Sub(now).Seconds())
+			if wait < 1 {
+				wait = 1
+			}
+			return wait, rule.max
+		}
+	} else {
+		rlRecords[key] = &rateLimitEntry{count: 1, expireAt: now.Add(rule.window)}
+		for k, v := range rlRecords {
+			if !now.Before(v.expireAt) {
+				delete(rlRecords, k)
+			}
+		}
+	}
+	return 0, rule.max
 }
 
 // RateLimit enforces the configurable per-user-group request rate on the MCP

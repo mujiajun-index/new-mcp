@@ -64,8 +64,8 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）服务管理平台。�
 
 - **stdio** — 标准输入/输出传输
 - **SSE** — 服务端推送事件
-- **Streamable HTTP** — 基于 HTTP 的 MCP 传输
-- **WebSocket** — NewMCP 主动连接上游 `ws://` / `wss://` MCP 服务
+- **Streamable HTTP** — 支持 MCP `2026-07-28` 请求与 POST 订阅流，保留至 `2025-11-25` 的旧版兼容
+- **WebSocket** — 支持客户端网关连接，以及主动连接上游 `ws://` / `wss://` MCP 服务
 - **被动 WebSocket 接入** — 注册服务后生成接入地址，本地 MCP 服务通过 WebSocket 桥接程序主动连接并提供工具
 
 被动接入地址根据 `ServerAddress` 生成 WS 或 WSS 链接，使用独立接入凭证。每个端点对应一个 MCP 服务，最近成功初始化的连接替换旧连接。服务页面提供接入地址、连接状态、工具同步及凭证重置。连接与代理配置见 [API 文档](./docs/API.md) 和 [部署文档](./docs/DEPLOY.md)。
@@ -115,7 +115,11 @@ NewMCP 通过统一网关暴露 MCP 工具，支持两种**工具暴露模式**�
 | `POST /smart/mcp` | Streamable HTTP | 固定 Smart | 聚合所有分组，仅暴露 5 个元工具，渐进发现 |
 | `POST /mcp/group/{slug}` | Streamable HTTP | 由分组 `expose_mode` 决定 | 端点驱动，每个分组独立配置 |
 
-客户端 WebSocket 网关路由（`/mcp/ws`、`/smart/mcp/ws`、`/mcp/ws/group/{slug}`）目前为预留接口，返回 `501`。上游 WebSocket 服务注册与 `/mcp/passive/` 被动接入分别可用。
+客户端 WebSocket 网关路由（`/mcp/ws`、`/smart/mcp/ws`、`/mcp/ws/group/{slug}`）通过 MCP JSON-RPC 消息传递请求、响应及订阅通知。上游 WebSocket 服务注册与 `/mcp/passive/` 被动接入也可用。
+
+网关支持正式 MCP `2026-07-28`：`server/discover`、每次请求的 `_meta`、HTTP 路由镜像头、`resultType` 和 `subscriptions/listen`。旧客户端可继续通过 `initialize` 和携带 `Mcp-Session-Id` 的 GET SSE 使用旧版协议。MCP 用日期标识版本，JSON-RPC `2.0` 与 SDK v2 是另外两种版本号。
+
+实验 Events API 提供 `events/list`、`events/poll`、`events/stream`、`events/subscribe`、`events/unsubscribe`，内建四种网关变更事件：`mcp.tools.list_changed`、`mcp.resources.list_changed`、`mcp.prompts.list_changed`、`mcp.resources.updated`。在 API Key 授权范围内支持轮询、推送及签名 HTTPS webhook。Webhook 订阅在内存中最多保留五分钟，需定期续期，重启后客户端须重新订阅。当前范围为网关目录及资源变更，上游业务事件需另行接入。Smart 模式的标准订阅只确认实际支持的过滤项，实验事件按授权服务范围订阅。详见[协议与 curl 示例](./docs/MCP-PROTOCOL.md#11-订阅与实验-events)和 [API 文档](./docs/API.md#11-mcp-协议端点)。
 
 - **Direct（直连）模式** — 直接暴露所有工具，适合支持大量工具的 LLM 客户端（Claude Code、Cursor 等）。
 - **Smart（智能）模式** — 仅暴露 5 个元工具（`mcp.search` / `mcp.describe` / `mcp.execute` / `mcp.execute_batch` / `mcp.read`），客户端通过 搜索 → 查看 → 执行 渐进发现和调用工具；相互独立的调用可用 `mcp.execute_batch` 一次并发执行。适合上下文受限的设备（如小智）或工具量特别大的场景。

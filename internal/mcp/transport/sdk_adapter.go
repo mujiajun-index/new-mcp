@@ -25,28 +25,38 @@ var clientImpl = &mcp.Implementation{Name: "newmcp", Version: "1.0.0"}
 // WebSocket 传输。协议握手（initialize、notifications/initialized）、
 // Mcp-Session-Id、SSE 解析、分页等全部交由 SDK 处理。
 type SDKAdapter struct {
-	typ             TransportType
-	transport       mcp.Transport
-	sess            *mcp.ClientSession
-	tools           []Tool
-	protocolVersion string
-	serverInfo      *ServerInfo
-	connected       bool
-	closed          bool
-	connectCancel   context.CancelFunc
-	done            chan struct{}
-	doneOnce        sync.Once
-	toolsChanged    func()
-	refreshRequests chan struct{}
-	connectMu       sync.Mutex
-	refreshMu       sync.Mutex
+	typ                  TransportType
+	transport            mcp.Transport
+	sess                 *mcp.ClientSession
+	tools                []Tool
+	protocolVersion      string
+	serverInfo           *ServerInfo
+	connected            bool
+	closed               bool
+	connectCancel        context.CancelFunc
+	done                 chan struct{}
+	doneOnce             sync.Once
+	toolsChanged         func()
+	refreshRequests      chan Notification
+	connectMu            sync.Mutex
+	refreshMu            sync.Mutex
+	notificationMu       sync.Mutex
+	watchOperationMu     sync.Mutex
+	notificationWatchers map[uint64]*notificationObserver
+	resourceWatchAcks    map[string]chan struct{}
+	resourceWatchRefs    map[string]int
+	nextWatcherID        uint64
 	// dyn 多秘钥动态注入槽位(nil = 静态 headers 行为,单秘钥/stdio)。
 	dyn *dynamicSlot
 	mu  sync.Mutex
 }
 
 func newSDKAdapter(typ TransportType) *SDKAdapter {
-	return &SDKAdapter{typ: typ, done: make(chan struct{}), refreshRequests: make(chan struct{}, 1)}
+	return &SDKAdapter{
+		typ: typ, done: make(chan struct{}), refreshRequests: make(chan Notification, 1),
+		notificationWatchers: make(map[uint64]*notificationObserver), resourceWatchRefs: make(map[string]int),
+		resourceWatchAcks: make(map[string]chan struct{}),
+	}
 }
 
 // Capture the physical connection so even SDK handshake failures that return
@@ -139,12 +149,31 @@ func (a *SDKAdapter) Connect(ctx context.Context) error {
 	a.mu.Unlock()
 
 	client := mcp.NewClient(clientImpl, &mcp.ClientOptions{
-		ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) {
+		ToolListChangedHandler: func(_ context.Context, req *mcp.ToolListChangedRequest) {
 			select {
-			case a.refreshRequests <- struct{}{}:
+			case a.refreshRequests <- makeNotification("notifications/tools/list_changed", req.Params):
 			default:
 			}
 		},
+		ResourceListChangedHandler: func(_ context.Context, req *mcp.ResourceListChangedRequest) {
+			a.publishNotification(makeNotification("notifications/resources/list_changed", req.Params))
+		},
+		PromptListChangedHandler: func(_ context.Context, req *mcp.PromptListChangedRequest) {
+			a.publishNotification(makeNotification("notifications/prompts/list_changed", req.Params))
+		},
+		ResourceUpdatedHandler: func(_ context.Context, req *mcp.ResourceUpdatedNotificationRequest) {
+			a.publishNotification(makeNotification("notifications/resources/updated", req.Params))
+		},
+	})
+	client.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			if method == "notifications/subscriptions/acknowledged" {
+				if params, ok := req.GetParams().(*mcp.SubscriptionsAcknowledgedParams); ok && params != nil {
+					a.acknowledgeResourceWatches(params.Notifications.ResourceSubscriptions)
+				}
+			}
+			return next(ctx, method, req)
+		}
 	})
 	// This adapter owns the persisted catalog snapshot. Disable the SDK's local
 	// tools TTL cache so an explicit refresh always re-reads the upstream, even
@@ -213,6 +242,7 @@ func (a *SDKAdapter) Close() error {
 		cancel()
 	}
 	a.doneOnce.Do(func() { close(a.done) })
+	a.closeNotificationWatchers()
 	if sess != nil {
 		return sess.Close()
 	}
@@ -246,6 +276,7 @@ func (a *SDKAdapter) watchSession(sess *mcp.ClientSession) {
 		cancel()
 	}
 	a.doneOnce.Do(func() { close(a.done) })
+	a.closeNotificationWatchers()
 }
 
 // RefreshTools leaves the old snapshot intact if any page fails.
@@ -279,7 +310,7 @@ func (a *SDKAdapter) refreshLoop() {
 		select {
 		case <-a.done:
 			return
-		case <-a.refreshRequests:
+		case notification := <-a.refreshRequests:
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			err := a.RefreshTools(ctx)
 			cancel()
@@ -290,6 +321,7 @@ func (a *SDKAdapter) refreshLoop() {
 				if handler != nil {
 					handler()
 				}
+				a.publishNotification(notification)
 			}
 		}
 	}

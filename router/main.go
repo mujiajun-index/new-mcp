@@ -148,7 +148,7 @@ func serveFrontend(engine *gin.Engine) {
 		// discovery URLs, never SPA routes. Use trailing slashes ("/api/",
 		// "/smart/") so frontend pages such as /api-keys or /smart-config are NOT
 		// mistaken for API calls.
-		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/mcp/") || strings.HasPrefix(path, "/smart/") || strings.HasPrefix(path, "/.well-known/") {
+		if path == "/mcp" || strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/mcp/") || strings.HasPrefix(path, "/smart/") || strings.HasPrefix(path, "/.well-known/") {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 			return
 		}
@@ -200,6 +200,9 @@ func StopCloudConnections() {
 
 // StopGateway closes local and remote service sessions before the database.
 func StopGateway() {
+	if GatewayHandler != nil {
+		GatewayHandler.Close()
+	}
 	if SessionPool != nil {
 		SessionPool.CloseAll()
 	}
