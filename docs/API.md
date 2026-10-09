@@ -1146,6 +1146,8 @@ passive-ws (被动 WebSocket 接入):
 
 ## 8. 摄像头接口
 
+本节描述当前已实现的摄像头 API。Agent 的 Direct／Smart 调用、推流密钥、拟新增的采集间隔、YOLO 工具与摄像头事件见 [摄像头与 Agent 调用指南](./CAMERA-AGENT-CALLING.md)。新指南中的 YOLO 和监控接口目前为设计约定，尚未上线。
+
 ### GET /cameras
 获取当前用户的摄像头列表。
 
@@ -1185,16 +1187,24 @@ passive-ws (被动 WebSocket 接入):
 ```json
 {
     "success": true,
+    "message": "created",
     "data": {
         "id": 1,
         "name": "前门摄像头",
-        ...
+        "description": "前门监控",
+        "vision_config_id": 1,
+        "auto_register": false,
+        "registered_service_id": null,
+        "streaming": false,
+        "has_stream_key": false
     }
 }
 ```
 
+上例展示响应核心字段；实际 data 还包含工具描述、默认描述、状态和时间等 CameraDetail 字段。
+
 ### GET /cameras/:id
-获取摄像头详情（含工具名称/描述和流状态）。
+获取摄像头详情（含工具描述、默认描述、推流密钥是否存在和流状态）。推流密钥原文只通过专用 stream-key 接口向属主提供。
 
 **Response:** `200 OK`
 ```json
@@ -1212,6 +1222,8 @@ passive-ws (被动 WebSocket 接入):
         "auto_register": true,
         "registered_service_id": 6,
         "streaming": true,
+        "has_stream_key": true,
+        "stream_key_expires_at": "",
         "status": 1,
         "created_at": "2026-05-15T00:00:00Z",
         "updated_at": "2026-05-15T00:00:00Z"
@@ -1243,25 +1255,49 @@ passive-ws (被动 WebSocket 接入):
 ```json
 {
     "success": true,
-    "message": "摄像头已启用",
-    "data": {
-        "service_id": 6,
-        "service_name": "camera_1",
-        "tools": ["capture_frame", "analyze_frame"]
-    }
+    "message": "success"
 }
 ```
 
+启用响应不包含服务详情。随后 GET `/cameras/:id` 读取 registered_service_id；服务名按 `camera_<摄像头ID>` 生成，具体工具从 MCP tools/list 发现。
+
 ### POST /cameras/:id/disable
-禁用摄像头。从 VirtualToolRegistry 注销，停止流连接，删除关联的 McpService、McpGroupService、McpGroupTool 记录。
+禁用摄像头。从 VirtualToolRegistry 注销，删除关联的 McpService、McpGroupService、McpGroupTool 记录，并拒绝新的推流连接。当前 Disable 实现不会主动关闭已升级的 WebSocket；需要立即停止已有推流时，关闭采集页面或撤销推流密钥。
 
 **Response:** `200 OK`
 ```json
 {
     "success": true,
-    "message": "摄像头已禁用"
+    "message": "success"
 }
 ```
+
+### GET /cameras/:id/stream-key
+登录用户查询自己摄像头的密钥与推流页面链接。未生成密钥时 data.has_key=false；此接口不自动生成密钥。
+
+**Response:** `200 OK`（有密钥时）
+```json
+{
+    "success": true,
+    "message": "success",
+    "data": {
+        "stream_key": "<该摄像头的推流密钥>",
+        "stream_url": "https://newmcp.example.com/camera-live/1?k=<推流密钥>",
+        "expires_at": "",
+        "has_key": true
+    }
+}
+```
+
+### POST /cameras/:id/stream-key
+生成或重新生成推流密钥，旧密钥立即失效，已有推流连接会断开。请求 `expires_in` 为有效秒数，0 或空 body 表示永久有效，负数返回 400。响应与 GET stream-key 相同；有限期 expires_at 返回时间字符串。
+
+```json
+{"expires_in":3600}
+```
+
+### DELETE /cameras/:id/stream-key
+撤销密钥并关闭已有推流连接，返回 `{"success":true,"message":"success"}`。以上三种管理接口均需要登录 JWT，并校验摄像头属主；密钥和完整 stream_url 都应作为凭证保存。
 
 ### WebSocket GET /cameras/:id/stream
 摄像头帧推流端点。浏览器通过此 WebSocket 连接推送摄像头实时画面。
@@ -1269,24 +1305,25 @@ passive-ws (被动 WebSocket 接入):
 **认证方式:** 由于浏览器 WebSocket API 不支持自定义 HTTP 头，认证通过 URL query 参数传递：
 
 ```
-ws://localhost:3000/api/v1/cameras/1/stream?token=<JWT_TOKEN>
+ws://localhost:3000/api/v1/cameras/1/stream?k=<stream_key>
 ```
 
-> 此端点位于 auth 路由组之外，由 handler 内部通过 `middleware.ParseToken()` 校验 query 中的 JWT token。
+> 此端点位于 auth 路由组之外，handler 将 k 与摄像头 StreamKey 做恒定时间比较并校验有效期。不是 JWT 认证；只有已启用的摄像头允许推流，每路同时只允许一个连接。缺少／无效／过期密钥返回 401，未启用返回 403，已有推流返回 409。线上使用 wss。
 
 **协议:**
-- 浏览器连接后，定时（默认 2 秒间隔）通过 canvas 截取 JPEG 帧，以二进制消息发送
+- 浏览器连接后，当前固定每 2 秒通过 canvas 截取 JPEG 帧，以二进制消息发送；后台可配置间隔属于拟新增能力
 - 后端通过 `CameraStreamManager` 缓存最新帧，供 MCP 工具 `capture_frame` 和 `analyze_frame` 调用
 - 连接关闭后自动清理缓存
 
 **连接示例 (浏览器端):**
 ```javascript
-const token = localStorage.getItem('token');
-const ws = new WebSocket(`ws://localhost:3000/api/v1/cameras/${cameraId}/stream?token=${encodeURIComponent(token)}`);
+// streamKey 由属主从专用 stream-key 接口取得，或来自推流页面的 k 参数。
+const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+const ws = new WebSocket(`${protocol}//${location.host}/api/v1/cameras/${cameraId}/stream?k=${encodeURIComponent(streamKey)}`);
 
 // canvas 截取 JPEG 帧并发送
 canvas.toBlob(blob => {
-    ws.send(blob);
+    if (blob && ws.readyState === WebSocket.OPEN) ws.send(blob);
 }, 'image/jpeg', 0.8);
 ```
 

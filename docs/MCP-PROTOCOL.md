@@ -1209,6 +1209,8 @@ webhook-signature = "v1," + Base64(HMAC-SHA256(key, signedBytes))
 
 ### 11.4 完整 curl 示例
 
+摄像头 capture_frame／analyze_frame 的 Direct 与 Smart 调用，以及拟新增 YOLO 识别、监控和摄像头事件示例，见 [摄像头与 Agent 调用指南](./CAMERA-AGENT-CALLING.md)。该指南明确区分已实现与拟新增能力；本节现有四种 Events 不自动产生摄像头物品事件。
+
 以下示例使用 Bash、curl、jq；示例密钥通过环境变量提供。选择 `/mcp`、`/smart/mcp` 或 `/mcp/group/<slug>`，后续调用使用同一端点。资源 URI 与服务名应从当前授权目录取得。
 
 ```bash
