@@ -832,6 +832,15 @@ export function AdminSettingsPage() {
                   />
                 </div>
                 <div className="space-y-2">
+                  <label className="text-sm font-medium">{t('settings.imageGenInlineMaxBytes')}</label>
+                  <Input
+                    type="number" min={0}
+                    value={localValues.ImageGenInlineMaxBytes ?? ''}
+                    onChange={(e) => updateLocal('ImageGenInlineMaxBytes', e.target.value)}
+                    onBlur={() => saveField('ImageGenInlineMaxBytes')}
+                  />
+                </div>
+                <div className="space-y-2">
                   <label className="text-sm font-medium">{t('settings.signedURLTTLSeconds')}</label>
                   <Input
                     type="number"

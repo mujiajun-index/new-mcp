@@ -109,6 +109,9 @@ func TestPollCursorBoundsIsolationAndAuthorization(t *testing.T) {
 	}
 	age := params(c)
 	age["maxAgeMs"] = 0
+	// Windows wall-clock timestamps can share a tick across consecutive polls.
+	// Ensure the emitted history predates the zero-age poll's cutoff.
+	time.Sleep(20 * time.Millisecond)
 	if r := call(t, m, p, "events/poll", age, s.source); !r["truncated"].(bool) || len(r["events"].([]Event)) != 0 {
 		t.Fatalf("maxAge ignored: %+v", r)
 	}

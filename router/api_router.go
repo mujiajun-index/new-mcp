@@ -122,6 +122,16 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.PUT("/connections/:id/bind-apikey", controller.BindConnectionApiKey)
 
 		// Vision Configs
+		auth.GET("/imagegen", controller.ListImageGenConfigs)
+		auth.POST("/imagegen", controller.CreateImageGenConfig)
+		auth.GET("/imagegen/:id", controller.GetImageGenConfig)
+		auth.PUT("/imagegen/:id", controller.UpdateImageGenConfig)
+		auth.DELETE("/imagegen/:id", controller.DeleteImageGenConfig)
+		auth.POST("/imagegen/models", controller.ListImageGenModels)
+		auth.POST("/imagegen/test", controller.TestImageGenConfig)
+		auth.POST("/imagegen/:id/enable", controller.EnableImageGenConfig)
+		auth.POST("/imagegen/:id/disable", controller.DisableImageGenConfig)
+
 		auth.GET("/vision", controller.ListVisionConfigs)
 		auth.POST("/vision", controller.CreateVisionConfig)
 		auth.GET("/vision/:id", controller.GetVisionConfig)

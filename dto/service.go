@@ -43,15 +43,16 @@ type ServiceListItem struct {
 }
 
 type ServiceDetail struct {
-	ID             int64                  `json:"id"`
-	Name           string                 `json:"name"`
-	DisplayName    string                 `json:"display_name"`
-	Description    string                 `json:"description"`
-	TransportType  string                 `json:"transport_type"`
-	Source         string                 `json:"source"`
-	Config         map[string]interface{} `json:"config"`
-	AuthType       string                 `json:"auth_type"`
-	QueryParamName string                 `json:"query_param_name,omitempty"`
+	ToolTimeoutSeconds *int                   `json:"tool_timeout_seconds,omitempty"`
+	ID                 int64                  `json:"id"`
+	Name               string                 `json:"name"`
+	DisplayName        string                 `json:"display_name"`
+	Description        string                 `json:"description"`
+	TransportType      string                 `json:"transport_type"`
+	Source             string                 `json:"source"`
+	Config             map[string]interface{} `json:"config"`
+	AuthType           string                 `json:"auth_type"`
+	QueryParamName     string                 `json:"query_param_name,omitempty"`
 	// 多秘钥:key_mode 为 random/polling 时认证头由秘钥池按策略注入,
 	// KeyCount/KeyEnabled 为池内总数与启用数。
 	KeyMode          string                 `json:"key_mode"`            // ""=单秘钥;random|polling

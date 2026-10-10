@@ -80,6 +80,7 @@ export interface ServiceListItem {
 }
 
 export interface ServiceDetail {
+  tool_timeout_seconds?: number
   id: number
   name: string
   display_name: string
@@ -197,6 +198,8 @@ export interface ServicesOverviewData {
 
 // MCP 内容块:text/image/resource 等,工具调用 content 与提示消息 content 共用
 export interface McpContentBlock {
+  uri?: string
+  name?: string
   type: string
   text?: string
   data?: string

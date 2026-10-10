@@ -57,7 +57,7 @@ func (s *SettingsService) UpdateSetting(actor model.Operator, key string, value 
 			return err
 		}
 	}
-	if key == "SharedStdioIdleTimeoutMinutes" || key == "SharedStdioMaxConcurrency" {
+	if key == "SharedStdioIdleTimeoutMinutes" || key == "SharedStdioMaxConcurrency" || key == "ImageGenInlineMaxBytes" {
 		if err := validateNonNegativeInt(value); err != nil {
 			return err
 		}

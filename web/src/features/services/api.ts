@@ -62,8 +62,8 @@ export async function getServiceTools(id: number) {
 }
 
 // 工具测试:后端 60s 超时,前端放宽到 65s 避免提前断开
-export async function callServiceTool(id: number, data: { name: string; arguments: Record<string, unknown> }) {
-  const res = await api.post(`/services/${id}/tools/call`, data, { timeout: 65_000 })
+export async function callServiceTool(id: number, data: { name: string; arguments: Record<string, unknown> }, timeout = 65_000) {
+  const res = await api.post(`/services/${id}/tools/call`, data, { timeout })
   return res.data
 }
 

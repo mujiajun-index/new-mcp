@@ -68,7 +68,7 @@ var MetaTools = []MetaTool{
 			"properties": {
 				"tool_id": {"type": "string", "description": "Tool ID in the form service.toolName, e.g. \"weather.get_forecast\""},
 				"arguments": {"type": "object", "description": "Arguments object matching the tool's input schema from mcp.describe"},
-				"timeout_ms": {"type": "number", "default": 30000, "description": "Execution timeout in milliseconds"}
+				"timeout_ms": {"type": "number", "description": "Optional caller timeout in milliseconds. If omitted, image services use their configured timeout (default 180s); other MCP services use 30s. A shorter caller deadline takes priority."}
 			},
 			"required": ["tool_id"]
 		}`),
@@ -89,7 +89,7 @@ var MetaTools = []MetaTool{
 					},
 					"required": ["tool_id"]
 				}},
-				"timeout_ms": {"type": "number", "default": 30000, "description": "Execution timeout in milliseconds, applied to every call in the batch"}
+				"timeout_ms": {"type": "number", "description": "Optional caller timeout in milliseconds, applied to every call in the batch. If omitted, image services use their configured timeout (default 180s); other MCP services use 30s. A shorter caller deadline takes priority."}
 			},
 			"required": []
 		}`),

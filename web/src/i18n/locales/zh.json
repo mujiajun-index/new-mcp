@@ -75,7 +75,8 @@
     "pricing": "服务定价",
     "adminBilling": "计费设置",
     "adminRedemption": "兑换码",
-    "adminUploads": "图片管理"
+    "adminUploads": "图片管理",
+    "imagegen": "图片生成"
   },
   "auth": {
     "signIn": "登录",
@@ -625,7 +626,8 @@
       "manageInCardBelow": "认证凭证由下方「秘钥管理」卡片维护。",
       "authLockedInMulti": "多秘钥模式下认证类型不可切换(请先切回单秘钥)",
       "multiKeyShort": "多秘钥·{{mode}}"
-    }
+    },
+    "sourceImageGen": "图片生成"
   },
   "groups": {
     "subtitle": "将多个服务聚合为统一的 MCP 端点",
@@ -1397,9 +1399,9 @@
     "noSmtpHint": " 当前未配置 SMTP 邮件，可直接绑定，无需验证码。",
     "binding": "绑定中...",
     "bindSuccess": "邮箱绑定成功",
-    "storage": "存储 / 视觉上传",
+    "storage": "图片存储",
     "storageBackend": "存储后端",
-    "storageBackendDesc": "视觉图片上传的存储后端。local 为本地磁盘（零依赖），s3 走 S3 兼容对象存储（AWS S3、R2、OSS、COS 等）。",
+    "storageBackendDesc": "上传和生成图片共用的存储后端。local 使用本地磁盘，s3 使用兼容对象存储。",
     "storageRestartHint": "后端类型与 S3 凭据的修改需重启服务后生效；上传调优参数即时生效。",
     "storageBackendLabel": "后端类型",
     "storageEndpoint": "Endpoint",
@@ -1426,7 +1428,8 @@
     "visionJPEGQuality": "JPEG 质量（1-100）",
     "secretPlaceholder": "已配置（留空则不修改）",
     "storageS3Blocked": "无法切换到 s3：还缺少 {{fields}}。请先填写这些字段（保存即时生效，但后端切换需重启），再切换后端。",
-    "storageS3Incomplete": "⚠️ s3 后端必填字段（Endpoint / Bucket / Access Key / Secret Key）有空值——重启服务会启动失败。请补全后再重启。"
+    "storageS3Incomplete": "⚠️ s3 后端必填字段（Endpoint / Bucket / Access Key / Secret Key）有空值——重启服务会启动失败。请补全后再重启。",
+    "imageGenInlineMaxBytes": "图片生成内联响应上限（字节，0 使用默认 1MiB）"
   },
   "billing": {
     "free": "免费",
@@ -1631,5 +1634,76 @@
     "inHours": "{{count}} 小时后",
     "daysAgo": "{{count}} 天前",
     "inDays": "{{count}} 天后"
+  },
+  "imagegen": {
+    "statusEnabled": "已启用",
+    "statusDisabled": "已禁用",
+    "deleteSuccess": "图片生成配置已删除",
+    "enableSuccess": "已启用",
+    "enableFailed": "启用失败",
+    "disableSuccess": "已禁用",
+    "disableFailed": "禁用失败",
+    "title": "图片生成配置",
+    "subtitle": "将图片模型配置为内置 MCP 服务，生成或编辑图片。",
+    "create": {
+      "title": "创建图片生成配置"
+    },
+    "searchPlaceholder": "搜索名称、协议或模型",
+    "noConfigs": "暂无图片生成配置",
+    "noConfigsHint": "创建配置、测试出图，再启用并添加到分组。",
+    "model": "模型",
+    "disable": "禁用",
+    "enable": "启用",
+    "detail": "详情",
+    "deleteConfirm": "确定删除图片配置「{{name}}」及关联内置服务？",
+    "name": "名称",
+    "actions": "操作",
+    "invalidDefaults": "默认参数必须是 JSON 对象",
+    "saved": "图片配置已保存",
+    "uploadFailed": "上传图片失败",
+    "loadFailed": "无法加载图片配置",
+    "configSubtitle": "每条配置绑定一个模型，启用后可加入 MCP 分组。",
+    "basicConfig": "基础配置",
+    "saveConfig": "保存配置",
+    "registered": "已注册为内置服务（ID: {{id}}）",
+    "registeredTools": "注册工具",
+    "registeredToolsHint": "工具名称固定，描述可自定义。根据已保存的图片能力展示工具，保存后同步更新内置服务。",
+    "toolSaved": "工具描述已更新",
+    "description": "描述",
+    "provider": "协议",
+    "providers": { "openai": "OpenAI 兼容", "gemini": "Gemini" },
+    "operation": "图片能力",
+    "endpointUrl": "API 基础地址",
+    "endpointPreview": "实际请求地址",
+    "keepKey": "留空保留已有密钥",
+    "fetchModels": "获取模型",
+    "timeout": "调用超时（秒）",
+    "timeoutHint": "默认 180 秒；0 表示跟随调用方期限。",
+    "defaultParams": "默认参数（JSON）",
+    "defaultsHint": "未填写的参数不发送。网关扩展放入 extra_body，例如 seed、watermark、prompt_extend。",
+    "toolDescription": "工具描述",
+    "restoreDefault": "恢复默认",
+    "openService": "查看内置服务",
+    "testTitle": "测试出图",
+    "testHint": "显式调用当前模型生成图片，使用上方配置及默认参数；可能产生模型费用。",
+    "operations": {
+      "both": "文生图与编辑",
+      "generate": "文生图",
+      "edit": "参考图编辑"
+    },
+    "prompt": "提示词",
+    "promptPlaceholder": "描述想要的图片，或说明参考图的修改要求。",
+    "references": "参考图（每行一个链接或 base64）",
+    "uploadReference": "上传参考图",
+    "mask": "可选 mask",
+    "uploadMask": "上传 mask",
+    "maskHint": "PNG，尺寸与首张参考图一致；透明区域为编辑区域。需上游模型支持。",
+    "testGenerate": "测试出图",
+    "selectModel": "选择模型",
+    "modelsHint": "展示网关返回的全部模型，也可直接填写模型名；图片能力由所选模型决定。",
+    "searchModelPlaceholder": "搜索模型...",
+    "noModelsFound": "未找到可用模型",
+    "downloadImage": "下载图片",
+    "copyLink": "复制链接"
   }
 }

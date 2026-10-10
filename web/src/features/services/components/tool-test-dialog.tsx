@@ -51,6 +51,7 @@ export function ToolTestDialog({
   serviceId,
   tool,
   billable = false,
+  timeoutSeconds,
   open,
   onOpenChange,
 }: {
@@ -58,6 +59,7 @@ export function ToolTestDialog({
   tool: McpTool | null
   /** 市场(平台托管)服务:测试按网关价格正常计费,弹窗内提示用户 */
   billable?: boolean
+  timeoutSeconds?: number
   open: boolean
   onOpenChange: (v: boolean) => void
 }) {
@@ -180,7 +182,8 @@ export function ToolTestDialog({
   const runMutation = useMutation({
     // api 层返回 {success, message, data} 信封,这里解出真正的 ToolCallResult
     mutationFn: async (args: Record<string, unknown>): Promise<ToolCallResult> => {
-      const res = await callServiceTool(serviceId, { name: tool!.name, arguments: args })
+      const timeout = timeoutSeconds === undefined ? 65_000 : timeoutSeconds === 0 ? 0 : (timeoutSeconds + 5) * 1000
+      const res = await callServiceTool(serviceId, { name: tool!.name, arguments: args }, timeout)
       return res.data as ToolCallResult
     },
     onSuccess: (data) => setResult(data),

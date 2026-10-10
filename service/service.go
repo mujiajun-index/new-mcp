@@ -420,7 +420,7 @@ func (s *McpServiceService) delete(userID, serviceID int64) error {
 		return err
 	}
 	if svc.TransportType == "virtual" {
-		sourceLabel := map[string]string{"vision": "视觉", "camera": "摄像头", "systemone": "System One"}[svc.Source]
+		sourceLabel := map[string]string{"vision": "视觉", "camera": "摄像头", "systemone": "System One", "imagegen": "图片生成"}[svc.Source]
 		if sourceLabel == "" {
 			sourceLabel = "对应"
 		}
@@ -626,6 +626,10 @@ func (s *McpServiceService) GetTools(userID, serviceID int64) ([]interface{}, er
 // 本地错误(连接失败/工具不存在)以 IsError+Error 返回,由前端在结果区展示。
 // 测试结果同样落调用日志(recordManualTestLog),健康状态条与健康回写一并吃到数据。
 func (s *McpServiceService) CallTool(userID, serviceID int64, req *dto.CallToolReq) (*dto.CallToolResult, error) {
+	return s.CallToolContext(context.Background(), userID, serviceID, req)
+}
+
+func (s *McpServiceService) CallToolContext(ctx context.Context, userID, serviceID int64, req *dto.CallToolReq) (*dto.CallToolResult, error) {
 	svc, err := model.GetServiceByID(userID, serviceID)
 	if err != nil {
 		return nil, err
@@ -636,7 +640,7 @@ func (s *McpServiceService) CallTool(userID, serviceID int64, req *dto.CallToolR
 		return s.callMarketplaceToolTested(svc, userID, req)
 	}
 
-	res, _, keyIndex := callToolTested(svc, userID, req)
+	res, _, keyIndex := callToolTestedContext(ctx, svc, userID, req)
 	recordManualTestLog(svc, userID, "tools/call", req.Name, res, nil, keyIndex)
 	return res, nil
 }
@@ -806,7 +810,23 @@ func (s *McpServiceService) testMarketplaceEntry(svc *model.McpService, userID i
 // ChargeOnClientError 判定,传输失败恒退款,同网关 §6.6);第三返回值 keyIndex=
 // 多秘钥服务本次实际使用的池内序号(落日志 key_index,0=单秘钥/未调上游)。
 func callToolTested(svc *model.McpService, userID int64, req *dto.CallToolReq) (*dto.CallToolResult, bool, int) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	return callToolTestedContext(context.Background(), svc, userID, req)
+}
+
+func callToolTestedContext(parent context.Context, svc *model.McpService, userID int64, req *dto.CallToolReq) (*dto.CallToolResult, bool, int) {
+	seconds := 60
+	if svc.Source == "imagegen" {
+		cfg, err := model.GetImageGenConfigByServiceID(svc.ID)
+		if err != nil {
+			return &dto.CallToolResult{IsError: true, Error: "Image configuration not found"}, false, 0
+		}
+		seconds = cfg.TimeoutSeconds
+	}
+	ctx, cancel := context.WithCancel(parent)
+	if seconds > 0 {
+		cancel()
+		ctx, cancel = context.WithTimeout(parent, time.Duration(seconds)*time.Second)
+	}
 	defer cancel()
 
 	var args json.RawMessage
@@ -1503,6 +1523,12 @@ func (s *McpServiceService) toDetail(svc *model.McpService) *dto.ServiceDetail {
 		Status:           svc.Status,
 		CreatedAt:        svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		PassiveConnected: svc.PassiveConnected,
+	}
+	if svc.Source == "imagegen" {
+		if cfg, err := model.GetImageGenConfigByServiceID(svc.ID); err == nil {
+			seconds := cfg.TimeoutSeconds
+			d.ToolTimeoutSeconds = &seconds
+		}
 	}
 	if svc.AuthType == "query_param" {
 		raw, _ := config["url"].(string)

@@ -88,6 +88,7 @@ export function ServiceDetailPage() {
   }
 
   const sourceLabels: Record<string, { label: string; color: string }> = {
+    'imagegen': { label: t('services.sourceImageGen'), color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
     'vision': { label: t('services.sourceVision'), color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
     'camera': { label: t('services.sourceCamera'), color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
   }
@@ -952,6 +953,7 @@ export function ServiceDetailPage() {
       {/* 工具测试弹窗:市场(平台托管)服务测试按网关价格计费,billable 让弹窗出提示 */}
       <ToolTestDialog
         serviceId={serviceId}
+        timeoutSeconds={service.tool_timeout_seconds}
         tool={testingTool}
         billable={service.source === 'marketplace'}
         open={!!testingTool}

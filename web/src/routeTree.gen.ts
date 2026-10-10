@@ -49,6 +49,9 @@ const AuthenticatedServicesIndexLazyRouteImport = createFileRoute(
 const AuthenticatedMarketplaceIndexLazyRouteImport = createFileRoute(
   '/_authenticated/marketplace/',
 )()
+const AuthenticatedImagegenIndexLazyRouteImport = createFileRoute(
+  '/_authenticated/imagegen/',
+)()
 const AuthenticatedGroupsIndexLazyRouteImport = createFileRoute(
   '/_authenticated/groups/',
 )()
@@ -81,6 +84,12 @@ const AuthenticatedServicesIdLazyRouteImport = createFileRoute(
 )()
 const AuthenticatedMarketplaceIdLazyRouteImport = createFileRoute(
   '/_authenticated/marketplace/$id',
+)()
+const AuthenticatedImagegenCreateLazyRouteImport = createFileRoute(
+  '/_authenticated/imagegen/create',
+)()
+const AuthenticatedImagegenIdLazyRouteImport = createFileRoute(
+  '/_authenticated/imagegen/$id',
 )()
 const AuthenticatedGroupsCreateLazyRouteImport = createFileRoute(
   '/_authenticated/groups/create',
@@ -250,6 +259,14 @@ const AuthenticatedMarketplaceIndexLazyRoute =
       (d) => d.Route,
     ),
   )
+const AuthenticatedImagegenIndexLazyRoute =
+  AuthenticatedImagegenIndexLazyRouteImport.update({
+    id: '/imagegen/',
+    path: '/imagegen/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any).lazy(() =>
+    import('./routes/_authenticated/imagegen/index.lazy').then((d) => d.Route),
+  )
 const AuthenticatedGroupsIndexLazyRoute =
   AuthenticatedGroupsIndexLazyRouteImport.update({
     id: '/groups/',
@@ -343,6 +360,22 @@ const AuthenticatedMarketplaceIdLazyRoute =
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any).lazy(() =>
     import('./routes/_authenticated/marketplace/$id.lazy').then((d) => d.Route),
+  )
+const AuthenticatedImagegenCreateLazyRoute =
+  AuthenticatedImagegenCreateLazyRouteImport.update({
+    id: '/imagegen/create',
+    path: '/imagegen/create',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any).lazy(() =>
+    import('./routes/_authenticated/imagegen/create.lazy').then((d) => d.Route),
+  )
+const AuthenticatedImagegenIdLazyRoute =
+  AuthenticatedImagegenIdLazyRouteImport.update({
+    id: '/imagegen/$id',
+    path: '/imagegen/$id',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any).lazy(() =>
+    import('./routes/_authenticated/imagegen/$id.lazy').then((d) => d.Route),
   )
 const AuthenticatedGroupsCreateLazyRoute =
   AuthenticatedGroupsCreateLazyRouteImport.update({
@@ -506,6 +539,8 @@ export interface FileRoutesByFullPath {
   '/connections/create': typeof AuthenticatedConnectionsCreateLazyRoute
   '/groups/$id': typeof AuthenticatedGroupsIdLazyRoute
   '/groups/create': typeof AuthenticatedGroupsCreateLazyRoute
+  '/imagegen/$id': typeof AuthenticatedImagegenIdLazyRoute
+  '/imagegen/create': typeof AuthenticatedImagegenCreateLazyRoute
   '/marketplace/$id': typeof AuthenticatedMarketplaceIdLazyRoute
   '/services/$id': typeof AuthenticatedServicesIdLazyRoute
   '/services/create': typeof AuthenticatedServicesCreateLazyRoute
@@ -517,6 +552,7 @@ export interface FileRoutesByFullPath {
   '/cameras/': typeof AuthenticatedCamerasIndexLazyRoute
   '/connections/': typeof AuthenticatedConnectionsIndexLazyRoute
   '/groups/': typeof AuthenticatedGroupsIndexLazyRoute
+  '/imagegen/': typeof AuthenticatedImagegenIndexLazyRoute
   '/marketplace/': typeof AuthenticatedMarketplaceIndexLazyRoute
   '/services/': typeof AuthenticatedServicesIndexLazyRoute
   '/system-one/': typeof AuthenticatedSystemOneIndexLazyRoute
@@ -551,6 +587,8 @@ export interface FileRoutesByTo {
   '/connections/create': typeof AuthenticatedConnectionsCreateLazyRoute
   '/groups/$id': typeof AuthenticatedGroupsIdLazyRoute
   '/groups/create': typeof AuthenticatedGroupsCreateLazyRoute
+  '/imagegen/$id': typeof AuthenticatedImagegenIdLazyRoute
+  '/imagegen/create': typeof AuthenticatedImagegenCreateLazyRoute
   '/marketplace/$id': typeof AuthenticatedMarketplaceIdLazyRoute
   '/services/$id': typeof AuthenticatedServicesIdLazyRoute
   '/services/create': typeof AuthenticatedServicesCreateLazyRoute
@@ -562,6 +600,7 @@ export interface FileRoutesByTo {
   '/cameras': typeof AuthenticatedCamerasIndexLazyRoute
   '/connections': typeof AuthenticatedConnectionsIndexLazyRoute
   '/groups': typeof AuthenticatedGroupsIndexLazyRoute
+  '/imagegen': typeof AuthenticatedImagegenIndexLazyRoute
   '/marketplace': typeof AuthenticatedMarketplaceIndexLazyRoute
   '/services': typeof AuthenticatedServicesIndexLazyRoute
   '/system-one': typeof AuthenticatedSystemOneIndexLazyRoute
@@ -599,6 +638,8 @@ export interface FileRoutesById {
   '/_authenticated/connections/create': typeof AuthenticatedConnectionsCreateLazyRoute
   '/_authenticated/groups/$id': typeof AuthenticatedGroupsIdLazyRoute
   '/_authenticated/groups/create': typeof AuthenticatedGroupsCreateLazyRoute
+  '/_authenticated/imagegen/$id': typeof AuthenticatedImagegenIdLazyRoute
+  '/_authenticated/imagegen/create': typeof AuthenticatedImagegenCreateLazyRoute
   '/_authenticated/marketplace/$id': typeof AuthenticatedMarketplaceIdLazyRoute
   '/_authenticated/services/$id': typeof AuthenticatedServicesIdLazyRoute
   '/_authenticated/services/create': typeof AuthenticatedServicesCreateLazyRoute
@@ -610,6 +651,7 @@ export interface FileRoutesById {
   '/_authenticated/cameras/': typeof AuthenticatedCamerasIndexLazyRoute
   '/_authenticated/connections/': typeof AuthenticatedConnectionsIndexLazyRoute
   '/_authenticated/groups/': typeof AuthenticatedGroupsIndexLazyRoute
+  '/_authenticated/imagegen/': typeof AuthenticatedImagegenIndexLazyRoute
   '/_authenticated/marketplace/': typeof AuthenticatedMarketplaceIndexLazyRoute
   '/_authenticated/services/': typeof AuthenticatedServicesIndexLazyRoute
   '/_authenticated/system-one/': typeof AuthenticatedSystemOneIndexLazyRoute
@@ -646,6 +688,8 @@ export interface FileRouteTypes {
     | '/connections/create'
     | '/groups/$id'
     | '/groups/create'
+    | '/imagegen/$id'
+    | '/imagegen/create'
     | '/marketplace/$id'
     | '/services/$id'
     | '/services/create'
@@ -657,6 +701,7 @@ export interface FileRouteTypes {
     | '/cameras/'
     | '/connections/'
     | '/groups/'
+    | '/imagegen/'
     | '/marketplace/'
     | '/services/'
     | '/system-one/'
@@ -691,6 +736,8 @@ export interface FileRouteTypes {
     | '/connections/create'
     | '/groups/$id'
     | '/groups/create'
+    | '/imagegen/$id'
+    | '/imagegen/create'
     | '/marketplace/$id'
     | '/services/$id'
     | '/services/create'
@@ -702,6 +749,7 @@ export interface FileRouteTypes {
     | '/cameras'
     | '/connections'
     | '/groups'
+    | '/imagegen'
     | '/marketplace'
     | '/services'
     | '/system-one'
@@ -738,6 +786,8 @@ export interface FileRouteTypes {
     | '/_authenticated/connections/create'
     | '/_authenticated/groups/$id'
     | '/_authenticated/groups/create'
+    | '/_authenticated/imagegen/$id'
+    | '/_authenticated/imagegen/create'
     | '/_authenticated/marketplace/$id'
     | '/_authenticated/services/$id'
     | '/_authenticated/services/create'
@@ -749,6 +799,7 @@ export interface FileRouteTypes {
     | '/_authenticated/cameras/'
     | '/_authenticated/connections/'
     | '/_authenticated/groups/'
+    | '/_authenticated/imagegen/'
     | '/_authenticated/marketplace/'
     | '/_authenticated/services/'
     | '/_authenticated/system-one/'
@@ -896,6 +947,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMarketplaceIndexLazyRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/imagegen/': {
+      id: '/_authenticated/imagegen/'
+      path: '/imagegen'
+      fullPath: '/imagegen/'
+      preLoaderRoute: typeof AuthenticatedImagegenIndexLazyRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/groups/': {
       id: '/_authenticated/groups/'
       path: '/groups'
@@ -971,6 +1029,20 @@ declare module '@tanstack/react-router' {
       path: '/marketplace/$id'
       fullPath: '/marketplace/$id'
       preLoaderRoute: typeof AuthenticatedMarketplaceIdLazyRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/imagegen/create': {
+      id: '/_authenticated/imagegen/create'
+      path: '/imagegen/create'
+      fullPath: '/imagegen/create'
+      preLoaderRoute: typeof AuthenticatedImagegenCreateLazyRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/imagegen/$id': {
+      id: '/_authenticated/imagegen/$id'
+      path: '/imagegen/$id'
+      fullPath: '/imagegen/$id'
+      preLoaderRoute: typeof AuthenticatedImagegenIdLazyRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/groups/create': {
@@ -1138,6 +1210,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedConnectionsCreateLazyRoute: typeof AuthenticatedConnectionsCreateLazyRoute
   AuthenticatedGroupsIdLazyRoute: typeof AuthenticatedGroupsIdLazyRoute
   AuthenticatedGroupsCreateLazyRoute: typeof AuthenticatedGroupsCreateLazyRoute
+  AuthenticatedImagegenIdLazyRoute: typeof AuthenticatedImagegenIdLazyRoute
+  AuthenticatedImagegenCreateLazyRoute: typeof AuthenticatedImagegenCreateLazyRoute
   AuthenticatedMarketplaceIdLazyRoute: typeof AuthenticatedMarketplaceIdLazyRoute
   AuthenticatedServicesIdLazyRoute: typeof AuthenticatedServicesIdLazyRoute
   AuthenticatedServicesCreateLazyRoute: typeof AuthenticatedServicesCreateLazyRoute
@@ -1149,6 +1223,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedCamerasIndexLazyRoute: typeof AuthenticatedCamerasIndexLazyRoute
   AuthenticatedConnectionsIndexLazyRoute: typeof AuthenticatedConnectionsIndexLazyRoute
   AuthenticatedGroupsIndexLazyRoute: typeof AuthenticatedGroupsIndexLazyRoute
+  AuthenticatedImagegenIndexLazyRoute: typeof AuthenticatedImagegenIndexLazyRoute
   AuthenticatedMarketplaceIndexLazyRoute: typeof AuthenticatedMarketplaceIndexLazyRoute
   AuthenticatedServicesIndexLazyRoute: typeof AuthenticatedServicesIndexLazyRoute
   AuthenticatedSystemOneIndexLazyRoute: typeof AuthenticatedSystemOneIndexLazyRoute
@@ -1169,6 +1244,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedConnectionsCreateLazyRoute,
   AuthenticatedGroupsIdLazyRoute: AuthenticatedGroupsIdLazyRoute,
   AuthenticatedGroupsCreateLazyRoute: AuthenticatedGroupsCreateLazyRoute,
+  AuthenticatedImagegenIdLazyRoute: AuthenticatedImagegenIdLazyRoute,
+  AuthenticatedImagegenCreateLazyRoute: AuthenticatedImagegenCreateLazyRoute,
   AuthenticatedMarketplaceIdLazyRoute: AuthenticatedMarketplaceIdLazyRoute,
   AuthenticatedServicesIdLazyRoute: AuthenticatedServicesIdLazyRoute,
   AuthenticatedServicesCreateLazyRoute: AuthenticatedServicesCreateLazyRoute,
@@ -1182,6 +1259,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedConnectionsIndexLazyRoute:
     AuthenticatedConnectionsIndexLazyRoute,
   AuthenticatedGroupsIndexLazyRoute: AuthenticatedGroupsIndexLazyRoute,
+  AuthenticatedImagegenIndexLazyRoute: AuthenticatedImagegenIndexLazyRoute,
   AuthenticatedMarketplaceIndexLazyRoute:
     AuthenticatedMarketplaceIndexLazyRoute,
   AuthenticatedServicesIndexLazyRoute: AuthenticatedServicesIndexLazyRoute,

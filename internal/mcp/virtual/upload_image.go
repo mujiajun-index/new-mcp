@@ -86,6 +86,10 @@ func CallerUserID(ctx context.Context) int64 {
 // or an S3 bucket), then calls analyze_image with the image_url. See §14 of the
 // vision transport design doc.
 func handleUploadImage(ctx context.Context, userID int64, args json.RawMessage) (json.RawMessage, error) {
+	return handleUploadImageFor(ctx, userID, args, model.DefaultAnalyzeImageName)
+}
+
+func handleUploadImageFor(ctx context.Context, userID int64, args json.RawMessage, nextTool string) (json.RawMessage, error) {
 	if UploadStore == nil {
 		return nil, fmt.Errorf("upload storage not initialized")
 	}
@@ -155,9 +159,9 @@ func handleUploadImage(ctx context.Context, userID int64, args json.RawMessage) 
 	result := map[string]interface{}{
 		"content": []map[string]interface{}{
 			{"type": "text", "text": fmt.Sprintf(
-				"Upload slot ready. Run upload_command, then call analyze_image with the image_url below.\n\n"+
+				"Upload slot ready. Run upload_command, then call %s with the image_url below as image input.\n\n"+
 					"upload_command: %s\nimage_url: %s\nexpires_in: %ds",
-				cmd, imageURL, int(putTTL.Seconds()))},
+				nextTool, cmd, imageURL, int(putTTL.Seconds()))},
 		},
 	}
 	return json.Marshal(result)

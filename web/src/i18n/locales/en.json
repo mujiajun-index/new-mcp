@@ -75,7 +75,8 @@
     "pricing": "Pricing",
     "adminBilling": "Billing",
     "adminRedemption": "Redemption Codes",
-    "adminUploads": "Image Bin"
+    "adminUploads": "Image Bin",
+    "imagegen": "Image generation"
   },
   "auth": {
     "signIn": "Sign In",
@@ -625,7 +626,8 @@
       "manageInCardBelow": "Credentials are managed in the Secret Keys card below.",
       "authLockedInMulti": "Auth type is locked in multi-secret mode (switch back to single first)",
       "multiKeyShort": "Multi-key · {{mode}}"
-    }
+    },
+    "sourceImageGen": "Image generation"
   },
   "groups": {
     "subtitle": "Aggregate multiple services into a unified MCP endpoint",
@@ -1397,9 +1399,9 @@
     "noSmtpHint": " SMTP is not configured, you can bind directly without a verification code.",
     "binding": "Binding...",
     "bindSuccess": "Email bound successfully",
-    "storage": "Storage / Vision Upload",
+    "storage": "Image storage",
     "storageBackend": "Storage backend",
-    "storageBackendDesc": "Backend for vision image uploads. 'local' uses disk (zero deps); 's3' uses an S3-compatible object store (AWS S3, R2, OSS, COS, ...).",
+    "storageBackendDesc": "Shared storage for uploaded and generated images. Use local disk or S3-compatible object storage.",
     "storageRestartHint": "Backend type and S3 credential changes take effect after a server restart. Upload tuning options take effect immediately.",
     "storageBackendLabel": "Backend",
     "storageEndpoint": "Endpoint",
@@ -1426,7 +1428,8 @@
     "visionJPEGQuality": "JPEG quality (1-100)",
     "secretPlaceholder": "configured (leave blank to keep)",
     "storageS3Blocked": "Can't switch to s3: missing {{fields}}. Fill those fields first (they save instantly, but the backend switch needs a restart), then switch.",
-    "storageS3Incomplete": "⚠️ Required s3 fields (Endpoint / Bucket / Access Key / Secret Key) are empty — the server will fail to start on restart. Complete them before restarting."
+    "storageS3Incomplete": "⚠️ Required s3 fields (Endpoint / Bucket / Access Key / Secret Key) are empty — the server will fail to start on restart. Complete them before restarting.",
+    "imageGenInlineMaxBytes": "Image generation inline response limit (bytes; 0 uses 1 MiB)"
   },
   "billing": {
     "free": "Free",
@@ -1631,5 +1634,76 @@
     "inHours": "in {{count}} h",
     "daysAgo": "{{count}} d ago",
     "inDays": "in {{count}} d"
+  },
+  "imagegen": {
+    "statusEnabled": "Enabled",
+    "statusDisabled": "Disabled",
+    "deleteSuccess": "Image generation configuration deleted",
+    "enableSuccess": "Enabled",
+    "enableFailed": "Enable failed",
+    "disableSuccess": "Disabled",
+    "disableFailed": "Disable failed",
+    "title": "Image generation",
+    "subtitle": "Configure image models as built-in MCP services for generation and editing.",
+    "create": {
+      "title": "Create image configuration"
+    },
+    "searchPlaceholder": "Search name, protocol or model",
+    "noConfigs": "No image generation configurations",
+    "noConfigsHint": "Create a configuration, test an image, then enable and add it to a group.",
+    "model": "Model",
+    "disable": "Disable",
+    "enable": "Enable",
+    "detail": "Detail",
+    "deleteConfirm": "Delete image configuration \"{{name}}\" and its built-in service?",
+    "name": "Name",
+    "actions": "Actions",
+    "invalidDefaults": "Default parameters must be a JSON object",
+    "saved": "Image configuration saved",
+    "uploadFailed": "Image upload failed",
+    "loadFailed": "Could not load image configuration",
+    "configSubtitle": "One model per configuration. Enable the service, then add it to an MCP group.",
+    "basicConfig": "Basic Config",
+    "saveConfig": "Save Config",
+    "registered": "Registered as a built-in service (ID: {{id}})",
+    "registeredTools": "Registered Tools",
+    "registeredToolsHint": "Tool names are fixed; descriptions can be customized. Tools follow the saved image capabilities and update the built-in service when saved.",
+    "toolSaved": "Tool description updated",
+    "description": "Description",
+    "provider": "Protocol",
+    "providers": { "openai": "OpenAI Compatible", "gemini": "Gemini" },
+    "operation": "Image capabilities",
+    "endpointUrl": "API base URL",
+    "endpointPreview": "Request URL",
+    "keepKey": "Leave empty to keep the saved key",
+    "fetchModels": "Fetch Models",
+    "timeout": "Call timeout (seconds)",
+    "timeoutHint": "Default 180 seconds. 0 uses the caller deadline.",
+    "defaultParams": "Default parameters (JSON)",
+    "defaultsHint": "Unset parameters are omitted. Put gateway extensions such as seed, watermark and prompt_extend in extra_body.",
+    "toolDescription": "Tool description",
+    "restoreDefault": "Restore default",
+    "openService": "Open built-in service",
+    "testTitle": "Test image generation",
+    "testHint": "Explicitly generate with the model using the configuration and defaults above. Model charges may apply.",
+    "operations": {
+      "both": "Generation and editing",
+      "generate": "Text to image",
+      "edit": "Reference image editing"
+    },
+    "prompt": "Prompt",
+    "promptPlaceholder": "Describe the image or the edits to apply to the reference images.",
+    "references": "Reference images (one URL or base64 image per line)",
+    "uploadReference": "Upload reference",
+    "mask": "Optional mask",
+    "uploadMask": "Upload mask",
+    "maskHint": "PNG with the same dimensions as the first reference. Transparent areas are edited when supported by the upstream model.",
+    "testGenerate": "Generate test image",
+    "selectModel": "Select Model",
+    "modelsHint": "All gateway models are listed; you can also enter a model manually. Image capabilities depend on the chosen model.",
+    "searchModelPlaceholder": "Search models...",
+    "noModelsFound": "No models found",
+    "downloadImage": "Download image",
+    "copyLink": "Copy link"
   }
 }

@@ -189,7 +189,7 @@ func CallServiceTool(c *gin.Context) {
 		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
 		return
 	}
-	resp, err := mcpServiceService.CallTool(userID, id, &req)
+	resp, err := mcpServiceService.CallToolContext(c.Request.Context(), userID, id, &req)
 	if err != nil {
 		common.Error(c, http.StatusNotFound, "服务不存在")
 		return

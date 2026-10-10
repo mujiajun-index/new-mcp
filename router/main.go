@@ -40,6 +40,9 @@ func InitGateway() {
 	GatewayHandler = handler.NewGatewayHandler(SessionPool, toolRouter, VirtualRegistry)
 
 	loadVirtualServices()
+	if n := (&service.ImageGenService{}).SyncAllRegisteredTools(); n > 0 {
+		log.Printf("[virtual] refreshed tools_cache for %d image generation services", n)
+	}
 
 	// Rebuild every registered vision service's tools_cache from its current
 	// config so tool-set changes (e.g. the describe_scene removal) reach
@@ -102,6 +105,8 @@ func loadVirtualServices() {
 
 		virtualType, _ := config["virtual_type"].(string)
 		switch virtualType {
+		case "imagegen":
+			VirtualRegistry.Register(svc.ID, svc.UserID, svc.Name, config, virtual.ImageGenHandler)
 		case "vision":
 			VirtualRegistry.Register(svc.ID, svc.UserID, svc.Name, config, virtual.VisionHandler)
 		case "camera":
