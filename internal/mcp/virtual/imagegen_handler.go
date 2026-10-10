@@ -96,6 +96,9 @@ func RunImageGen(ctx context.Context, store storage.Storage, userID int64, cfg *
 	if _, ok := params["mask"]; ok && cfg.Provider == "gemini" {
 		return nil, fmt.Errorf("Gemini does not support mask")
 	}
+	if _, ok := params["mask"]; ok && !imagegen.SupportsMask(cfg.Provider, cfg.EditRequestFormat) {
+		return nil, fmt.Errorf("mask is not supported by the configured JSON generations editing interface")
+	}
 	max := imagegen.MaxImageBytes()
 	var references []imagegen.Image
 	var mask *imagegen.Image
@@ -148,7 +151,7 @@ func RunImageGen(ctx context.Context, store storage.Storage, userID int64, cfg *
 	if err := imageasset.CheckQuota(userID); err != nil {
 		return nil, err
 	}
-	client := &imagegen.Client{Provider: cfg.Provider, EndpointURL: cfg.EndpointURL, APIKey: cfg.ApiKey, Model: cfg.ModelName}
+	client := &imagegen.Client{Provider: cfg.Provider, EndpointURL: cfg.EndpointURL, APIKey: cfg.ApiKey, Model: cfg.ModelName, EditRequestFormat: cfg.EditRequestFormat}
 	result, err := client.Run(ctx, operation, params, references, mask)
 	if err != nil {
 		return nil, err

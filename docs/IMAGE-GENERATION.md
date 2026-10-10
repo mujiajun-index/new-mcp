@@ -7,6 +7,7 @@
 - `provider`：`openai` 或 `gemini`。OpenAI 兼容模式可连接 New API 图片接口；Gemini 使用原生 `generateContent`。
 - `endpoint_url`：网关根地址、反向代理路径前缀或带 `/v1`、`/v1beta` 的基础地址均可；页面预览最终地址。
 - `operation`：`generate`、`edit`、`both`（默认）。能力由配置和上游决定，不根据模型名猜测。
+- `edit_request_format`：OpenAI 兼容编辑接口格式。新建 OpenAI 兼容配置默认 `generations_json`，请求 `/v1/images/generations` 并传入顶层 `image` 数组；`multipart` 请求 `/v1/images/edits`；`generations_json_extra_body` 请求生成接口并传入 `extra_body.image`。按实际网关文档选择，已有配置保持所选格式，旧配置中未设置该字段时保持 multipart；Gemini 使用原生接口。
 - `timeout_seconds`：默认 180；0 仅跟随调用方期限。MCP 智能/批量执行显式的 `timeout_ms`、请求取消及更短的调用方期限优先。
 - `default_params`：JSON 对象。调用参数覆盖默认值，`extra_body` 深度合并；未填写的可选参数不发送。
 - API Key 只保存在独立配置中。列表、详情和虚拟服务配置不回显密钥；编辑时留空保留原密钥。
@@ -32,6 +33,38 @@ Gemini 示例：
 
 OpenAI 扩展字段平铺到 JSON 或 multipart 表单；Gemini 扩展字段保持原生结构。`extra_body` 不能覆盖模型、提示词、参考图、mask、流式设置、认证或 Gemini 响应模态；已有工具参数须放在顶层。默认不发送 `response_format`；需要该字段的兼容模型可以显式放在 `extra_body` 中。
 
+### 通过生成接口进行参考图编辑
+
+部分 OpenAI 兼容模型的图生图使用生成接口，而非标准 edits 接口。两种 JSON 编辑格式请求同一个 `POST /v1/images/generations`，仅参考图字段的层级不同：
+
+| 选项 | 参考图在最终 HTTP JSON 请求体中的位置 |
+| --- | --- |
+| 生成接口 · JSON image | `{"image":["data:image/png;base64,..."]}` |
+| 生成接口 · JSON extra_body.image | `{"extra_body":{"image":["data:image/png;base64,..."]}}` |
+
+按接入地址的实际接口选择，不能只根据模型名称判断。[Agnes 官方 Image 2.1 Flash 文档](https://agnes-ai.com/en/docs/agnes-image-21-flash)的图生图 curl 示例使用嵌套 `extra_body.image`，但同页参数表又列出顶层 `image`，文档本身存在不一致；[DMXAPI 的 Agnes 文档](https://doc.dmxapi.cn/agnes-image-21-flash-i2i.html)也明确要求嵌套字段。因此保留两种显式格式，分别兼容实际请求结构。
+
+当前用户反馈 New API 中的 Agnes 配置使用顶层 `image` 已成功，应继续使用该格式。仓库内 `reference/new-api-main` 的 OpenAI 转发路径明确保留顶层 `image`；非透传路径重新序列化请求时，未知的 `extra_body` 可能被丢弃。这是基于参考代码的解释，不能据此认定已部署网关升级过、会自动转换嵌套字段，或所有 New API 渠道行为相同。`503 no available server` 来自上游服务，可能涉及接口路由或渠道容量，具体以 New API / 上游日志为准。
+
+直连 Agnes 可配置 `provider=openai`、`endpoint_url=https://apihub.agnes-ai.com/v1`、`model_name=agnes-image-2.1-flash`，使用 Agnes API Key，编辑格式按官方 curl 示例选嵌套 `extra_body.image`，默认参数设置 `size`（例如 `1K`）。适配器覆盖该请求格式；尚未进行真实直连验收，不能保证具体账号或上游服务的可用性。
+
+选择任一 JSON 编辑格式并保存后，继续调用原来的 `edit_image` 工具，调用参数中的 `images` 不变。服务验证并读取参考图，将真实图片字节转为带 MIME 的 data URL，避免上游访问 `localhost` 链接。JSON 编辑格式不支持 mask；服务会在调用上游前拒绝，工具 schema 和网页同时隐藏该参数。
+
+multipart `/v1/images/edits` 是兼容协议，不限定只能连接 OpenAI 官方服务。[New API 插件调用指南](https://docs.newapi.pro/zh/docs/plugins/usage)允许支持 `openai_image` 的插件接管该接口，编辑可使用 JSON 或 multipart；具体模型、参考图字段和 mask 能力取决于渠道或插件实现。
+
+如果渠道要求请求体中的原生 `extra_body.response_format`，由于 MCP 的 `extra_body` 是平铺扩展入口，应这样填写默认参数（是否需要 `size` 及可用值由渠道决定）：
+
+```json
+{
+  "size": "1K",
+  "extra_body": {
+    "extra_body": {"response_format": "url"}
+  }
+}
+```
+
+上述 JSON 编辑请求的最终结构为 `{"model":"已配置模型","prompt":"调用提示词","n":1,"size":"1K","extra_body":{"response_format":"url","image":["data:image/png;base64,..."]}}`。参考图由服务写入，不能在默认参数或扩展字段中覆盖。适配格式由用户显式配置；上游失败不会自动切换接口或再次生成。
+
 ## MCP 工具
 
 按 `operation` 暴露 `generate_image`、`edit_image`；支持编辑时附带 `upload_image`。在网关中工具名带服务前缀，例如 `imagegen_1__generate_image`。
@@ -52,8 +85,8 @@ OpenAI 扩展字段平铺到 JSON 或 multipart 表单；Gemini 扩展字段保�
 ```
 
 - `images` 支持 HTTP(S) URL、data URL、base64，1 到 16 张。客户端本地图片先调用 `upload_image`，执行其返回的上传命令，再把 `image_url` 传给 `edit_image`。网页也可上传参考图和 mask。
-- OpenAI 支持可选 `n`（1 到 10，默认 1）、字符串 `size`、`quality`、`background`、`output_format`；编辑请求单图字段为 `image`，多图为 `image[]`。
-- mask 必须是 PNG，尺寸与首图一致，透明区域用于重绘；具体模型须支持此能力。Gemini mask 在访问上游前拒绝。
+- OpenAI 支持可选 `n`（1 到 10，默认 1）、字符串 `size`、`quality`、`background`、`output_format`；multipart 编辑请求单图字段为 `image`，多图为 `image[]`；JSON 编辑格式始终使用图片数组。
+- mask 必须是 PNG，尺寸与首图一致，透明区域用于重绘；需要标准 OpenAI multipart 编辑接口及支持该能力的模型。Gemini / JSON 生成接口编辑的 mask 在访问上游前拒绝。
 - Gemini 支持 `aspect_ratio`、`image_size`，参考图通过 `inlineData` 输入；单次请求不模拟多张生成循环。
 
 ## 结果与存储

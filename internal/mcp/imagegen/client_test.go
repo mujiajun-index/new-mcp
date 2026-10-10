@@ -122,6 +122,93 @@ func TestOpenAIEditMultipart(t *testing.T) {
 	}
 }
 
+func TestGenerationsJSONEditing(t *testing.T) {
+	for _, format := range []string{EditFormatGenerationsJSON, EditFormatGenerationsJSONExtraBody} {
+		for _, count := range []int{1, 2} {
+			t.Run(fmt.Sprintf("%s/%d", format, count), func(t *testing.T) {
+				calls := 0
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					calls++
+					if r.Header.Get("Authorization") != "Bearer secret" {
+						t.Error("missing gateway authentication")
+					}
+					if r.URL.Path == "/proxy/v1/images/edits" {
+						w.WriteHeader(http.StatusServiceUnavailable)
+						fmt.Fprint(w, `{"error":{"message":"OpenAIException - no available server"}}`)
+						return
+					}
+					if r.URL.Path != "/proxy/v1/images/generations" || r.Header.Get("Content-Type") != "application/json" {
+						t.Errorf("wrong editing protocol: %s, %s", r.URL.Path, r.Header.Get("Content-Type"))
+					}
+					var body map[string]any
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						t.Error(err)
+						return
+					}
+					if body["model"] != "agnes-image-2.1-flash" || body["prompt"] != "edit reference" || body["n"] != float64(1) || body["size"] != "1K" || body["seed"] != float64(42) {
+						t.Errorf("lost model/parameters: %v", body)
+					}
+					imageBody := body
+					if format == EditFormatGenerationsJSONExtraBody {
+						if _, exists := body["image"]; exists {
+							t.Error("nested JSON format sent a top-level image")
+						}
+						imageBody, _ = body["extra_body"].(map[string]any)
+						if imageBody["response_format"] != "url" {
+							t.Error("lost native nested extension")
+						}
+					}
+					refs, ok := imageBody["image"].([]any)
+					if !ok || len(refs) != count {
+						t.Errorf("lost references: %v", imageBody)
+					} else {
+						for _, ref := range refs {
+							if ref != "data:image/png;base64,cG5n" {
+								t.Errorf("not forwarding image bytes as data URLs: %v", ref)
+							}
+						}
+					}
+					for _, k := range []string{"images", "mask", "response_format", "return_mode", "stream"} {
+						if _, exists := body[k]; exists {
+							t.Errorf("unexpected top-level field: %s", k)
+						}
+					}
+					fmt.Fprint(w, `{"data":[{"b64_json":"b2s="}]}`)
+				}))
+				defer server.Close()
+				images := make([]Image, count)
+				for i := range images {
+					images[i] = Image{Bytes: []byte("png"), MIME: "image/png", URL: "http://localhost:3000/u/private?s=signature"}
+				}
+				client := Client{Provider: "openai", EndpointURL: server.URL + "/proxy/v1", Model: "agnes-image-2.1-flash", APIKey: "secret"}
+				params := map[string]any{"prompt": "edit reference", "size": "1K", "return_mode": "url", "extra_body": map[string]any{"seed": 42}}
+				if _, err := client.Run(context.Background(), "edit", params, images, nil); err == nil || !strings.Contains(err.Error(), "HTTP 503") || calls != 1 {
+					t.Fatalf("standard edits failure was not preserved or was retried: calls=%d, %v", calls, err)
+				}
+				client.EditRequestFormat = format
+				if format == EditFormatGenerationsJSONExtraBody {
+					params["extra_body"].(map[string]any)["extra_body"] = map[string]any{"response_format": "url"}
+				}
+				result, err := client.Run(context.Background(), "edit", params, images, nil)
+				if err != nil || len(result.Images) != 1 || string(result.Images[0].Bytes) != "ok" || calls != 2 {
+					t.Fatalf("JSON edit failed: calls=%d, %+v, %v", calls, result, err)
+				}
+				if _, exists := params["extra_body"].(map[string]any)["image"]; exists {
+					t.Fatal("mutated caller parameters")
+				}
+				if _, err := client.Run(context.Background(), "edit", params, images, &images[0]); err == nil || !strings.Contains(err.Error(), "mask") || calls != 2 {
+					t.Fatal("JSON mask was sent upstream", err)
+				}
+			})
+		}
+	}
+	for _, tc := range []struct{ provider, format string }{{"openai", "unknown"}, {"gemini", EditFormatGenerationsJSON}} {
+		if err := ValidateEditRequestFormat(tc.provider, tc.format); err == nil {
+			t.Fatalf("accepted incompatible edit format: %+v", tc)
+		}
+	}
+}
+
 func TestGeminiNativeEditAndMixedCandidates(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/gw/v1beta/models/gemini-image:generateContent" || r.Header.Get("x-goog-api-key") != "secret" || r.Header.Get("Authorization") != "" {
@@ -153,7 +240,7 @@ func TestGeminiNativeEditAndMixedCandidates(t *testing.T) {
 }
 
 func TestImageParametersAndUpstreamFailure(t *testing.T) {
-	for _, raw := range []string{`{"extra_body":{"model":"x"}}`, `{"extra_body":{"stream":true}}`, `{"extra_body":{"n":20}}`, `{"n":11}`, `{"n":1.5}`, `{"size":2048}`, `{"extra_body":{"contents":[]}}`, `{"extra_body":{"generationConfig":{"response_modalities":["TEXT"]}}}`} {
+	for _, raw := range []string{`{"extra_body":{"model":"x"}}`, `{"extra_body":{"stream":true}}`, `{"extra_body":{"n":20}}`, `{"n":11}`, `{"n":1.5}`, `{"size":2048}`, `{"extra_body":{"contents":[]}}`, `{"extra_body":{"generationConfig":{"response_modalities":["TEXT"]}}}`, `{"extra_body":{"extra_body":{"image":["override"]}}}`, `{"extra_body":{"extra_body":{"MODEL":"override"}}}`, `{"extra_body":{"extra_body":{"stream":true}}}`, `{"extra_body":{"extra_body":[]}}`} {
 		var p map[string]any
 		_ = json.Unmarshal([]byte(raw), &p)
 		if ValidateParams("openai", p, false) == nil {

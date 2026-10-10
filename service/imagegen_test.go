@@ -77,7 +77,7 @@ func TestImageGenConfigLifecycleAndIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if detail.AutoRegister || detail.TimeoutSeconds != 180 || detail.Operation != "both" || !detail.HasAPIKey {
+	if detail.AutoRegister || detail.TimeoutSeconds != 180 || detail.Operation != "both" || detail.EditRequestFormat != imagegen.EditFormatGenerationsJSON || !detail.HasAPIKey {
 		t.Fatalf("defaults: %+v", detail)
 	}
 	raw, _ := json.Marshal(detail)
@@ -120,7 +120,7 @@ func TestImageGenConfigLifecycleAndIsolation(t *testing.T) {
 	}
 	cfg, _ = model.GetImageGenConfig(1, detail.ID)
 	svc, _ = model.GetServiceByID(1, sid)
-	if cfg.TimeoutSeconds != 0 || cfg.ApiKey != "secret-image-key" || strings.Contains(svc.ToolsCache, "edit_image") || !strings.Contains(svc.ToolsCache, "Custom generate description") {
+	if cfg.TimeoutSeconds != 0 || cfg.ApiKey != "secret-image-key" || cfg.EditRequestFormat != imagegen.EditFormatGenerationsJSON || strings.Contains(svc.ToolsCache, "edit_image") || !strings.Contains(svc.ToolsCache, "Custom generate description") {
 		t.Fatal("update/key/zero timeout/cache not synchronized")
 	}
 	// Startup repair rebuilds old tool caches from the current configuration.
@@ -172,6 +172,133 @@ func TestImageGenConfigLifecycleAndIsolation(t *testing.T) {
 	if _, err := s.Get(1, detail.ID); err == nil {
 		t.Fatal("config survived delete")
 	}
+	geminiReq := imageGenReq("https://gateway.example/v1beta")
+	geminiReq.Provider = igPtr("gemini")
+	gemini, err := s.Create(1, geminiReq)
+	if err != nil || gemini.EditRequestFormat != imagegen.EditFormatMultipart {
+		t.Fatal("OpenAI editing default affected Gemini creation", err)
+	}
+}
+
+func TestImageGenJSONEditingWithStoredReference(t *testing.T) {
+	db := imageGenTestSetup(t)
+	s := &ImageGenService{}
+	pngBytes := imageGenPNG(t, 3, 2)
+	stored, err := imageasset.Save(context.Background(), UploadStore, 1, bytes.NewReader(pngBytes), imagegen.MaxImageBytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	wantFormat := ""
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.URL.Path != "/v1/images/generations" || r.Header.Get("Authorization") != "Bearer secret-image-key" {
+			t.Error("wrong route/auth")
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+			return
+		}
+		inputs := body
+		if wantFormat == imagegen.EditFormatGenerationsJSONExtraBody {
+			inputs, _ = body["extra_body"].(map[string]any)
+		}
+		refs, _ := inputs["image"].([]any)
+		if len(refs) != 1 || refs[0] != "data:image/png;base64,"+base64.StdEncoding.EncodeToString(pngBytes) {
+			t.Error("signed storage link was not read and converted to image content")
+		}
+		fmt.Fprintf(w, `{"data":[{"b64_json":"%s"}]}`, base64.StdEncoding.EncodeToString(pngBytes))
+	}))
+	defer upstream.Close()
+	detail, err := s.Create(1, imageGenReq(upstream.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Enable(1, detail.ID); err != nil {
+		t.Fatal(err)
+	}
+	registered, err := model.GetImageGenConfig(1, detail.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sid := *registered.RegisteredServiceID
+	// Omitting the editing format on creation must send references through
+	// the generations API in both registered MCP and unsaved web previews.
+	wantFormat = imagegen.EditFormatGenerationsJSON
+	args, _ := json.Marshal(map[string]any{"prompt": "edit reference", "images": []string{stored.URL}, "n": 1, "return_mode": "url"})
+	if raw, err := VirtualRegistry.Handle(virtual.WithCallerUserID(context.Background(), 1), sid, nil, "edit_image", args); err != nil || strings.Contains(string(raw), `"isError":true`) {
+		t.Fatalf("default MCP editing format: %s, %v", raw, err)
+	}
+	if preview, err := s.Test(context.Background(), 1, &dto.ImageGenProbeReq{ImageGenConfigReq: *imageGenReq(upstream.URL), Tool: "edit_image", Arguments: args}); err != nil || preview.IsError {
+		t.Fatal("unsaved web preview did not use the new editing default", err)
+	}
+	// Existing rows before this field was introduced retain the standard API.
+	if err := db.Migrator().DropColumn(&model.ImageGenConfig{}, "edit_request_format"); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := db.AutoMigrate(&model.ImageGenConfig{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	detail, err = s.Get(1, detail.ID)
+	if err != nil || detail.EditRequestFormat != imagegen.EditFormatMultipart || *detail.RegisteredServiceID != sid || !detail.HasAPIKey {
+		t.Fatal("legacy configuration lost its default, registration or key", err)
+	}
+	if err := s.Update(1, detail.ID, &dto.ImageGenConfigReq{Description: igPtr("Updated legacy description")}); err != nil {
+		t.Fatal(err)
+	}
+	if legacy, err := s.Get(1, detail.ID); err != nil || legacy.EditRequestFormat != imagegen.EditFormatMultipart {
+		t.Fatal("updating a legacy configuration changed its editing format", err)
+	}
+	for _, format := range []string{imagegen.EditFormatGenerationsJSON, imagegen.EditFormatGenerationsJSONExtraBody} {
+		wantFormat = format
+		if err := s.Update(1, detail.ID, &dto.ImageGenConfigReq{EditRequestFormat: &format}); err != nil {
+			t.Fatal(err)
+		}
+		cfg, _ := model.GetImageGenConfig(1, detail.ID)
+		if cfg.EditRequestFormat != format {
+			t.Fatal("editing format was not persisted")
+		}
+		s.SyncAllRegisteredTools()
+		svc, _ := model.GetServiceByID(1, sid)
+		var tools []struct {
+			Name        string `json:"name"`
+			InputSchema struct {
+				Properties map[string]any `json:"properties"`
+			} `json:"inputSchema"`
+		}
+		_ = json.Unmarshal([]byte(svc.ToolsCache), &tools)
+		for _, tool := range tools {
+			if tool.Name == "edit_image" && tool.InputSchema.Properties["mask"] != nil {
+				t.Fatal("JSON editing advertised unsupported masks")
+			}
+		}
+		raw, err := VirtualRegistry.Handle(virtual.WithCallerUserID(context.Background(), 1), sid, nil, "edit_image", args)
+		if err != nil || !strings.Contains(string(raw), `"resource_link"`) || strings.Contains(string(raw), `"isError":true`) {
+			t.Fatalf("MCP editing: %s, %v", raw, err)
+		}
+		preview, err := s.Test(context.Background(), 1, &dto.ImageGenProbeReq{ConfigID: detail.ID, Tool: "edit_image", Arguments: args})
+		if err != nil || preview.IsError {
+			t.Fatal("web preview did not use the configured editing format", err)
+		}
+		before := calls
+		masked, _ := json.Marshal(map[string]any{"prompt": "edit", "images": []string{stored.URL}, "mask": stored.URL})
+		if _, err := VirtualRegistry.Handle(virtual.WithCallerUserID(context.Background(), 1), sid, nil, "edit_image", masked); err == nil || calls != before {
+			t.Fatal("unsupported mask reached the upstream")
+		}
+	}
+	if calls != 6 {
+		t.Fatalf("unexpected upstream retries: %d", calls)
+	}
+	if err := s.Update(1, detail.ID, &dto.ImageGenConfigReq{Provider: igPtr("gemini")}); err == nil {
+		t.Fatal("accepted incompatible protocol and editing format")
+	}
+	cfg, _ := model.GetImageGenConfig(1, detail.ID)
+	if cfg.Provider != "openai" || cfg.EditRequestFormat != wantFormat {
+		t.Fatal("invalid update was not rolled back")
+	}
 }
 
 func TestImageGenDefaultDescriptionsUpgradeAndCacheSync(t *testing.T) {
@@ -181,6 +308,7 @@ func TestImageGenDefaultDescriptionsUpgradeAndCacheSync(t *testing.T) {
 		name, generate, edit, wantGenerate, wantEdit string
 	}{
 		{"legacy defaults", legacyGenerateImageDesc, legacyEditImageDesc, model.DefaultGenerateImageDesc, model.DefaultEditImageDesc},
+		{"previous edit default", model.DefaultGenerateImageDesc, legacyEditImageDescV2, model.DefaultGenerateImageDesc, model.DefaultEditImageDesc},
 		{"custom edit", legacyGenerateImageDesc, "用户自定义编辑指引", model.DefaultGenerateImageDesc, "用户自定义编辑指引"},
 		{"empty defaults", "", "  ", model.DefaultGenerateImageDesc, model.DefaultEditImageDesc},
 	} {
@@ -297,7 +425,9 @@ func TestImageGenStoredResultsReferencesMaskAndInline(t *testing.T) {
 	}))
 	defer server.Close()
 	s := &ImageGenService{}
-	detail, err := s.Create(1, imageGenReq(server.URL))
+	req := imageGenReq(server.URL)
+	req.EditRequestFormat = igPtr(imagegen.EditFormatMultipart)
+	detail, err := s.Create(1, req)
 	if err != nil {
 		t.Fatal(err)
 	}

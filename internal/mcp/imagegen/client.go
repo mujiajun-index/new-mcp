@@ -17,9 +17,34 @@ import (
 
 type Client struct {
 	Provider, EndpointURL, APIKey, Model string
+	EditRequestFormat                    string
 	HTTPClient                           *http.Client
 	MaxResponseBytes                     int64
 }
+
+const (
+	EditFormatMultipart                = "multipart"
+	EditFormatGenerationsJSON          = "generations_json"
+	EditFormatGenerationsJSONExtraBody = "generations_json_extra_body"
+)
+
+// An empty value preserves the standard edits API for existing configurations.
+func ValidateEditRequestFormat(provider, format string) error {
+	switch format {
+	case "", EditFormatMultipart:
+		return nil
+	case EditFormatGenerationsJSON, EditFormatGenerationsJSONExtraBody:
+		if provider == "openai" {
+			return nil
+		}
+	}
+	return fmt.Errorf("unsupported edit_request_format %q for %s", format, provider)
+}
+
+func SupportsMask(provider, format string) bool {
+	return provider == "openai" && (format == "" || format == EditFormatMultipart)
+}
+
 type Image struct {
 	Bytes                    []byte
 	MIME, URL, RevisedPrompt string
@@ -60,6 +85,9 @@ func BaseURL(raw, provider string) (string, error) {
 }
 
 func (c *Client) Endpoint(operation string) (string, error) {
+	if err := ValidateEditRequestFormat(c.Provider, c.EditRequestFormat); err != nil {
+		return "", err
+	}
 	base, err := BaseURL(c.EndpointURL, c.Provider)
 	if err != nil {
 		return "", err
@@ -67,7 +95,7 @@ func (c *Client) Endpoint(operation string) (string, error) {
 	if c.Provider == "gemini" {
 		return base + "/models/" + url.PathEscape(strings.TrimPrefix(c.Model, "models/")) + ":generateContent", nil
 	}
-	if operation == "edit" {
+	if operation == "edit" && SupportsMask(c.Provider, c.EditRequestFormat) {
 		return base + "/images/edits", nil
 	}
 	return base + "/images/generations", nil
@@ -115,8 +143,21 @@ func ValidateParams(provider string, p map[string]any, defaults bool) error {
 			if protected[strings.ToLower(k)] {
 				return fmt.Errorf("extra_body cannot override %s", k)
 			}
-			if allowed[k] {
+			if allowed[k] && k != "extra_body" {
 				return fmt.Errorf("use the top-level %s parameter instead of extra_body", k)
+			}
+		}
+		// Some compatible gateways require a literal nested extra_body on the wire.
+		// It may carry extensions, but never a second source of fixed inputs.
+		if nested, exists := obj["extra_body"]; exists {
+			fields, ok := nested.(map[string]any)
+			if !ok {
+				return fmt.Errorf("extra_body.extra_body must be an object")
+			}
+			for k := range fields {
+				if protected[strings.ToLower(k)] || strings.EqualFold(k, "extra_body") {
+					return fmt.Errorf("extra_body.extra_body cannot override %s", k)
+				}
 			}
 		}
 		if value, exists := obj["generationConfig"]; exists {
@@ -180,6 +221,12 @@ func (c *Client) Run(ctx context.Context, operation string, p map[string]any, im
 	if err != nil {
 		return nil, err
 	}
+	if mask != nil && c.Provider == "openai" && !SupportsMask(c.Provider, c.EditRequestFormat) {
+		return nil, fmt.Errorf("mask is not supported by this editing interface; use the OpenAI multipart edits interface with a model that supports masks")
+	}
+	if operation == "edit" && len(images) == 0 {
+		return nil, fmt.Errorf("images are required for editing")
+	}
 	extra, _ := p["extra_body"].(map[string]any)
 	body := clone(extra)
 	var reader io.Reader
@@ -218,7 +265,22 @@ func (c *Client) Run(ctx context.Context, operation string, p map[string]any, im
 			body["n"] = 1
 		}
 	}
-	if c.Provider == "openai" && operation == "edit" {
+	if c.Provider == "openai" && operation == "edit" && !SupportsMask(c.Provider, c.EditRequestFormat) {
+		inputs := make([]string, len(images))
+		for i, img := range images {
+			// Forward validated bytes, never signed localhost URLs or private links.
+			inputs[i] = "data:" + img.MIME + ";base64," + base64.StdEncoding.EncodeToString(img.Bytes)
+		}
+		if c.EditRequestFormat == EditFormatGenerationsJSONExtraBody {
+			nested, _ := body["extra_body"].(map[string]any)
+			nested = clone(nested)
+			nested["image"] = inputs
+			body["extra_body"] = nested
+		} else {
+			body["image"] = inputs
+		}
+	}
+	if c.Provider == "openai" && operation == "edit" && SupportsMask(c.Provider, c.EditRequestFormat) {
 		var buf bytes.Buffer
 		writer := multipart.NewWriter(&buf)
 		for key, val := range body {

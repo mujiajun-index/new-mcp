@@ -1,6 +1,11 @@
 import { api } from '@/lib/api'
 import type { ToolCallResult } from '@/types'
 
+export type EditRequestFormat =
+  | 'multipart'
+  | 'generations_json'
+  | 'generations_json_extra_body'
+
 export interface ImageGenConfig {
   id: number
   name: string
@@ -9,6 +14,7 @@ export interface ImageGenConfig {
   model_name: string
   endpoint_url: string
   operation: 'generate' | 'edit' | 'both'
+  edit_request_format: EditRequestFormat
   default_params: Record<string, unknown>
   timeout_seconds: number
   generate_image_desc: string
@@ -32,6 +38,7 @@ export type ConfigInput = Partial<
     | 'model_name'
     | 'endpoint_url'
     | 'operation'
+    | 'edit_request_format'
     | 'default_params'
     | 'timeout_seconds'
     | 'generate_image_desc'
@@ -90,7 +97,8 @@ export function imageEndpoint(
   base: string,
   provider: string,
   model: string,
-  operation = 'generate'
+  operation = 'generate',
+  editRequestFormat: EditRequestFormat = 'multipart'
 ) {
   const root = base
     .trim()
@@ -98,5 +106,5 @@ export function imageEndpoint(
     .replace(/\/(v1|v1beta)$/, '')
   return provider === 'gemini'
     ? `${root}/v1beta/models/${encodeURIComponent(model.replace(/^models\//, '') || '{model}')}:generateContent`
-    : `${root}/v1/images/${operation === 'edit' ? 'edits' : 'generations'}`
+    : `${root}/v1/images/${operation === 'edit' && editRequestFormat === 'multipart' ? 'edits' : 'generations'}`
 }

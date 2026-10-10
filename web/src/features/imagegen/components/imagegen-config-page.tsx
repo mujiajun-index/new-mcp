@@ -52,7 +52,7 @@ import {
   testImageGenConfig,
   imageEndpoint,
 } from '../api'
-import type { ConfigInput } from '../api'
+import type { ConfigInput, EditRequestFormat } from '../api'
 
 const initial = {
   name: '',
@@ -62,6 +62,7 @@ const initial = {
   endpoint_url: '',
   api_key: '',
   operation: 'both' as 'generate' | 'edit' | 'both',
+  edit_request_format: 'generations_json' as EditRequestFormat,
   timeout_seconds: 180,
 }
 
@@ -102,6 +103,7 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
       endpoint_url: config.endpoint_url,
       api_key: '',
       operation: config.operation,
+      edit_request_format: config.edit_request_format || 'multipart',
       timeout_seconds: config.timeout_seconds,
     })
     setTools({
@@ -185,7 +187,7 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
                   .split('\n')
                   .map((s) => s.trim())
                   .filter(Boolean),
-                ...(mask.trim() ? { mask: mask.trim() } : {}),
+                ...(supportsMask && mask.trim() ? { mask: mask.trim() } : {}),
               }
             : {}),
         },
@@ -212,6 +214,8 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
   const canConnect =
     !!form.endpoint_url.trim() &&
     (!!form.api_key.trim() || !!config?.has_api_key)
+  const supportsMask =
+    form.provider === 'openai' && form.edit_request_format === 'multipart'
   const canSave =
     canConnect &&
     !!form.model_name.trim() &&
@@ -226,7 +230,8 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
         : 'https://generativelanguage.googleapis.com'),
     form.provider,
     form.model_name,
-    testOperation
+    testOperation,
+    form.edit_request_format
   )
   if (id && isLoading)
     return (
@@ -331,7 +336,13 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
             <Select
               value={form.provider}
               onValueChange={(v: 'openai' | 'gemini') => {
-                setForm({ ...form, provider: v })
+                setForm({
+                  ...form,
+                  provider: v,
+                  edit_request_format:
+                    v === 'gemini' ? 'multipart' : 'generations_json',
+                })
+                setMask('')
                 setModels([])
               }}
             >
@@ -427,6 +438,54 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
             </SelectContent>
           </Select>
         </div>
+        {form.provider === 'openai' && form.operation !== 'generate' && (
+          <div className="space-y-2">
+            <Label htmlFor="imagegen-edit-format">
+              {t('imagegen.editRequestFormat')}
+            </Label>
+            <Select
+              value={form.edit_request_format}
+              onValueChange={(v: EditRequestFormat) => {
+                setForm({ ...form, edit_request_format: v })
+                setMask('')
+              }}
+            >
+              <SelectTrigger id="imagegen-edit-format">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(
+                  [
+                    'multipart',
+                    'generations_json',
+                    'generations_json_extra_body',
+                  ] as const
+                ).map((v) => (
+                  <SelectItem key={v} value={v}>
+                    {t(`imagegen.editRequestFormats.${v}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {t('imagegen.editRequestFormatHint')}
+            </p>
+            {form.endpoint_url.trim() && (
+              <p className="break-all text-xs text-muted-foreground">
+                {t('imagegen.editEndpointPreview')}:{' '}
+                <code className="text-primary">
+                  {imageEndpoint(
+                    form.endpoint_url,
+                    form.provider,
+                    form.model_name,
+                    'edit',
+                    form.edit_request_format
+                  )}
+                </code>
+              </p>
+            )}
+          </div>
+        )}
         <div className="space-y-2">
           <Label htmlFor="imagegen-defaults">
             {t('imagegen.defaultParams')}
@@ -655,7 +714,7 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
                 />
               </label>
             </div>
-            {form.provider === 'openai' && (
+            {supportsMask && (
               <div className="space-y-2">
                 <Label htmlFor="imagegen-mask">{t('imagegen.mask')}</Label>
                 <Input

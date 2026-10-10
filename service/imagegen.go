@@ -34,19 +34,23 @@ type ImageGenDetail struct {
 const (
 	legacyGenerateImageDesc = "Generate images from a text prompt with the configured image model. Returns downloadable image URLs and metadata. Use return_mode=inline to also return native MCP image content when it fits the response limit."
 	legacyEditImageDesc     = "Edit or generate images from reference images and a prompt using the configured image model. Pass images as URLs (use upload_image first for local files) or small base64 images. An optional PNG mask selects areas to edit on supported OpenAI-compatible models. Returns image URLs and metadata."
+	legacyEditImageDescV2   = "Edit images or create variations from reference images with an image generation model. Covers image transformations: add or remove objects, replace backgrounds, change styles or colors, and combine references, as supported by the configured model. Pass prompt to describe the requested changes and images with one or more HTTP(S) URLs, data URLs, or small base64 images. For LOCAL files, call upload_image and run its returned upload_command first. An optional PNG mask must match the first image's dimensions; transparent areas are edited on supported OpenAI-compatible models. Gemini does not support masks. Returns: downloadable image URLs and metadata. Set return_mode=inline to also include native MCP image content when size limits allow."
 )
 
 func applyImageGenDefaultDescriptions(c *model.ImageGenConfig) {
 	if strings.TrimSpace(c.GenerateImageDesc) == "" || c.GenerateImageDesc == legacyGenerateImageDesc {
 		c.GenerateImageDesc = model.DefaultGenerateImageDesc
 	}
-	if strings.TrimSpace(c.EditImageDesc) == "" || c.EditImageDesc == legacyEditImageDesc {
+	if strings.TrimSpace(c.EditImageDesc) == "" || c.EditImageDesc == legacyEditImageDesc || c.EditImageDesc == legacyEditImageDescV2 {
 		c.EditImageDesc = model.DefaultEditImageDesc
 	}
 }
 
 func imageGenDetail(c *model.ImageGenConfig) *ImageGenDetail {
 	config := *c
+	if config.EditRequestFormat == "" {
+		config.EditRequestFormat = imagegen.EditFormatMultipart
+	}
 	applyImageGenDefaultDescriptions(&config)
 	return &ImageGenDetail{
 		ImageGenConfig:           config,
@@ -98,6 +102,17 @@ func applyImageGenReq(c *model.ImageGenConfig, r *dto.ImageGenConfigReq) error {
 	if r.Operation != nil {
 		c.Operation = *r.Operation
 	}
+	if r.EditRequestFormat != nil {
+		c.EditRequestFormat = *r.EditRequestFormat
+	}
+	if c.EditRequestFormat == "" {
+		c.EditRequestFormat = imagegen.EditFormatMultipart
+		// Apply the new default only after the provider is known. Persisted
+		// configurations with no format retain the legacy multipart behavior.
+		if c.ID == 0 && c.Provider == "openai" {
+			c.EditRequestFormat = imagegen.EditFormatGenerationsJSON
+		}
+	}
 	if r.TimeoutSeconds != nil {
 		c.TimeoutSeconds = *r.TimeoutSeconds
 	}
@@ -120,6 +135,9 @@ func applyImageGenReq(c *model.ImageGenConfig, r *dto.ImageGenConfigReq) error {
 		return fmt.Errorf("endpoint or API key is too long")
 	}
 	if _, err := imagegen.BaseURL(c.EndpointURL, c.Provider); err != nil {
+		return err
+	}
+	if err := imagegen.ValidateEditRequestFormat(c.Provider, c.EditRequestFormat); err != nil {
 		return err
 	}
 	if c.ApiKey == "" {
@@ -308,7 +326,7 @@ func buildImageGenTools(c *model.ImageGenConfig) []map[string]interface{} {
 			name, desc = model.EditImageToolName, c.EditImageDesc
 			required = append(required, "images")
 			properties["images"] = map[string]any{"type": "array", "items": map[string]string{"type": "string"}, "minItems": 1, "maxItems": 16, "description": "Reference image URLs, data URLs or small base64 images. For local files use upload_image and run its upload command first."}
-			if c.Provider == "openai" {
+			if imagegen.SupportsMask(c.Provider, c.EditRequestFormat) {
 				properties["mask"] = map[string]any{"type": "string", "description": "Optional PNG mask URL/base64; dimensions must match the first image. Transparent areas are edited on supported models."}
 			}
 		}

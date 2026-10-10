@@ -1673,6 +1673,14 @@
     "provider": "Protocol",
     "providers": { "openai": "OpenAI Compatible", "gemini": "Gemini" },
     "operation": "Image capabilities",
+    "editRequestFormat": "Editing API format",
+    "editRequestFormats": {
+      "multipart": "Edits API · multipart (standard OpenAI)",
+      "generations_json": "Generations API · JSON image",
+      "generations_json_extra_body": "Generations API · JSON extra_body.image"
+    },
+    "editRequestFormatHint": "Match the actual API: JSON image places references at the top level; JSON extra_body.image places them in a nested object. The same model may require different formats across gateways. JSON modes send data URLs and do not support masks.",
+    "editEndpointPreview": "Editing request URL",
     "endpointUrl": "API base URL",
     "endpointPreview": "Request URL",
     "keepKey": "Leave empty to keep the saved key",

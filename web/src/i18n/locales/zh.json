@@ -1673,6 +1673,14 @@
     "provider": "协议",
     "providers": { "openai": "OpenAI 兼容", "gemini": "Gemini" },
     "operation": "图片能力",
+    "editRequestFormat": "编辑接口格式",
+    "editRequestFormats": {
+      "multipart": "编辑接口 · multipart（标准 OpenAI）",
+      "generations_json": "生成接口 · JSON image",
+      "generations_json_extra_body": "生成接口 · JSON extra_body.image"
+    },
+    "editRequestFormatHint": "按实际接口选择：JSON image 将参考图放在请求体顶层，JSON extra_body.image 将参考图放在嵌套对象中。同一模型在不同网关上可能需要不同格式。JSON 模式发送 data URL，不支持 mask。",
+    "editEndpointPreview": "编辑请求地址",
     "endpointUrl": "API 基础地址",
     "endpointPreview": "实际请求地址",
     "keepKey": "留空保留已有密钥",

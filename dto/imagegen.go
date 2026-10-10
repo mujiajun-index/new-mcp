@@ -11,6 +11,7 @@ type ImageGenConfigReq struct {
 	EndpointURL       *string          `json:"endpoint_url"`
 	ApiKey            *string          `json:"api_key"`
 	Operation         *string          `json:"operation"`
+	EditRequestFormat *string          `json:"edit_request_format"`
 	DefaultParams     *json.RawMessage `json:"default_params"`
 	TimeoutSeconds    *int             `json:"timeout_seconds"`
 	GenerateImageDesc *string          `json:"generate_image_desc"`
