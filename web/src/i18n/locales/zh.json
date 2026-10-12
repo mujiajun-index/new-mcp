@@ -1429,7 +1429,7 @@
     "secretPlaceholder": "已配置（留空则不修改）",
     "storageS3Blocked": "无法切换到 s3：还缺少 {{fields}}。请先填写这些字段（保存即时生效，但后端切换需重启），再切换后端。",
     "storageS3Incomplete": "⚠️ s3 后端必填字段（Endpoint / Bucket / Access Key / Secret Key）有空值——重启服务会启动失败。请补全后再重启。",
-    "imageGenInlineMaxBytes": "图片生成内联响应上限（字节，0 使用默认 1MiB）"
+    "imageGenInlineMaxBytes": "图片生成内联响应上限（字节，0 默认 1MiB）"
   },
   "billing": {
     "free": "免费",

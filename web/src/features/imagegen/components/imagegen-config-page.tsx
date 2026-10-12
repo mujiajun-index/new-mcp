@@ -78,7 +78,7 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
   const [defaults, setDefaults] = useState('{}')
   const [models, setModels] = useState<Array<{ id: string; name: string }>>([])
   const [modelsOpen, setModelsOpen] = useState(false)
-  const [modelSearch, setModelSearch] = useState('')
+  const [modelSearch, setModelSearch] = useState('image')
   const [testOperation, setTestOperation] = useState<'generate' | 'edit'>(
     'generate'
   )
@@ -167,7 +167,7 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
       }),
     onSuccess: (res) => {
       setModels(res.data || [])
-      setModelSearch('')
+      setModelSearch('image')
       setModelsOpen(true)
     },
     onError: (err) => toast.error(err.message),
