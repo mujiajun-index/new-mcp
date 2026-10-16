@@ -1,6 +1,6 @@
 # NewMCP 开发进度文档
 
-> 最后更新: 2026-07-16 | 后端: 7,000+ 行 Go (60+ 源文件) | 前端: React 19 + TanStack 全家桶
+> 最后更新: 2026-10-12（视频生成）| 前端: React 19 + TanStack 全家桶
 
 ---
 
@@ -578,3 +578,19 @@ DATABASE.md(2.18 新表 + key_index 列 + ER/索引)、API.md(§4 六个 keys �
 | 网关 | ✅ | 忙碌错误带服务名上抛(`"服务名: 当前服务负载较高，请稍后重试"`),`acquireErrCode` 映射 JSON-RPC `-32000`(其余维持 -32602);覆盖 tools/call、execute/execute_batch、resources/read、prompts/get、智能模式 mcp.read 全路径;resources/list 等聚合类沿用单服务失败降级跳过 |
 | 设置 | ✅ | `SharedStdioMaxConcurrency` 默认 10 + `validateNonNegativeInt` 校验;管理端维护页新增「平台共享 Stdio 并发上限」输入框,zh/en 文案明确计数口径(全体用户合计、各条目独立、0 不限) |
 | 测试 | ✅ | `session_pool_test.go`:共享条目超限报 `ErrServiceBusy`+释放恢复可租、自有/独占会话(serviceID 键控)不受限、上限 0 不限流、per-key 锁同键串行/异键并行/引用计数回收清空 |
+
+## 17. 内置视频生成（2026-10-12）
+
+功能已实现，使用方式见 [VIDEO-GENERATION.md](./VIDEO-GENERATION.md)，完整验证记录见 [VIDEO-GENERATION-ACCEPTANCE.md](./VIDEO-GENERATION-ACCEPTANCE.md)。通过 `openai_video` 对接 New API 视频插件，提供文生、单图图生、上传及本地任务查询；模型可手填。
+
+| 范围 | 状态 | 说明 |
+| --- | --- | --- |
+| 协议及持久化任务 | 已完成 | JSON/multipart、默认参数合并、metadata/extra_body、短等待、幂等、租约、重启恢复、未知提交状态、查询退避及保存重试 |
+| 存储与隔离 | 已完成 | local/S3、受限流式下载、MP4/WebM 校验、独立签名、Range/HEAD、到期清理、用户/配置归属及凭证脱敏 |
+| 配置 API 与 MCP | 已完成 | CRUD、模型目录、草稿测试、注册/取消注册、任务历史及分组工具过滤；配置停用不取消旧任务 |
+| 管理页面 | 已完成 | `/videogen` 三个页面、参考图上传、5 秒查询、播放器、下载/复制、保存重试、管理员限制与中英文文案 |
+| 本地验证 | 已通过 | Go 全量测试、相关 go vet、前端类型检查与构建；十类参考网关插件 30 组协议检查，SQLite 迁移及图片生成回归 |
+| 浏览器验证 | 已通过模拟流程 | 独立数据库和模拟网关检查桌面/窄屏布局、配置/注册/异步刷新及播放下载控件，不代表真实生成验收 |
+| 真实环境验收 | 待完成 | 真实视频网关、实际 S3 桶、MySQL/PostgreSQL；现有网关模型查询受限，未配置专用测试凭证/DSN |
+
+协议检查确认通义万相、豆包图生需 JSON；xAI 复杂 metadata 建议 JSON。ESLint 因项目缺少配置文件未完成。真实验收测试已提供环境变量入口，跳过记录不会计为通过。

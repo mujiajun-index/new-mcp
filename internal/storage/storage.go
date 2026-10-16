@@ -46,6 +46,18 @@ type Storage interface {
 	Backend() string
 }
 
+// SeekableStorage is optional so existing image-only storage implementations
+// remain compatible. Video serving uses it with http.ServeContent for ranges.
+type SeekableStorage interface {
+	OpenSeek(context.Context, string) (ReadSeekCloser, error)
+}
+
+type ReadSeekCloser interface {
+	io.Reader
+	io.Seeker
+	io.Closer
+}
+
 // ObjectInfo is the lightweight metadata returned by Stat. MediaType is
 // best-effort — the local backend leaves it empty because it doesn't store
 // per-file metadata (the uploaded_images row is authoritative there).

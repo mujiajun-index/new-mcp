@@ -1083,7 +1083,7 @@ Direct 模式下的 `tools/list` 返回聚合后的完整工具列表。
 ### 10.2 范围与容错
 
 - 范围口径与 `tools/list` 一致：`/mcp`、`/smart/mcp` 聚合 API Key 绑定分组的全部服务
-  （去重）；`/mcp/group/{slug}` 限定该分组并校验访问权。vision/camera 虚拟服务不参与。
+  （去重）；`/mcp/group/{slug}` 限定该分组并校验访问权。视觉、摄像头、图片及视频生成等虚拟服务不参与上游资源/提示目录聚合。视频工具返回的 HTTP resource_link 通过签名文件接口读取。
 - 聚合并发连上游（上限 8）；**单个服务连接/拉取失败只跳过该服务**，不影响整体响应；
   范围解析失败（分组不存在/无权限）返回 JSON-RPC error。
 - 上游未声明 resources/prompts 能力时直接跳过（不发多余请求）；目录变化可通过订阅得知，
@@ -1325,3 +1325,20 @@ curl --no-buffer --silent --show-error "$MCP_URL" \
   -H 'Accept: text/event-stream' \
   -H 'MCP-Protocol-Version: 2025-11-25'
 ```
+
+## 12. 内置视频生成工具
+
+视频配置注册为 `source=videogen`、`transport_type=virtual` 服务，由 VirtualToolRegistry 在进程内派发；支持 Direct、Smart 和独立的批量调用，遵循现有 API Key 分组范围及工具启停。文生、图生按配置能力暴露，状态工具使用本地任务 ID，图生配置附带 upload_image。
+
+| 调用方式 | 工具标识示例 |
+| --- | --- |
+| Direct tools/call | `videogen_1__generate_video`、`videogen_1__generate_video_from_image`、`videogen_1__get_video_status` |
+| Smart mcp.execute | `videogen_1.generate_video`、`videogen_1.generate_video_from_image`、`videogen_1.get_video_status` |
+
+生成返回 `content` 文本及 `structuredContent`，包含 task_id、status、progress、artifact_status、poll_after_seconds 和错误信息。短等待结束或生成进行中仍是正常结果；客户端随后调用 get_video_status。保存成功时追加 HTTP resource_link 及 structuredContent.videos；视频不是内联二进制，也不作为虚拟服务的 resources/list 目录条目。
+
+短等待 0–30 秒，生成默认 10 秒，状态查询默认 0 秒。用户断开后已受理任务继续处理。客户端重试相同生成输入时复用 request_id；上游提交结果不明确的 submission_unknown 不自动重提。生成 completed 与文件 ready 分别判断，保存失败通过 retry_download 重试已有视频。
+
+get_video_status 校验用户及配置归属，禁止直接传上游 ID。取消注册后 MCP 服务入口移除，已有任务仍可在管理 API 中查询。上传、生成、依赖返回 task_id 的查询必须顺序执行，只有互不依赖的任务适合批量调用。
+
+完整工具 schema、图生格式、示例和状态表见[视频生成说明](./VIDEO-GENERATION.md#mcp-工具)，协议及隔离验证见[验收记录](./VIDEO-GENERATION-ACCEPTANCE.md)。

@@ -76,6 +76,8 @@ func migrateDB() error {
 		&McpGroupItem{},
 		&VisionConfig{},
 		&ImageGenConfig{},
+		&VideoGenConfig{},
+		&VideoGenTask{},
 		&SystemOneConfig{},
 		&SmartSearchConfig{},
 		&Camera{},

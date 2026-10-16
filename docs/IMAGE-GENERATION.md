@@ -2,6 +2,8 @@
 
 在「图片生成」页面创建配置，每条配置绑定一个模型。先获取模型或手动填写模型名，再显式测试出图，保存并启用，最后在分组中添加 `imagegen_<配置 ID>` 服务。获取模型只读取模型列表，不生成图片；测试出图会调用上游。
 
+需要文生视频或单图生成视频时，使用独立的[视频生成 MCP](./VIDEO-GENERATION.md)。视频复用配置、上传和分组交互，采用持久化异步任务与状态查询；验收范围见[视频验收记录](./VIDEO-GENERATION-ACCEPTANCE.md)。
+
 ## 配置
 
 - `provider`：`openai` 或 `gemini`。OpenAI 兼容模式可连接 New API 图片接口；Gemini 使用原生 `generateContent`。

@@ -39,7 +39,8 @@ export function ContentBlock({ block, index }: { block: McpContentBlock; index: 
   if (block.type === 'resource_link' && block.uri) {
     return <div className="space-y-2 rounded-md border p-3">
       {block.mimeType?.startsWith('image/') && <img src={block.uri} alt={block.name || ''} className="max-h-96 rounded-md" />}
-      <div className="flex flex-wrap items-center gap-3 text-xs"><a href={block.uri} target="_blank" rel="noreferrer" download className="text-primary hover:underline">{t('imagegen.downloadImage')}</a><Button variant="ghost" size="sm" className="h-7 gap-1" onClick={() => copyText(block.uri!).catch(() => toast.error(t('common.copyFailed')))}><Copy className="h-3 w-3" />{t('imagegen.copyLink')}</Button></div>
+      {block.mimeType?.startsWith('video/') && <video src={block.uri} controls preload="metadata" aria-label={block.name || t('videogen.title')} className="max-h-96 w-full rounded-md bg-black" />}
+      <div className="flex flex-wrap items-center gap-3 text-xs"><a href={block.uri} target="_blank" rel="noreferrer" download className="text-primary hover:underline">{t(block.mimeType?.startsWith('video/') ? 'videogen.download' : 'imagegen.downloadImage')}</a><Button variant="ghost" size="sm" className="h-7 gap-1" onClick={() => copyText(block.uri!).catch(() => toast.error(t('common.copyFailed')))}><Copy className="h-3 w-3" />{t('imagegen.copyLink')}</Button></div>
     </div>
   }
   if (block.type === 'text' && typeof block.text === 'string') {

@@ -1,6 +1,6 @@
 # NewMCP 前端设计文档
 
-> 版本: V2.0 | 状态: 草案 | 更新日期: 2026-05-05
+> 版本: V2.0 | 状态: 草案 | 更新日期: 2026-10-13（视频配置列表统一为表格）
 > 架构对标: new-api Default 版 (React 19 + TanStack 全家桶)
 
 ## 1. 技术栈
@@ -205,6 +205,9 @@ export const Route = createFileRoute('/_authenticated/admin')({
 | `/vision` | `_authenticated/vision/index.lazy.tsx` | 视觉配置列表 | 登录 |
 | `/vision/create` | `_authenticated/vision/create.lazy.tsx` | 新建视觉配置 | 登录 |
 | `/vision/:id` | `_authenticated/vision/$id.lazy.tsx` | 编辑视觉配置 | 登录 |
+| `/videogen` | `_authenticated/videogen/index.lazy.tsx` | 视频生成配置列表与任务历史 | 登录 |
+| `/videogen/create` | `_authenticated/videogen/create.lazy.tsx` | 新建视频配置与草稿测试 | 登录 |
+| `/videogen/:id` | `_authenticated/videogen/$id.lazy.tsx` | 视频配置详情与测试 | 登录 |
 | `/cameras` | `_authenticated/cameras/index.lazy.tsx` | 摄像头列表 | 登录 |
 | `/cameras/create` | `_authenticated/cameras/create.lazy.tsx` | 添加摄像头 | 登录 |
 | `/cameras/:id` | `_authenticated/cameras/$id.lazy.tsx` | 摄像头详情 | 登录 |
@@ -353,6 +356,23 @@ export const Route = createFileRoute('/_authenticated/admin')({
 - **版本信息只读展示**：系统维护 tab 显示当前版本号
 - **组件文件**: `features/admin/components/admin-settings-page.tsx`
 - **UI 组件**: 复用 `components/ui/switch.tsx`、`components/ui/tabs.tsx`
+
+---
+
+### 4.18 视频生成 `/videogen`
+
+- 列表、创建及详情沿用图片生成页面交互，加入侧栏；状态为“已启用/已禁用”，按钮为“启用/禁用”。启用时自动注册 `videogen_<id>` 内置服务，再在分组中选用。服务和分组显示视频来源标识；虚拟服务编辑或删除入口引导到配置页。
+- 配置列表使用与图片生成一致的表格，展示名称、协议、模型、生成能力、启用状态和操作；支持即时搜索名称、协议与模型。移动端沿用紧凑列表行，删除收纳在更多菜单。
+- 配置包含模型搜索与手填、能力、图生格式、默认参数 JSON、超时和工具描述。获取模型列表只提交连接字段，不依赖名称、模型或默认参数是否填完；模型弹窗默认搜索 `video`，支持修改或清空。API Key 输入留空保留原值，读取通过 `has_api_key` 展示配置情况。Wan、豆包图生使用 JSON。
+- 详情页与图片生成一致，依次展示基础配置、注册工具及测试生成卡片。新建页使用较窄的居中布局，保存后回到列表；详情页使用完整内容宽度。注册工具按已保存的能力展示，工具描述分别保存、恢复默认；`upload_image` 标为系统内置且不可修改。
+- 草稿测试无需保存，提供文生/图生切换、单图上传及提示词。测试提交取得任务 ID 后每 5 秒查询，显示进度、生成状态和保存状态；保存失败提供“重试保存”。
+- 保存成功显示 `<video controls>`、下载与复制链接。公共 MCP 测试结果组件也能将视频 `resource_link` 渲染为播放器；视频到期和历史保留按后端数据展示。
+- 任务历史使用表格，汇总模型、任务 ID、提示词、生成状态/进度、保存状态、创建时间及操作。列表提示词使用摘要，详情弹窗完整展示提示词并保留换行，长文本可滚动阅读，长连续字符自动换行；保留播放器、完整错误、重试保存及继续跟踪。支持配置过滤和分页，进行中的任务不提供删除操作。窄屏在表格内部横向滚动。管理员设置新增视频大小、文件保留、历史保留及每用户数量上限。
+- 生成失败的表格行和详情提供“重试生成”，窗口支持配置选择、提示词、参考图上传及 JSON 参数修正。确认后关闭窗口，刷新原任务详情和历史行，任务 ID、历史数量及当前分页保持不变；下次重试重新获取最新参数快照。旧记录提示补充未保存的输入。重试使用独立请求 ID 去重，保存失败仍使用“重试保存”，提交结果不确定不提供新的生成重试。
+- 默认、测试和重试参数共用 JSON 对象解析：空文本或仅空白按 `{}` 处理；不完整 JSON 或数组、`null`、标量会阻止提交，并以当前语言提示具体字段。`npm run test:videogen-params` 覆盖原报错场景及中英文错误提示。
+- 页面代码位于 `features/videogen/components/`，接口在 `features/videogen/api.ts`；中文、英文文案由现有 i18n 管理。
+
+使用流程、MCP 参数及真实验收限制见[视频生成说明](./VIDEO-GENERATION.md)。
 
 ---
 

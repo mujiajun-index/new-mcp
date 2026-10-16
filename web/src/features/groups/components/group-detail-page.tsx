@@ -474,6 +474,7 @@ export function GroupDetailPage() {
                   )}
                   <span className="text-xs text-muted-foreground">{s.tools_count} {t('groups.toolsCount')}</span>
                   {s.name.startsWith('imagegen_') && (<span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-600">{t('services.sourceImageGen')}</span>)}
+                  {s.name.startsWith('videogen_') && (<span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-600">{t('services.sourceVideoGen')}</span>)}
                   {s.name.startsWith('vision_') && (
                     <span className="inline-flex items-center rounded-md bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">{t('groups.badgeVision')}</span>
                   )}

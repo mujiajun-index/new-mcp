@@ -1,6 +1,6 @@
 # NewMCP 数据库设计文档
 
-> 版本: V1.0 | 状态: 草案 | 更新日期: 2026-05-03
+> 版本: V1.0 | 状态: 草案 | 更新日期: 2026-10-12（新增视频配置与持久化任务）
 
 ## 1. 概述
 
@@ -126,7 +126,7 @@ CREATE TABLE `mcp_services` (
     `icon_url`         VARCHAR(512)    DEFAULT '' COMMENT '图标 URL',
     `tags`             VARCHAR(512)    DEFAULT '' COMMENT '标签 (逗号分隔)',
     `visibility`       VARCHAR(16)     DEFAULT 'private' COMMENT '可见性: private, public',
-    `source`           VARCHAR(16)     DEFAULT 'user' COMMENT '来源: user=用户自建, admin=管理员添加, marketplace=从市场安装',
+    `source`           VARCHAR(16)     DEFAULT 'user' COMMENT '来源: user, admin, marketplace, vision, camera, imagegen, videogen',
     `marketplace_item_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '来源市场项 ID (从市场安装时关联)',
     `sort_order`       INT             DEFAULT 0 COMMENT '排序权重',
     `status`           TINYINT         DEFAULT 1 COMMENT '1=启用, 2=禁用',
@@ -607,6 +607,55 @@ CREATE TABLE `marketplace_item_keys` (
 
 ---
 
+### 2.20 videogen_configs - 视频生成配置表
+
+本节按实际 GORM 模型描述字段；启动时由 `model/main.go` 自动迁移，不需手工执行厂商专用 SQL。
+
+| 字段 | 存储 / 作用 |
+| --- | --- |
+| `id` / `user_id` | 自增主键 / 属主索引 |
+| `name` / `description` | 配置名称（128 字节上限）/ 说明文本 |
+| `protocol` / `model_name` / `endpoint_url` | `openai_video` / 手填模型 / 上游地址 |
+| `api_key` | 私有凭证文本，复用 `common.Encrypt`；未设置 `CRYPTO_SECRET` 时仅 base64 回退 |
+| `operation` / `image_request_format` | `generate/image/both` / `multipart/json` |
+| `default_params` | JSON 对象的文本存储 |
+| `request_timeout_seconds` / `task_timeout_seconds` | 单次请求超时 / 跟踪时限 |
+| 三个 `*_desc` 字段 | 文生、图生与状态工具描述 |
+| `auto_register` / `registered_service_id` / `status` | 注册状态 / 可空唯一服务关联 / 配置状态 |
+| `created_at` / `updated_at` / `deleted_at` | 时间戳及软删除索引 |
+
+配置删除清除自身凭证并取消虚拟服务注册，不级联删除任务。读取仅暴露 `has_api_key`；凭证写入使用静默 SQL 日志。
+
+### 2.21 videogen_tasks - 视频生成持久化任务表
+
+| 字段 | 存储 / 作用 |
+| --- | --- |
+| `id` | UUID 字符串主键，API 字段名 `task_id` |
+| `user_id` / `config_id` / `config_name` | 用户归属 / 配置关联（草稿为 0）/ 提交时名称 |
+| `source` / `operation` / `model` / `prompt` | `mcp/test/retry` 调用来源、能力、模型及请求摘要 |
+| `idempotency_key` / `request_hash` | 64 字符唯一幂等键 / 有效输入摘要，阻止重试重复生成 |
+| `request_params` | 不公开的最新调用参数快照；沿用现有凭证存储机制，不包含配置密钥和连接；MySQL 为 LONGTEXT，SQLite/PostgreSQL 为 TEXT |
+| `retry_requests` / `retry_count` | 不公开的重试请求哈希与输入摘要映射 / 已受理重试次数；请求映射为 JSON 文本，不保存原请求标识、输入或凭证；重启及并发重复请求不增加次数 |
+| `retry_of` | 旧版重试记录的来源关联，兼容保留；当前重试更新原任务，不新增该关联 |
+| `connection` / `upstream_id` | 私有连接快照 / 上游任务 ID，不返回 API；快照使用现有凭证机制 |
+| `status` / `progress` / `artifact_status` | 上游生成状态、进度、独立文件保存状态 |
+| `tracking_paused` / `error` / `last_error` / `failures` | 跟踪暂停、终止错误、最近临时错误和连续失败次数 |
+| `request_timeout_seconds` / `task_timeout_seconds` / `tracking_deadline` | 提交时的处理时限快照 |
+| `next_poll_at` / `lease_owner` / `lease_until` / `revision` | 轮询领取、租约及条件更新版本，协调多个实例 |
+| `storage_key` / `backend` / `short_id` | 对象键、存储后端、可空唯一短 ID；未保存任务保持 NULL |
+| `mime` / `size` / `expires_at` | 视频格式、字节数及保存成功后的到期时间 |
+| `stopped_at` / `created_at` / `updated_at` | 历史保留起算点及创建/更新时间 |
+
+任务先入库，再异步提交。已有上游 ID 的任务重启后继续查询；过期的提交租约记录为 `submission_unknown`，不重新 POST。租约清空使用 1970 年时间，避免 MySQL 严格日期模式下的零年值。任务使用独立连接快照，配置变更或删除不改变其目标；保存成功或生成失败后清除快照，保存失败保留快照以供下载重试。
+
+明确的 HTTP 503 `video_queue_full` 拒绝提交记录为 `failed`。管理器启动时分批修正旧版误分类记录，条件要求原状态为 `submission_unknown`、上游 ID 和租约持有者为空、原错误是完整的 503 队列拒绝 JSON；更新核对原修订号与错误，避免覆盖其他实例改动。修正保留停止时间、错误及私有输入，并清除凭证快照，无需新增表字段。
+
+手动重试失败生成会使用当前已保存配置更新原任务行，保留任务 ID、创建时间、初始来源和原提交的幂等键/摘要；重置上游 ID、进度、错误、保存状态、停止时间及跟踪时限，保存新的连接与参数快照。更新核对原状态、修订号和租约，同时写入重试请求映射与计数，避免不同实例重复受理。每次重试的哈希记录保留在任务上，较早的已受理请求重放也不生成新任务。调用参数快照仅在归属校验后的专用重试接口返回；普通列表、详情和 MCP 结果不暴露私有字段。AutoMigrate 追加重试状态字段，保留旧记录及旧版 `retry_of` 关系；输入与重试状态随任务历史到期清理。
+
+`user_id`、`config_id`、`status`、`artifact_status`、`next_poll_at`、`lease_until`、`expires_at`、`stopped_at` 按模型建立索引。到期视频清理与历史清理分开，未到期视频的历史保留。SQLite 新建、升级和重复迁移已验证；MySQL/PostgreSQL 的实际迁移验收仍需专用测试 DSN，见 [验证记录](./VIDEO-GENERATION-ACCEPTANCE.md)。
+
+---
+
 ## 3. ER 关系图
 
 ```
@@ -617,6 +666,8 @@ users (1) ──< (N) api_keys
 users (1) ──< (N) mcp_services
 users (1) ──< (N) mcp_groups
 users (1) ──< (N) vision_configs
+users (1) ──< (N) videogen_configs
+users (1) ──< (N) videogen_tasks
 users (1) ──< (N) cameras
 users (1) ──< (N) cloud_endpoints
 
@@ -631,6 +682,8 @@ mcp_groups (1) ──< (N) cloud_endpoints
 vision_configs (1) ──< (N) cameras
 vision_configs (1) ──> (0..1) mcp_services (启用时创建虚拟服务, transport_type=virtual)
 cameras (1) ──> (0..1) mcp_services (启用时创建虚拟服务, transport_type=virtual)
+videogen_configs (1) ──> (0..1) mcp_services (source=videogen, 注册时创建)
+videogen_configs (1) ──< (N) videogen_tasks (逻辑关联, 配置删除不级联；草稿 config_id=0)
 
 mcp_services (1) ──< (N) mcp_call_logs
 mcp_groups   (1) ──< (N) mcp_call_logs
@@ -674,3 +727,7 @@ mcp_groups (1) ──< (N) mcp_group_services >── mcp_services
 | 条目级定价 | `mcp_tool_prices(marketplace_item_id, kind, tool_name)` UNIQUE | 命中即用 |
 | 多秘钥池 | `mcp_service_keys(service_id, sort_order)` UNIQUE | 按服务整池加载(选择器构建,非每请求) |
 | 条目多秘钥池 | `marketplace_item_keys(item_id, sort_order)` UNIQUE | 按条目整池加载(一份池全局轮换) |
+| 视频任务去重 | `videogen_tasks.idempotency_key` UNIQUE | 同用户、配置、request_id 的输入幂等 |
+| 视频文件读取 | `videogen_tasks.short_id` UNIQUE（可空） | 签名链接查找文件；NULL 允许多个未保存任务 |
+| 视频后台处理 | `next_poll_at` / `lease_until` / `status` / `artifact_status` | 轮询领取与保存重试，租约配合版本条件更新 |
+| 视频到期清理 | `expires_at` / `stopped_at` | 分别清理视频文件和停止跟踪的历史 |

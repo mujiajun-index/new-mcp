@@ -420,7 +420,7 @@ func (s *McpServiceService) delete(userID, serviceID int64) error {
 		return err
 	}
 	if svc.TransportType == "virtual" {
-		sourceLabel := map[string]string{"vision": "视觉", "camera": "摄像头", "systemone": "System One", "imagegen": "图片生成"}[svc.Source]
+		sourceLabel := map[string]string{"vision": "视觉", "camera": "摄像头", "systemone": "System One", "imagegen": "图片生成", "videogen": "视频生成"}[svc.Source]
 		if sourceLabel == "" {
 			sourceLabel = "对应"
 		}
@@ -815,6 +815,9 @@ func callToolTested(svc *model.McpService, userID int64, req *dto.CallToolReq) (
 
 func callToolTestedContext(parent context.Context, svc *model.McpService, userID int64, req *dto.CallToolReq) (*dto.CallToolResult, bool, int) {
 	seconds := 60
+	if svc.Source == "videogen" {
+		seconds = 40
+	}
 	if svc.Source == "imagegen" {
 		cfg, err := model.GetImageGenConfigByServiceID(svc.ID)
 		if err != nil {
@@ -1529,6 +1532,10 @@ func (s *McpServiceService) toDetail(svc *model.McpService) *dto.ServiceDetail {
 			seconds := cfg.TimeoutSeconds
 			d.ToolTimeoutSeconds = &seconds
 		}
+	}
+	if svc.Source == "videogen" {
+		seconds := 40
+		d.ToolTimeoutSeconds = &seconds
 	}
 	if svc.AuthType == "query_param" {
 		raw, _ := config["url"].(string)

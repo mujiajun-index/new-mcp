@@ -94,8 +94,12 @@ var defaultOptions = map[string]string{
 	// 返回"负载较高,请稍后重试"。0 表示不限。
 	"SharedStdioMaxConcurrency": "10",
 	// --- V1.1: shell 直传 / 图片管理 / 入参择优 ---
-	"PresignedPutTTLSeconds": "600",   // 预签名 PUT URL 有效期(秒),直传路径;须 < SignedURLTTL
-	"MaxUploadsPerUser":      "0",     // 每用户活跃上传数上限(护栏);0=不限
+	"PresignedPutTTLSeconds": "600", // 预签名 PUT URL 有效期(秒),直传路径;须 < SignedURLTTL
+	"MaxUploadsPerUser":      "0",   // 每用户活跃上传数上限(护栏);0=不限
+	"VideoGenMaxBytes":       "268435456",
+	"VideoGenRetentionHours": "24",
+	"VideoGenHistoryDays":    "30",
+	"MaxVideosPerUser":       "0",
 	"VisionInlineMaxBytes":   "10240", // base64 内联软阈值(字节);超过引导走上传;0=关闭(退回 V1.0)
 	// --- 图像读取时变换(resize / 重压缩;§13.2 网关侧 resize)---
 	// 仅作用于 Bytes 路径,在 base64 编码前、client.Analyze 前;磁盘原图与 GET 不受影响。默认全关,

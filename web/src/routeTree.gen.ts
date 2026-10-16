@@ -40,6 +40,9 @@ const AuthenticatedApiKeysLazyRouteImport = createFileRoute(
 const AuthenticatedVisionIndexLazyRouteImport = createFileRoute(
   '/_authenticated/vision/',
 )()
+const AuthenticatedVideogenIndexLazyRouteImport = createFileRoute(
+  '/_authenticated/videogen/',
+)()
 const AuthenticatedSystemOneIndexLazyRouteImport = createFileRoute(
   '/_authenticated/system-one/',
 )()
@@ -66,6 +69,12 @@ const AuthenticatedVisionCreateLazyRouteImport = createFileRoute(
 )()
 const AuthenticatedVisionIdLazyRouteImport = createFileRoute(
   '/_authenticated/vision/$id',
+)()
+const AuthenticatedVideogenCreateLazyRouteImport = createFileRoute(
+  '/_authenticated/videogen/create',
+)()
+const AuthenticatedVideogenIdLazyRouteImport = createFileRoute(
+  '/_authenticated/videogen/$id',
 )()
 const AuthenticatedSystemOneCreateLazyRouteImport = createFileRoute(
   '/_authenticated/system-one/create',
@@ -231,6 +240,14 @@ const AuthenticatedVisionIndexLazyRoute =
   } as any).lazy(() =>
     import('./routes/_authenticated/vision/index.lazy').then((d) => d.Route),
   )
+const AuthenticatedVideogenIndexLazyRoute =
+  AuthenticatedVideogenIndexLazyRouteImport.update({
+    id: '/videogen/',
+    path: '/videogen/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any).lazy(() =>
+    import('./routes/_authenticated/videogen/index.lazy').then((d) => d.Route),
+  )
 const AuthenticatedSystemOneIndexLazyRoute =
   AuthenticatedSystemOneIndexLazyRouteImport.update({
     id: '/system-one/',
@@ -308,6 +325,22 @@ const AuthenticatedVisionIdLazyRoute =
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any).lazy(() =>
     import('./routes/_authenticated/vision/$id.lazy').then((d) => d.Route),
+  )
+const AuthenticatedVideogenCreateLazyRoute =
+  AuthenticatedVideogenCreateLazyRouteImport.update({
+    id: '/videogen/create',
+    path: '/videogen/create',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any).lazy(() =>
+    import('./routes/_authenticated/videogen/create.lazy').then((d) => d.Route),
+  )
+const AuthenticatedVideogenIdLazyRoute =
+  AuthenticatedVideogenIdLazyRouteImport.update({
+    id: '/videogen/$id',
+    path: '/videogen/$id',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any).lazy(() =>
+    import('./routes/_authenticated/videogen/$id.lazy').then((d) => d.Route),
   )
 const AuthenticatedSystemOneCreateLazyRoute =
   AuthenticatedSystemOneCreateLazyRouteImport.update({
@@ -547,6 +580,8 @@ export interface FileRoutesByFullPath {
   '/services/overview': typeof AuthenticatedServicesOverviewLazyRoute
   '/system-one/$id': typeof AuthenticatedSystemOneIdLazyRoute
   '/system-one/create': typeof AuthenticatedSystemOneCreateLazyRoute
+  '/videogen/$id': typeof AuthenticatedVideogenIdLazyRoute
+  '/videogen/create': typeof AuthenticatedVideogenCreateLazyRoute
   '/vision/$id': typeof AuthenticatedVisionIdLazyRoute
   '/vision/create': typeof AuthenticatedVisionCreateLazyRoute
   '/cameras/': typeof AuthenticatedCamerasIndexLazyRoute
@@ -556,6 +591,7 @@ export interface FileRoutesByFullPath {
   '/marketplace/': typeof AuthenticatedMarketplaceIndexLazyRoute
   '/services/': typeof AuthenticatedServicesIndexLazyRoute
   '/system-one/': typeof AuthenticatedSystemOneIndexLazyRoute
+  '/videogen/': typeof AuthenticatedVideogenIndexLazyRoute
   '/vision/': typeof AuthenticatedVisionIndexLazyRoute
   '/admin/marketplace/create': typeof AuthenticatedAdminMarketplaceCreateRoute
   '/admin/marketplace/$id': typeof AuthenticatedAdminMarketplaceIdLazyRoute
@@ -595,6 +631,8 @@ export interface FileRoutesByTo {
   '/services/overview': typeof AuthenticatedServicesOverviewLazyRoute
   '/system-one/$id': typeof AuthenticatedSystemOneIdLazyRoute
   '/system-one/create': typeof AuthenticatedSystemOneCreateLazyRoute
+  '/videogen/$id': typeof AuthenticatedVideogenIdLazyRoute
+  '/videogen/create': typeof AuthenticatedVideogenCreateLazyRoute
   '/vision/$id': typeof AuthenticatedVisionIdLazyRoute
   '/vision/create': typeof AuthenticatedVisionCreateLazyRoute
   '/cameras': typeof AuthenticatedCamerasIndexLazyRoute
@@ -604,6 +642,7 @@ export interface FileRoutesByTo {
   '/marketplace': typeof AuthenticatedMarketplaceIndexLazyRoute
   '/services': typeof AuthenticatedServicesIndexLazyRoute
   '/system-one': typeof AuthenticatedSystemOneIndexLazyRoute
+  '/videogen': typeof AuthenticatedVideogenIndexLazyRoute
   '/vision': typeof AuthenticatedVisionIndexLazyRoute
   '/admin/marketplace/create': typeof AuthenticatedAdminMarketplaceCreateRoute
   '/admin/marketplace/$id': typeof AuthenticatedAdminMarketplaceIdLazyRoute
@@ -646,6 +685,8 @@ export interface FileRoutesById {
   '/_authenticated/services/overview': typeof AuthenticatedServicesOverviewLazyRoute
   '/_authenticated/system-one/$id': typeof AuthenticatedSystemOneIdLazyRoute
   '/_authenticated/system-one/create': typeof AuthenticatedSystemOneCreateLazyRoute
+  '/_authenticated/videogen/$id': typeof AuthenticatedVideogenIdLazyRoute
+  '/_authenticated/videogen/create': typeof AuthenticatedVideogenCreateLazyRoute
   '/_authenticated/vision/$id': typeof AuthenticatedVisionIdLazyRoute
   '/_authenticated/vision/create': typeof AuthenticatedVisionCreateLazyRoute
   '/_authenticated/cameras/': typeof AuthenticatedCamerasIndexLazyRoute
@@ -655,6 +696,7 @@ export interface FileRoutesById {
   '/_authenticated/marketplace/': typeof AuthenticatedMarketplaceIndexLazyRoute
   '/_authenticated/services/': typeof AuthenticatedServicesIndexLazyRoute
   '/_authenticated/system-one/': typeof AuthenticatedSystemOneIndexLazyRoute
+  '/_authenticated/videogen/': typeof AuthenticatedVideogenIndexLazyRoute
   '/_authenticated/vision/': typeof AuthenticatedVisionIndexLazyRoute
   '/_authenticated/admin/marketplace/create': typeof AuthenticatedAdminMarketplaceCreateRoute
   '/_authenticated/admin/marketplace/$id': typeof AuthenticatedAdminMarketplaceIdLazyRoute
@@ -696,6 +738,8 @@ export interface FileRouteTypes {
     | '/services/overview'
     | '/system-one/$id'
     | '/system-one/create'
+    | '/videogen/$id'
+    | '/videogen/create'
     | '/vision/$id'
     | '/vision/create'
     | '/cameras/'
@@ -705,6 +749,7 @@ export interface FileRouteTypes {
     | '/marketplace/'
     | '/services/'
     | '/system-one/'
+    | '/videogen/'
     | '/vision/'
     | '/admin/marketplace/create'
     | '/admin/marketplace/$id'
@@ -744,6 +789,8 @@ export interface FileRouteTypes {
     | '/services/overview'
     | '/system-one/$id'
     | '/system-one/create'
+    | '/videogen/$id'
+    | '/videogen/create'
     | '/vision/$id'
     | '/vision/create'
     | '/cameras'
@@ -753,6 +800,7 @@ export interface FileRouteTypes {
     | '/marketplace'
     | '/services'
     | '/system-one'
+    | '/videogen'
     | '/vision'
     | '/admin/marketplace/create'
     | '/admin/marketplace/$id'
@@ -794,6 +842,8 @@ export interface FileRouteTypes {
     | '/_authenticated/services/overview'
     | '/_authenticated/system-one/$id'
     | '/_authenticated/system-one/create'
+    | '/_authenticated/videogen/$id'
+    | '/_authenticated/videogen/create'
     | '/_authenticated/vision/$id'
     | '/_authenticated/vision/create'
     | '/_authenticated/cameras/'
@@ -803,6 +853,7 @@ export interface FileRouteTypes {
     | '/_authenticated/marketplace/'
     | '/_authenticated/services/'
     | '/_authenticated/system-one/'
+    | '/_authenticated/videogen/'
     | '/_authenticated/vision/'
     | '/_authenticated/admin/marketplace/create'
     | '/_authenticated/admin/marketplace/$id'
@@ -926,6 +977,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedVisionIndexLazyRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/videogen/': {
+      id: '/_authenticated/videogen/'
+      path: '/videogen'
+      fullPath: '/videogen/'
+      preLoaderRoute: typeof AuthenticatedVideogenIndexLazyRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/system-one/': {
       id: '/_authenticated/system-one/'
       path: '/system-one'
@@ -987,6 +1045,20 @@ declare module '@tanstack/react-router' {
       path: '/vision/$id'
       fullPath: '/vision/$id'
       preLoaderRoute: typeof AuthenticatedVisionIdLazyRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/videogen/create': {
+      id: '/_authenticated/videogen/create'
+      path: '/videogen/create'
+      fullPath: '/videogen/create'
+      preLoaderRoute: typeof AuthenticatedVideogenCreateLazyRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/videogen/$id': {
+      id: '/_authenticated/videogen/$id'
+      path: '/videogen/$id'
+      fullPath: '/videogen/$id'
+      preLoaderRoute: typeof AuthenticatedVideogenIdLazyRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/system-one/create': {
@@ -1218,6 +1290,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedServicesOverviewLazyRoute: typeof AuthenticatedServicesOverviewLazyRoute
   AuthenticatedSystemOneIdLazyRoute: typeof AuthenticatedSystemOneIdLazyRoute
   AuthenticatedSystemOneCreateLazyRoute: typeof AuthenticatedSystemOneCreateLazyRoute
+  AuthenticatedVideogenIdLazyRoute: typeof AuthenticatedVideogenIdLazyRoute
+  AuthenticatedVideogenCreateLazyRoute: typeof AuthenticatedVideogenCreateLazyRoute
   AuthenticatedVisionIdLazyRoute: typeof AuthenticatedVisionIdLazyRoute
   AuthenticatedVisionCreateLazyRoute: typeof AuthenticatedVisionCreateLazyRoute
   AuthenticatedCamerasIndexLazyRoute: typeof AuthenticatedCamerasIndexLazyRoute
@@ -1227,6 +1301,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMarketplaceIndexLazyRoute: typeof AuthenticatedMarketplaceIndexLazyRoute
   AuthenticatedServicesIndexLazyRoute: typeof AuthenticatedServicesIndexLazyRoute
   AuthenticatedSystemOneIndexLazyRoute: typeof AuthenticatedSystemOneIndexLazyRoute
+  AuthenticatedVideogenIndexLazyRoute: typeof AuthenticatedVideogenIndexLazyRoute
   AuthenticatedVisionIndexLazyRoute: typeof AuthenticatedVisionIndexLazyRoute
 }
 
@@ -1253,6 +1328,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedServicesOverviewLazyRoute,
   AuthenticatedSystemOneIdLazyRoute: AuthenticatedSystemOneIdLazyRoute,
   AuthenticatedSystemOneCreateLazyRoute: AuthenticatedSystemOneCreateLazyRoute,
+  AuthenticatedVideogenIdLazyRoute: AuthenticatedVideogenIdLazyRoute,
+  AuthenticatedVideogenCreateLazyRoute: AuthenticatedVideogenCreateLazyRoute,
   AuthenticatedVisionIdLazyRoute: AuthenticatedVisionIdLazyRoute,
   AuthenticatedVisionCreateLazyRoute: AuthenticatedVisionCreateLazyRoute,
   AuthenticatedCamerasIndexLazyRoute: AuthenticatedCamerasIndexLazyRoute,
@@ -1264,6 +1341,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedMarketplaceIndexLazyRoute,
   AuthenticatedServicesIndexLazyRoute: AuthenticatedServicesIndexLazyRoute,
   AuthenticatedSystemOneIndexLazyRoute: AuthenticatedSystemOneIndexLazyRoute,
+  AuthenticatedVideogenIndexLazyRoute: AuthenticatedVideogenIndexLazyRoute,
   AuthenticatedVisionIndexLazyRoute: AuthenticatedVisionIndexLazyRoute,
 }
 

@@ -1,6 +1,6 @@
 # NewMCP 技术架构文档
 
-> 版本: V1.1 | 状态: 草案 | 更新日期: 2026-05-15
+> 版本: V1.1 | 状态: 草案 | 更新日期: 2026-10-12（新增视频任务管理与存储）
 
 ## 1. 架构概述
 
@@ -500,7 +500,7 @@ func (r *VirtualToolRegistry) Handle(ctx context.Context, serviceID int64, confi
 func (r *VirtualToolRegistry) IsVirtual(serviceID int64) bool
 ```
 
-> **设计思路**: VirtualToolRegistry 绕过现有的 SessionPool/TransportAdapter 架构，为进程内虚拟工具提供直接调用路径。每个虚拟 McpService（Vision/Camera 启用后创建）注册一个 handler，Gateway 在 `tools/call` 时优先检查虚拟服务。
+> **设计思路**: VirtualToolRegistry 绕过现有的 SessionPool/TransportAdapter 架构，为进程内虚拟工具提供直接调用路径。每个虚拟 McpService（视觉、摄像头、图片或视频生成配置注册后创建）注册一个 handler，Gateway 在 `tools/call` 时优先检查虚拟服务。
 
 ### 4.7 VisionClient — 视觉 API 客户端
 
@@ -653,6 +653,27 @@ OnAuthFailure(keyIndex int)                           // 401/403 熔断:落库+�
 > **条目级池**(V1.1):市场 instant HTTP 条目一份池对全部安装用户全局轮换(引用行
 > AuthType 恒为 none,`Get(svc)` 按 source=marketplace 分流后 session_pool 调用点零改动),
 > 凭证存 `marketplace_item_keys`,模式/头名/bearer 位存 `marketplace_items.auth_config`。
+
+---
+
+### 4.13 VideoGen — 异步视频生成
+
+配置管理位于 `service/videogen.go`，虚拟入口位于 `internal/mcp/virtual/videogen_handler.go`。两者共用 `internal/mcp/videogen` 的协议客户端与任务管理器；管理器依赖模型、存储和现有图片加载能力，不反向依赖 service。注册服务使用 `source=videogen`，工具按能力生成，文生配置不暴露图生或上传工具。
+
+请求使用 `openai_video`：提交 `POST /v1/videos`，轮询 `GET /v1/videos/{id}`，下载 `GET /v1/videos/{id}/content`。支持 JSON 和 multipart，不设置厂商模型白名单。参考图复用格式、归属、大小与地址检查，multipart 上传实际字节，JSON 使用经校验的 URL 或已暂存图片的签名链接。
+
+处理流程：
+
+1. 合并默认参数并校验输入，将本地 UUID 任务及私有连接快照持久化，再异步提交上游。用户断开连接不取消已受理任务。
+2. 获得上游 ID 后通过数据库租约轮询，每实例最多 4 个处理任务，条件更新使用 revision 防止并发覆盖。临时查询失败保留最近状态并退避。
+3. 上游完成后独立处理文件保存；下载或存储失败仅重试保存。提交结果不明确记录 `submission_unknown`，避免自动重提导致重复费用。
+4. 生成工具短等待默认 10 秒，状态工具默认 0 秒，上限均 30 秒。跟踪默认 1 小时，到期暂停，查询可恢复。已获上游 ID 的任务重启后继续处理。
+
+`internal/videoasset` 使用受限临时文件流转，验证 MP4/WebM 文件头，不把完整视频读入内存。对象键为 `video/<user>/<task>`，复用 local/S3 后端及独立保留设置。存储通过可选 `SeekableStorage.OpenSeek` 提供寻址读取，`/v/:sid` 使用独立 HMAC 签名域并检查数据库到期时间，支持 GET、HEAD 和 Range。后台生命周期同时接入任务跟踪及每分钟清理。
+
+状态查询检查用户及配置归属；相同 request_id 和有效输入返回已有任务。凭证只发送给配置的上游来源，跨来源重定向移除凭证并验证目标；保存成功或生成失败后清除任务凭证快照。配置变更、禁用或删除不影响已提交任务。分组的工具启用过滤覆盖直接调用、Smart 执行与批量执行。
+
+字段、接口与验证范围见 [数据库设计](./DATABASE.md#220-videogen_configs---视频生成配置表)、[API §13](./API.md#13-视频生成接口)及[视频生成说明](./VIDEO-GENERATION.md)。
 
 ---
 

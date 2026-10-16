@@ -8,6 +8,8 @@ import (
 )
 
 func SetApiRouter(engine *gin.Engine) {
+	engine.GET("/v/:sid", controller.GetVideoFile)
+	engine.HEAD("/v/:sid", controller.GetVideoFile)
 	api := engine.Group("/api/v1")
 	api.Use(middleware.CORS())
 
@@ -122,6 +124,22 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.PUT("/connections/:id/bind-apikey", controller.BindConnectionApiKey)
 
 		// Vision Configs
+		auth.GET("/videogen", controller.ListVideoGenConfigs)
+		auth.POST("/videogen", controller.CreateVideoGenConfig)
+		auth.GET("/videogen/:id", controller.GetVideoGenConfig)
+		auth.PUT("/videogen/:id", controller.UpdateVideoGenConfig)
+		auth.DELETE("/videogen/:id", controller.DeleteVideoGenConfig)
+		auth.POST("/videogen/:id/enable", controller.EnableVideoGenConfig)
+		auth.POST("/videogen/:id/disable", controller.DisableVideoGenConfig)
+		auth.POST("/videogen/models", controller.ListVideoGenModels)
+		auth.POST("/videogen/test", controller.TestVideoGenConfig)
+		auth.GET("/videogen/tasks", controller.ListVideoGenTasks)
+		auth.GET("/videogen/tasks/:task_id", controller.GetVideoGenTask)
+		auth.POST("/videogen/tasks/:task_id/retry-download", controller.RetryVideoGenDownload)
+		auth.GET("/videogen/tasks/:task_id/retry-input", controller.GetVideoGenRetryInput)
+		auth.POST("/videogen/tasks/:task_id/retry", controller.RetryVideoGenTask)
+		auth.DELETE("/videogen/tasks/:task_id", controller.DeleteVideoGenTask)
+
 		auth.GET("/imagegen", controller.ListImageGenConfigs)
 		auth.POST("/imagegen", controller.CreateImageGenConfig)
 		auth.GET("/imagegen/:id", controller.GetImageGenConfig)

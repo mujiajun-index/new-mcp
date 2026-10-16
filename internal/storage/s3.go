@@ -68,6 +68,14 @@ func newS3(ctx context.Context, cfg Config) (Storage, error) {
 
 func (s *s3Storage) Backend() string { return "s3" }
 
+func (s *s3Storage) OpenSeek(ctx context.Context, key string) (ReadSeekCloser, error) {
+	r, err := s.Get(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	return r.(*minio.Object), nil
+}
+
 // objectName turns a content key into the bucket object name "<prefix>/<key>".
 // S3 keys are opaque strings (no path traversal), but we still reject empty/.. /
 // double-slash keys for parity with local and to keep keys clean.

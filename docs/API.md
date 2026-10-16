@@ -1,6 +1,6 @@
 # NewMCP API 接口文档
 
-> 版本: V1.1 | 更新日期: 2026-10-02 (正式 MCP `2026-07-28`、订阅与实验 Events)
+> 版本: V1.1 | 更新日期: 2026-10-13 (视频模型目录连接字段校验；正式 MCP `2026-07-28`、订阅与实验 Events)
 
 ## 1. 概述
 
@@ -1454,6 +1454,10 @@ canvas.toBlob(blob => {
 | 通用 | `SystemName` | string | 系统名称，显示在登录页和标题栏 |
 | 通用 | `ServerAddress` | string | 服务器地址 |
 | 通用 | `Footer` | string | 页脚内容 |
+| 视频 | `VideoGenMaxBytes` | int | 单文件上限，默认 268435456 字节（256 MiB） |
+| 视频 | `VideoGenRetentionHours` | int | 保存成功后的文件保留时长，默认 24 小时 |
+| 视频 | `VideoGenHistoryDays` | int | 停止跟踪后的历史保留时长，默认 30 天；未过期视频的记录保留 |
+| 视频 | `MaxVideosPerUser` | int | 每用户保存数量上限，默认 0（不限） |
 | 认证 | `RegisterEnabled` | bool | 是否允许用户注册 |
 | 认证 | `EmailVerificationEnabled` | bool | 是否开启邮箱验证 |
 | 认证 | `EmailDomainRestrictionEnabled` | bool | 是否开启邮箱域名限制 |
@@ -1901,3 +1905,104 @@ wss://api.newmcp.pro/mcp/passive/?token=<serviceID>.<random-secret>
 | `RedemptionEnabled` | true | 是否开放兑换 |
 
 > 公开设置(`GET /settings/public`)暴露:`BillingEnabled` / `DisplayCurrency` / `SelfUseModeEnabled` / `RedemptionEnabled` / `UserOwnedServicesEnabled`(供 `/pricing`、市场上架页按模式适配)。
+
+---
+
+## 13. 视频生成接口
+
+管理接口使用用户 JWT，路径相对于 `/api/v1`。MCP 工具使用 API Key 及分组授权；视频文件通过独立签名链接读取。完整操作流程与兼容性说明见 [视频生成](./VIDEO-GENERATION.md)。
+
+### 13.1 配置 CRUD 与注册
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET / POST | `/videogen` | 当前用户的配置列表 / 创建配置 |
+| GET / PUT / DELETE | `/videogen/:id` | 详情 / 部分字段更新 / 删除配置 |
+| POST | `/videogen/:id/enable` | 注册虚拟 MCP 服务，重复启用不会创建第二个服务 |
+| POST | `/videogen/:id/disable` | 取消注册并清理分组关联 |
+
+创建请求示例（密钥和模型 ID 为占位值）：
+
+```json
+{
+  "name": "视频生成",
+  "protocol": "openai_video",
+  "model_name": "your-video-model",
+  "endpoint_url": "https://gateway.example.com",
+  "api_key": "<UPSTREAM_API_KEY>",
+  "operation": "both",
+  "image_request_format": "multipart",
+  "default_params": {
+    "seconds": 4,
+    "size": "1280x720"
+  },
+  "request_timeout_seconds": 30,
+  "task_timeout_seconds": 3600
+}
+```
+
+| 字段 | 类型 | 约束 / 默认 |
+| --- | --- | --- |
+| `name` / `description` | string | 配置名称必填；说明可选 |
+| `protocol` | string | 固定 `openai_video` |
+| `model_name` | string | 必填，允许手填；不设厂商模型白名单 |
+| `endpoint_url` | string | 必填，兼容根地址、已有 `/v1` 及代理前缀 |
+| `api_key` | string | 写入字段；更新为空保留原密钥，读取只返回 `has_api_key` |
+| `operation` | string | `generate`（文生）、`image`（图生）、`both`，默认 `both` |
+| `image_request_format` | string | `multipart` / `json`，默认 `multipart` |
+| `default_params` | object | 默认 `{}`，调用参数按图片生成规则深度合并 |
+| `request_timeout_seconds` | int | 1–300 秒，默认 30 |
+| `task_timeout_seconds` | int | 60–86400 秒，默认 3600；到期暂停跟踪，查询可恢复 |
+| `generate_video_desc` / `generate_video_from_image_desc` / `get_video_status_desc` | string | 可编辑工具描述；上传工具描述固定 |
+
+返回详情包含 `auto_register`、`registered_service_id` 和默认工具描述；注册状态由 enable/disable 接口控制。新建配置不自动注册。注册后服务名称为 `videogen_<id>`，`transport_type=virtual`、`source=videogen`；服务编辑和删除应从视频配置页操作。配置变更、取消注册或删除不会取消已有任务，任务继续使用提交时的连接快照。
+
+### 13.2 模型目录与草稿测试
+
+`POST /videogen/models` 接受连接字段 `endpoint_url`、`api_key`、可选 `protocol`（默认 `openai_video`）及可选 `config_id`。提供 ID 时先载入当前用户的配置，再覆盖请求中的连接字段，API Key 留空保留已保存值；省略 ID 时只需网关地址和密钥，不要求填写 `name` 或 `model_name`，也不校验生成参数。返回上游完整模型目录数组；页面默认用 `video` 搜索，可修改或清空。查询目录成功不代表模型具有视频生成权限。
+
+`POST /videogen/test` 同样支持草稿覆盖，另接受 `tool`（默认 `generate_video`）及 `arguments` 对象。已保存配置示例：
+
+```json
+{
+  "config_id": 1,
+  "tool": "generate_video",
+  "arguments": {
+    "prompt": "山间日出，镜头缓慢向前移动",
+    "seconds": 4,
+    "wait_seconds": 0,
+    "request_id": "preview-001"
+  }
+}
+```
+
+测试响应遵循通用外层 `{success, data}`，`data` 为 `{result, is_error, error?, duration_ms}`；任务位于 `data.result.structuredContent`。草稿测试任务也持久化，未保存配置的 `config_id=0`。测试生成会实际调用上游，可能产生费用。
+
+### 13.3 任务历史与结果
+
+| 方法 | 路径 | 行为 |
+| --- | --- | --- |
+| GET | `/videogen/tasks` | `page=1`、`page_size=20`（最大 100），可选 `config_id`；返回 `{items,total,page,page_size}` |
+| GET | `/videogen/tasks/:task_id` | 当前用户的本地任务详情；恢复已暂停的自动跟踪 |
+| POST | `/videogen/tasks/:task_id/retry-download` | 保存失败时重试下载及存储，不重新提交生成 |
+| GET | `/videogen/tasks/:task_id/retry-input` | 获取当前用户失败任务的调用参数及 `has_input_snapshot`，不返回连接和凭证 |
+| POST | `/videogen/tasks/:task_id/retry` | 使用当前已保存配置重新提交原任务，仅允许失败任务接受新的重试 |
+| DELETE | `/videogen/tasks/:task_id` | 删除停止处理的任务及其视频；进行中或被其他处理者领取时返回 409 |
+
+详情含 `task_id`、`config_id`、`source`、`operation`、`model`、`prompt`、`status`、`progress`、`artifact_status`、`tracking_paused`、`poll_after_seconds`、错误信息及 `videos`。不会返回上游 ID、凭证或连接快照。`status=completed` 表示生成成功，只有 `artifact_status=ready` 且 `videos` 非空才可下载。
+
+生成重试请求为 `{config_id?, request_id, arguments?}`：`request_id` 必填且最长 128 字节，同一次重试重复提交返回原任务的当前状态；改变输入时必须更换该 ID。返回的 `task_id` 与 URL 中的任务 ID 相同，不新增历史记录。`config_id` 默认使用原配置，草稿或原配置已删除时需选择其他属于当前用户的已保存配置。使用所选配置当前的模型、连接和默认参数，更新原记录的配置关联、模型、提示词及参数；保留创建时间、初始来源及原提交幂等映射，`retry_count` 加一。`arguments` 可替换原调用参数，省略时恢复私有输入快照；其中不能填写 `request_id` 或 `wait_seconds`。旧记录没有输入快照时仅恢复提示词，图生须补充参考图。进行中、已生成和 `submission_unknown` 任务不能接受新的重试；已经受理的同一次重试仍可重复查询当前结果。保存失败使用 `retry-download`。重试生成会重新调用上游，可能产生费用。
+
+MCP 生成参数为必填 `prompt`，可选 `seconds`、`size`、`metadata`、`extra_body`、`wait_seconds`、`request_id`；图生另需 `image`。等待上限 30 秒，生成默认 10 秒，状态查询默认 0 秒。进行中或短等待结束返回正常结果及任务 ID。已保存结果同时提供 `structuredContent.videos` 与 `resource_link`。MCP 状态工具校验用户和配置归属，不接受任意上游任务 ID。
+
+相同用户、配置、`request_id` 的相同输入返回已有任务；输入不同拒绝。提交受理情况不明确时记录 `submission_unknown`，禁止自动重新提交。查询临时失败保留最近状态；保存失败仅重试保存。各状态与调用示例见 [MCP 工具说明](./VIDEO-GENERATION.md#mcp-工具)。
+
+提交 HTTP 503 的结构化错误码为 `video_queue_full` 时属于明确拒绝，记录为 `failed`，可通过生成重试接口重新提交原任务；普通 5xx 或响应不完整仍为 `submission_unknown`。启动时会条件修正旧版保存有完整队列拒绝错误且无上游 ID、无租约持有者的误分类记录，不会自动调用上游。已有任务查询返回 503 时保留其最近状态。
+
+错误码识别兼容 New API 将完整上游错误 JSON 放入 `message`、`error.message` 或字符串 `error` 的包装形式，即使外层为通用错误码。完整内层 JSON 中必须存在确切的 `video_queue_full`，不使用文字匹配。重试再次被队列拒绝时，原记录再次显示 `failed`，历史数量保持不变。
+
+### 13.4 视频读取
+
+`GET` / `HEAD /v/:sid?s=<signature>` 位于应用根路径，不带 `/api/v1`。返回 MP4/WebM，支持 Range（206、416）和浏览器拖动播放；文件到期返回 410。链接使用独立于图片的签名域，持有有效链接即可读取文件，无需额外用户 JWT。过期检查以任务保存的 `expires_at` 为准。
+
+服务端仅将上游凭证发送至配置来源，跨来源下载重定向移除凭证并校验目标地址；参考图需通过现有图片加载及归属校验。通义万相、豆包图生选择 JSON；multipart 上传实际图片字节，`metadata` 编码为 JSON 字符串，其他复杂扩展参数使用 JSON。`extra_body` 不可覆盖模型、提示词、参考图、鉴权和本地任务控制字段。

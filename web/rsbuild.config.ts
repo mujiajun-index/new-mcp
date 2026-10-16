@@ -49,6 +49,7 @@ export default defineConfig(({ envMode }) => {
       port: 5173,
       proxy: {
         '/api/': { target: 'http://localhost:3000', changeOrigin: true, ws: true },
+        '/v/': { target: 'http://localhost:3000', changeOrigin: true },
         '/mcp/': { target: 'http://localhost:3000', changeOrigin: true, ws: true },
       },
     },

@@ -119,6 +119,22 @@ func Download(ctx context.Context, raw, trustedBase string, max int64) ([]byte, 
 }
 
 func downloadWithLookup(ctx context.Context, raw, trustedBase string, max int64, lookup func(context.Context, string, bool) ([]net.IPAddr, error)) ([]byte, error) {
+	resp, err := openDownloadWithLookup(ctx, raw, trustedBase, max, "", lookup)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return readBounded(resp.Body, max)
+}
+
+// OpenDownload shares the pinned-DNS and redirect protections with image
+// downloads, but leaves bounded streaming to the media consumer. Authentication
+// is restricted to the explicitly configured origin, including redirects.
+func OpenDownload(ctx context.Context, raw, trustedBase string, max int64, authorization string) (*http.Response, error) {
+	return openDownloadWithLookup(ctx, raw, trustedBase, max, authorization, lookupImageHost)
+}
+
+func openDownloadWithLookup(ctx context.Context, raw, trustedBase string, max int64, authorization string, lookup func(context.Context, string, bool) ([]net.IPAddr, error)) (*http.Response, error) {
 	var trusted *url.URL
 	if trustedBase != "" {
 		trusted, _ = url.Parse(trustedBase)
@@ -172,13 +188,15 @@ func downloadWithLookup(ctx context.Context, raw, trustedBase string, max int64,
 		}
 		return nil, last
 	}
-	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 3 {
 			return fmt.Errorf("too many image redirects")
 		}
 		if e := valid(req.URL); e != nil {
 			return e
+		}
+		if !trustedOrigin(req.URL) {
+			req.Header.Del("Authorization")
 		}
 		// DialContext's private-host exception is restricted to the original origin.
 		if trustedOrigin(target) && !trustedOrigin(req.URL) && strings.EqualFold(req.URL.Hostname(), target.Hostname()) {
@@ -190,18 +208,37 @@ func downloadWithLookup(ctx context.Context, raw, trustedBase string, max int64,
 	if err != nil {
 		return nil, err
 	}
+	if authorization != "" && trustedOrigin(target) {
+		req.Header.Set("Authorization", authorization)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
+		transport.CloseIdleConnections()
 		return nil, err
 	}
-	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		resp.Body.Close()
+		transport.CloseIdleConnections()
 		return nil, fmt.Errorf("image download HTTP %d", resp.StatusCode)
 	}
 	if resp.ContentLength > max {
+		resp.Body.Close()
+		transport.CloseIdleConnections()
 		return nil, fmt.Errorf("image exceeds %d bytes", max)
 	}
-	return readBounded(resp.Body, max)
+	resp.Body = &downloadBody{ReadCloser: resp.Body, transport: transport}
+	return resp, nil
+}
+
+type downloadBody struct {
+	io.ReadCloser
+	transport *http.Transport
+}
+
+func (b *downloadBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.transport.CloseIdleConnections()
+	return err
 }
 func effectivePort(u *url.URL) string {
 	if p := u.Port(); p != "" {

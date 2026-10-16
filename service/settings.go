@@ -57,9 +57,18 @@ func (s *SettingsService) UpdateSetting(actor model.Operator, key string, value 
 			return err
 		}
 	}
-	if key == "SharedStdioIdleTimeoutMinutes" || key == "SharedStdioMaxConcurrency" || key == "ImageGenInlineMaxBytes" {
+	if key == "SharedStdioIdleTimeoutMinutes" || key == "SharedStdioMaxConcurrency" || key == "ImageGenInlineMaxBytes" || key == "MaxVideosPerUser" {
 		if err := validateNonNegativeInt(value); err != nil {
 			return err
+		}
+	}
+	if key == "VideoGenMaxBytes" || key == "VideoGenRetentionHours" || key == "VideoGenHistoryDays" {
+		if err := validateNonNegativeInt(value); err != nil {
+			return err
+		}
+		n, _ := strconv.ParseInt(value, 10, 64)
+		if n <= 0 || (key == "VideoGenMaxBytes" && n > 10<<30) || (key != "VideoGenMaxBytes" && n > 8760) {
+			return fmt.Errorf("%w: video size must be 1–10 GiB; retention must be 1–8760", ErrInvalidSetting)
 		}
 	}
 	if err := model.UpdateOption(key, value); err != nil {

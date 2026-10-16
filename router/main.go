@@ -14,6 +14,7 @@ import (
 	"github.com/mujkjk/newmcp/internal/mcp/camera"
 	"github.com/mujkjk/newmcp/internal/mcp/cloud"
 	"github.com/mujkjk/newmcp/internal/mcp/handler"
+	"github.com/mujkjk/newmcp/internal/mcp/videogen"
 	"github.com/mujkjk/newmcp/internal/mcp/virtual"
 	"github.com/mujkjk/newmcp/internal/storage"
 	"github.com/mujkjk/newmcp/model"
@@ -40,6 +41,9 @@ func InitGateway() {
 	GatewayHandler = handler.NewGatewayHandler(SessionPool, toolRouter, VirtualRegistry)
 
 	loadVirtualServices()
+	if n := (&service.VideoGenService{}).SyncAllRegisteredTools(); n > 0 {
+		log.Printf("[virtual] refreshed tools_cache for %d video generation services", n)
+	}
 	if n := (&service.ImageGenService{}).SyncAllRegisteredTools(); n > 0 {
 		log.Printf("[virtual] refreshed tools_cache for %d image generation services", n)
 	}
@@ -83,6 +87,7 @@ func initUploadStorage() {
 	}
 	service.UploadStore = store
 	virtual.UploadStore = store
+	virtual.VideoManager = videogen.NewManager(model.DB, store)
 	log.Printf("[storage] vision-upload backend=%s", store.Backend())
 
 	if !storage.IsSecretConfigured() {
@@ -105,6 +110,8 @@ func loadVirtualServices() {
 
 		virtualType, _ := config["virtual_type"].(string)
 		switch virtualType {
+		case "videogen":
+			VirtualRegistry.Register(svc.ID, svc.UserID, svc.Name, config, virtual.VideoGenHandler)
 		case "imagegen":
 			VirtualRegistry.Register(svc.ID, svc.UserID, svc.Name, config, virtual.ImageGenHandler)
 		case "vision":
@@ -221,6 +228,9 @@ func StopGateway() {
 func StartBackgroundJobs(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	backgroundJobsCancel = cancel
+	if virtual.VideoManager != nil {
+		virtual.VideoManager.Start(ctx)
+	}
 	go service.StartCleanupLoop(ctx)
 	if SessionPool != nil {
 		go SessionPool.StartIdleReaper(ctx, func() time.Duration {
@@ -233,5 +243,8 @@ func StopBackgroundJobs() {
 	if backgroundJobsCancel != nil {
 		backgroundJobsCancel()
 		backgroundJobsCancel = nil
+	}
+	if virtual.VideoManager != nil {
+		virtual.VideoManager.Close()
 	}
 }

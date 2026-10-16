@@ -840,6 +840,7 @@ export function AdminSettingsPage() {
                     onBlur={() => saveField('ImageGenInlineMaxBytes')}
                   />
                 </div>
+                {(['VideoGenMaxBytes', 'VideoGenRetentionHours', 'VideoGenHistoryDays', 'MaxVideosPerUser'] as const).map((key) => <div className="space-y-2" key={key}><label htmlFor={`setting-${key}`} className="text-sm font-medium">{t(`videogen.settings.${key}`)}</label><Input id={`setting-${key}`} type="number" min={key === 'MaxVideosPerUser' ? 0 : 1} value={localValues[key] ?? ''} onChange={(e) => updateLocal(key, e.target.value)} onBlur={() => saveField(key)} /></div>)}
                 <div className="space-y-2">
                   <label className="text-sm font-medium">{t('settings.signedURLTTLSeconds')}</label>
                   <Input

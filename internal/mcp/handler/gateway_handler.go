@@ -507,8 +507,8 @@ func (h *GatewayHandler) routeAndCall(ctx context.Context, reqID interface{}, lo
 	// the upload branch can attribute ownership + enforce the per-user quota.
 	if h.virtualRegistry != nil && parsedSvc != "" {
 		if vSvcID, entry, ok := h.virtualRegistry.LookupByName(logCtx.UserID, parsedSvc); ok {
-			if entry.Config["virtual_type"] == "imagegen" && !h.imageToolAccessible(logCtx, vSvcID, parsedTool) {
-				return h.errorResponse(reqID, -32602, "Image tool is not enabled in an accessible group")
+			if (entry.Config["virtual_type"] == "imagegen" || entry.Config["virtual_type"] == "videogen") && !h.generationToolAccessible(logCtx, vSvcID, parsedTool) {
+				return h.errorResponse(reqID, -32602, "Generation tool is not enabled in an accessible group")
 			}
 			vResult, vErr := h.virtualRegistry.Handle(virtual.WithCallerUserID(ctx, logCtx.UserID), vSvcID, entry.Config, parsedTool, args)
 			*svcID = vSvcID
@@ -711,10 +711,10 @@ func (h *GatewayHandler) executeOne(ctx context.Context, logCtx *LogContext, too
 		parsedSvc, parsedTool := bridge.ParseNamespacedName(toolID)
 		if parsedSvc != "" {
 			if vSvcID, entry, ok := h.virtualRegistry.LookupByName(logCtx.UserID, parsedSvc); ok {
-				if entry.Config["virtual_type"] == "imagegen" && !h.imageToolAccessible(logCtx, vSvcID, parsedTool) {
-					return &callOutcome{Err: "Image tool is not enabled in an accessible group", ErrCode: -32602}
+				if (entry.Config["virtual_type"] == "imagegen" || entry.Config["virtual_type"] == "videogen") && !h.generationToolAccessible(logCtx, vSvcID, parsedTool) {
+					return &callOutcome{Err: "Generation tool is not enabled in an accessible group", ErrCode: -32602}
 				}
-				if entry.Config["virtual_type"] == "imagegen" && requestedTimeoutMs > 0 {
+				if (entry.Config["virtual_type"] == "imagegen" || entry.Config["virtual_type"] == "videogen") && requestedTimeoutMs > 0 {
 					var cancel context.CancelFunc
 					ctx, cancel = context.WithTimeout(ctx, time.Duration(requestedTimeoutMs)*time.Millisecond)
 					defer cancel()
@@ -1076,9 +1076,9 @@ func (h *GatewayHandler) resolveGroupForService(serviceID int64, logCtx *LogCont
 	return 0, ""
 }
 
-// imageToolAccessible checks the live group membership and tool filters for
-// virtual image calls, including cached names sent directly or via execute_batch.
-func (h *GatewayHandler) imageToolAccessible(logCtx *LogContext, serviceID int64, tool string) bool {
+// generationToolAccessible checks the live group membership and tool filters for
+// virtual image/video calls, including cached names sent directly or via execute_batch.
+func (h *GatewayHandler) generationToolAccessible(logCtx *LogContext, serviceID int64, tool string) bool {
 	info, err := bridge.ResolveApiKeyInfo(logCtx.ApiKeyID)
 	if err != nil || info.UserID != logCtx.UserID {
 		return false

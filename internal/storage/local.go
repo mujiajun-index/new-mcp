@@ -34,6 +34,14 @@ func newLocal(cfg Config) (Storage, error) {
 
 func (s *localStorage) Backend() string { return "local" }
 
+func (s *localStorage) OpenSeek(ctx context.Context, key string) (ReadSeekCloser, error) {
+	r, err := s.Get(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	return r.(*os.File), nil
+}
+
 // fullpath validates key and returns its absolute on-disk path, guarding against
 // path traversal. Keys are content-addressed hex shards ("ab/abcdef..."), so in
 // practice they never contain ".." or absolutes — but we defend in depth and

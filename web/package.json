@@ -8,6 +8,7 @@
     "build": "rsbuild build",
     "build:check": "tsc -b && rsbuild build",
     "typecheck": "tsc -b",
+    "test:videogen-params": "node --test ../scripts/video-json-params.test.mjs",
     "lint": "eslint .",
     "preview": "rsbuild preview",
     "format": "prettier --write .",
