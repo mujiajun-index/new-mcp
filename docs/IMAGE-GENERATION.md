@@ -95,7 +95,7 @@ multipart `/v1/images/edits` 是兼容协议，不限定只能连接 OpenAI 官�
 
 默认返回 MCP 文本、图片 `resource_link` 和 `structuredContent`，包含协议、模型、链接、实际 MIME、字节数、宽高、失效时间、修订提示词及可用的上游文本/用量。生成和上传共用本地/S3 存储、按用户配额、内容去重、签名 URL 和自动清理。
 
-`return_mode=inline` 会追加 MCP 原生 `image` 内容。序列化响应合计超过 `ImageGenInlineMaxBytes`（默认 1 MiB；0 使用默认值）时保留链接并给出说明。图片有效期按 `UploadRetentionHours` 计算；管理员更改保留规则后，实际有效期随规则变化。
+`return_mode=inline` 会追加 MCP 原生 `image` 内容。序列化响应合计超过 `ImageGenInlineMaxBytes`（默认 1 MiB；0 使用默认值）时保留链接并给出说明。图片有效期按 `UploadRetentionHours` 计算；管理员更改保留规则后，实际有效期随规则变化。系统设置“文件储存”中的图片保留时间支持 0，表示永久保存，现存图片不再过期或被保留期清理，生成/上传和列表接口的 `expires_at` 返回 `null`；恢复正数后按当前时长重新判断有效期。
 
 自有存储参考图读取前校验签名、所有者、上传状态和有效期。外部参考图下载禁止私网，校验 DNS 和每次重定向并限制字节数。上游输出允许访问明确配置的网关同源地址；下载图片不携带模型 API Key。上游失败不会自动重新生成；部分图片保存失败会保留已成功的链接并报告失败项。
 

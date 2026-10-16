@@ -596,7 +596,7 @@ func TestSharedImageStorageDedupAndQuota(t *testing.T) {
 	if n, _ := model.CountByKey(first.Key); n != 2 {
 		t.Fatalf("blob refcount %d", n)
 	}
-	if time.Until(second.ExpiresAt) < 23*time.Hour {
+	if second.ExpiresAt == nil || time.Until(*second.ExpiresAt) < 23*time.Hour {
 		t.Fatal("expiry must match retention rather than SignedURLTTL")
 	}
 	if _, err := imageasset.Save(ctx, UploadStore, 1, bytes.NewReader(data), 10); err == nil {

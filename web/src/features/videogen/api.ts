@@ -72,7 +72,7 @@ export interface VideoTask {
     url: string;
     mime: string;
     size: number;
-    expires_at: string;
+    expires_at: string | null;
   }>;
 }
 

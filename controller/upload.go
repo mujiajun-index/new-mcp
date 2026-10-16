@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mujkjk/newmcp/common"
+	"github.com/mujkjk/newmcp/internal/imageasset"
 	"github.com/mujkjk/newmcp/internal/mcp/vision"
 	"github.com/mujkjk/newmcp/internal/storage"
 	"github.com/mujkjk/newmcp/model"
@@ -98,7 +99,7 @@ func GetVisionFileByShortID(c *gin.Context) {
 		common.Error(c, http.StatusNotFound, "file not found")
 		return
 	}
-	if time.Since(img.CreatedAt) > uploadRetentionDur() {
+	if imageasset.Expired(img.CreatedAt) {
 		common.Error(c, http.StatusGone, "url expired")
 		return
 	}
@@ -198,24 +199,17 @@ func actingUserID(c *gin.Context) int64 {
 // capability handle (/u/<sid>) that is stable for the row's lifetime; ExpiresAt
 // is an estimate (created_at + retention) for display only.
 type uploadListItem struct {
-	ID        int64     `json:"id"`
-	UserID    int64     `json:"user_id"`
-	ShortID   string    `json:"short_id"` // /u/<sid> handle — exposed so the short-URL ↔ storage_key mapping is visible without a join
-	Key       string    `json:"key"`
-	URL       string    `json:"url"`
-	MediaType string    `json:"mime"`
-	Size      int64     `json:"size"`
-	Backend   string    `json:"backend"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	ExpiresAt time.Time `json:"expires_at"`
-}
-
-func uploadRetentionDur() time.Duration {
-	if h := model.GetOptionInt("UploadRetentionHours"); h > 0 {
-		return time.Duration(h) * time.Hour
-	}
-	return 24 * time.Hour
+	ID        int64      `json:"id"`
+	UserID    int64      `json:"user_id"`
+	ShortID   string     `json:"short_id"` // /u/<sid> handle — exposed so the short-URL ↔ storage_key mapping is visible without a join
+	Key       string     `json:"key"`
+	URL       string     `json:"url"`
+	MediaType string     `json:"mime"`
+	Size      int64      `json:"size"`
+	Backend   string     `json:"backend"`
+	Status    string     `json:"status"`
+	CreatedAt time.Time  `json:"created_at"`
+	ExpiresAt *time.Time `json:"expires_at"`
 }
 
 // presignedPutTTL is the lifetime of a short PUT URL (the upload_image curl
@@ -240,7 +234,7 @@ func toUploadListItem(img model.UploadedImage) uploadListItem {
 		Backend:   img.Backend,
 		Status:    img.Status,
 		CreatedAt: img.CreatedAt,
-		ExpiresAt: img.CreatedAt.Add(uploadRetentionDur()),
+		ExpiresAt: imageasset.Expiration(img.CreatedAt),
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,7 +24,7 @@ type Result struct {
 	Key       string
 	MIME      string
 	Size      int64
-	ExpiresAt time.Time
+	ExpiresAt *time.Time
 }
 
 func MaxBytes() int64 {
@@ -69,11 +70,29 @@ func Save(ctx context.Context, store storage.Storage, uid int64, taskID string, 
 	if err := store.Put(ctx, key, f, mime); err != nil {
 		return nil, fmt.Errorf("save video: %w", err)
 	}
-	hours := model.GetOptionInt("VideoGenRetentionHours")
-	if hours <= 0 {
-		hours = 24
+	var expiresAt *time.Time
+	if retention := Retention(); retention > 0 {
+		expires := time.Now().Add(retention)
+		expiresAt = &expires
 	}
-	return &Result{Key: key, MIME: mime, Size: n, ExpiresAt: time.Now().Add(time.Duration(hours) * time.Hour)}, nil
+	return &Result{Key: key, MIME: mime, Size: n, ExpiresAt: expiresAt}, nil
+}
+
+func Retention() time.Duration {
+	if hours, err := strconv.Atoi(model.GetOptionString("VideoGenRetentionHours")); err == nil && hours >= 0 {
+		return time.Duration(hours) * time.Hour
+	}
+	return 24 * time.Hour
+}
+
+// Zero disables expiry for files that still exist. Preserve earlier deadlines
+// in the database so restoring finite retention can resume their expiry policy.
+// Files saved with no deadline remain permanent.
+func EffectiveExpiration(expiresAt *time.Time) *time.Time {
+	if Retention() == 0 {
+		return nil
+	}
+	return expiresAt
 }
 
 // The video-read domain permits GET and HEAD only. Expiry is authoritative in

@@ -39,6 +39,14 @@ func TestBoundedVideoStorageAndSigning(t *testing.T) {
 		t.Fatal(err)
 	}
 	reader.Close()
+	if result.ExpiresAt == nil {
+		t.Fatal("default video retention has no expiry")
+	}
+	model.UpdateOption("VideoGenRetentionHours", "0")
+	permanent, err := Save(context.Background(), store, 1, "permanent", bytes.NewReader(video))
+	if err != nil || permanent.ExpiresAt != nil {
+		t.Fatalf("permanent video expiry: result=%+v err=%v", permanent, err)
+	}
 	if _, err := Save(context.Background(), store, 1, "html", strings.NewReader("<html>error</html>")); err == nil {
 		t.Fatal("accepted HTML as video")
 	}

@@ -491,7 +491,13 @@ func (m *Manager) save(t *model.VideoGenTask, client *Client) {
 				return err
 			}
 			var n int64
-			if err := tx.Model(&model.VideoGenTask{}).Where("user_id = ? AND id <> ?", t.UserID, t.ID).Where("artifact_status = ? OR (artifact_status = ? AND expires_at > ?)", "saving", "ready", time.Now()).Count(&n).Error; err != nil {
+			q = tx.Model(&model.VideoGenTask{}).Where("user_id = ? AND id <> ?", t.UserID, t.ID)
+			if videoasset.Retention() == 0 {
+				q = q.Where("artifact_status IN ?", []string{"saving", "ready"})
+			} else {
+				q = q.Where("artifact_status = ? OR (artifact_status = ? AND (expires_at IS NULL OR expires_at > ?))", "saving", "ready", time.Now())
+			}
+			if err := q.Count(&n).Error; err != nil {
 				return err
 			}
 			if n >= maxVideos {
@@ -659,8 +665,12 @@ func TaskView(t *model.VideoGenTask) map[string]any {
 	out["protocol"] = ProtocolName(t.Protocol)
 	out["poll_after_seconds"] = 5
 	out["videos"] = []any{}
-	if t.ArtifactStatus == "ready" && t.ExpiresAt != nil && t.ExpiresAt.After(time.Now()) && t.ShortID != nil {
-		out["videos"] = []any{map[string]any{"url": videoasset.URL(*t.ShortID), "mime": t.MIME, "size": t.Size, "expires_at": t.ExpiresAt}}
+	expiresAt := videoasset.EffectiveExpiration(t.ExpiresAt)
+	if t.ArtifactStatus == "ready" {
+		out["expires_at"] = expiresAt
+	}
+	if t.ArtifactStatus == "ready" && (expiresAt == nil || expiresAt.After(time.Now())) && t.ShortID != nil {
+		out["videos"] = []any{map[string]any{"url": videoasset.URL(*t.ShortID), "mime": t.MIME, "size": t.Size, "expires_at": expiresAt}}
 	} else if t.ArtifactStatus == "ready" {
 		out["artifact_status"] = "expired"
 	}
@@ -703,7 +713,8 @@ func (m *Manager) Cleanup() {
 	videoasset.CleanupTemps()
 	now := time.Now()
 	var rows []model.VideoGenTask
-	if m.DB.Where("storage_key <> ? AND artifact_status IN ? AND expires_at <= ? AND lease_until <= ?", "", []string{"ready", "expired"}, now, now).Limit(100).Find(&rows).Error == nil {
+	finiteRetention := videoasset.Retention() > 0
+	if finiteRetention && m.DB.Where("storage_key <> ? AND artifact_status IN ? AND expires_at IS NOT NULL AND expires_at <= ? AND lease_until <= ?", "", []string{"ready", "expired"}, now, now).Limit(100).Find(&rows).Error == nil {
 		for i := range rows {
 			t := &rows[i]
 			if !m.claim(t, time.Minute) {
@@ -721,7 +732,13 @@ func (m *Manager) Cleanup() {
 		historyDays = 30
 	}
 	rows = nil
-	if m.DB.Where("stopped_at <= ? AND lease_until <= ?", now.Add(-time.Duration(historyDays)*24*time.Hour), now).Where("artifact_status <> ? OR expires_at <= ?", "ready", now).Limit(100).Find(&rows).Error == nil {
+	history := m.DB.Where("stopped_at <= ? AND lease_until <= ?", now.Add(-time.Duration(historyDays)*24*time.Hour), now)
+	if finiteRetention {
+		history = history.Where("artifact_status <> ? OR expires_at <= ?", "ready", now)
+	} else {
+		history = history.Where("artifact_status <> ?", "ready")
+	}
+	if history.Limit(100).Find(&rows).Error == nil {
 		for i := range rows {
 			_ = m.Delete(rows[i].UserID, rows[i].ID)
 		}

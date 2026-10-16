@@ -308,14 +308,16 @@ export function AdminUploadsPage() {
                       </TooltipProvider>
                     </td>
                     <td className="px-3 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span>{formatRelative(item.expires_at, t)}</span>
-                          </TooltipTrigger>
-                          <TooltipContent>{formatDateTime(item.expires_at, locale)}</TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                      {item.expires_at ? (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span>{formatRelative(item.expires_at, t)}</span>
+                            </TooltipTrigger>
+                            <TooltipContent>{formatDateTime(item.expires_at, locale)}</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      ) : t('uploads.permanent')}
                     </td>
                     <td className="px-3 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">

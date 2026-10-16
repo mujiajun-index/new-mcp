@@ -432,6 +432,21 @@ func TestVideoGenAPIAndMCPWorkflow(t *testing.T) {
 	if resp.StatusCode != 410 {
 		t.Fatal("expired video was served")
 	}
+	model.UpdateOption("VideoGenRetentionHours", "0")
+	for _, permanent := range []bool{false, true} {
+		if permanent {
+			db.Model(&model.VideoGenTask{}).Where("id = ?", taskID).Update("expires_at", nil)
+			model.UpdateOption("VideoGenRetentionHours", "24")
+		}
+		resp, err := http.Get(url + "&download=1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Disposition"), "attachment") {
+			t.Fatal("permanent video download unavailable", permanent, resp.StatusCode)
+		}
+	}
 	restarted.Cleanup()
 	if code, _ := apiRequest("DELETE", "/videogen/tasks/"+taskID, token, nil); code != 200 {
 		t.Fatal("completed task deletion")

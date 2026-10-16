@@ -14,7 +14,7 @@ export interface UploadListItem {
   backend: string
   status: string
   created_at: string
-  expires_at: string
+  expires_at: string | null // null = permanent retention
 }
 
 export interface UploadListResponse {

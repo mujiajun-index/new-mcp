@@ -86,7 +86,7 @@ var defaultOptions = map[string]string{
 	"VisionUploadMaxBytes":         "10485760",       // 单图字节上限(解码后),10MB
 	"ImageGenInlineMaxBytes":       "1048576",        // 图片生成 MCP 内联响应上限,1MiB
 	"SignedURLTTLSeconds":          "3600",           // 签名 URL 有效期(秒),1h
-	"UploadRetentionHours":         "24",             // 上传文件保留时长(小时),须 > SignedURLTTL
+	"UploadRetentionHours":         "24",             // 图片保留时长(小时),0=永久保存
 	"UploadCleanupIntervalMinutes": "60",             // 过期清理扫描间隔(分钟)
 	// 市场平台托管的 stdio 进程空闲回收；0 表示关闭自动回收。
 	"SharedStdioIdleTimeoutMinutes": "60",

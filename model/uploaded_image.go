@@ -14,7 +14,8 @@ import (
 // into a no-op Put + a freshly signed URL by looking the key up here.
 //
 // Retention is dynamic: there is no ExpiresAt column. A row is reaped when
-// created_at is older than (now - UploadRetentionHours), evaluated by the
+// created_at is older than (now - UploadRetentionHours), unless retention is
+// zero (permanent). The retention is evaluated by the
 // cleanup loop each tick. That means an admin LOWERING retention takes effect
 // on the very next sweep — existing uploads granted a longer window get pulled
 // in immediately — which is the behavior the design verification relies on.

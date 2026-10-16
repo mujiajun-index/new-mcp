@@ -2,6 +2,12 @@
 
 验收日期：2026-10-12。环境为 Go 1.26.3 / Windows amd64、SQLite 3.41.2。已完成自动测试和隔离环境的页面模拟流程；真实视频生成、实际 S3 桶及 MySQL/PostgreSQL 验收尚未完成。使用说明见 [内置视频生成 MCP](./VIDEO-GENERATION.md)。
 
+## 2026-10-16 文件储存与永久保留
+
+- 系统设置改名为“文件储存”，图片和已保存视频的保留小时数均接受 0（永久保存）；相应读取与清理流程、API 的 `expires_at=null` 和管理页面永久保存显示已接通。
+- 验证 0 模式保留现存图片/视频及视频历史，图片仍可读取并作为参考图；恢复正数后有限期文件按原规则过期。新保存的永久视频无到期时间，恢复正数后仍可下载并保留历史，永久视频计入每用户数量上限。
+- `go test ./internal/imageasset ./internal/videoasset ./internal/mcp/imagegen ./internal/mcp/videogen ./internal/mcp/virtual ./service ./controller ./router -count=1` 通过，新增永久保留的存储、设置、清理、配额及下载检查后，相关六个测试包再次通过；图片存储包含 local/S3 模拟后端。前端 `npm run typecheck` 通过，未进行浏览器测试。
+
 ## 2026-10-16 OpenRouter 视频协议
 
 - 新增独立 `openrouter_video` 协议，对接 `heygen/heygen-video-1`、`minimax/hailuo-3-max`、`google/veo-3.1-lite` 等 OpenRouter 视频模型；默认 `openai_video` 继续使用 New API / OpenAI 视频格式，不根据模型 ID 自动切换。

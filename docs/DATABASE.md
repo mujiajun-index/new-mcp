@@ -644,7 +644,7 @@ CREATE TABLE `marketplace_item_keys` (
 | `request_timeout_seconds` / `task_timeout_seconds` / `tracking_deadline` | 提交时的处理时限快照 |
 | `next_poll_at` / `lease_owner` / `lease_until` / `revision` | 轮询领取、租约及条件更新版本，协调多个实例 |
 | `storage_key` / `backend` / `short_id` | 对象键、存储后端、可空唯一短 ID；未保存任务保持 NULL |
-| `mime` / `size` / `expires_at` | 视频格式、字节数及保存成功后的到期时间 |
+| `mime` / `size` / `expires_at` | 视频格式、字节数及保存成功后的到期时间；永久保存视频的 `expires_at` 为 NULL |
 | `stopped_at` / `created_at` / `updated_at` | 历史保留起算点及创建/更新时间 |
 
 任务先入库，再异步提交。已有上游 ID 的任务重启后继续查询；过期的提交租约记录为 `submission_unknown`，不重新 POST。租约清空使用 1970 年时间，避免 MySQL 严格日期模式下的零年值。任务使用独立连接及协议快照，配置变更协议或删除不改变其目标；保存成功或生成失败后清除私有连接快照，保留任务行的协议字段以供展示，保存失败保留连接快照以供下载重试。

@@ -140,8 +140,10 @@ export function VideoTaskCard({
             downloadUri={videoDownloadURL(video.url)}
           />
           <p className="text-xs text-muted-foreground">
-            {t("videogen.expires", {
-              date: new Date(video.expires_at).toLocaleString(),
+            {t(video.expires_at ? "videogen.expires" : "videogen.permanent", {
+              date: video.expires_at
+                ? new Date(video.expires_at).toLocaleString()
+                : undefined,
               size: (video.size / 1024 / 1024).toFixed(1),
             })}
           </p>

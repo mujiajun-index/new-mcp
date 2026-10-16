@@ -16,6 +16,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/mujkjk/newmcp/internal/mcp/imagegen"
 	"github.com/mujkjk/newmcp/internal/storage"
 	"github.com/mujkjk/newmcp/model"
 	"github.com/mujkjk/newmcp/service"
@@ -158,6 +159,19 @@ func TestUploadServeSecureEndToEnd(t *testing.T) {
 	engine.ServeHTTP(ew, httptest.NewRequest(http.MethodGet, signedPath, nil))
 	if ew.Code != http.StatusGone {
 		t.Fatalf("expired status=%d want 410", ew.Code)
+	}
+	model.UpdateOption("UploadRetentionHours", "0")
+	permanent := httptest.NewRecorder()
+	engine.ServeHTTP(permanent, httptest.NewRequest(http.MethodGet, signedPath, nil))
+	if permanent.Code != http.StatusOK || !bytes.Equal(permanent.Body.Bytes(), png) {
+		t.Fatal("permanent image was not readable", permanent.Code)
+	}
+	row, _ := model.GetUploadedImageByUserAndKey(42, first.Key)
+	if toUploadListItem(*row).ExpiresAt != nil {
+		t.Fatal("permanent upload list must not include an expiry date")
+	}
+	if _, err := imagegen.LoadReference(context.Background(), service.UploadStore, 42, first.URL, 1<<20); err != nil {
+		t.Fatal("permanent own image cannot be reused as reference", err)
 	}
 }
 

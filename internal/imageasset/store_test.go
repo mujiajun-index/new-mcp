@@ -132,6 +132,11 @@ func TestSaveWithLocalAndS3Backend(t *testing.T) {
 			if err != nil || !second.Deduped || result.URL != second.URL {
 				t.Fatalf("dedup %v %v", second, err)
 			}
+			model.UpdateOption("UploadRetentionHours", "0")
+			permanent, err := Save(ctx, store, 1, bytes.NewReader(data), 1024)
+			if err != nil || permanent.ExpiresAt != nil || !permanent.Deduped {
+				t.Fatalf("permanent image retention: result=%+v err=%v", permanent, err)
+			}
 			if err := store.Delete(ctx, result.Key); err != nil {
 				t.Fatal(err)
 			}

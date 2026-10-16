@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/mujkjk/newmcp/internal/mcp/vision"
@@ -16,13 +17,13 @@ import (
 
 // Result describes an uploaded or generated image in the shared blob store.
 type Result struct {
-	URL       string    `json:"url"`        // short-lived signed URL the upstream provider fetches
-	ExpiresAt time.Time `json:"expires_at"` // when the URL stops resolving
-	MediaType string    `json:"mime"`       // sniffed image media type
-	Size      int64     `json:"size"`       // decoded byte length
-	Key       string    `json:"key"`        // content-addressed storage key
-	Backend   string    `json:"backend"`    // "local" | "s3"
-	Deduped   bool      `json:"deduped"`    // true if bytes were already stored (no new write)
+	URL       string     `json:"url"`        // short-lived signed URL the upstream provider fetches
+	ExpiresAt *time.Time `json:"expires_at"` // nil means permanent retention
+	MediaType string     `json:"mime"`       // sniffed image media type
+	Size      int64      `json:"size"`       // decoded byte length
+	Key       string     `json:"key"`        // content-addressed storage key
+	Backend   string     `json:"backend"`    // "local" | "s3"
+	Deduped   bool       `json:"deduped"`    // true if bytes were already stored (no new write)
 }
 
 // Save stores an image read from r and returns a short-lived signed URL plus
@@ -67,7 +68,6 @@ func Save(ctx context.Context, store storage.Storage, userID int64, r io.Reader,
 	sum := sha256.Sum256(data)
 	key := storage.ContentKey(hex.EncodeToString(sum[:]))
 
-	ttl := Retention()
 	now := time.Now()
 
 	// Per-user dedup (V1.1): same user + same content key → their existing row.
@@ -80,7 +80,7 @@ func Save(ctx context.Context, store storage.Storage, userID int64, r io.Reader,
 		}
 		return &Result{
 			URL:       storage.ShortURL("GET", existing.ShortID),
-			ExpiresAt: now.Add(ttl),
+			ExpiresAt: Expiration(now),
 			MediaType: existing.MediaType,
 			Size:      existing.Size,
 			Key:       key,
@@ -112,7 +112,7 @@ func Save(ctx context.Context, store storage.Storage, userID int64, r io.Reader,
 		if existing, e2 := model.GetUploadedImageByUserAndKey(userID, key); e2 == nil && existing != nil {
 			return &Result{
 				URL:       storage.ShortURL("GET", existing.ShortID),
-				ExpiresAt: now.Add(ttl),
+				ExpiresAt: Expiration(now),
 				MediaType: existing.MediaType,
 				Size:      existing.Size,
 				Key:       key,
@@ -125,7 +125,7 @@ func Save(ctx context.Context, store storage.Storage, userID int64, r io.Reader,
 
 	return &Result{
 		URL:       storage.ShortURL("GET", img.ShortID),
-		ExpiresAt: now.Add(ttl),
+		ExpiresAt: Expiration(now),
 		MediaType: mediaType,
 		Size:      int64(len(data)),
 		Key:       key,
@@ -135,10 +135,23 @@ func Save(ctx context.Context, store storage.Storage, userID int64, r io.Reader,
 }
 
 func Retention() time.Duration {
-	if hours := model.GetOptionInt("UploadRetentionHours"); hours > 0 {
+	if hours, err := strconv.Atoi(model.GetOptionString("UploadRetentionHours")); err == nil && hours >= 0 {
 		return time.Duration(hours) * time.Hour
 	}
 	return 24 * time.Hour
+}
+
+func Expiration(createdAt time.Time) *time.Time {
+	if retention := Retention(); retention > 0 {
+		expires := createdAt.Add(retention)
+		return &expires
+	}
+	return nil
+}
+
+func Expired(createdAt time.Time) bool {
+	expires := Expiration(createdAt)
+	return expires != nil && !expires.After(time.Now())
 }
 
 // CheckQuota returns an error if the user has reached MaxUploadsPerUser

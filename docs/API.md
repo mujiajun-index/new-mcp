@@ -1455,7 +1455,8 @@ canvas.toBlob(blob => {
 | 通用 | `ServerAddress` | string | 服务器地址 |
 | 通用 | `Footer` | string | 页脚内容 |
 | 视频 | `VideoGenMaxBytes` | int | 单文件上限，默认 268435456 字节（256 MiB） |
-| 视频 | `VideoGenRetentionHours` | int | 保存成功后的文件保留时长，默认 24 小时 |
+| 文件储存 | `UploadRetentionHours` | int | 图片保留小时数，默认 24；0 表示永久保存，不自动过期或清理 |
+| 视频 | `VideoGenRetentionHours` | int | 保存成功后的文件保留小时数，默认 24；0 表示永久保存 |
 | 视频 | `VideoGenHistoryDays` | int | 停止跟踪后的历史保留时长，默认 30 天；未过期视频的记录保留 |
 | 视频 | `MaxVideosPerUser` | int | 每用户保存数量上限，默认 0（不限） |
 | 认证 | `RegisterEnabled` | bool | 是否允许用户注册 |
@@ -2008,5 +2009,7 @@ OpenRouter 将 `seconds` 转为整数 `duration`；未提供 `seconds` 时可传
 ### 13.4 视频读取
 
 `GET` / `HEAD /v/:sid?s=<signature>` 位于应用根路径，不带 `/api/v1`。返回 MP4/WebM，支持 Range（206、416）和浏览器拖动播放；附加 `download=1` 时返回 `Content-Disposition: attachment` 和带正确扩展名的文件名，供浏览器直接下载，仍使用相同签名、过期检查和 Range 能力。文件到期返回 410。链接使用独立于图片的签名域，持有有效链接即可读取文件，无需额外用户 JWT。过期检查以任务保存的 `expires_at` 为准。
+
+图片和视频接口中的 `expires_at=null` 表示永久保存。`VideoGenRetentionHours=0` 时，现存且未清理的视频暂停过期与自动清理；新保存视频不记录到期时间。永久视频计入每用户数量限制，其任务历史保留至手动删除。恢复正数时，旧有限期视频继续按原到期时间处理，新保存的永久视频仍无到期时间。
 
 服务端仅将上游凭证发送至配置来源，跨来源下载重定向移除凭证并校验目标地址；参考图需通过现有图片加载及归属校验。New API 的通义万相、豆包图生选择 JSON；multipart 上传实际图片字节，`metadata` 编码为 JSON 字符串，其他复杂扩展参数使用 JSON。OpenRouter 使用 JSON 首帧，内容由固定接口携带凭证流式获取后保存。`extra_body` 不可覆盖模型、提示词、参考图（包括 `frame_images`、`input_references`）、鉴权和本地任务控制字段。

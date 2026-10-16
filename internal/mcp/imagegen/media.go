@@ -58,7 +58,7 @@ func LoadReference(ctx context.Context, store storage.Storage, userID int64, ref
 			if e != nil || row.UserID != userID || row.Status != model.UploadStatusUploaded {
 				return Image{}, fmt.Errorf("storage image is unavailable or belongs to another user")
 			}
-			if time.Since(row.CreatedAt) > imageasset.Retention() {
+			if imageasset.Expired(row.CreatedAt) {
 				return Image{}, fmt.Errorf("storage image has expired")
 			}
 			if row.Size > max {

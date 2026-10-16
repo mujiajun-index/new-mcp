@@ -402,6 +402,8 @@ curl.exe -X PUT -T 'C:\photos\photo.jpg' 'https://.../files/a1/a1b2...?expires=.
 
 **保留期是动态的**——没有 `expires_at` 列。清理 sweep 每次 `now - UploadRetentionHours` 重算 cutoff，所以管理员**调小 `UploadRetentionHours` 在下次 tick 立即生效**，已有上传也会被回收。同字节重传走 `TouchRefresh`（重置 `created_at`）续期，热门图按最近一次请求计寿命。
 
+`UploadRetentionHours=0` 表示永久保存：跳过已上传图片的保留期清理及读取过期检查，响应中的 `expires_at` 为 `null`；恢复正数时重新按当前时长判断。未完成的预签名 PUT 上传槽仍按 PUT TTL 加宽限期清理。
+
 > ⚠️ **V1.1 schema 迁移（须手写，AutoMigrate 不改索引）**：① 删 `storage_key` 上的旧**全局唯一索引**；② 建 `(user_id, storage_key)` **复合唯一索引**；③ 建 `storage_key` **普通索引**。`status` 列由 AutoMigrate 自动加。建议在 `migrateDB` 加一段启动迁移（检测旧索引并重建）。**存量数据无需回填**——每 key 一行恰是新模型的合法子集，迁移后多用户可各自建行。
 
 ---
@@ -425,7 +427,7 @@ curl.exe -X PUT -T 'C:\photos\photo.jpg' 'https://.../files/a1/a1b2...?expires=.
 | `VisionInlineMaxBytes` | `10240` | **V1.1** base64 内联软阈值：≤ 此值小图走 base64、超过则引导走上传（§16）；`0` = 关闭（退回 V1.0 行为） |
 | `SignedURLTTLSeconds` | `3600` | 签名 URL 有效期，1h |
 | `PresignedPutTTLSeconds` | `600` | **V1.1** 预签名 PUT URL 有效期（直传路径），须 < `SignedURLTTLSeconds`（GET 交给 analyze 的窗口要盖住上传窗口） |
-| `UploadRetentionHours` | `24` | 上传保留时长，须 > `SignedURLTTLSeconds` |
+| `UploadRetentionHours` | `24` | 图片保留小时数，0=永久保存；短 GET 链接不另受签名 TTL 限制 |
 | `UploadCleanupIntervalMinutes` | `60` | 过期清理扫描间隔（**改后需重启才生效**——ticker 启动时读一次） |
 | `MaxUploadsPerUser` | `0` | **V1.1** 每用户活跃上传数上限（护栏，防滥用）；`0` = 不限。超限上传返回 429 |
 

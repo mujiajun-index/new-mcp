@@ -38,13 +38,13 @@ func ImageGenHandler(ctx context.Context, serviceID int64, config map[string]int
 }
 
 type generatedImageMeta struct {
-	URL           string    `json:"url"`
-	MIME          string    `json:"mime"`
-	Size          int64     `json:"size"`
-	Width         int       `json:"width"`
-	Height        int       `json:"height"`
-	ExpiresAt     time.Time `json:"expires_at"`
-	RevisedPrompt string    `json:"revised_prompt,omitempty"`
+	URL           string     `json:"url"`
+	MIME          string     `json:"mime"`
+	Size          int64      `json:"size"`
+	Width         int        `json:"width"`
+	Height        int        `json:"height"`
+	ExpiresAt     *time.Time `json:"expires_at"`
+	RevisedPrompt string     `json:"revised_prompt,omitempty"`
 }
 
 // RunImageGen is shared with the authenticated preview endpoint. It does not

@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/mujkjk/newmcp/internal/imageasset"
 	"github.com/mujkjk/newmcp/model"
 )
 
@@ -54,7 +55,11 @@ func StartCleanupLoop(ctx context.Context) {
 // deleted once the last row referencing it is gone (CountByKey refcount).
 func runCleanupSweep(ctx context.Context) {
 	const sweepLimit = 500
-	cutoff := time.Now().Add(-uploadRetention())
+	retention := uploadRetention()
+	if retention == 0 {
+		return
+	}
+	cutoff := time.Now().Add(-retention)
 	expired, err := model.ListExpiredUploads(cutoff, sweepLimit)
 	if err != nil {
 		log.Printf("[upload-cleanup] list expired: %v", err)
@@ -120,8 +125,5 @@ func cleanupInterval() time.Duration {
 }
 
 func uploadRetention() time.Duration {
-	if h := model.GetOptionInt("UploadRetentionHours"); h > 0 {
-		return time.Duration(h) * time.Hour
-	}
-	return 24 * time.Hour
+	return imageasset.Retention()
 }

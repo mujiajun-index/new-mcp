@@ -240,7 +240,8 @@ func GetVideoFile(c *gin.Context) {
 		common.Error(c, 404, "Video not found")
 		return
 	}
-	if t.ExpiresAt == nil || !t.ExpiresAt.After(time.Now()) || t.ArtifactStatus == "expired" {
+	expiresAt := videoasset.EffectiveExpiration(t.ExpiresAt)
+	if (expiresAt != nil && !expiresAt.After(time.Now())) || t.ArtifactStatus == "expired" {
 		common.Error(c, 410, "Video expired")
 		return
 	}

@@ -67,6 +67,16 @@ func TestCleanupSweepReapsExpired(t *testing.T) {
 		t.Fatalf("insert new row: %v", err)
 	}
 
+	// Permanent retention must keep existing files, even when they predate it.
+	model.UpdateOption("UploadRetentionHours", "0")
+	runCleanupSweep(ctx)
+	if _, err := model.GetUploadedImageByID(oldRow.ID); err != nil {
+		t.Fatal("permanent retention deleted an existing image", err)
+	}
+	if _, err := UploadStore.Stat(ctx, oldKey); err != nil {
+		t.Fatal("permanent retention deleted image bytes", err)
+	}
+	model.UpdateOption("UploadRetentionHours", "1")
 	runCleanupSweep(ctx)
 
 	// Expired row + blob gone.
