@@ -1833,6 +1833,8 @@
     "deleteTaskConfirm": "Delete this task record and its saved video? This does not cancel an upstream job.",
     "download": "Download video",
     "expires": "{{size}} MiB · Available until {{date}}",
+    "expiresAt": "Expires at",
+    "permanentLabel": "Saved permanently",
     "permanent": "{{size}} MiB · Saved permanently",
     "previous": "Previous",
     "next": "Next",

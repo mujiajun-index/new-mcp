@@ -1833,6 +1833,8 @@
     "deleteTaskConfirm": "删除该任务记录及已保存的视频？此操作不会取消上游任务。",
     "download": "下载视频",
     "expires": "{{size}} MiB · 有效期至 {{date}}",
+    "expiresAt": "过期时间",
+    "permanentLabel": "永久保存",
     "permanent": "{{size}} MiB · 永久保存",
     "previous": "上一页",
     "next": "下一页",

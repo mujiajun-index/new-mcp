@@ -338,6 +338,13 @@ function VideoTaskRow({
       <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">
         {new Date(task.created_at).toLocaleString()}
       </td>
+      <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">
+        {task.expires_at
+          ? new Date(task.expires_at).toLocaleString()
+          : task.artifact_status === "ready"
+            ? t("videogen.permanentLabel")
+            : "—"}
+      </td>
       <td className="px-4 py-3 text-right">
         <div className="flex items-center justify-end gap-1 whitespace-nowrap">
           <Button variant="ghost" size="sm" onClick={onDetails}>
@@ -451,6 +458,7 @@ export function VideoTasks({ configID }: { configID?: number }) {
                     "videogen.generationStatus",
                     "videogen.savingStatus",
                     "common.createdAt",
+                    "videogen.expiresAt",
                   ].map((label) => (
                     <th
                       key={label}
