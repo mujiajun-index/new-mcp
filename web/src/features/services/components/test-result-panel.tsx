@@ -34,13 +34,13 @@ export async function copyText(text: string) {
 }
 
 // 单个 content 块渲染:text 等宽展示、image 内联图片、resource 展示 uri+文本,未知类型回退原始 JSON。
-export function ContentBlock({ block, index }: { block: McpContentBlock; index: number }) {
+export function ContentBlock({ block, index, downloadUri }: { block: McpContentBlock; index: number; downloadUri?: string }) {
   const { t } = useTranslation()
   if (block.type === 'resource_link' && block.uri) {
     return <div className="space-y-2 rounded-md border p-3">
       {block.mimeType?.startsWith('image/') && <img src={block.uri} alt={block.name || ''} className="max-h-96 rounded-md" />}
       {block.mimeType?.startsWith('video/') && <video src={block.uri} controls preload="metadata" aria-label={block.name || t('videogen.title')} className="max-h-96 w-full rounded-md bg-black" />}
-      <div className="flex flex-wrap items-center gap-3 text-xs"><a href={block.uri} target="_blank" rel="noreferrer" download className="text-primary hover:underline">{t(block.mimeType?.startsWith('video/') ? 'videogen.download' : 'imagegen.downloadImage')}</a><Button variant="ghost" size="sm" className="h-7 gap-1" onClick={() => copyText(block.uri!).catch(() => toast.error(t('common.copyFailed')))}><Copy className="h-3 w-3" />{t('imagegen.copyLink')}</Button></div>
+      <div className="flex flex-wrap items-center gap-3 text-xs"><a href={downloadUri || block.uri} target={downloadUri ? undefined : '_blank'} rel="noreferrer" download className="text-primary hover:underline">{t(block.mimeType?.startsWith('video/') ? 'videogen.download' : 'imagegen.downloadImage')}</a><Button variant="ghost" size="sm" className="h-7 gap-1" onClick={() => copyText(block.uri!).catch(() => toast.error(t('common.copyFailed')))}><Copy className="h-3 w-3" />{t('imagegen.copyLink')}</Button></div>
     </div>
   }
   if (block.type === 'text' && typeof block.text === 'string') {

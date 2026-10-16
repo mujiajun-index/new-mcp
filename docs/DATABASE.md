@@ -1,6 +1,6 @@
 # NewMCP 数据库设计文档
 
-> 版本: V1.0 | 状态: 草案 | 更新日期: 2026-10-12（新增视频配置与持久化任务）
+> 版本: V1.0 | 状态: 草案 | 更新日期: 2026-10-16（视频协议快照与兼容迁移）
 
 ## 1. 概述
 
@@ -615,7 +615,7 @@ CREATE TABLE `marketplace_item_keys` (
 | --- | --- |
 | `id` / `user_id` | 自增主键 / 属主索引 |
 | `name` / `description` | 配置名称（128 字节上限）/ 说明文本 |
-| `protocol` / `model_name` / `endpoint_url` | `openai_video` / 手填模型 / 上游地址 |
+| `protocol` / `model_name` / `endpoint_url` | `openai_video`（默认）或 `openrouter_video` / 手填模型 / 上游地址 |
 | `api_key` | 私有凭证文本，复用 `common.Encrypt`；未设置 `CRYPTO_SECRET` 时仅 base64 回退 |
 | `operation` / `image_request_format` | `generate/image/both` / `multipart/json` |
 | `default_params` | JSON 对象的文本存储 |
@@ -633,11 +633,12 @@ CREATE TABLE `marketplace_item_keys` (
 | `id` | UUID 字符串主键，API 字段名 `task_id` |
 | `user_id` / `config_id` / `config_name` | 用户归属 / 配置关联（草稿为 0）/ 提交时名称 |
 | `source` / `operation` / `model` / `prompt` | `mcp/test/retry` 调用来源、能力、模型及请求摘要 |
+| `protocol` | 提交协议快照，`openai_video` / `openrouter_video`；旧记录默认 `openai_video` |
 | `idempotency_key` / `request_hash` | 64 字符唯一幂等键 / 有效输入摘要，阻止重试重复生成 |
 | `request_params` | 不公开的最新调用参数快照；沿用现有凭证存储机制，不包含配置密钥和连接；MySQL 为 LONGTEXT，SQLite/PostgreSQL 为 TEXT |
 | `retry_requests` / `retry_count` | 不公开的重试请求哈希与输入摘要映射 / 已受理重试次数；请求映射为 JSON 文本，不保存原请求标识、输入或凭证；重启及并发重复请求不增加次数 |
 | `retry_of` | 旧版重试记录的来源关联，兼容保留；当前重试更新原任务，不新增该关联 |
-| `connection` / `upstream_id` | 私有连接快照 / 上游任务 ID，不返回 API；快照使用现有凭证机制 |
+| `connection` / `upstream_id` | 私有连接快照（地址、模型、凭证及协议）/ 上游任务 ID，不返回 API；快照使用现有凭证机制 |
 | `status` / `progress` / `artifact_status` | 上游生成状态、进度、独立文件保存状态 |
 | `tracking_paused` / `error` / `last_error` / `failures` | 跟踪暂停、终止错误、最近临时错误和连续失败次数 |
 | `request_timeout_seconds` / `task_timeout_seconds` / `tracking_deadline` | 提交时的处理时限快照 |
@@ -646,7 +647,9 @@ CREATE TABLE `marketplace_item_keys` (
 | `mime` / `size` / `expires_at` | 视频格式、字节数及保存成功后的到期时间 |
 | `stopped_at` / `created_at` / `updated_at` | 历史保留起算点及创建/更新时间 |
 
-任务先入库，再异步提交。已有上游 ID 的任务重启后继续查询；过期的提交租约记录为 `submission_unknown`，不重新 POST。租约清空使用 1970 年时间，避免 MySQL 严格日期模式下的零年值。任务使用独立连接快照，配置变更或删除不改变其目标；保存成功或生成失败后清除快照，保存失败保留快照以供下载重试。
+任务先入库，再异步提交。已有上游 ID 的任务重启后继续查询；过期的提交租约记录为 `submission_unknown`，不重新 POST。租约清空使用 1970 年时间，避免 MySQL 严格日期模式下的零年值。任务使用独立连接及协议快照，配置变更协议或删除不改变其目标；保存成功或生成失败后清除私有连接快照，保留任务行的协议字段以供展示，保存失败保留连接快照以供下载重试。
+
+升级通过 AutoMigrate 追加任务 `protocol` 字段，已有任务及缺少协议的旧连接快照按 `openai_video` 解释，避免恢复时误用配置当前协议。新 OpenRouter 任务的行及连接快照均写入 `openrouter_video`，草稿任务同样适用；手动重试生成时更新为当前所选配置的协议。
 
 明确的 HTTP 503 `video_queue_full` 拒绝提交记录为 `failed`。管理器启动时分批修正旧版误分类记录，条件要求原状态为 `submission_unknown`、上游 ID 和租约持有者为空、原错误是完整的 503 队列拒绝 JSON；更新核对原修订号与错误，避免覆盖其他实例改动。修正保留停止时间、错误及私有输入，并清除凭证快照，无需新增表字段。
 

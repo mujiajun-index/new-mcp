@@ -6,7 +6,7 @@ export interface VideoGenConfig {
   id: number;
   name: string;
   description: string;
-  protocol: "openai_video";
+  protocol: "openai_video" | "openrouter_video";
   model_name: string;
   endpoint_url: string;
   operation: "generate" | "image" | "both";
@@ -56,6 +56,7 @@ export interface VideoTask {
   config_name: string;
   source: string;
   operation: "generate" | "image";
+  protocol?: VideoGenConfig["protocol"];
   retry_of?: string;
   retry_count?: number;
   model: string;
@@ -168,8 +169,38 @@ export async function listVideoTasks(
   ).data;
 }
 
-export function videoEndpoint(base: string) {
-  return `${base.trim().replace(/\/+$/, "").replace(/\/v1$/, "")}/v1/videos`;
+export function videoDownloadURL(url: string) {
+  return `${url}${url.includes("?") ? "&" : "?"}download=1`;
+}
+
+export function defaultVideoEndpoint(
+  protocol: VideoGenConfig["protocol"] = "openai_video",
+) {
+  return protocol === "openrouter_video"
+    ? "https://openrouter.ai/api/v1"
+    : "https://api.openai.com/v1";
+}
+
+export function videoEndpoint(
+  base: string,
+  protocol: VideoGenConfig["protocol"] = "openai_video",
+) {
+  let endpoint = base.trim() || defaultVideoEndpoint(protocol);
+  if (protocol === "openrouter_video") {
+    try {
+      const url = new URL(endpoint);
+      if (
+        url.hostname.toLowerCase() === "openrouter.ai" &&
+        !url.pathname.replace(/\//g, "")
+      ) {
+        url.pathname = "/api";
+        endpoint = url.toString();
+      }
+    } catch {
+      // Preserve the preview while the base URL is still being edited.
+    }
+  }
+  return `${endpoint.replace(/\/+$/, "").replace(/\/v1$/, "")}/v1/videos`;
 }
 
 export function jsonObject(

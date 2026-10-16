@@ -1,4 +1,4 @@
-// Package videogen implements the gateway's asynchronous OpenAI video protocol.
+// Package videogen implements asynchronous OpenAI and OpenRouter video protocols.
 package videogen
 
 import (
@@ -20,6 +20,7 @@ import (
 )
 
 type Connection struct {
+	Protocol    string `json:"protocol,omitempty"`
 	EndpointURL string `json:"endpoint_url"`
 	APIKey      string `json:"api_key"`
 	Model       string `json:"model"`
@@ -63,7 +64,80 @@ type Video struct {
 	Error    json.RawMessage `json:"error"`
 }
 
-func BaseURL(raw string) (string, error) { return imagegen.BaseURL(raw, "openai") }
+const (
+	ProtocolOpenAI            = "openai_video"
+	ProtocolOpenRouter        = "openrouter_video"
+	DefaultOpenAIEndpoint     = "https://api.openai.com/v1"
+	DefaultOpenRouterEndpoint = "https://openrouter.ai/api/v1"
+)
+
+// Empty snapshots and configurations created before protocol selection retain
+// the original gateway protocol.
+func ProtocolName(protocol string) string {
+	if protocol == "" {
+		return ProtocolOpenAI
+	}
+	return protocol
+}
+
+func BaseURL(raw string) (string, error) { return BaseURLForProtocol(raw, ProtocolOpenAI) }
+
+func DefaultEndpoint(protocol string) string {
+	switch ProtocolName(protocol) {
+	case ProtocolOpenAI:
+		return DefaultOpenAIEndpoint
+	case ProtocolOpenRouter:
+		return DefaultOpenRouterEndpoint
+	default:
+		return ""
+	}
+}
+
+func BaseURLForProtocol(raw, protocol string) (string, error) {
+	if strings.TrimSpace(raw) == "" {
+		raw = DefaultEndpoint(protocol)
+	}
+	switch ProtocolName(protocol) {
+	case ProtocolOpenAI:
+	case ProtocolOpenRouter:
+		u, err := url.Parse(strings.TrimSpace(raw))
+		if err == nil && strings.EqualFold(u.Hostname(), "openrouter.ai") && strings.Trim(u.Path, "/") == "" {
+			u.Path = "/api"
+			raw = u.String()
+		}
+	default:
+		return "", fmt.Errorf("protocol must be openai_video or openrouter_video")
+	}
+	return imagegen.BaseURL(raw, "openai")
+}
+
+func ValidateProtocolParams(protocol string, p map[string]any) error {
+	switch ProtocolName(protocol) {
+	case ProtocolOpenAI:
+		return nil
+	case ProtocolOpenRouter:
+		if metadata, _ := p["metadata"].(map[string]any); len(metadata) != 0 {
+			return fmt.Errorf("OpenRouter video does not use metadata; use extra_body for resolution, aspect_ratio or provider options")
+		}
+		if seconds, ok := p["seconds"].(float64); ok && seconds != float64(int(seconds)) {
+			return fmt.Errorf("OpenRouter video seconds must be an integer (sent as duration)")
+		}
+		if extra, _ := p["extra_body"].(map[string]any); extra != nil {
+			if duration, exists := extra["duration"]; exists {
+				if _, exists := p["seconds"]; exists {
+					return fmt.Errorf("use either seconds or extra_body.duration, not both")
+				}
+				n, ok := duration.(float64)
+				if !ok || n <= 0 || n > 3600 || n != float64(int(n)) {
+					return fmt.Errorf("extra_body.duration must be an integer from 1 to 3600")
+				}
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("protocol must be openai_video or openrouter_video")
+	}
+}
 
 func WaitSeconds(p map[string]any, fallback int) (int, error) {
 	v, exists := p["wait_seconds"]
@@ -117,7 +191,10 @@ func ValidateParams(p map[string]any, defaults bool) error {
 		}
 		for k := range m {
 			name := strings.ToLower(k)
-			if allowed[name] || name == "prompt" || name == "image" || name == "wait_seconds" || name == "request_id" || strings.Contains(name, "authorization") || strings.ReplaceAll(name, "_", "") == "apikey" || name == "headers" || name == "model" || name == "input_reference" || name == "images" || name == "image_url" || name == "stream" || name == "extra_body" || name == "return_mode" {
+			if name == "previous_job_id" {
+				return fmt.Errorf("extra_body.previous_job_id is not supported; video editing and extension are not enabled")
+			}
+			if allowed[name] || name == "prompt" || name == "image" || name == "wait_seconds" || name == "request_id" || strings.Contains(name, "authorization") || strings.ReplaceAll(name, "_", "") == "apikey" || name == "headers" || name == "model" || name == "input_reference" || name == "input_references" || name == "frame_images" || name == "images" || name == "image_url" || name == "stream" || name == "extra_body" || name == "return_mode" {
 				return fmt.Errorf("extra_body cannot override %s", k)
 			}
 		}
@@ -129,14 +206,25 @@ func ValidateParams(p map[string]any, defaults bool) error {
 }
 
 func (c *Client) BuildSubmit(ctx context.Context, p map[string]any, img *imagegen.Image, format string) (*http.Request, error) {
-	base, err := BaseURL(c.EndpointURL)
+	if err := ValidateParams(p, false); err != nil {
+		return nil, err
+	}
+	if err := ValidateProtocolParams(c.Protocol, p); err != nil {
+		return nil, err
+	}
+	base, err := BaseURLForProtocol(c.EndpointURL, c.Protocol)
 	if err != nil {
 		return nil, err
 	}
 	body := map[string]any{"model": c.Model, "prompt": p["prompt"]}
+	openRouter := ProtocolName(c.Protocol) == ProtocolOpenRouter
 	for _, k := range []string{"seconds", "size", "metadata"} {
 		if v, ok := p[k]; ok {
-			body[k] = v
+			if openRouter && k == "seconds" {
+				body["duration"] = int(v.(float64))
+			} else if !openRouter || k != "metadata" {
+				body[k] = v
+			}
 		}
 	}
 	if extra, ok := p["extra_body"].(map[string]any); ok {
@@ -146,7 +234,7 @@ func (c *Client) BuildSubmit(ctx context.Context, p map[string]any, img *imagege
 	}
 	var data bytes.Buffer
 	contentType := "application/json"
-	if img != nil && format == "multipart" {
+	if img != nil && format == "multipart" && !openRouter {
 		writer := multipart.NewWriter(&data)
 		for k, v := range body {
 			var value string
@@ -184,10 +272,14 @@ func (c *Client) BuildSubmit(ctx context.Context, p map[string]any, img *imagege
 		contentType = writer.FormDataContentType()
 	} else {
 		if img != nil {
+			reference := "data:" + img.MIME + ";base64," + base64.StdEncoding.EncodeToString(img.Bytes)
 			if img.URL != "" {
-				body["input_reference"] = img.URL
+				reference = img.URL
+			}
+			if openRouter {
+				body["frame_images"] = []any{map[string]any{"type": "image_url", "image_url": map[string]any{"url": reference}, "frame_type": "first_frame"}}
 			} else {
-				body["input_reference"] = "data:" + img.MIME + ";base64," + base64.StdEncoding.EncodeToString(img.Bytes)
+				body["input_reference"] = reference
 			}
 		}
 		if err := json.NewEncoder(&data).Encode(body); err != nil {
@@ -202,7 +294,7 @@ func (c *Client) BuildSubmit(ctx context.Context, p map[string]any, img *imagege
 	return req, err
 }
 
-func (c *Client) do(req *http.Request) (*Video, error) {
+func (c *Client) request(req *http.Request) ([]byte, error) {
 	hc := &http.Client{}
 	if c.HTTPClient != nil {
 		copied := *c.HTTPClient
@@ -236,6 +328,14 @@ func (c *Client) do(req *http.Request) (*Video, error) {
 		}
 		return nil, &HTTPError{Status: resp.StatusCode, RetryAfter: retry, Message: c.redact(responseError(raw)), Code: c.redact(responseErrorCode(raw))}
 	}
+	return raw, nil
+}
+
+func (c *Client) do(req *http.Request) (*Video, error) {
+	raw, err := c.request(req)
+	if err != nil {
+		return nil, err
+	}
 	var v Video
 	if err := json.Unmarshal(raw, &v); err != nil {
 		return nil, fmt.Errorf("invalid video API response")
@@ -258,7 +358,7 @@ func (c *Client) Submit(req *http.Request) (*Video, error) {
 }
 
 func (c *Client) Query(ctx context.Context, id string) (*Video, error) {
-	base, err := BaseURL(c.EndpointURL)
+	base, err := BaseURLForProtocol(c.EndpointURL, c.Protocol)
 	if err != nil {
 		return nil, err
 	}
@@ -271,15 +371,51 @@ func (c *Client) Query(ctx context.Context, id string) (*Video, error) {
 }
 
 func (c *Client) Content(ctx context.Context, id string, maxBytes int64) (*http.Response, error) {
-	base, err := BaseURL(c.EndpointURL)
+	base, err := BaseURLForProtocol(c.EndpointURL, c.Protocol)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := imagegen.OpenDownload(ctx, base+"/videos/"+url.PathEscape(id)+"/content", base, maxBytes, "Bearer "+c.APIKey)
+	contentURL := base + "/videos/" + url.PathEscape(id) + "/content"
+	if ProtocolName(c.Protocol) == ProtocolOpenRouter {
+		contentURL += "?index=0"
+	}
+	resp, err := imagegen.OpenDownload(ctx, contentURL, base, maxBytes, "Bearer "+c.APIKey)
 	if err != nil {
 		return nil, fmt.Errorf("video content: %s", strings.ReplaceAll(err.Error(), "image", "media"))
 	}
 	return resp, nil
+}
+
+func (c *Client) ListModels(ctx context.Context) ([]imagegen.ModelInfo, error) {
+	base, err := BaseURLForProtocol(c.EndpointURL, c.Protocol)
+	if err != nil {
+		return nil, err
+	}
+	path := "/models"
+	if ProtocolName(c.Protocol) == ProtocolOpenRouter {
+		path = "/videos/models"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	raw, err := c.request(req)
+	if err != nil {
+		return nil, err
+	}
+	var response struct {
+		Data []imagegen.ModelInfo `json:"data"`
+	}
+	if json.Unmarshal(raw, &response) != nil || response.Data == nil {
+		return nil, fmt.Errorf("invalid video model catalog response")
+	}
+	for i := range response.Data {
+		if response.Data[i].Name == "" {
+			response.Data[i].Name = response.Data[i].ID
+		}
+	}
+	return response.Data, nil
 }
 
 func (c *Client) redact(s string) string {
@@ -353,7 +489,7 @@ func NormalizeStatus(s string) string {
 		return "in_progress"
 	case "completed", "succeeded", "success":
 		return "completed"
-	case "failed", "cancelled", "canceled", "failure":
+	case "failed", "cancelled", "canceled", "failure", "expired":
 		return "failed"
 	default:
 		return "unknown"

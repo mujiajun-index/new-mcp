@@ -184,7 +184,7 @@ Smart 模式暴露的 5 个元工具（参考 mcp-gateway）:
 
 | 功能 | 范围 |
 | --- | --- |
-| 配置及模型 | `/videogen` 管理配置；固定 `openai_video`，模型搜索或手填，支持草稿测试与可编辑工具描述 |
+| 配置及模型 | `/videogen` 管理配置；默认 `openai_video`，另支持 `openrouter_video`；模型搜索或手填，支持草稿测试与可编辑工具描述 |
 | 生成能力 | 文生视频、单张参考图生成视频；按能力暴露 generate_video / generate_video_from_image / upload_image |
 | 异步任务 | 先持久化后提交，短等待返回本地 task_id，get_video_status 继续查询；支持重启恢复和数据库租约 |
 | 去重与重试 | 同用户、配置和 request_id 的相同输入复用任务；提交未知不自动重提，保存失败仅重试下载存储 |
@@ -192,7 +192,7 @@ Smart 模式暴露的 5 个元工具（参考 mcp-gateway）:
 | 播放和下载 | local/S3 存储、MP4/WebM 校验、独立签名链接、GET/HEAD/Range；保存成功后显示播放器 |
 | 保留与管理 | 默认 256 MiB、文件 24 小时、停止跟踪后历史 30 天、每用户数量默认不限；进行中不提供删除 |
 
-上游采用 New API 统一视频协议，不限制厂商模型或分辨率枚举；Wan、豆包图生使用 JSON URL。默认单次请求 30 秒、生成短等待 10 秒（0–30）、跟踪 1 小时，到期暂停并允许继续查询。配置变更、禁用或删除不取消已提交任务。首期不包含厂商原生协议、Responses、Remix、编辑或延长。
+上游支持 New API 统一视频协议及 OpenRouter 视频协议，不限制厂商模型或分辨率枚举；New API 的 Wan、豆包图生使用 JSON URL，OpenRouter 图生使用 JSON 首帧，覆盖 HeyGen Video、Hailuo 3 Max 和 Veo 3.1 Lite 等模型。默认单次请求 30 秒、生成短等待 10 秒（0–30）、跟踪 1 小时，到期暂停并允许继续查询。配置变更、禁用或删除不取消已提交任务，已有任务保留提交时协议。本期不包含厂商原生协议、Responses、Remix、编辑或延长。
 
 使用方式见 [视频生成 MCP](./VIDEO-GENERATION.md)，实际通过与待验收范围见 [视频验收记录](./VIDEO-GENERATION-ACCEPTANCE.md)。
 

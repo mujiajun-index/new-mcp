@@ -259,7 +259,14 @@ export function VideoGenListPage() {
                 }
                 badge={<EnabledBadge enabled={config.auto_register} />}
                 meta={[
-                  { label: t("videogen.protocol"), value: config.protocol },
+                  {
+                    label: t("videogen.protocol"),
+                    value: t(
+                      config.protocol === "openrouter_video"
+                        ? "videogen.openRouterProtocolLabel"
+                        : "videogen.protocolLabel",
+                    ),
+                  },
                   {
                     label: t("videogen.model"),
                     value: (
@@ -275,7 +282,10 @@ export function VideoGenListPage() {
                     : [
                         {
                           label: t("videogen.imageFormat"),
-                          value: config.image_request_format.toUpperCase(),
+                          value:
+                            config.protocol === "openrouter_video"
+                              ? "JSON"
+                              : config.image_request_format.toUpperCase(),
                         },
                       ]),
                 ]}
@@ -328,7 +338,11 @@ export function VideoGenListPage() {
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-xs text-muted-foreground">
-                        {config.protocol}
+                        {t(
+                          config.protocol === "openrouter_video"
+                            ? "videogen.openRouterProtocolLabel"
+                            : "videogen.protocolLabel",
+                        )}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -345,7 +359,9 @@ export function VideoGenListPage() {
                           className="mt-1 text-xs text-muted-foreground"
                           title={t("videogen.imageFormat")}
                         >
-                          {config.image_request_format.toUpperCase()}
+                          {config.protocol === "openrouter_video"
+                            ? "JSON"
+                            : config.image_request_format.toUpperCase()}
                         </p>
                       )}
                     </td>

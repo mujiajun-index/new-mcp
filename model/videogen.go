@@ -7,13 +7,15 @@ import (
 )
 
 const (
-	GenerateVideoToolName             = "generate_video"
-	GenerateVideoFromImageToolName    = "generate_video_from_image"
-	GetVideoStatusToolName            = "get_video_status"
-	DefaultGenerateVideoDesc          = "Create a new video from a text prompt using the configured video model. Describe the scene, motion, camera and style in prompt. Optional seconds, size and metadata depend on the model. Returns a task_id and progress; generation continues after this call. Call get_video_status with that task_id until the video is saved and a downloadable resource_link is returned. wait_seconds is a short wait, not a generation timeout. Reuse request_id when retrying the same submission to avoid creating another paid upstream job."
-	DefaultGenerateVideoFromImageDesc = "Animate a single reference image into a video. Pass prompt describing motion and image as an HTTP(S) URL, data URL or small base64 image. For a LOCAL file, call upload_image, run its returned upload_command, then pass image_url as image. The server cannot read your local disk. Returns a task_id; call get_video_status until the video is ready. Model-specific parameters belong in metadata or extra_body. Reuse request_id when retrying the same submission."
-	DefaultGetVideoStatusDesc         = "Check a video task created by this service using its local task_id. Returns generation status, progress, artifact_status and saved video links. Running tasks and short-wait expiry are successful responses. If saving failed after generation completed, set retry_download=true to retry saving without generating or paying for a new video. Querying a paused task resumes tracking. Never resubmit generate_video just to check progress."
-	DefaultVideoUploadDesc            = "Stage a LOCAL reference image for video generation. Call with local_path, run the returned upload_command using your shell, then call generate_video_from_image with the returned image_url as image. The server cannot read your local files directly."
+	GenerateVideoToolName                       = "generate_video"
+	GenerateVideoFromImageToolName              = "generate_video_from_image"
+	GetVideoStatusToolName                      = "get_video_status"
+	DefaultGenerateVideoDesc                    = "Create a new video from a text prompt using the configured video model. Describe the scene, motion, camera and style in prompt. Optional seconds, size and metadata depend on the model. Returns a task_id and progress; generation continues after this call. Call get_video_status with that task_id until the video is saved and a downloadable resource_link is returned. wait_seconds is a short wait, not a generation timeout. Reuse request_id when retrying the same submission to avoid creating another paid upstream job."
+	DefaultGenerateVideoFromImageDesc           = "Animate a single reference image into a video. Pass prompt describing motion and image as an HTTP(S) URL, data URL or small base64 image. For a LOCAL file, call upload_image, run its returned upload_command, then pass image_url as image. The server cannot read your local disk. Returns a task_id; call get_video_status until the video is ready. Model-specific parameters belong in metadata or extra_body. Reuse request_id when retrying the same submission."
+	DefaultGetVideoStatusDesc                   = "Check a video task created by this service using its local task_id. Returns generation status, progress, artifact_status and saved video links. Running tasks and short-wait expiry are successful responses. If saving failed after generation completed, set retry_download=true to retry saving without generating or paying for a new video. Querying a paused task resumes tracking. Never resubmit generate_video just to check progress."
+	DefaultVideoUploadDesc                      = "Stage a LOCAL reference image for video generation. Call with local_path, run the returned upload_command using your shell, then call generate_video_from_image with the returned image_url as image. The server cannot read your local files directly."
+	DefaultOpenRouterGenerateVideoDesc          = "Create a new video from a text prompt using the configured OpenRouter video model. Describe the scene, motion, camera and style in prompt. Optional seconds must be an integer and is sent as duration. Put resolution, aspect_ratio, generate_audio, seed and provider options in extra_body; metadata is not supported. Returns a task_id; call get_video_status until the video is saved. wait_seconds is only a short wait. Reuse request_id when retrying the same submission to avoid another paid upstream job."
+	DefaultOpenRouterGenerateVideoFromImageDesc = "Animate a single first-frame reference image using the configured OpenRouter video model. Pass prompt and image as an HTTP(S) URL, data URL or small base64 image. For a LOCAL file, call upload_image, run its returned upload_command, then use image_url as image. The image is sent in JSON frame_images as first_frame. Optional integer seconds is sent as duration; model-specific options belong in extra_body, not metadata. Returns a task_id; call get_video_status until ready. Reuse request_id when retrying the same submission."
 )
 
 type VideoGenConfig struct {
@@ -64,6 +66,7 @@ type VideoGenTask struct {
 	ConfigName            string     `json:"config_name" gorm:"size:128"`
 	Source                string     `json:"source" gorm:"size:16"`
 	Operation             string     `json:"operation" gorm:"size:16"`
+	Protocol              string     `json:"protocol" gorm:"size:32;not null;default:openai_video"`
 	Model                 string     `json:"model" gorm:"size:128"`
 	Prompt                string     `json:"prompt" gorm:"type:text"`
 	IdempotencyKey        string     `json:"-" gorm:"size:64;not null;uniqueIndex"`

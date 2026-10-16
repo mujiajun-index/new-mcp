@@ -22,6 +22,7 @@ import {
   listVideoTasks,
   retryVideoDownload,
   taskIsActive,
+  videoDownloadURL,
 } from "../api";
 import type { VideoTask } from "../api";
 import { VideoTaskRetryDialog } from "./video-task-retry-dialog";
@@ -136,6 +137,7 @@ export function VideoTaskCard({
               mimeType: video.mime,
             }}
             index={index}
+            downloadUri={videoDownloadURL(video.url)}
           />
           <p className="text-xs text-muted-foreground">
             {t("videogen.expires", {
@@ -342,7 +344,7 @@ function VideoTaskRow({
           {video && (
             <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
               <a
-                href={video.url}
+                href={videoDownloadURL(video.url)}
                 download
                 aria-label={t("videogen.download")}
                 title={t("videogen.download")}

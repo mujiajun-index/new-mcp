@@ -1,6 +1,6 @@
 # NewMCP 协议适配说明
 
-> 版本: V1.4 | 更新日期: 2026-10-02 | 正式 MCP `2026-07-28` + NewMCP 实验 Events 扩展
+> 版本: V1.4 | 更新日期: 2026-10-16 | 正式 MCP `2026-07-28` + NewMCP 实验 Events 扩展
 
 本文描述代码的协议能力。部署中的实例需要运行包含这些改动的构建；本文不表示现有实例已更新或重启。MCP 的正式版本使用日期标识，JSON-RPC `2.0` 与 SDK v2 不等同于“MCP 2.0”。
 
@@ -1329,6 +1329,8 @@ curl --no-buffer --silent --show-error "$MCP_URL" \
 ## 12. 内置视频生成工具
 
 视频配置注册为 `source=videogen`、`transport_type=virtual` 服务，由 VirtualToolRegistry 在进程内派发；支持 Direct、Smart 和独立的批量调用，遵循现有 API Key 分组范围及工具启停。文生、图生按配置能力暴露，状态工具使用本地任务 ID，图生配置附带 upload_image。
+
+上游协议由配置显式选择：默认 `openai_video` 保持 New API / OpenAI 视频格式，`openrouter_video` 使用 OpenRouter 异步视频 API，覆盖 `heygen/heygen-video-1`、`minimax/hailuo-3-max`、`google/veo-3.1-lite` 等模型。两者复用以下 MCP 工具名，不能根据模型 ID 推断或切换协议。OpenRouter 将通用 `seconds` 转为整数 `duration`，图生构造 JSON 首帧；非空 `metadata` 会拒绝，应将支持的扩展放入 `extra_body`。协议保存在任务快照，已有任务查询与保存不随配置协议修改而改变。
 
 | 调用方式 | 工具标识示例 |
 | --- | --- |

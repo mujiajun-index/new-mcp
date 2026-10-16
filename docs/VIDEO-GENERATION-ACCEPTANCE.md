@@ -2,6 +2,17 @@
 
 验收日期：2026-10-12。环境为 Go 1.26.3 / Windows amd64、SQLite 3.41.2。已完成自动测试和隔离环境的页面模拟流程；真实视频生成、实际 S3 桶及 MySQL/PostgreSQL 验收尚未完成。使用说明见 [内置视频生成 MCP](./VIDEO-GENERATION.md)。
 
+## 2026-10-16 OpenRouter 视频协议
+
+- 新增独立 `openrouter_video` 协议，对接 `heygen/heygen-video-1`、`minimax/hailuo-3-max`、`google/veo-3.1-lite` 等 OpenRouter 视频模型；默认 `openai_video` 继续使用 New API / OpenAI 视频格式，不根据模型 ID 自动切换。
+- 按 [OpenRouter 官方提交接口](https://openrouter.ai/docs/api/api-reference/video-generation/submit-a-video-generation-request) 适配整数 `duration`、JSON 首帧和 `extra_body` 扩展；非空 `metadata` 在本地拒绝。模型目录使用专用 `/videos/models`，仅返回 `id` / `name`，未实现模型能力动态限制或固定范围白名单。
+- 已持久化协议随任务和连接快照恢复，旧任务按 `openai_video` 兼容。查询与内容下载由配置地址及任务 ID 构造，不跟随响应中的任意 URL；上游 `expired` 作为生成失败终态。
+- `internal/mcp/videogen/openrouter_test.go` 通过三个模型 × 文生 / data URL 图生 / 图片 URL 图生的 9 类 JSON 请求检查；另完成三个模型各一次文生、一次图生，共 6 个模拟任务全流程。覆盖 `pending → completed`、管理器重建后恢复、配置改动不影响已提交协议快照、完成响应无下载 URL 时使用固定 `content?index=0`、文件就绪、清除任务凭证及 MCP `resource_link`。
+- 协议测试通过专用模型目录、参数与危险参考图地址校验、`expired` 失败终态；`previous_job_id` 及大小写变体均被拒绝，避免通过扩展参数调用本期未开放的编辑或延长。服务测试通过配置创建、协议切换、自定义描述保留、工具 schema 和草稿 / 已保存配置的模型查询。
+- `go test ./internal/mcp/videogen ./model ./service ./router ./internal/mcp/imagegen -count=1` 通过，包含现有 New API 与图片生成回归。SQLite 旧任务协议默认 `openai_video`，重复迁移两次通过；MySQL / PostgreSQL 因未设置专用测试 DSN 跳过，不计为通过。
+- `npm run build:check` 与 `npm run test:videogen-params`（8 项）通过。本轮未运行浏览器测试；三个模型均未使用真实凭证提交生成，不能据本地模拟测试宣称实际模型生成、计费、音频或画面质量已通过验收。
+- 相关包 `go vet` 与服务端编译通过，内嵌本轮前端资源的程序为 `tmp/videogen-openrouter/newmcp.exe`；未重启或修改正在运行的业务服务。
+
 ## 2026-10-13 详情提示词全文展示
 
 - 移除任务详情提示词的三行截断，保留换行和空行，长连续字符自动换行。详情沿用弹窗内的垂直滚动，列表继续展示摘要。

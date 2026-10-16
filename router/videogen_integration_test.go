@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/png"
 	"io"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -266,8 +267,13 @@ func TestVideoGenAPIAndMCPWorkflow(t *testing.T) {
 		method, rangeHeader string
 		status              int
 		bytes               int
-	}{{"GET", "", 200, len(videoBytes)}, {"HEAD", "", 200, 0}, {"GET", "bytes=0-7", 206, 8}, {"GET", "bytes=999999-", 416, -1}} {
-		req, _ := http.NewRequest(test.method, url, nil)
+		download            bool
+	}{{"GET", "", 200, len(videoBytes), false}, {"HEAD", "", 200, 0, false}, {"GET", "bytes=0-7", 206, 8, false}, {"GET", "bytes=999999-", 416, -1, false}, {"GET", "", 200, len(videoBytes), true}, {"HEAD", "", 200, 0, true}, {"GET", "bytes=0-7", 206, 8, true}} {
+		requestURL := url
+		if test.download {
+			requestURL += "&download=1"
+		}
+		req, _ := http.NewRequest(test.method, requestURL, nil)
 		if test.rangeHeader != "" {
 			req.Header.Set("Range", test.rangeHeader)
 		}
@@ -279,6 +285,14 @@ func TestVideoGenAPIAndMCPWorkflow(t *testing.T) {
 		resp.Body.Close()
 		if resp.StatusCode != test.status || (test.bytes >= 0 && len(body) != test.bytes) {
 			t.Fatalf("video %s %s: %d (%d bytes)", test.method, test.rangeHeader, resp.StatusCode, len(body))
+		}
+		if test.download {
+			disposition, params, err := mime.ParseMediaType(resp.Header.Get("Content-Disposition"))
+			if err != nil || disposition != "attachment" || params["filename"] != "generated-video-"+taskID+".mp4" {
+				t.Fatal("video download must use an attachment filename", resp.Header.Get("Content-Disposition"), err)
+			}
+		} else if resp.Header.Get("Content-Disposition") != "" {
+			t.Fatal("playback must not force an attachment")
 		}
 	}
 	resp, err := http.Get(strings.Split(url, "?s=")[0] + "?s=invalid")

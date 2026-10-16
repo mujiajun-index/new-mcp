@@ -47,7 +47,32 @@ type VideoGenDetail struct {
 }
 
 func videoGenDetail(c *model.VideoGenConfig) *VideoGenDetail {
-	return &VideoGenDetail{VideoGenConfig: *c, DefaultParams: json.RawMessage(c.DefaultParams), HasAPIKey: c.APIKey != "", GenerateVideoDescDefault: model.DefaultGenerateVideoDesc, GenerateVideoFromImageDescDefault: model.DefaultGenerateVideoFromImageDesc, GetVideoStatusDescDefault: model.DefaultGetVideoStatusDesc, UploadImageDesc: model.DefaultVideoUploadDesc}
+	copy := *c
+	defaults := videoGenDescriptions(&copy)
+	return &VideoGenDetail{VideoGenConfig: copy, DefaultParams: json.RawMessage(c.DefaultParams), HasAPIKey: c.APIKey != "", GenerateVideoDescDefault: defaults[0].fallback, GenerateVideoFromImageDescDefault: defaults[1].fallback, GetVideoStatusDescDefault: model.DefaultGetVideoStatusDesc, UploadImageDesc: model.DefaultVideoUploadDesc}
+}
+
+type videoDescription struct {
+	target   *string
+	fallback string
+}
+
+// Switch only built-in descriptions when the protocol changes. User-written
+// descriptions remain editable and are never replaced by a protocol switch.
+func videoGenDescriptions(c *model.VideoGenConfig) []videoDescription {
+	generate, image := model.DefaultGenerateVideoDesc, model.DefaultGenerateVideoFromImageDesc
+	otherGenerate, otherImage := model.DefaultOpenRouterGenerateVideoDesc, model.DefaultOpenRouterGenerateVideoFromImageDesc
+	if c.Protocol == videogen.ProtocolOpenRouter {
+		generate, otherGenerate = otherGenerate, generate
+		image, otherImage = otherImage, image
+	}
+	if c.GenerateVideoDesc == "" || c.GenerateVideoDesc == otherGenerate {
+		c.GenerateVideoDesc = generate
+	}
+	if c.GenerateVideoFromImageDesc == "" || c.GenerateVideoFromImageDesc == otherImage {
+		c.GenerateVideoFromImageDesc = image
+	}
+	return []videoDescription{{&c.GenerateVideoDesc, generate}, {&c.GenerateVideoFromImageDesc, image}, {&c.GetVideoStatusDesc, model.DefaultGetVideoStatusDesc}}
 }
 
 func newVideoGenConfig(uid int64) *model.VideoGenConfig {
@@ -58,8 +83,12 @@ func applyVideoGenConnection(c *model.VideoGenConfig, r *dto.VideoGenConfigReq) 
 	if r.Protocol != nil {
 		c.Protocol = strings.TrimSpace(*r.Protocol)
 	}
+	c.Protocol = videogen.ProtocolName(c.Protocol)
 	if r.EndpointURL != nil {
 		c.EndpointURL = strings.TrimSpace(*r.EndpointURL)
+	}
+	if c.EndpointURL == "" {
+		c.EndpointURL = videogen.DefaultEndpoint(c.Protocol)
 	}
 	if len(c.EndpointURL) > 512 || (r.APIKey != nil && len(*r.APIKey) > 512) {
 		return fmt.Errorf("endpoint or API key exceeds 512 bytes")
@@ -71,10 +100,7 @@ func applyVideoGenConnection(c *model.VideoGenConfig, r *dto.VideoGenConfigReq) 
 		}
 		c.APIKey = key
 	}
-	if c.Protocol != "openai_video" {
-		return fmt.Errorf("protocol must be openai_video")
-	}
-	if _, err := videogen.BaseURL(c.EndpointURL); err != nil {
+	if _, err := videogen.BaseURLForProtocol(c.EndpointURL, c.Protocol); err != nil {
 		return err
 	}
 	if c.APIKey == "" {
@@ -114,6 +140,9 @@ func applyVideoGenReq(c *model.VideoGenConfig, r *dto.VideoGenConfigReq) error {
 	if c.ImageRequestFormat != "multipart" && c.ImageRequestFormat != "json" {
 		return fmt.Errorf("image_request_format must be multipart or json")
 	}
+	if c.Protocol == videogen.ProtocolOpenRouter {
+		c.ImageRequestFormat = "json"
+	}
 	if c.RequestTimeoutSeconds < 1 || c.RequestTimeoutSeconds > 300 {
 		return fmt.Errorf("request_timeout_seconds must be from 1 to 300")
 	}
@@ -130,10 +159,10 @@ func applyVideoGenReq(c *model.VideoGenConfig, r *dto.VideoGenConfigReq) error {
 	if err := videogen.ValidateParams(params, true); err != nil {
 		return err
 	}
-	for _, f := range []struct {
-		target   *string
-		fallback string
-	}{{&c.GenerateVideoDesc, model.DefaultGenerateVideoDesc}, {&c.GenerateVideoFromImageDesc, model.DefaultGenerateVideoFromImageDesc}, {&c.GetVideoStatusDesc, model.DefaultGetVideoStatusDesc}} {
+	if err := videogen.ValidateProtocolParams(c.Protocol, params); err != nil {
+		return err
+	}
+	for _, f := range videoGenDescriptions(c) {
 		if len(*f.target) > 4096 {
 			return fmt.Errorf("tool descriptions exceed 4096 bytes")
 		}
@@ -312,6 +341,9 @@ func (s *VideoGenService) SyncAllRegisteredTools() int {
 }
 
 func buildVideoGenTools(c *model.VideoGenConfig) []map[string]any {
+	copy := *c
+	videoGenDescriptions(&copy)
+	c = &copy
 	tools := []map[string]any{}
 	for _, op := range []string{"generate", "image"} {
 		if c.Operation != op && c.Operation != "both" {
@@ -320,6 +352,11 @@ func buildVideoGenTools(c *model.VideoGenConfig) []map[string]any {
 		name, desc := model.GenerateVideoToolName, c.GenerateVideoDesc
 		required := []string{"prompt"}
 		props := map[string]any{"prompt": map[string]any{"type": "string", "minLength": 1}, "seconds": map[string]any{"type": "number", "exclusiveMinimum": 0, "maximum": 3600, "description": "Model-dependent video duration; omitted when unset"}, "size": map[string]any{"type": "string", "description": "Model-dependent output size, such as 1280x720"}, "metadata": map[string]any{"type": "object", "description": "Native gateway video plugin parameters"}, "extra_body": map[string]any{"type": "object", "description": "Additional upstream fields; cannot override model, prompt, reference or local controls"}, "wait_seconds": map[string]any{"type": "integer", "minimum": 0, "maximum": 30, "default": 10}, "request_id": map[string]any{"type": "string", "maxLength": 128, "description": "Reuse this ID when retrying the same submission"}}
+		if c.Protocol == videogen.ProtocolOpenRouter {
+			props["seconds"] = map[string]any{"type": "integer", "minimum": 1, "maximum": 3600, "description": "Video duration in seconds, sent as OpenRouter duration; supported values depend on the model"}
+			delete(props, "metadata")
+			props["extra_body"] = map[string]any{"type": "object", "description": "OpenRouter options such as resolution, aspect_ratio, generate_audio, seed and provider.options. Cannot override model, prompt, frame_images or local controls. Use either seconds or duration, not both."}
+		}
 		if op == "image" {
 			name, desc = model.GenerateVideoFromImageToolName, c.GenerateVideoFromImageDesc
 			required = append(required, "image")
@@ -374,7 +411,7 @@ func (s *VideoGenService) Models(ctx context.Context, uid int64, r *dto.VideoGen
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	return (&imagegen.Client{Provider: "openai", EndpointURL: c.EndpointURL, APIKey: key, Model: c.ModelName, MaxResponseBytes: 4 << 20, HTTPClient: &videoModelHTTPClient}).ListModels(ctx)
+	return (&videogen.Client{Connection: videogen.Connection{Protocol: c.Protocol, EndpointURL: c.EndpointURL, APIKey: key, Model: c.ModelName}, HTTPClient: &videoModelHTTPClient}).ListModels(ctx)
 }
 func (s *VideoGenService) Test(ctx context.Context, uid int64, r *dto.VideoGenProbeReq) (*dto.CallToolResult, error) {
 	c, err := s.probe(uid, r)

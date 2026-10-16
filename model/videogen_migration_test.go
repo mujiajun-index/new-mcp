@@ -89,7 +89,7 @@ func TestVideoGenMigrations(t *testing.T) {
 				t.Fatal("existing image data changed")
 			}
 			var migratedTask VideoGenTask
-			if err := db.First(&migratedTask, "id = ?", oldTask.ID).Error; err != nil || migratedTask.Prompt != oldTask.Prompt || migratedTask.Status != "failed" || migratedTask.RequestParams != "" || migratedTask.RetryOf != "" || migratedTask.RetryRequests != "" || migratedTask.RetryCount != 0 {
+			if err := db.First(&migratedTask, "id = ?", oldTask.ID).Error; err != nil || migratedTask.Prompt != oldTask.Prompt || migratedTask.Status != "failed" || migratedTask.Protocol != "openai_video" || migratedTask.RequestParams != "" || migratedTask.RetryOf != "" || migratedTask.RetryRequests != "" || migratedTask.RetryCount != 0 {
 				t.Fatalf("existing video retry migration: task=%+v err=%v", migratedTask, err)
 			}
 			for _, id := range []string{"first", "second"} {

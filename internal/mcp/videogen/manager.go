@@ -148,6 +148,10 @@ func (m *Manager) submitTask(ctx context.Context, uid int64, cfg *model.VideoGen
 	digestInput := []any{operation, input}
 	if cfg.ID == 0 {
 		digestInput = append(digestInput, cfg.EndpointURL, cfg.ModelName, cfg.DefaultParams, cfg.APIKey, cfg.ImageRequestFormat)
+		// Preserve existing draft idempotency hashes for the original protocol.
+		if ProtocolName(cfg.Protocol) != ProtocolOpenAI {
+			digestInput = append(digestInput, cfg.Protocol)
+		}
 	}
 	digest := hash(digestInput)
 	var existing model.VideoGenTask
@@ -188,6 +192,9 @@ func (m *Manager) submitTask(ctx context.Context, uid int64, cfg *model.VideoGen
 	if err := ValidateParams(p, false); err != nil {
 		return nil, err
 	}
+	if err := ValidateProtocolParams(cfg.Protocol, p); err != nil {
+		return nil, err
+	}
 	var img *imagegen.Image
 	if operation == "image" {
 		ref, _ := p["image"].(string)
@@ -201,7 +208,13 @@ func (m *Manager) submitTask(ctx context.Context, uid int64, cfg *model.VideoGen
 			return nil, err
 		}
 		img = &i
-		if cfg.ImageRequestFormat == "json" {
+		if ProtocolName(cfg.Protocol) == ProtocolOpenRouter {
+			// OpenRouter accepts data URLs, so uploads/base64 do not require a
+			// publicly reachable image store. Remote URLs were checked above.
+			if strings.HasPrefix(ref, "https://") || strings.HasPrefix(ref, "http://") {
+				img.URL = ref
+			}
+		} else if cfg.ImageRequestFormat == "json" {
 			if strings.HasPrefix(ref, "https://") || strings.HasPrefix(ref, "http://") {
 				img.URL = ref
 			} else {
@@ -222,7 +235,10 @@ func (m *Manager) submitTask(ctx context.Context, uid int64, cfg *model.VideoGen
 	if err != nil {
 		return nil, fmt.Errorf("cannot decrypt video API key")
 	}
-	conn := Connection{EndpointURL: cfg.EndpointURL, Model: cfg.ModelName, APIKey: key}
+	conn := Connection{Protocol: ProtocolName(cfg.Protocol), EndpointURL: cfg.EndpointURL, Model: cfg.ModelName, APIKey: key}
+	if strings.TrimSpace(conn.EndpointURL) == "" {
+		conn.EndpointURL = DefaultEndpoint(conn.Protocol)
+	}
 	client := &Client{Connection: conn, HTTPClient: m.HTTPClient}
 	req, err := client.BuildSubmit(ctx, p, img, cfg.ImageRequestFormat)
 	if err != nil {
@@ -248,7 +264,7 @@ func (m *Manager) submitTask(ctx context.Context, uid int64, cfg *model.VideoGen
 	}
 	now := time.Now()
 	owner := uuid.NewString()
-	t := &model.VideoGenTask{ID: uuid.NewString(), UserID: uid, ConfigID: cfg.ID, ConfigName: cfg.Name, Source: source, Operation: operation, Model: cfg.ModelName, Prompt: prompt, IdempotencyKey: idempotency, RequestHash: digest, RequestParams: requestParams, Connection: snapshot, Status: "submitting", ArtifactStatus: "pending", RequestTimeoutSeconds: cfg.RequestTimeoutSeconds, TaskTimeoutSeconds: cfg.TaskTimeoutSeconds, TrackingDeadline: now.Add(time.Duration(cfg.TaskTimeoutSeconds) * time.Second), NextPollAt: now, LeaseOwner: owner, LeaseUntil: now.Add(time.Duration(cfg.RequestTimeoutSeconds+15) * time.Second)}
+	t := &model.VideoGenTask{ID: uuid.NewString(), UserID: uid, ConfigID: cfg.ID, ConfigName: cfg.Name, Source: source, Operation: operation, Protocol: conn.Protocol, Model: cfg.ModelName, Prompt: prompt, IdempotencyKey: idempotency, RequestHash: digest, RequestParams: requestParams, Connection: snapshot, Status: "submitting", ArtifactStatus: "pending", RequestTimeoutSeconds: cfg.RequestTimeoutSeconds, TaskTimeoutSeconds: cfg.TaskTimeoutSeconds, TrackingDeadline: now.Add(time.Duration(cfg.TaskTimeoutSeconds) * time.Second), NextPollAt: now, LeaseOwner: owner, LeaseUntil: now.Add(time.Duration(cfg.RequestTimeoutSeconds+15) * time.Second)}
 	if retry != nil {
 		// Replace the failed attempt in place while preserving the task identity
 		// and the original submission's idempotency mapping.
@@ -260,7 +276,7 @@ func (m *Manager) submitTask(ctx context.Context, uid int64, cfg *model.VideoGen
 		encoded, _ := json.Marshal(requests)
 		t.RetryRequests = string(encoded)
 		values := map[string]any{
-			"config_id": t.ConfigID, "config_name": t.ConfigName, "model": t.Model, "prompt": t.Prompt,
+			"config_id": t.ConfigID, "config_name": t.ConfigName, "protocol": t.Protocol, "model": t.Model, "prompt": t.Prompt,
 			"request_params": t.RequestParams, "retry_requests": t.RetryRequests, "retry_count": t.RetryCount,
 			"connection": t.Connection, "upstream_id": "", "status": t.Status, "progress": 0,
 			"artifact_status": "pending", "tracking_paused": false, "error": "", "last_error": "", "failures": 0,
@@ -640,7 +656,7 @@ func TaskView(t *model.VideoGenTask) map[string]any {
 	data, _ := json.Marshal(t)
 	var out map[string]any
 	_ = json.Unmarshal(data, &out)
-	out["protocol"] = "openai_video"
+	out["protocol"] = ProtocolName(t.Protocol)
 	out["poll_after_seconds"] = 5
 	out["videos"] = []any{}
 	if t.ArtifactStatus == "ready" && t.ExpiresAt != nil && t.ExpiresAt.After(time.Now()) && t.ShortID != nil {

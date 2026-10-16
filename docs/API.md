@@ -1,6 +1,6 @@
 # NewMCP API 接口文档
 
-> 版本: V1.1 | 更新日期: 2026-10-13 (视频模型目录连接字段校验；正式 MCP `2026-07-28`、订阅与实验 Events)
+> 版本: V1.1 | 更新日期: 2026-10-16 (新增 OpenRouter 视频协议；正式 MCP `2026-07-28`、订阅与实验 Events)
 
 ## 1. 概述
 
@@ -1944,22 +1944,24 @@ wss://api.newmcp.pro/mcp/passive/?token=<serviceID>.<random-secret>
 | 字段 | 类型 | 约束 / 默认 |
 | --- | --- | --- |
 | `name` / `description` | string | 配置名称必填；说明可选 |
-| `protocol` | string | 固定 `openai_video` |
+| `protocol` | string | `openai_video`（默认，New API / OpenAI 格式）或 `openrouter_video` |
 | `model_name` | string | 必填，允许手填；不设厂商模型白名单 |
-| `endpoint_url` | string | 必填，兼容根地址、已有 `/v1` 及代理前缀 |
+| `endpoint_url` | string | 可选；留空时 `openai_video` 默认 `https://api.openai.com/v1`，`openrouter_video` 默认 `https://openrouter.ai/api/v1`；更新时省略字段保留原地址，传空字符串恢复当前协议官方地址。兼容根地址、已有 `/v1`、`/api/v1` 及代理前缀；OpenRouter 协议的 `openrouter.ai` 根地址补 `/api/v1`，其他根地址补 `/v1` |
 | `api_key` | string | 写入字段；更新为空保留原密钥，读取只返回 `has_api_key` |
 | `operation` | string | `generate`（文生）、`image`（图生）、`both`，默认 `both` |
-| `image_request_format` | string | `multipart` / `json`，默认 `multipart` |
+| `image_request_format` | string | New API 为 `multipart` / `json`，默认 `multipart`；OpenRouter 图生使用 JSON |
 | `default_params` | object | 默认 `{}`，调用参数按图片生成规则深度合并 |
 | `request_timeout_seconds` | int | 1–300 秒，默认 30 |
 | `task_timeout_seconds` | int | 60–86400 秒，默认 3600；到期暂停跟踪，查询可恢复 |
 | `generate_video_desc` / `generate_video_from_image_desc` / `get_video_status_desc` | string | 可编辑工具描述；上传工具描述固定 |
 
-返回详情包含 `auto_register`、`registered_service_id` 和默认工具描述；注册状态由 enable/disable 接口控制。新建配置不自动注册。注册后服务名称为 `videogen_<id>`，`transport_type=virtual`、`source=videogen`；服务编辑和删除应从视频配置页操作。配置变更、取消注册或删除不会取消已有任务，任务继续使用提交时的连接快照。
+返回详情包含 `auto_register`、`registered_service_id` 和默认工具描述；注册状态由 enable/disable 接口控制。新建配置不自动注册。注册后服务名称为 `videogen_<id>`，`transport_type=virtual`、`source=videogen`；服务编辑和删除应从视频配置页操作。配置变更、取消注册或删除不会取消已有任务，任务继续使用提交时的连接及协议快照。
+
+OpenRouter 配置与参数示例见[视频生成说明](./VIDEO-GENERATION.md#openrouter-视频协议openrouter_video)。同一协议覆盖 `heygen/heygen-video-1`、`minimax/hailuo-3-max`、`google/veo-3.1-lite` 等任意上游支持的模型 ID，不根据模型名称静默改变协议。
 
 ### 13.2 模型目录与草稿测试
 
-`POST /videogen/models` 接受连接字段 `endpoint_url`、`api_key`、可选 `protocol`（默认 `openai_video`）及可选 `config_id`。提供 ID 时先载入当前用户的配置，再覆盖请求中的连接字段，API Key 留空保留已保存值；省略 ID 时只需网关地址和密钥，不要求填写 `name` 或 `model_name`，也不校验生成参数。返回上游完整模型目录数组；页面默认用 `video` 搜索，可修改或清空。查询目录成功不代表模型具有视频生成权限。
+`POST /videogen/models` 接受连接字段 `endpoint_url`、`api_key`、可选 `protocol`（默认 `openai_video`）及可选 `config_id`。提供 ID 时先载入当前用户的配置，再覆盖请求中的连接字段，API Key 留空保留已保存值；省略 ID 时只需密钥，地址可省略或留空使用当前协议官方地址，不要求填写 `name` 或 `model_name`，也不校验生成参数。OpenAI 视频协议使用 `/v1/models`，OpenRouter 使用专用 `/api/v1/videos/models`（实际路径保留配置的代理前缀）。返回目录中的 `id` / `name`，不返回或动态限制模型的完整能力集合。页面默认用 `video` 搜索，可修改为 `veo`、`hailuo` 或清空。查询目录成功不代表模型具有视频生成权限。
 
 `POST /videogen/test` 同样支持草稿覆盖，另接受 `tool`（默认 `generate_video`）及 `arguments` 对象。已保存配置示例：
 
@@ -1989,11 +1991,13 @@ wss://api.newmcp.pro/mcp/passive/?token=<serviceID>.<random-secret>
 | POST | `/videogen/tasks/:task_id/retry` | 使用当前已保存配置重新提交原任务，仅允许失败任务接受新的重试 |
 | DELETE | `/videogen/tasks/:task_id` | 删除停止处理的任务及其视频；进行中或被其他处理者领取时返回 409 |
 
-详情含 `task_id`、`config_id`、`source`、`operation`、`model`、`prompt`、`status`、`progress`、`artifact_status`、`tracking_paused`、`poll_after_seconds`、错误信息及 `videos`。不会返回上游 ID、凭证或连接快照。`status=completed` 表示生成成功，只有 `artifact_status=ready` 且 `videos` 非空才可下载。
+详情含 `task_id`、`config_id`、`source`、`operation`、`protocol`、`model`、`prompt`、`status`、`progress`、`artifact_status`、`tracking_paused`、`poll_after_seconds`、错误信息及 `videos`。不会返回上游 ID、凭证或连接快照。`protocol` 是本次提交使用的协议，旧任务按 `openai_video` 兼容。`status=completed` 表示生成成功，只有 `artifact_status=ready` 且 `videos` 非空才可下载。
 
 生成重试请求为 `{config_id?, request_id, arguments?}`：`request_id` 必填且最长 128 字节，同一次重试重复提交返回原任务的当前状态；改变输入时必须更换该 ID。返回的 `task_id` 与 URL 中的任务 ID 相同，不新增历史记录。`config_id` 默认使用原配置，草稿或原配置已删除时需选择其他属于当前用户的已保存配置。使用所选配置当前的模型、连接和默认参数，更新原记录的配置关联、模型、提示词及参数；保留创建时间、初始来源及原提交幂等映射，`retry_count` 加一。`arguments` 可替换原调用参数，省略时恢复私有输入快照；其中不能填写 `request_id` 或 `wait_seconds`。旧记录没有输入快照时仅恢复提示词，图生须补充参考图。进行中、已生成和 `submission_unknown` 任务不能接受新的重试；已经受理的同一次重试仍可重复查询当前结果。保存失败使用 `retry-download`。重试生成会重新调用上游，可能产生费用。
 
-MCP 生成参数为必填 `prompt`，可选 `seconds`、`size`、`metadata`、`extra_body`、`wait_seconds`、`request_id`；图生另需 `image`。等待上限 30 秒，生成默认 10 秒，状态查询默认 0 秒。进行中或短等待结束返回正常结果及任务 ID。已保存结果同时提供 `structuredContent.videos` 与 `resource_link`。MCP 状态工具校验用户和配置归属，不接受任意上游任务 ID。
+MCP 生成参数为必填 `prompt`，可选 `seconds`、`size`、`extra_body`、`wait_seconds`、`request_id`；`metadata` 仅在 `openai_video` 工具 schema 中提供，图生另需 `image`。等待上限 30 秒，生成默认 10 秒，状态查询默认 0 秒。进行中或短等待结束返回正常结果及任务 ID。已保存结果同时提供 `structuredContent.videos` 与 `resource_link`。MCP 状态工具校验用户和配置归属，不接受任意上游任务 ID。
+
+OpenRouter 将 `seconds` 转为整数 `duration`；未提供 `seconds` 时可传 `extra_body.duration`，不可同时提供。`extra_body` 可传 `resolution`、`aspect_ratio`、`generate_audio`、`seed` 和 `provider.options` 等扩展。非空 `metadata` 在本地拒绝，提示使用 `extra_body`。图生固定使用 JSON `frame_images` 的首帧结构；URL 经现有图片加载和归属校验，base64/data URL 可直接提交而无需先保存为图片链接。上游查询及下载固定为配置前缀下的 `/videos/{id}`、`/videos/{id}/content?index=0`，不使用返回的任意 URL；`expired` 终态映射为 `failed`。精确字段参考 [OpenRouter 提交接口](https://openrouter.ai/docs/api/api-reference/video-generation/submit-a-video-generation-request)。
 
 相同用户、配置、`request_id` 的相同输入返回已有任务；输入不同拒绝。提交受理情况不明确时记录 `submission_unknown`，禁止自动重新提交。查询临时失败保留最近状态；保存失败仅重试保存。各状态与调用示例见 [MCP 工具说明](./VIDEO-GENERATION.md#mcp-工具)。
 
@@ -2003,6 +2007,6 @@ MCP 生成参数为必填 `prompt`，可选 `seconds`、`size`、`metadata`、`e
 
 ### 13.4 视频读取
 
-`GET` / `HEAD /v/:sid?s=<signature>` 位于应用根路径，不带 `/api/v1`。返回 MP4/WebM，支持 Range（206、416）和浏览器拖动播放；文件到期返回 410。链接使用独立于图片的签名域，持有有效链接即可读取文件，无需额外用户 JWT。过期检查以任务保存的 `expires_at` 为准。
+`GET` / `HEAD /v/:sid?s=<signature>` 位于应用根路径，不带 `/api/v1`。返回 MP4/WebM，支持 Range（206、416）和浏览器拖动播放；附加 `download=1` 时返回 `Content-Disposition: attachment` 和带正确扩展名的文件名，供浏览器直接下载，仍使用相同签名、过期检查和 Range 能力。文件到期返回 410。链接使用独立于图片的签名域，持有有效链接即可读取文件，无需额外用户 JWT。过期检查以任务保存的 `expires_at` 为准。
 
-服务端仅将上游凭证发送至配置来源，跨来源下载重定向移除凭证并校验目标地址；参考图需通过现有图片加载及归属校验。通义万相、豆包图生选择 JSON；multipart 上传实际图片字节，`metadata` 编码为 JSON 字符串，其他复杂扩展参数使用 JSON。`extra_body` 不可覆盖模型、提示词、参考图、鉴权和本地任务控制字段。
+服务端仅将上游凭证发送至配置来源，跨来源下载重定向移除凭证并校验目标地址；参考图需通过现有图片加载及归属校验。New API 的通义万相、豆包图生选择 JSON；multipart 上传实际图片字节，`metadata` 编码为 JSON 字符串，其他复杂扩展参数使用 JSON。OpenRouter 使用 JSON 首帧，内容由固定接口携带凭证流式获取后保存。`extra_body` 不可覆盖模型、提示词、参考图（包括 `frame_images`、`input_references`）、鉴权和本地任务控制字段。

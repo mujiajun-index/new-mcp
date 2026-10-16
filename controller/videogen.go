@@ -2,6 +2,7 @@ package controller
 
 import (
 	"errors"
+	"mime"
 	"net/http"
 	"strconv"
 	"time"
@@ -261,5 +262,12 @@ func GetVideoFile(c *gin.Context) {
 	c.Header("Content-Type", t.MIME)
 	c.Header("Cache-Control", "private, no-store")
 	c.Header("X-Content-Type-Options", "nosniff")
+	if c.Query("download") == "1" {
+		ext := ".mp4"
+		if t.MIME == "video/webm" {
+			ext = ".webm"
+		}
+		c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": "generated-video-" + t.ID + ext}))
+	}
 	http.ServeContent(c.Writer, c.Request, "generated-video", t.CreatedAt, r)
 }
