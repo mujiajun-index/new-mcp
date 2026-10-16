@@ -170,7 +170,7 @@ HTTP 400 任务可修正参数后，通过页面“重试生成”更新原记�
 | `tracking_paused=true` | 自动跟踪暂停；查询原任务可恢复，生成状态保持原值 |
 | `status=failed/submission_unknown` | 生成失败或提交结果不明确；查看错误信息，不自动重提 |
 
-`generate_video_from_image` 额外要求 `image`。本地文件先调用 `upload_image`，执行返回的上传命令，然后使用其 `image_url`。文生配置不暴露上传或图生工具。
+`generate_video_from_image` 额外要求 `image`。本地文件先调用 `upload_image`，执行返回的上传命令，然后使用其 `image_url`。Agent 无法执行上传命令时，管理员可打开「图片管理」（`/admin/uploads`），手动上传 PNG/JPEG/WebP，复制图片地址传给 Agent 的 `image` 参数；调用需使用上传账号的 API Key。文生配置不暴露上传或图生工具。
 
 图生调用示例（先选择图生或两者能力，URL 应指向有效图片）：
 

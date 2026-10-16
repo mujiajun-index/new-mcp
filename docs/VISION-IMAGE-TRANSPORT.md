@@ -835,6 +835,8 @@ if UploadStore != nil && UploadStore.OwnsURL(params.ImageURL) {
 - 列表字段同 §15.2，额外带 `user_id` / `username`。
 - 管理员删除**无归属校验**。
 
+管理员图片管理页 `/admin/uploads` 另提供「上传图片」弹窗：选择本机文件、预览、上传成功后复制图片地址。复用 §7.1 的 JWT `POST /vision/upload`，没有新增管理员代上传接口；图片始终归属当前登录账号，与列表中的用户筛选无关。上传成功后清空筛选并刷新第一页，图片可继续预览、复制和删除。无法执行 `upload_image` 命令的 Agent 可直接使用页面复制的地址；内置图生图、图生视频工具需使用同账号 API Key，参考图格式为 PNG/JPEG/WebP。
+
 ### 15.4 自动删除（完整）
 
 **时间驱动**（既有 `service/upload_cleanup.go`，V1.1 扩展）：

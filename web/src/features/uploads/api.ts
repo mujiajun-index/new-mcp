@@ -28,6 +28,24 @@ export interface UploadListResponse {
   }
 }
 
+export interface UploadImageResult {
+  url: string
+  expires_at: string | null
+  mime: string
+  size: number
+  key: string
+  backend: string
+  deduped: boolean
+}
+
+// Uses the signed-in user's identity, including when called from the admin page.
+export async function uploadImage(file: File): Promise<UploadImageResult> {
+  const body = new FormData()
+  body.append('image', file)
+  const res = await api.post('/vision/upload', body)
+  return res.data.data
+}
+
 // --- Admin: all users' uploads ---
 
 export async function adminGetUploads(

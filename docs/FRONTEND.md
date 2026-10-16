@@ -377,6 +377,15 @@ export const Route = createFileRoute('/_authenticated/admin')({
 
 ---
 
+### 4.19 管理员 - 图片管理 `/admin/uploads`
+
+- 顶部提供「上传图片」按钮，弹窗以虚线框展示文件选择区域，支持拖拽图片和点击选择，悬停或拖入时高亮，并在选图后预览。点击上传后显示图片地址及复制按钮；上传中禁止重复提交和关闭弹窗，失败可重试，成功后可继续选择下一张图片。
+- 上传复用 `POST /vision/upload`（登录 JWT），遵循现有文件大小、配额、去重和图片保留设置，支持 local/S3。图片归属当前管理员账号，界面提示使用该账号的 API Key 调用内置图生图、图生视频工具。
+- 上传成功后清空用户筛选、回到第一页并刷新图片列表，现有预览、复制链接、删除和调优预览操作保持可用。保留桌面表格与移动端列表。
+- 上传弹窗位于 `features/uploads/components/upload-image-dialog.tsx`；图片地址可用于 `edit_image.images`、`generate_video_from_image.image` 和图片分析，Agent 无需执行上传命令。
+
+---
+
 ## 5. 前端项目结构
 
 ```

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { adminGetUploads, adminDeleteUpload, adminBatchDeleteUploads, adminPreviewUpload, type UploadListItem } from '../api'
 import { formatBytes, formatRelative, formatDateTime } from '../utils'
 import { BackendBadge, Thumb, CopyUrlButton, ImagePreviewDialog, OptimizedPreviewDialog } from './shared'
+import { UploadImageDialog } from './upload-image-dialog'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -15,7 +16,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { Image as ImageIcon, Trash2, Loader2, RefreshCw, Search, Wand2 } from 'lucide-react'
+import { Image as ImageIcon, Trash2, Loader2, RefreshCw, Search, Wand2, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 
 export function AdminUploadsPage() {
@@ -28,6 +29,7 @@ export function AdminUploadsPage() {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null)
   const [optimPreviewItem, setOptimPreviewItem] = useState<UploadListItem | null>(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [uploadOpen, setUploadOpen] = useState(false)
   const pageSize = 15
   const locale = i18n.language?.startsWith('zh') ? 'zh-CN' : 'en-US'
 
@@ -103,12 +105,16 @@ export function AdminUploadsPage() {
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{t('uploads.adminTitle')}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{t('uploads.adminSubtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button size="sm" className="gap-1.5" onClick={() => setUploadOpen(true)}>
+            <Upload className="h-4 w-4" />
+            {t('uploads.uploadImage')}
+          </Button>
           {selected.size > 0 && (
             <Button
               variant="destructive"
@@ -369,6 +375,20 @@ export function AdminUploadsPage() {
             </Button>
           </div>
         </div>
+      )}
+
+      {uploadOpen && (
+        <UploadImageDialog
+          onClose={() => setUploadOpen(false)}
+          onUploaded={() => {
+            setUserInput('')
+            setUserId(undefined)
+            setPage(1)
+            setSelected(new Set())
+            setPreviewIndex(null)
+            queryClient.invalidateQueries({ queryKey: ['admin-uploads'] })
+          }}
+        />
       )}
 
       <ImagePreviewDialog

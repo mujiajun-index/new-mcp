@@ -1144,6 +1144,16 @@ passive-ws (被动 WebSocket 接入):
 
 ---
 
+### POST /vision/upload
+
+使用登录 JWT 上传单张本机图片，供网页及管理员「图片管理」页使用；无需执行 `upload_image` 返回的命令。请求使用 `multipart/form-data`，文件字段为 `image`。服务端复用 local/S3 存储、图片格式校验、大小限制、当前用户配额和去重规则。
+
+成功返回 `201`，`data` 包含 `url`、`expires_at`、`mime`、`size`、`key`、`backend`、`deduped`。`url` 是可复制的签名图片地址（`/u/:sid?s=...`），`expires_at=null` 表示永久保存。将地址作为 `edit_image.images` 中的一项、`generate_video_from_image.image` 或视觉工具的 `image_url` 使用；图生图、图生视频支持 PNG/JPEG/WebP，上传端点另外支持 GIF。
+
+图片归属当前登录账号，内置图生工具使用该账号的 API Key 校验归属；管理员的列表用户筛选不会改变上传归属，也不会代其他用户上传。应用的 `ServerAddress` 应设置为调用方可访问的地址。
+
+---
+
 ## 8. 摄像头接口
 
 本节描述当前已实现的摄像头 API。Agent 的 Direct／Smart 调用、推流密钥、拟新增的采集间隔、YOLO 工具与摄像头事件见 [摄像头与 Agent 调用指南](./CAMERA-AGENT-CALLING.md)。新指南中的 YOLO 和监控接口目前为设计约定，尚未上线。

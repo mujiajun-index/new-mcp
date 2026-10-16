@@ -158,6 +158,7 @@ export function CopyUrlButton({
   const [copied, setCopied] = useState(false)
   return (
     <Button
+      type="button"
       variant="ghost"
       size="sm"
       className="gap-1"
