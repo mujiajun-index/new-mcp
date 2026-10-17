@@ -47,12 +47,6 @@ function EnabledBadge({ enabled }: { enabled: boolean }) {
   )
 }
 
-const providerLabels: Record<string, string> = {
-  openai: 'OpenAI',
-  openrouter: 'OpenRouter',
-  gemini: 'Gemini',
-}
-
 function ImageCapabilities({ config }: { config: ImageGenConfigListItem }) {
   const { t } = useTranslation()
   const editFormat =
@@ -210,7 +204,9 @@ export function ImageGenListPage() {
                   meta={[
                     {
                       label: t('imagegen.provider'),
-                      value: providerLabels[c.provider] || c.provider,
+                      value: t(`imagegen.providers.${c.provider}`, {
+                        defaultValue: c.provider,
+                      }),
                     },
                     {
                       label: t('imagegen.model'),
@@ -327,7 +323,9 @@ export function ImageGenListPage() {
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-xs text-muted-foreground">
-                          {providerLabels[c.provider] || c.provider}
+                          {t(`imagegen.providers.${c.provider}`, {
+                            defaultValue: c.provider,
+                          })}
                         </span>
                       </td>
                       <td className="px-4 py-3">

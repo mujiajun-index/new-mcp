@@ -1687,8 +1687,8 @@
     "description": "Description",
     "provider": "Protocol",
     "providers": {
-      "openai": "OpenAI Compatible",
-      "openrouter": "OpenRouter Images",
+      "openai": "OpenAI",
+      "openrouter": "OpenRouter",
       "gemini": "Gemini"
     },
     "operation": "Image capabilities",
@@ -1791,8 +1791,8 @@
     "deleteConfigConfirm": "Delete \"{{name}}\"? Submitted tasks continue and remain in history.",
     "loadFailed": "Could not load video configuration.",
     "configSubtitle": "Each configuration binds one model. Enable it to add it to an MCP group.",
-    "protocolLabel": "OpenAI video",
-    "openRouterProtocolLabel": "OpenRouter video",
+    "protocolLabel": "OpenAI",
+    "openRouterProtocolLabel": "OpenRouter",
     "endpointDefaultHint": "Leave blank to use {{endpoint}}.",
     "openRouterFormatHint": "JSON submits the reference image as the first video frame, using an image URL or data URL. Image-to-video support depends on the model.",
     "openRouterDefaultsHint": "For example: {\"seconds\":8,\"extra_body\":{\"resolution\":\"720p\",\"aspect_ratio\":\"16:9\"}}. seconds maps to duration. Put extensions in extra_body rather than metadata. Parameters are validated by the model.",

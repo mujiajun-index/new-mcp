@@ -1687,8 +1687,8 @@
     "description": "描述",
     "provider": "协议",
     "providers": {
-      "openai": "OpenAI 兼容",
-      "openrouter": "OpenRouter 图片",
+      "openai": "OpenAI",
+      "openrouter": "OpenRouter",
       "gemini": "Gemini"
     },
     "operation": "图片能力",
@@ -1791,8 +1791,8 @@
     "deleteConfigConfirm": "删除“{{name}}”？已提交任务会继续运行，并保留在任务历史中。",
     "loadFailed": "加载视频配置失败。",
     "configSubtitle": "每条配置绑定一个模型，启用后可加入 MCP 分组。",
-    "protocolLabel": "OpenAI 视频",
-    "openRouterProtocolLabel": "OpenRouter 视频",
+    "protocolLabel": "OpenAI",
+    "openRouterProtocolLabel": "OpenRouter",
     "endpointDefaultHint": "留空默认使用 {{endpoint}}。",
     "openRouterFormatHint": "使用 JSON 将参考图作为视频首帧提交，支持图片 URL 或 data URL。图生能力由模型决定。",
     "openRouterDefaultsHint": "例如：{\"seconds\":8,\"extra_body\":{\"resolution\":\"720p\",\"aspect_ratio\":\"16:9\"}}。seconds 自动映射为 duration；扩展参数放入 extra_body，不使用 metadata。具体参数由模型校验。",

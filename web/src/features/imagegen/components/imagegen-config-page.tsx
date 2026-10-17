@@ -353,7 +353,9 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
                 <SelectItem value="openai">
                   {t('imagegen.providers.openai')}
                 </SelectItem>
-                <SelectItem value="gemini">Gemini</SelectItem>
+                <SelectItem value="gemini">
+                  {t('imagegen.providers.gemini')}
+                </SelectItem>
                 <SelectItem value="openrouter">
                   {t('imagegen.providers.openrouter')}
                 </SelectItem>

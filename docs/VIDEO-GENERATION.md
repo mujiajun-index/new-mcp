@@ -22,7 +22,7 @@
 
 ## 配置
 
-- 协议：默认 `openai_video`（New API / OpenAI 视频格式），另可选 `openrouter_video`。模型名称允许手填，不根据名称自动切换协议。New API 网关即使代理了上述带厂商前缀的模型，仍按网关实际要求选择协议。
+- 协议：默认 `openai_video`（New API / OpenAI 视频格式），另可选 `openrouter_video`。配置列表、添加/编辑选项及详情页标题统一显示为 **OpenAI**、**OpenRouter**。当前未接入 Gemini 原生视频协议；Google Veo 模型通过网关或 OpenRouter 使用相应协议。模型名称允许手填，不根据名称自动切换协议。New API 网关即使代理了上述带厂商前缀的模型，仍按网关实际要求选择协议。
 - 地址：可留空，OpenAI 视频默认 `https://api.openai.com/v1`，OpenRouter 视频默认 `https://openrouter.ai/api/v1`；模型查询、测试和保存配置均使用此默认值。自定义地址兼容根地址、`/v1` 或 `/api/v1` 及反向代理前缀。OpenRouter 协议下 `https://openrouter.ai` 自动补为 `https://openrouter.ai/api/v1`；其他网关根地址仍补 `/v1`。使用代理时填写其实际 API 前缀，例如 `https://proxy.example.com/router/api/v1`，避免把 OpenRouter 的 `/api` 路径遗漏。
 - 能力：文生、图生或两者；默认两者。
 - 图片格式：New API 默认 multipart。通义万相和豆包插件不接收 multipart 图片文件，图生需选择 **JSON**；xAI 的复杂 metadata 也建议选择 JSON。OpenRouter 图生使用 JSON 首帧结构。

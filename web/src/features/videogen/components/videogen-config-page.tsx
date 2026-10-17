@@ -314,7 +314,11 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
             </h1>
             <p className="mt-0.5 break-words text-sm text-muted-foreground">
               {id
-                ? `${config?.protocol} / ${config?.model_name}`
+                ? `${t(
+                    config?.protocol === "openrouter_video"
+                      ? "videogen.openRouterProtocolLabel"
+                      : "videogen.protocolLabel",
+                  )} / ${config?.model_name}`
                 : t("videogen.configSubtitle")}
             </p>
           </div>

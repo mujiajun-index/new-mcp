@@ -6,7 +6,7 @@
 
 ## 配置
 
-- `provider`：`openai`、`gemini` 或 `openrouter`。OpenAI 兼容模式可连接 New API 图片接口；Gemini 使用原生 `generateContent`；OpenRouter 使用独立图片 API。协议由配置显式选择，不根据模型名称推断。
+- `provider`：`openai`、`gemini` 或 `openrouter`，配置列表与添加、编辑页面统一显示为 OpenAI、Gemini、OpenRouter。OpenAI 兼容模式可连接 New API 图片接口；Gemini 使用原生 `generateContent`；OpenRouter 使用独立图片 API。协议由配置显式选择，不根据模型名称推断。
 - `endpoint_url`：可留空使用当前协议的官方地址。OpenAI 为 `https://api.openai.com/v1`，Gemini 为 `https://generativelanguage.googleapis.com/v1beta`，OpenRouter 为 `https://openrouter.ai/api/v1`。支持网关根地址、反向代理路径前缀及已有版本后缀；OpenRouter 官方根地址自动补 `/api/v1`，其他网关根地址补 `/v1`。更新时省略字段保留已有地址，传空字符串恢复当前协议官方地址。页面预览最终地址。
 - `operation`：`generate`、`edit`、`both`（默认）。能力由配置和上游决定，不根据模型名猜测。
 - `edit_request_format`：OpenAI 兼容编辑接口格式。新建 OpenAI 兼容配置默认 `generations_json`，请求 `/v1/images/generations` 并传入顶层 `image` 数组；`multipart` 请求 `/v1/images/edits`；`generations_json_extra_body` 请求生成接口并传入 `extra_body.image`。按实际网关文档选择，已有配置保持所选格式，旧配置中未设置该字段时保持 multipart；Gemini 使用原生接口。
