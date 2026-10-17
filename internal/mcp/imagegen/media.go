@@ -135,6 +135,17 @@ func OpenDownload(ctx context.Context, raw, trustedBase string, max int64, autho
 }
 
 func openDownloadWithLookup(ctx context.Context, raw, trustedBase string, max int64, authorization string, lookup func(context.Context, string, bool) ([]net.IPAddr, error)) (*http.Response, error) {
+	return openDownloadHeadersWithLookup(ctx, raw, trustedBase, max, http.Header{"Authorization": []string{authorization}}, lookup)
+}
+
+// OpenDownloadWithHeaders supports API-key authenticated media downloads using
+// the same origin, pinned-DNS and redirect checks as OpenDownload. Headers are
+// applied only to the configured origin and removed on cross-origin redirects.
+func OpenDownloadWithHeaders(ctx context.Context, raw, trustedBase string, max int64, headers http.Header) (*http.Response, error) {
+	return openDownloadHeadersWithLookup(ctx, raw, trustedBase, max, headers, lookupImageHost)
+}
+
+func openDownloadHeadersWithLookup(ctx context.Context, raw, trustedBase string, max int64, headers http.Header, lookup func(context.Context, string, bool) ([]net.IPAddr, error)) (*http.Response, error) {
 	var trusted *url.URL
 	if trustedBase != "" {
 		trusted, _ = url.Parse(trustedBase)
@@ -197,6 +208,9 @@ func openDownloadWithLookup(ctx context.Context, raw, trustedBase string, max in
 		}
 		if !trustedOrigin(req.URL) {
 			req.Header.Del("Authorization")
+			for key := range headers {
+				req.Header.Del(key)
+			}
 		}
 		// DialContext's private-host exception is restricted to the original origin.
 		if trustedOrigin(target) && !trustedOrigin(req.URL) && strings.EqualFold(req.URL.Hostname(), target.Hostname()) {
@@ -208,8 +222,14 @@ func openDownloadWithLookup(ctx context.Context, raw, trustedBase string, max in
 	if err != nil {
 		return nil, err
 	}
-	if authorization != "" && trustedOrigin(target) {
-		req.Header.Set("Authorization", authorization)
+	if trustedOrigin(target) {
+		for key, values := range headers {
+			for _, value := range values {
+				if value != "" {
+					req.Header.Add(key, value)
+				}
+			}
+		}
 	}
 	resp, err := client.Do(req)
 	if err != nil {

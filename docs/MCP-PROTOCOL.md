@@ -1330,7 +1330,7 @@ curl --no-buffer --silent --show-error "$MCP_URL" \
 
 视频配置注册为 `source=videogen`、`transport_type=virtual` 服务，由 VirtualToolRegistry 在进程内派发；支持 Direct、Smart 和独立的批量调用，遵循现有 API Key 分组范围及工具启停。文生、图生按配置能力暴露，状态工具使用本地任务 ID，图生配置附带 upload_image。
 
-上游协议由配置显式选择：默认 `openai_video` 保持 New API / OpenAI 视频格式，`openrouter_video` 使用 OpenRouter 异步视频 API，覆盖 `heygen/heygen-video-1`、`minimax/hailuo-3-max`、`google/veo-3.1-lite` 等模型。两者复用以下 MCP 工具名，不能根据模型 ID 推断或切换协议。OpenRouter 将通用 `seconds` 转为整数 `duration`，图生构造 JSON 首帧；非空 `metadata` 会拒绝，应将支持的扩展放入 `extra_body`。协议保存在任务快照，已有任务查询与保存不随配置协议修改而改变。
+上游协议由配置显式选择：默认 `openai_video` 保持 New API / OpenAI 视频格式，`gemini_video` 使用 Gemini 原生 Veo 异步 operation，`openrouter_video` 使用 OpenRouter 异步视频 API，覆盖 `heygen/heygen-video-1`、`minimax/hailuo-3-max`、`google/veo-3.1-lite` 等模型。三者复用以下 MCP 工具名，不能根据模型 ID 推断或切换协议。OpenRouter 将通用 `seconds` 转为整数 `duration`，图生构造 JSON 首帧。Gemini 将整数 `seconds` 转为 `durationSeconds`、`size` 转为 `resolution`，`extra_body` 直接映射原生驼峰 `parameters`，图生内嵌经校验的单图字节；固定单个输出，不允许追加参考帧或延长。Gemini / OpenRouter 工具 schema 不提供 `metadata`，非空值会拒绝。协议保存在任务快照，已有任务查询与保存不随配置协议修改而改变。
 
 | 调用方式 | 工具标识示例 |
 | --- | --- |

@@ -61,16 +61,23 @@ type videoDescription struct {
 // descriptions remain editable and are never replaced by a protocol switch.
 func videoGenDescriptions(c *model.VideoGenConfig) []videoDescription {
 	generate, image := model.DefaultGenerateVideoDesc, model.DefaultGenerateVideoFromImageDesc
-	otherGenerate, otherImage := model.DefaultOpenRouterGenerateVideoDesc, model.DefaultOpenRouterGenerateVideoFromImageDesc
-	if c.Protocol == videogen.ProtocolOpenRouter {
-		generate, otherGenerate = otherGenerate, generate
-		image, otherImage = otherImage, image
+	switch c.Protocol {
+	case videogen.ProtocolOpenRouter:
+		generate, image = model.DefaultOpenRouterGenerateVideoDesc, model.DefaultOpenRouterGenerateVideoFromImageDesc
+	case videogen.ProtocolGemini:
+		generate, image = model.DefaultGeminiGenerateVideoDesc, model.DefaultGeminiGenerateVideoFromImageDesc
 	}
-	if c.GenerateVideoDesc == "" || c.GenerateVideoDesc == otherGenerate {
-		c.GenerateVideoDesc = generate
+	for _, builtin := range []string{"", model.DefaultGenerateVideoDesc, model.DefaultOpenRouterGenerateVideoDesc, model.DefaultGeminiGenerateVideoDesc} {
+		if c.GenerateVideoDesc == builtin {
+			c.GenerateVideoDesc = generate
+			break
+		}
 	}
-	if c.GenerateVideoFromImageDesc == "" || c.GenerateVideoFromImageDesc == otherImage {
-		c.GenerateVideoFromImageDesc = image
+	for _, builtin := range []string{"", model.DefaultGenerateVideoFromImageDesc, model.DefaultOpenRouterGenerateVideoFromImageDesc, model.DefaultGeminiGenerateVideoFromImageDesc} {
+		if c.GenerateVideoFromImageDesc == builtin {
+			c.GenerateVideoFromImageDesc = image
+			break
+		}
 	}
 	return []videoDescription{{&c.GenerateVideoDesc, generate}, {&c.GenerateVideoFromImageDesc, image}, {&c.GetVideoStatusDesc, model.DefaultGetVideoStatusDesc}}
 }
@@ -140,7 +147,7 @@ func applyVideoGenReq(c *model.VideoGenConfig, r *dto.VideoGenConfigReq) error {
 	if c.ImageRequestFormat != "multipart" && c.ImageRequestFormat != "json" {
 		return fmt.Errorf("image_request_format must be multipart or json")
 	}
-	if c.Protocol == videogen.ProtocolOpenRouter {
+	if c.Protocol == videogen.ProtocolOpenRouter || c.Protocol == videogen.ProtocolGemini {
 		c.ImageRequestFormat = "json"
 	}
 	if c.RequestTimeoutSeconds < 1 || c.RequestTimeoutSeconds > 300 {
@@ -356,6 +363,12 @@ func buildVideoGenTools(c *model.VideoGenConfig) []map[string]any {
 			props["seconds"] = map[string]any{"type": "integer", "minimum": 1, "maximum": 3600, "description": "Video duration in seconds, sent as OpenRouter duration; supported values depend on the model"}
 			delete(props, "metadata")
 			props["extra_body"] = map[string]any{"type": "object", "description": "OpenRouter options such as resolution, aspect_ratio, generate_audio, seed and provider.options. Cannot override model, prompt, frame_images or local controls. Use either seconds or duration, not both."}
+		}
+		if c.Protocol == videogen.ProtocolGemini {
+			props["seconds"] = map[string]any{"type": "integer", "minimum": 1, "maximum": 3600, "description": "Gemini durationSeconds; supported values depend on the model. Do not also set extra_body.durationSeconds."}
+			props["size"] = map[string]any{"type": "string", "description": "Gemini resolution, for example 720p or 1080p. Do not also set extra_body.resolution."}
+			delete(props, "metadata")
+			props["extra_body"] = map[string]any{"type": "object", "description": "Native Gemini camelCase parameters such as aspectRatio, resolution, durationSeconds, negativePrompt, personGeneration and seed. These fields become parameters directly; do not nest parameters or instances. One saved video per task. Cannot override prompt, model, image, video, reference frames, storage targets or local controls."}
 		}
 		if op == "image" {
 			name, desc = model.GenerateVideoFromImageToolName, c.GenerateVideoFromImageDesc

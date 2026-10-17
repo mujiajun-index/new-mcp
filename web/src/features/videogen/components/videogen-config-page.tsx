@@ -45,6 +45,7 @@ import type { ToolCallResult } from "@/types";
 import {
   createVideoGenConfig,
   defaultVideoEndpoint,
+  videoProtocolLabel,
   getVideoGenConfig,
   jsonObject,
   newVideoRequestID,
@@ -127,7 +128,7 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
       api_key: "",
       operation: config.operation,
       image_request_format:
-        config.protocol === "openrouter_video"
+        config.protocol !== "openai_video"
           ? "json"
           : config.image_request_format,
       request_timeout_seconds: config.request_timeout_seconds,
@@ -147,6 +148,8 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
   const selectedOperation =
     form.operation === "both" ? testOperation : form.operation;
   const isOpenRouter = form.protocol === "openrouter_video";
+  const isGemini = form.protocol === "gemini_video";
+  const jsonOnly = isOpenRouter || isGemini;
   const refresh = () => {
     for (const key of [
       ["videogen-config", id],
@@ -280,7 +283,7 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
     form.task_timeout_seconds >= 60 &&
     form.task_timeout_seconds <= 86400;
   const filteredModels = models.filter((model) =>
-    `${model.id} ${model.name}`
+    `${model.id} ${model.name}${isGemini ? " video" : ""}`
       .toLowerCase()
       .includes(modelSearch.trim().toLowerCase()),
   );
@@ -314,11 +317,7 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
             </h1>
             <p className="mt-0.5 break-words text-sm text-muted-foreground">
               {id
-                ? `${t(
-                    config?.protocol === "openrouter_video"
-                      ? "videogen.openRouterProtocolLabel"
-                      : "videogen.protocolLabel",
-                  )} / ${config?.model_name}`
+                ? `${videoProtocolLabel(config?.protocol || "openai_video")} / ${config?.model_name}`
                 : t("videogen.configSubtitle")}
             </p>
           </div>
@@ -391,8 +390,13 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
                 setForm({
                   ...form,
                   protocol,
+                  endpoint_url:
+                    form.endpoint_url.trim() ===
+                    defaultVideoEndpoint(form.protocol)
+                      ? ""
+                      : form.endpoint_url,
                   image_request_format:
-                    protocol === "openrouter_video"
+                    protocol !== "openai_video"
                       ? "json"
                       : form.image_request_format,
                 });
@@ -405,6 +409,9 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
               <SelectContent>
                 <SelectItem value="openai_video">
                   {t("videogen.protocolLabel")}
+                </SelectItem>
+                <SelectItem value="gemini_video">
+                  {t("videogen.geminiProtocolLabel")}
                 </SelectItem>
                 <SelectItem value="openrouter_video">
                   {t("videogen.openRouterProtocolLabel")}
@@ -461,7 +468,8 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
           <p className="break-all text-xs text-muted-foreground">
             {t("videogen.endpointPreview")}:{" "}
             <code className="text-primary">
-              POST {videoEndpoint(form.endpoint_url, form.protocol)}
+              POST{" "}
+              {videoEndpoint(form.endpoint_url, form.protocol, form.model_name)}
             </code>
           </p>
         </div>
@@ -504,7 +512,7 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
             <Label htmlFor="video-format">{t("videogen.imageFormat")}</Label>
             <Select
               value={form.image_request_format}
-              disabled={isOpenRouter}
+              disabled={jsonOnly}
               onValueChange={(
                 image_request_format: VideoGenConfig["image_request_format"],
               ) => setForm({ ...form, image_request_format })}
@@ -513,7 +521,7 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {!isOpenRouter && (
+                {!jsonOnly && (
                   <SelectItem value="multipart">Multipart</SelectItem>
                 )}
                 <SelectItem value="json">JSON</SelectItem>
@@ -523,7 +531,9 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
               {t(
                 isOpenRouter
                   ? "videogen.openRouterFormatHint"
-                  : "videogen.formatHint",
+                  : isGemini
+                    ? "videogen.geminiFormatHint"
+                    : "videogen.formatHint",
               )}
             </p>
           </div>
@@ -541,7 +551,9 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
             {t(
               isOpenRouter
                 ? "videogen.openRouterDefaultsHint"
-                : "videogen.defaultsHint",
+                : isGemini
+                  ? "videogen.geminiDefaultsHint"
+                  : "videogen.defaultsHint",
             )}
           </p>
         </div>

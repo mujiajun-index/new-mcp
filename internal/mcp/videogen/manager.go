@@ -214,7 +214,7 @@ func (m *Manager) submitTask(ctx context.Context, uid int64, cfg *model.VideoGen
 			if strings.HasPrefix(ref, "https://") || strings.HasPrefix(ref, "http://") {
 				img.URL = ref
 			}
-		} else if cfg.ImageRequestFormat == "json" {
+		} else if ProtocolName(cfg.Protocol) == ProtocolOpenAI && cfg.ImageRequestFormat == "json" {
 			if strings.HasPrefix(ref, "https://") || strings.HasPrefix(ref, "http://") {
 				img.URL = ref
 			} else {

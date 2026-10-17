@@ -27,6 +27,7 @@ for (const language of ["zh", "en"]) {
   ).videogen;
   const module = { exports: {} };
   vm.runInNewContext(compiled, {
+    URL,
     exports: module.exports,
     module,
     require: (name) => {
@@ -35,7 +36,7 @@ for (const language of ["zh", "en"]) {
         return {
           __esModule: true,
           default: {
-            t: (key, { field }) => {
+            t: (key, { field } = {}) => {
               const template = strings[key.replace("videogen.", "")];
               assert.equal(
                 typeof template,
@@ -50,7 +51,40 @@ for (const language of ["zh", "en"]) {
       throw new Error(`Unexpected dependency: ${name}`);
     },
   });
-  const { jsonObject } = module.exports;
+  const {
+    jsonObject,
+    defaultVideoEndpoint,
+    videoEndpoint,
+    videoProtocolLabel,
+  } = module.exports;
+
+  test(`${language}: Gemini native protocol label and endpoint previews`, () => {
+    assert.equal(videoProtocolLabel("gemini_video"), "Gemini");
+    assert.equal(videoProtocolLabel("openai_video"), "OpenAI");
+    assert.equal(videoProtocolLabel("openrouter_video"), "OpenRouter");
+    assert.equal(
+      defaultVideoEndpoint("gemini_video"),
+      "https://generativelanguage.googleapis.com/v1beta",
+    );
+    for (const base of [
+      "https://proxy.example/gemini",
+      "https://proxy.example/gemini/v1/",
+      "https://proxy.example/gemini/v1beta/",
+    ]) {
+      assert.equal(
+        videoEndpoint(base, "gemini_video", "models/veo-test"),
+        "https://proxy.example/gemini/v1beta/models/veo-test:predictLongRunning",
+      );
+    }
+    assert.equal(
+      videoEndpoint("", "openai_video"),
+      "https://api.openai.com/v1/videos",
+    );
+    assert.equal(
+      videoEndpoint("https://openrouter.ai", "openrouter_video"),
+      "https://openrouter.ai/api/v1/videos",
+    );
+  });
   const fields = [
     strings.defaultParams,
     strings.testParams,

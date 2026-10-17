@@ -662,6 +662,8 @@ OnAuthFailure(keyIndex int)                           // 401/403 熔断:落库+�
 
 请求使用 `openai_video`：提交 `POST /v1/videos`，轮询 `GET /v1/videos/{id}`，下载 `GET /v1/videos/{id}/content`。支持 JSON 和 multipart，不设置厂商模型白名单。参考图复用格式、归属、大小与地址检查，multipart 上传实际字节，JSON 使用经校验的 URL 或已暂存图片的签名链接。
 
+另支持 `gemini_video` 和 `openrouter_video`。Gemini 使用原生 `/v1beta/models/{model}:predictLongRunning`、operation 资源查询和结果 URI 下载，凭证为仅限配置来源的 `x-goog-api-key`；参考图校验后按官方 SDK 的 JSON `image.bytesBase64Encoded` / `mimeType` 提交，输出数量固定 `parameters.sampleCount=1`。OpenRouter 使用 `/api/v1/videos` 系列接口和 JSON 首帧。三者共用任务、租约、幂等及安全流式保存；Gemini 重启后凭已持久化 operation 名称重新获取下载地址，无需新增任务字段。
+
 处理流程：
 
 1. 合并默认参数并校验输入，将本地 UUID 任务及私有连接快照持久化，再异步提交上游。用户断开连接不取消已受理任务。

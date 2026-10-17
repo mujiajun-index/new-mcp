@@ -1,6 +1,6 @@
 # NewMCP API 接口文档
 
-> 版本: V1.1 | 更新日期: 2026-10-16 (新增 OpenRouter 视频协议；正式 MCP `2026-07-28`、订阅与实验 Events)
+> 版本: V1.1 | 更新日期: 2026-10-17 (新增 Gemini 原生视频协议；正式 MCP `2026-07-28`、订阅与实验 Events)
 
 ## 1. 概述
 
@@ -1955,9 +1955,9 @@ wss://api.newmcp.pro/mcp/passive/?token=<serviceID>.<random-secret>
 | 字段 | 类型 | 约束 / 默认 |
 | --- | --- | --- |
 | `name` / `description` | string | 配置名称必填；说明可选 |
-| `protocol` | string | `openai_video`（默认，New API / OpenAI 格式）或 `openrouter_video` |
+| `protocol` | string | `openai_video`（默认）、`gemini_video`（Gemini 原生 Veo）或 `openrouter_video`；页面显示 OpenAI、Gemini、OpenRouter |
 | `model_name` | string | 必填，允许手填；不设厂商模型白名单 |
-| `endpoint_url` | string | 可选；留空时 `openai_video` 默认 `https://api.openai.com/v1`，`openrouter_video` 默认 `https://openrouter.ai/api/v1`；更新时省略字段保留原地址，传空字符串恢复当前协议官方地址。兼容根地址、已有 `/v1`、`/api/v1` 及代理前缀；OpenRouter 协议的 `openrouter.ai` 根地址补 `/api/v1`，其他根地址补 `/v1` |
+| `endpoint_url` | string | 可选；留空时 OpenAI 默认 `https://api.openai.com/v1`，Gemini 默认 `https://generativelanguage.googleapis.com/v1beta`，OpenRouter 默认 `https://openrouter.ai/api/v1`；更新时省略字段保留原地址，传空字符串恢复当前协议官方地址。保留代理前缀，Gemini 统一使用 `/v1beta`；OpenRouter 的官方根地址补 `/api/v1` |
 | `api_key` | string | 写入字段；更新为空保留原密钥，读取只返回 `has_api_key` |
 | `operation` | string | `generate`（文生）、`image`（图生）、`both`，默认 `both` |
 | `image_request_format` | string | New API 为 `multipart` / `json`，默认 `multipart`；OpenRouter 图生使用 JSON |
@@ -1970,9 +1970,11 @@ wss://api.newmcp.pro/mcp/passive/?token=<serviceID>.<random-secret>
 
 OpenRouter 配置与参数示例见[视频生成说明](./VIDEO-GENERATION.md#openrouter-视频协议openrouter_video)。同一协议覆盖 `heygen/heygen-video-1`、`minimax/hailuo-3-max`、`google/veo-3.1-lite` 等任意上游支持的模型 ID，不根据模型名称静默改变协议。
 
+Gemini 原生配置选择 `gemini_video`，参考[Gemini 接入说明](./VIDEO-GENERATION.md#gemini-原生视频协议gemini_video)。`seconds` 映射为整数 `parameters.durationSeconds`，`size` 映射为 `parameters.resolution`；`extra_body` 直接承载其他原生驼峰 `parameters` 字段，不嵌套 `instances` / `parameters`，不使用 `metadata`。固定 JSON 单图首帧和单个输出视频，不包含额外参考帧、延长、Vertex AI 或 Interactions API。
+
 ### 13.2 模型目录与草稿测试
 
-`POST /videogen/models` 接受连接字段 `endpoint_url`、`api_key`、可选 `protocol`（默认 `openai_video`）及可选 `config_id`。提供 ID 时先载入当前用户的配置，再覆盖请求中的连接字段，API Key 留空保留已保存值；省略 ID 时只需密钥，地址可省略或留空使用当前协议官方地址，不要求填写 `name` 或 `model_name`，也不校验生成参数。OpenAI 视频协议使用 `/v1/models`，OpenRouter 使用专用 `/api/v1/videos/models`（实际路径保留配置的代理前缀）。返回目录中的 `id` / `name`，不返回或动态限制模型的完整能力集合。页面默认用 `video` 搜索，可修改为 `veo`、`hailuo` 或清空。查询目录成功不代表模型具有视频生成权限。
+`POST /videogen/models` 接受连接字段 `endpoint_url`、`api_key`、可选 `protocol`（默认 `openai_video`）及可选 `config_id`。提供 ID 时先载入当前用户的配置，再覆盖请求中的连接字段，API Key 留空保留已保存值；省略 ID 时只需密钥，地址可省略或留空使用当前协议官方地址，不要求填写 `name` 或 `model_name`，也不校验生成参数。OpenAI 使用 `/v1/models`，Gemini 分页查询 `/v1beta/models` 并筛选支持 `predictLongRunning` 的模型，OpenRouter 使用专用 `/api/v1/videos/models`（实际路径保留配置的代理前缀）。统一返回 `id` / `name`，不限制具体模型的时长、分辨率枚举。页面默认用 `video` 搜索，可修改为 `veo`、`hailuo` 或清空；Gemini 目录已按视频能力过滤，默认词匹配全部返回条目。查询目录成功不代表模型具有视频生成权限。
 
 `POST /videogen/test` 同样支持草稿覆盖，另接受 `tool`（默认 `generate_video`）及 `arguments` 对象。已保存配置示例：
 

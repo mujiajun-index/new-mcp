@@ -81,3 +81,40 @@ func TestDownloadPrivateAddressesRedirectsAndLimits(t *testing.T) {
 		}
 	}
 }
+
+func TestMediaAPIKeyDownloadOriginAndRedirects(t *testing.T) {
+	otherHits := 0
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		otherHits++
+		if r.Header.Get("x-goog-api-key") != "" {
+			t.Error("API key leaked to a different origin")
+		}
+	}))
+	defer other.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("x-goog-api-key") != "native-secret" || r.Header.Get("Authorization") != "" {
+			t.Error("API key missing on configured origin")
+		}
+		switch r.URL.Path {
+		case "/same":
+			http.Redirect(w, r, "/file", http.StatusFound)
+		case "/cross":
+			http.Redirect(w, r, other.URL+"/file", http.StatusFound)
+		default:
+			w.Write([]byte("video-bytes"))
+		}
+	}))
+	defer server.Close()
+	headers := http.Header{"X-Goog-Api-Key": []string{"native-secret"}}
+	resp, err := OpenDownloadWithHeaders(context.Background(), server.URL+"/same", server.URL, 100, headers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if _, err := OpenDownloadWithHeaders(context.Background(), server.URL+"/cross", server.URL, 100, headers); err == nil {
+		t.Fatal("followed a private cross-origin redirect")
+	}
+	if _, err := OpenDownloadWithHeaders(context.Background(), other.URL+"/file", server.URL, 100, headers); err == nil || otherHits != 0 {
+		t.Fatal("allowed a private cross-origin file URI", err, otherHits)
+	}
+}

@@ -6,7 +6,7 @@ export interface VideoGenConfig {
   id: number;
   name: string;
   description: string;
-  protocol: "openai_video" | "openrouter_video";
+  protocol: "openai_video" | "gemini_video" | "openrouter_video";
   model_name: string;
   endpoint_url: string;
   operation: "generate" | "image" | "both";
@@ -181,14 +181,31 @@ export function defaultVideoEndpoint(
 ) {
   return protocol === "openrouter_video"
     ? "https://openrouter.ai/api/v1"
-    : "https://api.openai.com/v1";
+    : protocol === "gemini_video"
+      ? "https://generativelanguage.googleapis.com/v1beta"
+      : "https://api.openai.com/v1";
+}
+
+export function videoProtocolLabel(protocol: VideoGenConfig["protocol"]) {
+  const keys = {
+    openai_video: "videogen.protocolLabel",
+    gemini_video: "videogen.geminiProtocolLabel",
+    openrouter_video: "videogen.openRouterProtocolLabel",
+  };
+  return i18n.t(keys[protocol] || protocol);
 }
 
 export function videoEndpoint(
   base: string,
   protocol: VideoGenConfig["protocol"] = "openai_video",
+  model = "{model}",
 ) {
   let endpoint = base.trim() || defaultVideoEndpoint(protocol);
+  if (protocol === "gemini_video") {
+    const root = endpoint.replace(/\/+$/, "").replace(/\/v1(?:beta)?$/, "");
+    const modelID = model.trim().replace(/^models\//, "") || "{model}";
+    return `${root}/v1beta/models/${encodeURIComponent(modelID)}:predictLongRunning`;
+  }
   if (protocol === "openrouter_video") {
     try {
       const url = new URL(endpoint);

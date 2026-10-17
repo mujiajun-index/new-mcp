@@ -1,6 +1,16 @@
 # 视频生成 MCP 验收记录
 
-验收日期：2026-10-12。环境为 Go 1.26.3 / Windows amd64、SQLite 3.41.2。已完成自动测试和隔离环境的页面模拟流程；真实视频生成、实际 S3 桶及 MySQL/PostgreSQL 验收尚未完成。使用说明见 [内置视频生成 MCP](./VIDEO-GENERATION.md)。
+首次验收日期：2026-10-12，后续验证按下方日期记录。环境为 Go 1.26.3 / Windows amd64、SQLite 3.41.2。已完成自动测试和隔离环境的页面模拟流程；真实视频生成、实际 S3 桶及 MySQL/PostgreSQL 验收尚未完成。使用说明见 [内置视频生成 MCP](./VIDEO-GENERATION.md)。
+
+## 2026-10-17 Gemini 原生视频协议
+
+- 新增 `gemini_video`，页面列表、添加/编辑选项和详情标题统一为 OpenAI、Gemini、OpenRouter。基础地址留空使用 `https://generativelanguage.googleapis.com/v1beta`，支持代理前缀和 `models/` 模型前缀，不固定模型名称及参数枚举。
+- 联网核对 [Veo 官方接入指南](https://ai.google.dev/gemini-api/docs/veo)、[模型列表 API](https://ai.google.dev/api/models) 和 [Google 官方 SDK](https://github.com/googleapis/go-genai/blob/main/models.go)。采用 SDK 实际 REST 图片序列化 `image.bytesBase64Encoded` / `mimeType`、`parameters.sampleCount=1`；部分指南的 `inlineData` 示例与 SDK 不一致，此处不混用两种结构，也不因错误自动重复提交。
+- 模拟覆盖文生和单图图生、模型/代理地址、`x-goog-api-key`、时长/分辨率映射、原生扩展字段、单输出数量、保护字段和非法 operation 路径；原生模型目录支持分页、视频能力筛选、去重和循环页码防护。
+- 覆盖 operation 待处理/完成/失败、无视频和安全过滤终态、错误凭证脱敏；文生与草稿图生在管理器重建后恢复，同一 `request_id` 复用记录，429 临时错误后继续查询，下载失败只重试保存，跨用户/配置访问拒绝。失败生成的重新提交继续复用同一任务 ID、创建时间和历史记录数量。保存成功后清除凭证并返回 MCP `resource_link`。
+- 共享流式下载新增受来源限制的 API Key 请求头，验证同来源重定向、拒绝私有跨来源 URI/重定向；现有图片加载、视频大小、格式、签名、存储及保留期行为保持原流程。无需新增数据库表或字段。
+- 相关后端八个包回归通过；最后调整 SDK 序列化后再次验证视频、服务和路由包。`go vet ./internal/mcp/videogen ./internal/mcp/imagegen ./service`、`npm run build:check`、`npm run test:videogen-params`（中英文共 10 项）通过。
+- 生成包含最新前端的服务端程序 `tmp/videogen-gemini/newmcp.exe`。未运行浏览器验收，未修改或重启业务服务。此次仅模拟 Veo 协议，未使用真实凭证提交付费生成；不宣称真实模型权限、计费、音频或画面质量已验收。Vertex AI 服务账号和 Gemini Omni Interactions 不在本轮接入范围。
 
 ## 2026-10-16 文件储存与永久保留
 

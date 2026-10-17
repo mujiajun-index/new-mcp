@@ -26,6 +26,7 @@ import {
   deleteVideoGenConfig,
   getVideoGenConfigs,
   toggleVideoGenConfig,
+  videoProtocolLabel,
 } from "../api";
 import type { VideoGenConfig } from "../api";
 import { VideoTasks } from "./video-tasks";
@@ -261,11 +262,7 @@ export function VideoGenListPage() {
                 meta={[
                   {
                     label: t("videogen.protocol"),
-                    value: t(
-                      config.protocol === "openrouter_video"
-                        ? "videogen.openRouterProtocolLabel"
-                        : "videogen.protocolLabel",
-                    ),
+                    value: videoProtocolLabel(config.protocol),
                   },
                   {
                     label: t("videogen.model"),
@@ -283,7 +280,7 @@ export function VideoGenListPage() {
                         {
                           label: t("videogen.imageFormat"),
                           value:
-                            config.protocol === "openrouter_video"
+                            config.protocol !== "openai_video"
                               ? "JSON"
                               : config.image_request_format.toUpperCase(),
                         },
@@ -338,11 +335,7 @@ export function VideoGenListPage() {
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-xs text-muted-foreground">
-                        {t(
-                          config.protocol === "openrouter_video"
-                            ? "videogen.openRouterProtocolLabel"
-                            : "videogen.protocolLabel",
-                        )}
+                        {videoProtocolLabel(config.protocol)}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -359,7 +352,7 @@ export function VideoGenListPage() {
                           className="mt-1 text-xs text-muted-foreground"
                           title={t("videogen.imageFormat")}
                         >
-                          {config.protocol === "openrouter_video"
+                          {config.protocol !== "openai_video"
                             ? "JSON"
                             : config.image_request_format.toUpperCase()}
                         </p>

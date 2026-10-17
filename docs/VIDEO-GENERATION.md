@@ -18,14 +18,14 @@
 4. 保存配置并点击“启用”，将自动注册的 `videogen_<id>` 服务加入分组，确认分组工具已启用，再将分组绑定到 MCP 客户端使用的 API Key。
 5. 调用生成工具取得本地 `task_id`，按返回的 `poll_after_seconds` 调用状态工具，直到 `artifact_status=ready` 并出现 `videos` 链接。
 
-支持文生和单图图生，不包含厂商原生接口、Responses、Remix、编辑或延长。`openai_video` 对接参考 New API 网关中的 Sora、Google/Vertex Veo、通义万相、豆包、可灵、海螺、即梦、Vidu 和 xAI；`openrouter_video` 对接 OpenRouter 的统一视频 API，覆盖 `heygen/heygen-video-1`、`minimax/hailuo-3-max`、`google/veo-3.1-lite` 等模型。协议测试通过不等于这些模型均已完成真实生成验收。
+支持文生和单图图生，不包含 Responses、Remix、编辑或延长。`openai_video` 对接参考 New API 网关中的 Sora、Google/Vertex Veo、通义万相、豆包、可灵、海螺、即梦、Vidu 和 xAI；`gemini_video` 对接 Gemini Developer API 原生 Veo；`openrouter_video` 对接 OpenRouter 的统一视频 API，覆盖 `heygen/heygen-video-1`、`minimax/hailuo-3-max`、`google/veo-3.1-lite` 等模型。协议测试通过不等于这些模型均已完成真实生成验收。
 
 ## 配置
 
-- 协议：默认 `openai_video`（New API / OpenAI 视频格式），另可选 `openrouter_video`。配置列表、添加/编辑选项及详情页标题统一显示为 **OpenAI**、**OpenRouter**。当前未接入 Gemini 原生视频协议；Google Veo 模型通过网关或 OpenRouter 使用相应协议。模型名称允许手填，不根据名称自动切换协议。New API 网关即使代理了上述带厂商前缀的模型，仍按网关实际要求选择协议。
-- 地址：可留空，OpenAI 视频默认 `https://api.openai.com/v1`，OpenRouter 视频默认 `https://openrouter.ai/api/v1`；模型查询、测试和保存配置均使用此默认值。自定义地址兼容根地址、`/v1` 或 `/api/v1` 及反向代理前缀。OpenRouter 协议下 `https://openrouter.ai` 自动补为 `https://openrouter.ai/api/v1`；其他网关根地址仍补 `/v1`。使用代理时填写其实际 API 前缀，例如 `https://proxy.example.com/router/api/v1`，避免把 OpenRouter 的 `/api` 路径遗漏。
+- 协议：默认 `openai_video`，另可选 `gemini_video`、`openrouter_video`。配置列表、添加/编辑选项及详情页标题统一显示为 **OpenAI**、**Gemini**、**OpenRouter**。模型名称允许手填，不根据名称自动切换协议。New API 网关即使代理了 Veo 或带厂商前缀的模型，仍按网关实际要求选择协议。
+- 地址：可留空，OpenAI 默认 `https://api.openai.com/v1`，Gemini 默认 `https://generativelanguage.googleapis.com/v1beta`，OpenRouter 默认 `https://openrouter.ai/api/v1`；模型查询、测试和保存配置均使用此默认值。自定义地址保留反向代理前缀，Gemini 统一使用 `/v1beta`，其他协议使用 `/v1`。OpenRouter 协议下 `https://openrouter.ai` 自动补为 `https://openrouter.ai/api/v1`。使用代理时填写其实际 API 前缀，例如 `https://proxy.example.com/router/api/v1`。页面切换协议时会将上一协议的默认官方地址恢复为空，自定义地址保留。
 - 能力：文生、图生或两者；默认两者。
-- 图片格式：New API 默认 multipart。通义万相和豆包插件不接收 multipart 图片文件，图生需选择 **JSON**；xAI 的复杂 metadata 也建议选择 JSON。OpenRouter 图生使用 JSON 首帧结构。
+- 图片格式：New API 默认 multipart。通义万相和豆包插件不接收 multipart 图片文件，图生需选择 **JSON**；xAI 的复杂 metadata 也建议选择 JSON。Gemini 和 OpenRouter 固定使用 JSON，分别提交内嵌图片字节和首帧结构。
 - New API 的 JSON 图生保留经过下载、图片格式和归属校验的 URL；base64 图片先保存到共享图片存储，再提供签名 URL。OpenRouter 的 URL 同样先校验，base64 / data URL 则直接编码进 JSON，不为提交参考图依赖 `ServerAddress`；最终视频的本地下载链接仍使用该设置。
 - 单次上游请求默认超时 30 秒；后台跟踪默认 1 小时。跟踪到期会暂停查询，查询该任务可以继续跟踪，不会再次生成。
 - 默认参数为 JSON 对象，New API 示例为 `{"seconds":8,"size":"1280x720","metadata":{"resolution":"720p"}}`，OpenRouter 示例见下文。默认参数、本次测试参数和重试参数均可留空，等同于 `{}`；填写时必须是完整的 JSON 对象，不接受数组、`null` 或其他类型。格式错误会指出对应输入框，阻止提交。时长、分辨率与其他参数的可用组合由具体模型校验。
@@ -76,6 +76,41 @@ HTTP 400 任务可修正参数后，通过页面“重试生成”更新原记�
 文生请求使用 JSON。图生的 multipart 模式以 `input_reference` 字段上传真实图片字节，`metadata` 编码为 JSON 字符串；JSON 模式以 `input_reference` 提交经校验的图片 URL。单图输入不接受客户端本地路径；JSON 模式下，data URL 或 base64 会经图片存储转换为可供上游访问的 URL。
 
 通义万相、豆包插件要求图片 URL，因此图生选择 JSON；xAI 的 multipart 解码器不解析 metadata，使用这类插件参数时选择 JSON。其他模型的时长、分辨率和参数组合由网关校验。配置格式必须明确选择，失败不会自动切换格式或重复提交。
+
+### Gemini 原生视频协议（`gemini_video`）
+
+页面选择 **Gemini**，使用 Google AI Studio / Gemini API Key，地址可留空。模型填写 Gemini 模型 ID（例如 `veo-3.1-generate-preview`），也接受 `models/` 前缀；不使用 OpenRouter 的 `google/` 前缀。接口按 [Google 官方 Veo REST 文档](https://ai.google.dev/gemini-api/docs/veo) 和 [模型列表 API](https://ai.google.dev/api/models) 实现。
+
+```json
+{
+  "name": "Gemini Veo",
+  "protocol": "gemini_video",
+  "model_name": "veo-3.1-generate-preview",
+  "endpoint_url": "",
+  "api_key": "<GEMINI_API_KEY>",
+  "operation": "both",
+  "default_params": {
+    "seconds": 8,
+    "size": "720p",
+    "extra_body": {"aspectRatio": "16:9"}
+  }
+}
+```
+
+| 请求（默认基础地址下） | 作用 |
+| --- | --- |
+| `GET /v1beta/models` | 分页获取模型，保留支持 `predictLongRunning` 的条目；转换为 `id` / `name` |
+| `POST /v1beta/models/{model}:predictLongRunning` | 提交单个 `instances`，接收 operation 的 `name` |
+| `GET /v1beta/{operation_name}` | 查询已有 operation 的 `done`、`error` 和生成结果 |
+| 完成结果中的 `response.generateVideoResponse.generatedSamples[0].video.uri` | 通过安全流式下载保存视频 |
+
+调用仍使用现有 MCP 工具和本地任务 ID。`seconds` 必须为整数，映射为 `parameters.durationSeconds`；`size` 映射为 `parameters.resolution`，例如 `720p`，不是像素宽高。其他原生驼峰字段直接放入 `extra_body`，平铺到 `parameters`，例如 `aspectRatio`、`negativePrompt`、`personGeneration`、`seed`。也可直接使用 `extra_body.durationSeconds` 或 `extra_body.resolution`，但不能同时设置对应通用字段。具体模型的可用值由上游校验。
+
+图生固定 JSON，单图经共享的 URL、所有者、格式和大小检查后，编码为 `instances[0].image` 的 `mimeType` / `bytesBase64Encoded`；不会直接转发图片 URL、客户端路径，也不需要公开的图片存储地址。部分指南示例使用 `inlineData`，此处按 [Google 官方 SDK 的实际序列化](https://github.com/googleapis/go-genai/blob/main/models.go)实现：图片使用 `bytesBase64Encoded`，输出数量使用 `parameters.sampleCount=1`。`metadata` 不适用于 Gemini。每任务固定保存一个视频，`sampleCount` 与 SDK 风格别名 `numberOfVideos` 仅接受 1；拒绝通过扩展覆盖 `instances`、`parameters`、参考图、尾帧、视频、输出存储目标及凭证。本次接入范围是 Veo 的 Gemini Developer API，不包含 Vertex AI 服务账号或 Gemini Omni 的 Interactions API。
+
+凭证通过 `x-goog-api-key` 请求头发送，仅附加到配置的上游来源；查询不接受任意 URL。视频下载采用现有 DNS、来源、重定向、大小及文件头校验，跨来源不携带 API Key，私有地址会被拒绝。代理需要自行处理官方下载 URI 的鉴权或返回同来源下载地址。operation 名称保存在现有私有任务字段中，重启与重试保存时重新查询结果获取 URI，不重新生成。上游错误和无视频的安全过滤结果映射为生成失败；提交超时等结果不明确时仍保持 `submission_unknown`。
+
+默认模型搜索词仍为 `video`；Gemini 目录已按视频能力筛选，所以该搜索词能显示全部返回的视频模型，也可以改搜 `veo` 或清空。本轮使用模拟接口验收，未向真实付费模型提交生成。
 
 ### OpenRouter 视频协议（`openrouter_video`）
 
@@ -190,7 +225,7 @@ HTTP 400 任务可修正参数后，通过页面“重试生成”更新原记�
 
 Direct 模式使用上面的命名空间；Smart 模式先搜索、查看工具 schema，再通过 `mcp.execute` 使用 `videogen_1.generate_video` 等 tool_id。后续状态查询依赖前一次返回的 task_id，分步执行。生成工具应启用对应分组权限；取消注册后仍可在管理 API 或页面查询旧任务。
 
-`openai_video` 的 `metadata` 承载网关插件参数，multipart 会将其序列化为 JSON 字符串；其他复杂扩展参数需使用 JSON 模式。`openrouter_video` 不接受非空 `metadata`，参数通过 `extra_body` 传入。两种协议都禁止扩展覆盖模型、提示词、参考图、鉴权或本地任务控制参数。
+`openai_video` 的 `metadata` 承载网关插件参数，multipart 会将其序列化为 JSON 字符串；其他复杂扩展参数需使用 JSON 模式。`gemini_video`、`openrouter_video` 不接受非空 `metadata`，参数通过 `extra_body` 传入。三种协议都禁止扩展覆盖模型、提示词、参考图、鉴权或本地任务控制参数。
 
 保存失败时，使用 `get_video_status` 的 `retry_download=true` 或页面的“重试保存”。它只获取已有视频，不再创建生成任务。提交超时、响应缺少任务 ID 或进程中断造成的 `submission_unknown` 不会自动重试生成，以免重复消耗上游额度。
 
