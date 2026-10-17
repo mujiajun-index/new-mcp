@@ -134,10 +134,19 @@ func ListVideoGenTasks(c *gin.Context) {
 		return
 	}
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
 	page = max(1, page)
 	pageSize = min(100, max(1, pageSize))
 	q := model.DB.Model(&model.VideoGenTask{}).Where("user_id = ?", c.GetInt64("user_id"))
+	if status := c.Query("status"); status != "" && status != "all" {
+		switch status {
+		case "submitting", "queued", "in_progress", "completed", "failed", "unknown", "submission_unknown":
+			q = q.Where("status = ?", status)
+		default:
+			common.Error(c, 400, "Invalid task status")
+			return
+		}
+	}
 	if id := c.Query("config_id"); id != "" {
 		parsed, err := strconv.ParseInt(id, 10, 64)
 		if err != nil || parsed < 0 {

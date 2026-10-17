@@ -1,11 +1,24 @@
-import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import {
+  useIsMutating,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Copy, Download, Film, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { TaskReferenceImages } from "@/components/task-reference-images";
+import { LocalPager } from "@/components/local-pager";
+import {
+  TaskHistoryBatchActions,
+  TaskHistoryCheckbox,
+  TaskHistoryStatusFilter,
+} from "@/components/task-history-actions";
+import { useTaskHistorySelection } from "@/hooks/use-task-history-selection";
+import { historyPageCount } from "@/lib/task-history";
 import {
   Dialog,
   DialogContent,
@@ -45,6 +58,7 @@ function useVideoTaskActions(task: VideoTask, onDeleted?: () => void) {
     onError: (err) => toast.error(err.message),
   });
   const remove = useMutation({
+    mutationKey: ["delete-video-task"],
     mutationFn: () => deleteVideoTask(task.task_id),
     onSuccess: () => {
       refresh();
@@ -327,19 +341,36 @@ function VideoTaskRow({
   configID,
   onDetails,
   onDeleted,
+  selected,
+  selectionBusy,
+  onToggle,
 }: {
   task: VideoTask;
   configID?: number;
   onDetails: () => void;
   onDeleted: () => void;
+  selected: boolean;
+  selectionBusy: boolean;
+  onToggle: () => void;
 }) {
   const { t } = useTranslation();
   const { retry, resume, remove } = useVideoTaskActions(task, onDeleted);
   const active = taskIsActive(task);
-  const busy = retry.isPending || resume.isPending || remove.isPending;
+  const busy =
+    selectionBusy || retry.isPending || resume.isPending || remove.isPending;
   const video = task.videos[0];
   return (
-    <tr className="border-b transition-colors last:border-0 hover:bg-muted/30">
+    <tr
+      className={`border-b transition-colors last:border-0 hover:bg-muted/30 ${selected ? "bg-muted/40" : ""}`}
+    >
+      <td className="px-3 py-3">
+        <TaskHistoryCheckbox
+          checked={selected}
+          disabled={busy || active}
+          label={t("taskHistory.selectTask", { id: task.task_id })}
+          onChange={onToggle}
+        />
+      </td>
       <td className="px-4 py-3">
         <div className="min-w-40 max-w-52 space-y-1">
           <span className="block break-all font-mono text-xs">
@@ -494,7 +525,9 @@ function VideoTaskRow({
               {t("videogen.retrySave")}
             </Button>
           )}
-          {task.status === "failed" && <VideoTaskRetryDialog task={task} />}
+          {task.status === "failed" && (
+            <VideoTaskRetryDialog task={task} disabled={busy} />
+          )}
           {!active && (
             <Button
               variant="ghost"
@@ -518,43 +551,75 @@ function VideoTaskRow({
 
 export function VideoTasks({ configID }: { configID?: number }) {
   const { t } = useTranslation();
+  const removing = useIsMutating({ mutationKey: ["delete-video-task"] }) > 0;
   const [page, setPage] = useState(1);
+  const [status, setStatus] = useState("all");
   const [selectedTaskID, setSelectedTaskID] = useState<string | null>(null);
   const { data, isLoading, isError, isFetching, refetch } = useQuery({
-    queryKey: ["video-tasks", configID, page],
-    queryFn: () => listVideoTasks(configID, page),
+    queryKey: ["video-tasks", configID, page, status],
+    queryFn: () => listVideoTasks(configID, page, status),
     refetchInterval: (query) =>
       query.state.data?.data.items.some(taskIsActive) ? 5000 : false,
   });
-  const pageSize = data?.data.page_size ?? 20;
-  const totalPages = Math.max(1, Math.ceil((data?.data.total ?? 0) / pageSize));
-  const handleDeleted = () => {
-    setSelectedTaskID(null);
-    if (page > 1 && data?.data.items.length === 1) setPage(page - 1);
+  const pageSize = data?.data.page_size ?? 10;
+  const total = data?.data.total ?? 0;
+  const totalPages = historyPageCount(total, pageSize);
+  const handleDeleted = (ids: string[]) => {
+    if (selectedTaskID && ids.includes(selectedTaskID)) setSelectedTaskID(null);
   };
+  const selection = useTaskHistorySelection({
+    items: data?.data.items ?? [],
+    scope: `${configID ?? "all"}:${page}:${status}`,
+    canDelete: (task) => !taskIsActive(task),
+    remove: deleteVideoTask,
+    kind: "video",
+    onDeleted: handleDeleted,
+  });
+  const busy = selection.batchDelete.isPending || removing;
+  useEffect(() => {
+    if (data && page > totalPages) setPage(totalPages);
+  }, [data, page, totalPages]);
   return (
     <section className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold">{t("videogen.history")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             {t("videogen.historyHint")}
           </p>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={isFetching}
-          onClick={() => refetch()}
-          className="shrink-0 gap-2"
-        >
-          <RefreshCw
-            className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`}
+        <div className="flex shrink-0 items-center gap-2">
+          <TaskHistoryStatusFilter
+            kind="video"
+            value={status}
+            disabled={busy}
+            onChange={(value) => {
+              setStatus(value);
+              setPage(1);
+            }}
           />
-          {t("common.refresh")}
-        </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isFetching || busy}
+            onClick={() => refetch()}
+            className="shrink-0 gap-2"
+          >
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`}
+            />
+            {t("common.refresh")}
+          </Button>
+        </div>
       </div>
+      <TaskHistoryBatchActions
+        count={selection.selected.size}
+        busy={busy}
+        kind="video"
+        onDelete={() => selection.batchDelete.mutate([...selection.selected])}
+        onClear={selection.clear}
+      />
       <div className="overflow-hidden rounded-xl border bg-card">
         {isLoading ? (
           <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
@@ -567,7 +632,7 @@ export function VideoTasks({ configID }: { configID?: number }) {
           </p>
         ) : !data?.data.items.length ? (
           <p className="p-12 text-center text-sm text-muted-foreground">
-            {t("videogen.noTasks")}
+            {t(status === "all" ? "videogen.noTasks" : "taskHistory.noMatchingTasks")}
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -577,6 +642,20 @@ export function VideoTasks({ configID }: { configID?: number }) {
             >
               <thead>
                 <tr className="border-b bg-muted/50">
+                  <th scope="col" className="w-12 px-3 py-3">
+                    <TaskHistoryCheckbox
+                      checked={
+                        selection.allSelected
+                          ? true
+                          : selection.selected.size > 0
+                            ? "mixed"
+                            : false
+                      }
+                      disabled={busy || !selection.hasEligible}
+                      label={t("taskHistory.selectAll")}
+                      onChange={selection.toggleAll}
+                    />
+                  </th>
                   {[
                     "videogen.task",
                     "videogen.capabilities",
@@ -610,7 +689,10 @@ export function VideoTasks({ configID }: { configID?: number }) {
                     task={task}
                     configID={configID}
                     onDetails={() => setSelectedTaskID(task.task_id)}
-                    onDeleted={handleDeleted}
+                    onDeleted={() => handleDeleted([task.task_id])}
+                    selected={selection.selected.has(task.task_id)}
+                    selectionBusy={busy}
+                    onToggle={() => selection.toggle(task.task_id)}
                   />
                 ))}
               </tbody>
@@ -618,28 +700,14 @@ export function VideoTasks({ configID }: { configID?: number }) {
           </div>
         )}
       </div>
-      {totalPages > 1 && (
-        <div className="flex items-center justify-end gap-3">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page === 1 || isLoading}
-            onClick={() => setPage(page - 1)}
-          >
-            {t("videogen.previous")}
-          </Button>
-          <span className="text-sm">
-            {page} / {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page >= totalPages || isLoading}
-            onClick={() => setPage(page + 1)}
-          >
-            {t("videogen.next")}
-          </Button>
-        </div>
+      {data && !isError && (
+        <LocalPager
+          total={total}
+          page={page}
+          totalPages={totalPages}
+          onPage={setPage}
+          disabled={busy || isFetching}
+        />
       )}
       <Dialog
         open={!!selectedTaskID}
@@ -658,7 +726,7 @@ export function VideoTasks({ configID }: { configID?: number }) {
             <VideoTaskResult
               key={selectedTaskID}
               id={selectedTaskID}
-              onDeleted={handleDeleted}
+              onDeleted={() => handleDeleted([selectedTaskID])}
               embedded
             />
           )}

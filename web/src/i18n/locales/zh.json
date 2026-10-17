@@ -52,6 +52,19 @@
     "reset": "重置",
     "paramRequired": "必填"
   },
+  "taskHistory": {
+    "filterStatus": "筛选任务状态",
+    "noMatchingTasks": "暂无符合该状态的任务。",
+    "allStatuses": "全部状态",
+    "success": "成功",
+    "batchDelete": "批量删除",
+    "selectAll": "全选本页可删除任务",
+    "selectTask": "选择任务 {{id}}",
+    "imageDeleteConfirm": "确定删除选中的 {{count}} 条图片任务历史？图片仍按存储保留时间清理，不会立即删除。",
+    "videoDeleteConfirm": "确定删除选中的 {{count}} 条视频任务历史及其已保存视频？此操作无法恢复。",
+    "deleteSuccess": "已删除 {{count}} 条任务历史。",
+    "deletePartial": "已删除 {{deleted}} 条，{{failed}} 条删除失败，请刷新后重试。"
+  },
   "nav": {
     "home": "主页",
     "dashboard": "控制台",

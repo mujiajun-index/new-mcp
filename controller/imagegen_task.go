@@ -13,9 +13,18 @@ import (
 
 func ListImageGenTasks(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	size, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	size, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
 	page, size = max(1, page), min(100, max(1, size))
 	q := model.DB.Model(&model.ImageGenTask{}).Where("user_id = ?", c.GetInt64("user_id"))
+	if status := c.Query("status"); status != "" && status != "all" {
+		switch status {
+		case "running", "completed", "partial", "failed", "canceled", "interrupted":
+			q = q.Where("status = ?", status)
+		default:
+			common.Error(c, 400, "Invalid task status")
+			return
+		}
+	}
 	if value := c.Query("config_id"); value != "" {
 		id, err := strconv.ParseInt(value, 10, 64)
 		if err != nil || id < 0 {

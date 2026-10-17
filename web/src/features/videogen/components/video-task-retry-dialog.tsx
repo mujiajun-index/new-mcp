@@ -35,9 +35,11 @@ import type { VideoTask } from "../api";
 export function VideoTaskRetryDialog({
   task,
   variant = "ghost",
+  disabled = false,
 }: {
   task: VideoTask;
   variant?: "ghost" | "outline";
+  disabled?: boolean;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -141,6 +143,7 @@ export function VideoTaskRetryDialog({
     <>
       <Button
         variant={variant}
+        disabled={disabled}
         size="sm"
         className="gap-1"
         onClick={() => setOpen(true)}

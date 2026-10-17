@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import {
@@ -13,6 +13,14 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { TaskReferenceImages } from '@/components/task-reference-images'
+import { LocalPager } from '@/components/local-pager'
+import {
+  TaskHistoryBatchActions,
+  TaskHistoryCheckbox,
+  TaskHistoryStatusFilter,
+} from '@/components/task-history-actions'
+import { useTaskHistorySelection } from '@/hooks/use-task-history-selection'
+import { historyPageCount } from '@/lib/task-history'
 import {
   Dialog,
   DialogContent,
@@ -209,10 +217,11 @@ export function ImageTasks({
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
+  const [status, setStatus] = useState('all')
   const [selectedID, setSelectedID] = useState<string | null>(null)
   const { data, isLoading, isError, isFetching, refetch } = useQuery({
-    queryKey: ['image-tasks', configID, page],
-    queryFn: () => listImageTasks(configID, page),
+    queryKey: ['image-tasks', configID, page, status],
+    queryFn: () => listImageTasks(configID, page, status),
     refetchInterval: (query) =>
       pending ||
       query.state.data?.data.items.some((task) => task.status === 'running')
@@ -223,37 +232,70 @@ export function ImageTasks({
     mutationFn: deleteImageTask,
     onSuccess: (_, id) => {
       toast.success(t('imagegen.taskDeleted'))
-      if (selectedID === id) setSelectedID(null)
+      handleDeleted([id])
       queryClient.removeQueries({ queryKey: ['image-task', id] })
       queryClient.invalidateQueries({ queryKey: ['image-tasks'] })
-      if (page > 1 && data?.data.items.length === 1) setPage(page - 1)
     },
     onError: (err) => toast.error(err.message),
   })
   const total = data?.data.total ?? 0
-  const pages = Math.max(1, Math.ceil(total / (data?.data.page_size ?? 20)))
+  const pageSize = data?.data.page_size ?? 10
+  const pages = historyPageCount(total, pageSize)
+  const handleDeleted = (ids: string[]) => {
+    if (selectedID && ids.includes(selectedID)) setSelectedID(null)
+  }
+  const selection = useTaskHistorySelection({
+    items: data?.data.items ?? [],
+    scope: `${configID ?? 'all'}:${page}:${status}`,
+    canDelete: (task) => task.status !== 'running',
+    remove: deleteImageTask,
+    kind: 'image',
+    onDeleted: handleDeleted,
+  })
+  const busy = remove.isPending || selection.batchDelete.isPending
+  useEffect(() => {
+    if (data && page > pages) setPage(pages)
+  }, [data, page, pages])
   return (
     <section className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold">{t('imagegen.history')}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             {t('imagegen.historyHint')}
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={isFetching}
-          onClick={() => refetch()}
-          className="shrink-0 gap-2"
-        >
-          <RefreshCw
-            className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`}
+        <div className="flex shrink-0 items-center gap-2">
+          <TaskHistoryStatusFilter
+            kind="image"
+            value={status}
+            disabled={busy}
+            onChange={(value) => {
+              setStatus(value)
+              setPage(1)
+            }}
           />
-          {t('common.refresh')}
-        </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isFetching || busy}
+            onClick={() => refetch()}
+            className="shrink-0 gap-2"
+          >
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`}
+            />
+            {t('common.refresh')}
+          </Button>
+        </div>
       </div>
+      <TaskHistoryBatchActions
+        count={selection.selected.size}
+        busy={busy}
+        kind="image"
+        onDelete={() => selection.batchDelete.mutate([...selection.selected])}
+        onClear={selection.clear}
+      />
       <div className="overflow-hidden rounded-xl border bg-card">
         {isLoading ? (
           <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
@@ -266,7 +308,7 @@ export function ImageTasks({
           </p>
         ) : !data?.data.items.length ? (
           <p className="p-12 text-center text-sm text-muted-foreground">
-            {t('imagegen.noTasks')}
+            {t(status === 'all' ? 'imagegen.noTasks' : 'taskHistory.noMatchingTasks')}
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -276,6 +318,20 @@ export function ImageTasks({
             >
               <thead>
                 <tr className="border-b bg-muted/50">
+                  <th scope="col" className="w-12 px-3 py-3">
+                    <TaskHistoryCheckbox
+                      checked={
+                        selection.allSelected
+                          ? true
+                          : selection.selected.size > 0
+                            ? 'mixed'
+                            : false
+                      }
+                      disabled={busy || !selection.hasEligible}
+                      label={t('taskHistory.selectAll')}
+                      onChange={selection.toggleAll}
+                    />
+                  </th>
                   {[
                     'imagegen.task',
                     'imagegen.capabilities',
@@ -318,8 +374,16 @@ export function ImageTasks({
                   return (
                     <tr
                       key={task.task_id}
-                      className="border-b transition-colors last:border-0 hover:bg-muted/30"
+                      className={`border-b transition-colors last:border-0 hover:bg-muted/30 ${selection.selected.has(task.task_id) ? 'bg-muted/40' : ''}`}
                     >
+                      <td className="px-3 py-3">
+                        <TaskHistoryCheckbox
+                          checked={selection.selected.has(task.task_id)}
+                          disabled={busy || task.status === 'running'}
+                          label={t('taskHistory.selectTask', { id: task.task_id })}
+                          onChange={() => selection.toggle(task.task_id)}
+                        />
+                      </td>
                       <td className="px-4 py-3">
                         <div className="min-w-40 max-w-52 space-y-1">
                           <span className="block break-all font-mono text-xs">
@@ -440,7 +504,7 @@ export function ImageTasks({
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 text-destructive hover:text-destructive"
-                              disabled={remove.isPending}
+                              disabled={busy}
                               aria-label={t('imagegen.deleteTask')}
                               title={t('imagegen.deleteTask')}
                               onClick={() => {
@@ -461,28 +525,14 @@ export function ImageTasks({
           </div>
         )}
       </div>
-      {total > 0 && (
-        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-          <span>{t('imagegen.taskPagination', { page, pages, total })}</span>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => setPage(page - 1)}
-            >
-              {t('imagegen.previous')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= pages}
-              onClick={() => setPage(page + 1)}
-            >
-              {t('imagegen.next')}
-            </Button>
-          </div>
-        </div>
+      {data && !isError && (
+        <LocalPager
+          total={total}
+          page={page}
+          totalPages={pages}
+          onPage={setPage}
+          disabled={busy || isFetching}
+        />
       )}
       <Dialog
         open={selectedID !== null}

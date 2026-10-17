@@ -1995,11 +1995,13 @@ Gemini 原生配置选择 `gemini_video`，参考[Gemini 接入说明](./VIDEO-G
 
 ### 13.3 任务历史与结果
 
+`GET /imagegen/tasks` 和 `GET /videogen/tasks` 支持可选 `status` 查询参数，省略或 `all` 不筛选；筛选与用户归属和 `config_id` 共同生效，先筛选再统计总数和分页。图片可选 `completed/running/partial/failed/canceled/interrupted`；视频可选 `completed/failed/submitting/queued/in_progress/unknown/submission_unknown`，非法值返回 400。“成功”对应 `completed`，视频保存状态不受此筛选定义影响。
+
 图片任务（`/imagegen/tasks`、`/imagegen/tasks/:task_id`）和视频任务的视图均新增 `reference_images` 数组。每项包含 `role`（`reference` 或图片编辑的 `mask`）、`status`（`ready/expired`）、`mime`、`size`、`width`、`height`、`expires_at`，有效时提供可预览/复制的 `url`。链接按任务用户与当前图片保留规则生成，`expires_at=null` 表示永久保存；过期或删除保留元数据且不返回链接，旧记录无法恢复输入时为空数组。新任务保存经校验的图片内容及资产引用，不把 base64 或原始私有参数放进此字段；视频重试更新原记录的参考图。
 
 | 方法 | 路径 | 行为 |
 | --- | --- | --- |
-| GET | `/videogen/tasks` | `page=1`、`page_size=20`（最大 100），可选 `config_id`；返回 `{items,total,page,page_size}` |
+| GET | `/videogen/tasks` | `page=1`、`page_size=10`（最大 100），可选 `config_id`；返回 `{items,total,page,page_size}` |
 | GET | `/videogen/tasks/:task_id` | 当前用户的本地任务详情；恢复已暂停的自动跟踪 |
 | POST | `/videogen/tasks/:task_id/retry-download` | 保存失败时重试下载及存储，不重新提交生成 |
 | GET | `/videogen/tasks/:task_id/retry-input` | 获取当前用户失败任务的调用参数及 `has_input_snapshot`，不返回连接和凭证 |

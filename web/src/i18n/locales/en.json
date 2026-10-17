@@ -52,6 +52,19 @@
     "reset": "Reset",
     "paramRequired": "required"
   },
+  "taskHistory": {
+    "filterStatus": "Filter task status",
+    "noMatchingTasks": "No tasks match this status.",
+    "allStatuses": "All statuses",
+    "success": "Succeeded",
+    "batchDelete": "Delete selected",
+    "selectAll": "Select all deletable tasks on this page",
+    "selectTask": "Select task {{id}}",
+    "imageDeleteConfirm": "Delete the {{count}} selected image task records? Images remain subject to storage retention and are not deleted immediately.",
+    "videoDeleteConfirm": "Delete the {{count}} selected video task records and their saved videos? This cannot be undone.",
+    "deleteSuccess": "Deleted {{count}} task records.",
+    "deletePartial": "Deleted {{deleted}} records; {{failed}} failed. Refresh and retry."
+  },
   "nav": {
     "home": "Home",
     "dashboard": "Dashboard",

@@ -166,10 +166,16 @@ export async function deleteVideoTask(id: string) {
 export async function listVideoTasks(
   configID: number | undefined,
   page: number,
+  status = "all",
 ): Promise<{ data: { items: VideoTask[]; total: number; page_size: number } }> {
   return (
     await api.get("/videogen/tasks", {
-      params: { config_id: configID, page, page_size: 20 },
+      params: {
+        config_id: configID,
+        page,
+        page_size: 10,
+        status: status === "all" ? undefined : status,
+      },
     })
   ).data;
 }
