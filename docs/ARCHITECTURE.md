@@ -679,6 +679,18 @@ OnAuthFailure(keyIndex int)                           // 401/403 熔断:落库+�
 
 ---
 
+### 4.14 ImageGen — 图片后台任务
+
+`internal/imagegentask.Manager` 与视频任务并行接入启动/关闭生命周期，独立于 service；配置测试和虚拟 MCP 使用同一管理器。`internal/mcp/imagegen.Client` 继续调用同步 OpenAI、Gemini、OpenRouter 图片接口。
+
+校验参考图并归属入库后，保存任务及密封的连接/有效参数快照，再由每实例 4 个 worker 处理。数据库租约每 10 秒续期、30 秒失效；有唯一幂等键的异步任务与旧同步历史分开恢复。MCP 默认短等 10 秒，上限 30 秒，客户端断开不取消受理任务。`get_image_status` 校验用户与配置归属，默认不等待。生成超时独立于调用方，默认 180 秒，0 无固定生成期限。
+
+`queued` 可以重新领取，`running` 的租约丢失只标记 `submission_unknown`，不再次调用收费接口。获得结果后写入私有文件对象，再进入 `saving`；保存失败、重启恢复均只重放该阶段。每张结果以 `(task_id, output_index)` 唯一，保存重试跳过已有有效输出。所有输出保存成功后清理私有文件和快照，获得结果后立即清理快照凭证。已有图片保留、共享去重和签名读取不变。
+
+工具、状态、接口和恢复边界详见[图片生成](./IMAGE-GENERATION.md)。
+
+---
+
 ## 5. 分层架构
 
 ```

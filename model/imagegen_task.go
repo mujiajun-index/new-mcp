@@ -2,9 +2,8 @@ package model
 
 import "time"
 
-// History survives configuration deletion. It contains no connection snapshot,
-// API key, reference bytes or signed links. ReferenceImages contains asset IDs
-// and image metadata, resolved with an owner check when reading history.
+// History survives configuration deletion. Snapshot is private and encrypted;
+// reference bytes and generated output snapshots live in the shared blob store.
 type ImageGenTask struct {
 	ID              string     `json:"task_id" gorm:"primaryKey;size:36"`
 	UserID          int64      `json:"-" gorm:"not null;index:idx_imagegen_task_user_created,priority:1"`
@@ -17,7 +16,16 @@ type ImageGenTask struct {
 	Prompt          string     `json:"prompt" gorm:"type:text"`
 	ReferenceCount  int        `json:"reference_count"`
 	ReferenceImages string     `json:"-" gorm:"type:text"`
-	Status          string     `json:"status" gorm:"size:16;index"`
+	Status          string     `json:"status" gorm:"size:32;index"`
+	ArtifactStatus  string     `json:"artifact_status,omitempty" gorm:"size:16"`
+	IdempotencyKey  *string    `json:"-" gorm:"size:64;uniqueIndex"`
+	RequestHash     string     `json:"-" gorm:"size:64"`
+	Snapshot        string     `json:"-" gorm:"size:2097152"`
+	ResultKey       string     `json:"-" gorm:"size:128"`
+	ResultCount     int        `json:"result_count"`
+	LeaseOwner      string     `json:"-" gorm:"size:36"`
+	LeaseUntil      *time.Time `json:"-" gorm:"index"`
+	StartedAt       *time.Time `json:"started_at,omitempty"`
 	Error           string     `json:"error,omitempty" gorm:"type:text"`
 	Warnings        string     `json:"-" gorm:"type:text"`
 	Text            string     `json:"text,omitempty" gorm:"type:text"`
@@ -32,7 +40,8 @@ func (ImageGenTask) TableName() string { return "imagegen_tasks" }
 
 type ImageGenTaskImage struct {
 	ID            int64  `json:"-" gorm:"primaryKey;autoIncrement"`
-	TaskID        string `json:"-" gorm:"size:36;not null;index"`
+	TaskID        string `json:"-" gorm:"size:36;not null;index;uniqueIndex:idx_imagegen_task_output,priority:1"`
+	OutputIndex   *int   `json:"-" gorm:"uniqueIndex:idx_imagegen_task_output,priority:2"`
 	UploadID      int64  `json:"-" gorm:"not null;index"`
 	MIME          string `json:"mime" gorm:"size:64"`
 	Size          int64  `json:"size"`

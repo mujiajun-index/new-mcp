@@ -815,15 +815,8 @@ func callToolTested(svc *model.McpService, userID int64, req *dto.CallToolReq) (
 
 func callToolTestedContext(parent context.Context, svc *model.McpService, userID int64, req *dto.CallToolReq) (*dto.CallToolResult, bool, int) {
 	seconds := 60
-	if svc.Source == "videogen" {
+	if svc.Source == "videogen" || svc.Source == "imagegen" {
 		seconds = 40
-	}
-	if svc.Source == "imagegen" {
-		cfg, err := model.GetImageGenConfigByServiceID(svc.ID)
-		if err != nil {
-			return &dto.CallToolResult{IsError: true, Error: "Image configuration not found"}, false, 0
-		}
-		seconds = cfg.TimeoutSeconds
 	}
 	ctx, cancel := context.WithCancel(parent)
 	if seconds > 0 {
@@ -1528,10 +1521,8 @@ func (s *McpServiceService) toDetail(svc *model.McpService) *dto.ServiceDetail {
 		PassiveConnected: svc.PassiveConnected,
 	}
 	if svc.Source == "imagegen" {
-		if cfg, err := model.GetImageGenConfigByServiceID(svc.ID); err == nil {
-			seconds := cfg.TimeoutSeconds
-			d.ToolTimeoutSeconds = &seconds
-		}
+		seconds := 40
+		d.ToolTimeoutSeconds = &seconds
 	}
 	if svc.Source == "videogen" {
 		seconds := 40

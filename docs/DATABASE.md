@@ -664,6 +664,27 @@ Gemini 原生视频沿用现有字段：`protocol=gemini_video`，`upstream_id` 
 
 ---
 
+### 图片异步任务扩展
+
+`imagegen_configs` 增加可编辑 `get_image_status_desc`；`imagegen_tasks` 在原历史表上追加以下字段，无需建立第二套历史：
+
+| 字段 | 用途 |
+| --- | --- |
+| `artifact_status` / `result_count` | 保存状态与上游输出数量 |
+| `idempotency_key` / `request_hash` | 用户、配置、request_id 的唯一摘要与输入核对；旧记录幂等键 NULL |
+| `snapshot` | 私有密封连接、模型、参数及参考图 ID，配置删除后继续处理；不经 JSON 返回 |
+| `result_key` | 私有结果文件对象地址，仅供保存恢复和重试 |
+| `lease_owner` / `lease_until` | worker 条件领取、续期、恢复及删除互斥 |
+| `started_at` | 开始生成时间 |
+
+状态列扩大为 32 字符，支持 `submission_unknown`。`snapshot` 声明为大字符串，由 GORM 映射为 MySQL MEDIUMTEXT、PostgreSQL VARCHAR 和 SQLite TEXT，容纳密封后的参数。已有配置与历史通过 AutoMigrate 追加字段，私有字段不出现在列表、详情或 MCP JSON。
+
+`imagegen_task_images` 增加可空 `output_index`，建立 `(task_id, output_index)` 唯一索引。旧图片行使用 NULL，保留同任务的多张历史结果；新任务序号从 0 开始，保存重试按序号补齐，不重复写结果。旧同步任务无幂等键，启动时仍按旧规则标记中断；异步队列和保存任务靠租约恢复，生成中的过期租约只转结果不确定。
+
+私有输出对象复用 local/S3，独立前缀 `imagegen/tasks/`，不创建可公开读取的上传记录；结果保存后清除凭证快照，全部成功删除私有对象及参数快照，删除失败历史时也清理对象。图片资产本身继续遵循原共享存储保留规则。SQLite 升级和重复迁移有测试；MySQL/PostgreSQL 实际迁移仍需测试 DSN。
+
+---
+
 ## 3. ER 关系图
 
 ```

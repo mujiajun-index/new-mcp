@@ -32,9 +32,6 @@ var (
 )
 
 func InitGateway() {
-	if err := imagegentask.RecoverInterrupted(); err != nil {
-		log.Printf("[imagegen] could not recover interrupted tasks: %v", err)
-	}
 	SessionPool = bridge.NewSessionPool()
 	toolRouter := bridge.NewToolRouter(SessionPool)
 	VirtualRegistry = virtual.NewVirtualToolRegistry()
@@ -92,6 +89,7 @@ func initUploadStorage() {
 	service.UploadStore = store
 	virtual.UploadStore = store
 	virtual.VideoManager = videogen.NewManager(model.DB, store)
+	virtual.ImageManager = imagegentask.NewManager(model.DB, store)
 	log.Printf("[storage] vision-upload backend=%s", store.Backend())
 
 	if !storage.IsSecretConfigured() {
@@ -235,6 +233,9 @@ func StartBackgroundJobs(parent context.Context) {
 	if virtual.VideoManager != nil {
 		virtual.VideoManager.Start(ctx)
 	}
+	if virtual.ImageManager != nil {
+		virtual.ImageManager.Start(ctx)
+	}
 	go service.StartCleanupLoop(ctx)
 	if SessionPool != nil {
 		go SessionPool.StartIdleReaper(ctx, func() time.Duration {
@@ -250,5 +251,8 @@ func StopBackgroundJobs() {
 	}
 	if virtual.VideoManager != nil {
 		virtual.VideoManager.Close()
+	}
+	if virtual.ImageManager != nil {
+		virtual.ImageManager.Close()
 	}
 }

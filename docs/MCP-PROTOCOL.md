@@ -1344,3 +1344,13 @@ curl --no-buffer --silent --show-error "$MCP_URL" \
 get_video_status 校验用户及配置归属，禁止直接传上游 ID。取消注册后 MCP 服务入口移除，已有任务仍可在管理 API 中查询。上传、生成、依赖返回 task_id 的查询必须顺序执行，只有互不依赖的任务适合批量调用。
 
 完整工具 schema、图生格式、示例和状态表见[视频生成说明](./VIDEO-GENERATION.md#mcp-工具)，协议及隔离验证见[验收记录](./VIDEO-GENERATION-ACCEPTANCE.md)。
+
+## 13. 内置图片异步生成工具
+
+图片虚拟服务 `source=imagegen` 按能力暴露 `generate_image`、`edit_image`，统一新增 `get_image_status`，图生图附带 `upload_image`。工具服务前缀、分组授权和 Direct / Smart / 批量分发与原图片工具一致；已有配置在启动时更新工具缓存，客户端需刷新工具列表以发现查询工具。
+
+生成参数增加 `wait_seconds`（0–30 秒，默认 10）和 `request_id`（同用户/配置/输入幂等）。任务先持久化再后台处理，进行中正常返回 `task_id`、`status`、`artifact_status` 和 `poll_after_seconds`，不设置 `isError`。用同配置 `get_image_status({task_id, wait_seconds:0})` 继续查询；该工具不重新生成。保存失败且 `can_retry_save=true` 时使用 `retry_download=true` 重试保存。结果仍提供 `structuredContent.images`、图片 `resource_link` 和受限 `return_mode=inline`。
+
+客户端取消只结束本次短等待。配置的生成超时在后台独立执行，默认 180 秒；原同步图片协议在进程重启后无法接续已提交请求，这类任务标为 `submission_unknown`，禁止自动重提。排队任务、已持久化输出的保存阶段可以恢复；已删除/停用配置的任务仍可在管理 API 查询。上传、生成、依赖任务 ID 的查询需要顺序执行。
+
+完整状态、参数和示例见[图片生成说明](./IMAGE-GENERATION.md)。

@@ -55,6 +55,21 @@ type Result struct {
 	Text   string
 	Usage  json.RawMessage
 }
+
+// APIError identifies a complete upstream rejection without matching message text.
+// StatusCode is zero for an explicit error envelope in a successful HTTP response.
+type APIError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *APIError) Error() string {
+	if e.StatusCode != 0 {
+		return fmt.Sprintf("image API HTTP %d: %s", e.StatusCode, e.Message)
+	}
+	return "image API error: " + e.Message
+}
+
 type ModelInfo struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -164,7 +179,7 @@ func ValidateParams(provider string, p map[string]any, defaults bool) error {
 		if !ok {
 			return fmt.Errorf("extra_body must be an object")
 		}
-		protected := map[string]bool{"model": true, "prompt": true, "image": true, "images": true, "mask": true, "stream": true, "partial_images": true, "contents": true, "return_mode": true, "api_key": true, "authorization": true, "input_references": true, "models": true, "messages": true}
+		protected := map[string]bool{"model": true, "prompt": true, "image": true, "images": true, "mask": true, "stream": true, "partial_images": true, "contents": true, "return_mode": true, "api_key": true, "authorization": true, "input_references": true, "models": true, "messages": true, "wait_seconds": true, "request_id": true, "task_id": true, "retry_download": true}
 		for k := range obj {
 			if protected[strings.ToLower(k)] {
 				return fmt.Errorf("extra_body cannot override %s", k)
@@ -439,14 +454,14 @@ func (c *Client) request(ctx context.Context, method, endpoint string, body io.R
 		return nil, fmt.Errorf("image API response exceeds %d bytes", limit)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("image API HTTP %d: %s", resp.StatusCode, c.redact(errorMessage(raw)))
+		return nil, &APIError{StatusCode: resp.StatusCode, Message: c.redact(errorMessage(raw))}
 	}
 	var failure struct {
 		Error json.RawMessage `json:"error"`
 	}
 	_ = json.Unmarshal(raw, &failure)
 	if len(failure.Error) > 0 && string(failure.Error) != "null" {
-		return nil, fmt.Errorf("image API error: %s", c.redact(errorMessage(raw)))
+		return nil, &APIError{Message: c.redact(errorMessage(raw))}
 	}
 	return raw, nil
 }

@@ -23,11 +23,12 @@ var imageGenConfigMu sync.Mutex
 
 type ImageGenDetail struct {
 	model.ImageGenConfig
-	DefaultParams            json.RawMessage `json:"default_params"`
-	HasAPIKey                bool            `json:"has_api_key"`
-	GenerateImageDescDefault string          `json:"generate_image_desc_default"`
-	EditImageDescDefault     string          `json:"edit_image_desc_default"`
-	UploadImageDesc          string          `json:"upload_image_desc"`
+	DefaultParams             json.RawMessage `json:"default_params"`
+	HasAPIKey                 bool            `json:"has_api_key"`
+	GenerateImageDescDefault  string          `json:"generate_image_desc_default"`
+	EditImageDescDefault      string          `json:"edit_image_desc_default"`
+	GetImageStatusDescDefault string          `json:"get_image_status_desc_default"`
+	UploadImageDesc           string          `json:"upload_image_desc"`
 }
 
 // Recognize only the previous built-in descriptions; user-authored text stays intact.
@@ -38,11 +39,14 @@ const (
 )
 
 func applyImageGenDefaultDescriptions(c *model.ImageGenConfig) {
-	if strings.TrimSpace(c.GenerateImageDesc) == "" || c.GenerateImageDesc == legacyGenerateImageDesc {
+	if strings.TrimSpace(c.GenerateImageDesc) == "" || c.GenerateImageDesc == legacyGenerateImageDesc || c.GenerateImageDesc == strings.TrimSuffix(model.DefaultGenerateImageDesc, model.ImageGenAsyncDescSuffix) {
 		c.GenerateImageDesc = model.DefaultGenerateImageDesc
 	}
-	if strings.TrimSpace(c.EditImageDesc) == "" || c.EditImageDesc == legacyEditImageDesc || c.EditImageDesc == legacyEditImageDescV2 {
+	if strings.TrimSpace(c.EditImageDesc) == "" || c.EditImageDesc == legacyEditImageDesc || c.EditImageDesc == legacyEditImageDescV2 || c.EditImageDesc == strings.TrimSuffix(model.DefaultEditImageDesc, model.ImageGenAsyncDescSuffix) {
 		c.EditImageDesc = model.DefaultEditImageDesc
+	}
+	if strings.TrimSpace(c.GetImageStatusDesc) == "" {
+		c.GetImageStatusDesc = model.DefaultGetImageStatusDesc
 	}
 }
 
@@ -53,12 +57,13 @@ func imageGenDetail(c *model.ImageGenConfig) *ImageGenDetail {
 	}
 	applyImageGenDefaultDescriptions(&config)
 	return &ImageGenDetail{
-		ImageGenConfig:           config,
-		DefaultParams:            json.RawMessage(c.DefaultParams),
-		HasAPIKey:                c.ApiKey != "",
-		GenerateImageDescDefault: model.DefaultGenerateImageDesc,
-		EditImageDescDefault:     model.DefaultEditImageDesc,
-		UploadImageDesc:          model.DefaultImageGenUploadDesc,
+		ImageGenConfig:            config,
+		DefaultParams:             json.RawMessage(c.DefaultParams),
+		HasAPIKey:                 c.ApiKey != "",
+		GenerateImageDescDefault:  model.DefaultGenerateImageDesc,
+		EditImageDescDefault:      model.DefaultEditImageDesc,
+		GetImageStatusDescDefault: model.DefaultGetImageStatusDesc,
+		UploadImageDesc:           model.DefaultImageGenUploadDesc,
 	}
 }
 func (s *ImageGenService) List(uid int64) ([]*ImageGenDetail, error) {
@@ -144,6 +149,9 @@ func applyImageGenReq(c *model.ImageGenConfig, r *dto.ImageGenConfigReq) error {
 	if r.EditImageDesc != nil {
 		c.EditImageDesc = *r.EditImageDesc
 	}
+	if r.GetImageStatusDesc != nil {
+		c.GetImageStatusDesc = *r.GetImageStatusDesc
+	}
 	if c.Name == "" || len(c.Name) > 128 {
 		return fmt.Errorf("name must contain 1 to 128 bytes")
 	}
@@ -169,7 +177,7 @@ func applyImageGenReq(c *model.ImageGenConfig, r *dto.ImageGenConfigReq) error {
 	if err := imagegen.ValidateParams(c.Provider, params, true); err != nil {
 		return err
 	}
-	if len(c.GenerateImageDesc) > 4096 || len(c.EditImageDesc) > 4096 {
+	if len(c.GenerateImageDesc) > 4096 || len(c.EditImageDesc) > 4096 || len(c.GetImageStatusDesc) > 4096 {
 		return fmt.Errorf("tool descriptions must not exceed 4096 bytes")
 	}
 	applyImageGenDefaultDescriptions(c)
@@ -322,6 +330,8 @@ func buildImageGenTools(c *model.ImageGenConfig) []map[string]interface{} {
 		name, desc := model.GenerateImageToolName, c.GenerateImageDesc
 		required := []string{"prompt"}
 		properties := map[string]any{"prompt": map[string]any{"type": "string", "minLength": 1, "description": "Description of the desired image or edit"}, "return_mode": map[string]any{"type": "string", "enum": []string{"url", "inline"}, "default": "url", "description": "Return stored image links; inline also includes MCP images within the response limit"}, "extra_body": map[string]any{"type": "object", "description": "Additional native upstream parameters (for example seed, watermark, prompt_extend)"}}
+		properties["wait_seconds"] = map[string]any{"type": "integer", "minimum": 0, "maximum": 30, "default": 10, "description": "Short wait only. Returns task_id normally when still processing; call get_image_status to continue."}
+		properties["request_id"] = map[string]any{"type": "string", "minLength": 1, "maxLength": 128, "description": "Reuse the same ID and input when retrying a submission, preventing duplicate paid generation."}
 		if c.Provider == "openai" || c.Provider == imagegen.ProviderOpenRouter {
 			properties["n"] = map[string]any{"type": "integer", "minimum": 1, "maximum": 10, "description": "Number of images; defaults to 1"}
 			for _, key := range []string{"size", "quality", "background", "output_format"} {
@@ -348,6 +358,7 @@ func buildImageGenTools(c *model.ImageGenConfig) []map[string]interface{} {
 		}
 		tools = append(tools, map[string]interface{}{"name": name, "description": desc, "inputSchema": map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}})
 	}
+	tools = append(tools, map[string]interface{}{"name": model.GetImageStatusToolName, "description": c.GetImageStatusDesc, "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"task_id": map[string]any{"type": "string", "description": "Local task_id returned by this image service"}, "wait_seconds": map[string]any{"type": "integer", "minimum": 0, "maximum": 30, "default": 0}, "retry_download": map[string]any{"type": "boolean", "default": false, "description": "Retry failed saving only, without regenerating. Requires can_retry_save=true."}, "return_mode": map[string]any{"type": "string", "enum": []string{"url", "inline"}, "default": "url"}}, "required": []string{"task_id"}, "additionalProperties": false}})
 	if c.Operation != "generate" {
 		upload := virtual.UploadImageTool()
 		upload["description"] = model.DefaultImageGenUploadDesc
@@ -395,7 +406,7 @@ func (s *ImageGenService) Test(ctx context.Context, uid int64, r *dto.ImageGenPr
 		tool = model.GenerateImageToolName
 	}
 	start := time.Now()
-	raw, err := virtual.RunImageGen(ctx, UploadStore, uid, c, tool, r.Arguments, "test")
+	raw, err := virtual.RunImageGenAsync(ctx, uid, c, tool, r.Arguments, "test")
 	if err != nil {
 		return &dto.CallToolResult{IsError: true, Error: err.Error(), DurationMs: time.Since(start).Milliseconds()}, nil
 	}

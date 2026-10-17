@@ -149,6 +149,7 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.POST("/imagegen/test", controller.TestImageGenConfig)
 		auth.GET("/imagegen/tasks", controller.ListImageGenTasks)
 		auth.GET("/imagegen/tasks/:task_id", controller.GetImageGenTask)
+		auth.POST("/imagegen/tasks/:task_id/retry-download", controller.RetryImageGenSave)
 		auth.DELETE("/imagegen/tasks/:task_id", controller.DeleteImageGenTask)
 		auth.POST("/imagegen/:id/enable", controller.EnableImageGenConfig)
 		auth.POST("/imagegen/:id/disable", controller.DisableImageGenConfig)

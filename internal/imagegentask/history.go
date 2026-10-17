@@ -16,7 +16,7 @@ import (
 	"gorm.io/gorm"
 )
 
-var ErrActiveTask = errors.New("running image tasks cannot be deleted")
+var ErrActiveTask = errors.New("active image tasks cannot be deleted")
 
 func Start(ctx context.Context, uid int64, cfg *model.ImageGenConfig, tool, source string, raw json.RawMessage) (*model.ImageGenTask, error) {
 	if source != "test" {
@@ -99,8 +99,12 @@ func Finish(task *model.ImageGenTask, images []model.ImageGenTaskImage, raw json
 // Called once on server startup. Synchronous requests cannot resume after a
 // process exit; recovering history must never resubmit a paid generation.
 func RecoverInterrupted() error {
+	return recoverInterrupted(model.DB)
+}
+
+func recoverInterrupted(db *gorm.DB) error {
 	now := time.Now()
-	return model.DB.Model(&model.ImageGenTask{}).Where("status = ?", "running").Updates(map[string]any{"status": "interrupted", "error": "Server restarted before the image request finished", "finished_at": now}).Error
+	return db.Model(&model.ImageGenTask{}).Where("status = ? AND idempotency_key IS NULL", "running").Updates(map[string]any{"status": "interrupted", "error": "Server restarted before the image request finished", "finished_at": now}).Error
 }
 
 func Get(uid int64, id string) (*model.ImageGenTask, error) {
@@ -118,10 +122,12 @@ type ImageView struct {
 
 type TaskView struct {
 	model.ImageGenTask
-	Warnings        []string             `json:"warnings"`
-	Usage           map[string]any       `json:"usage,omitempty"`
-	Images          []ImageView          `json:"images"`
-	ReferenceImages []taskreference.View `json:"reference_images"`
+	Warnings         []string             `json:"warnings"`
+	Usage            map[string]any       `json:"usage,omitempty"`
+	Images           []ImageView          `json:"images"`
+	ReferenceImages  []taskreference.View `json:"reference_images"`
+	PollAfterSeconds int                  `json:"poll_after_seconds"`
+	CanRetrySave     bool                 `json:"can_retry_save"`
 }
 
 // Views signs fresh links and checks the current retention clock. Cleanup or a
@@ -160,6 +166,10 @@ func Views(tasks []model.ImageGenTask) ([]TaskView, error) {
 	for _, task := range tasks {
 		v := TaskView{ImageGenTask: task, Warnings: []string{}, Images: []ImageView{}}
 		v.ReferenceImages = taskreference.Views(model.DB, task.UserID, task.ReferenceImages)
+		if Active(&task) {
+			v.PollAfterSeconds = 5
+		}
+		v.CanRetrySave = task.ResultKey != "" && (task.ArtifactStatus == "failed" || task.ArtifactStatus == "partial")
 		if task.FinishedAt != nil && task.DurationMs == 0 {
 			v.DurationMs = max(0, task.FinishedAt.Sub(task.CreatedAt).Milliseconds())
 		}
@@ -191,8 +201,11 @@ func Delete(uid int64, id string) error {
 		if err := tx.Where("id = ? AND user_id = ?", id, uid).First(&task).Error; err != nil {
 			return err
 		}
-		if task.Status == "running" {
+		if Active(&task) || (task.LeaseUntil != nil && task.LeaseUntil.After(time.Now())) {
 			return ErrActiveTask
+		}
+		if task.ResultKey != "" {
+			return fmt.Errorf("use the image task manager to delete pending saved output")
 		}
 		if err := tx.Where("task_id = ?", id).Delete(&model.ImageGenTaskImage{}).Error; err != nil {
 			return err

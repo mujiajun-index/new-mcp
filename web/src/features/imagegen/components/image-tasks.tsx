@@ -37,6 +37,8 @@ import {
   getImageTask,
   imageDownloadURL,
   listImageTasks,
+  imageTaskIsActive,
+  retryImageSave,
 } from '../api'
 import type { ImageTask } from '../api'
 
@@ -48,12 +50,17 @@ function TaskStatus({ task }: { task: ImageTask }) {
       variant={
         task.status === 'completed'
           ? 'success'
-          : ['failed', 'canceled', 'interrupted'].includes(task.status)
+          : [
+                'failed',
+                'canceled',
+                'interrupted',
+                'submission_unknown',
+              ].includes(task.status)
             ? 'destructive'
             : 'secondary'
       }
     >
-      {task.status === 'running' && (
+      {imageTaskIsActive(task) && (
         <Loader2 className="mr-1 h-3 w-3 animate-spin" />
       )}
       {t(`imagegen.taskStatus.${task.status}`)}
@@ -61,13 +68,13 @@ function TaskStatus({ task }: { task: ImageTask }) {
   )
 }
 
-function ImageTaskDetail({ id }: { id: string }) {
+export function ImageTaskDetail({ id }: { id: string }) {
   const { t } = useTranslation()
   const { data, isError } = useQuery({
     queryKey: ['image-task', id],
     queryFn: () => getImageTask(id),
     refetchInterval: (query) =>
-      query.state.data?.data.status === 'running' ? 5000 : false,
+      imageTaskIsActive(query.state.data?.data) ? 5000 : false,
   })
   if (isError)
     return (
@@ -86,6 +93,11 @@ function ImageTaskDetail({ id }: { id: string }) {
           {t(`imagegen.operations.${task.operation}`)}
         </Badge>
       </div>
+      {imageTaskIsActive(task) && (
+        <p className="text-sm text-muted-foreground">
+          {t('imagegen.asyncHint')}
+        </p>
+      )}
       <dl className="grid grid-cols-1 gap-3 text-xs text-muted-foreground sm:grid-cols-2">
         <div>
           <dt>{t('imagegen.taskConfig')}</dt>
@@ -143,7 +155,9 @@ function ImageTaskDetail({ id }: { id: string }) {
           {task.prompt || '—'}
         </p>
       </div>
-      {task.operation === 'edit' && <TaskReferenceImages images={task.reference_images} />}
+      {task.operation === 'edit' && (
+        <TaskReferenceImages images={task.reference_images} />
+      )}
       {task.error && (
         <p className="whitespace-pre-wrap break-words rounded-lg bg-destructive/10 p-3 text-xs text-destructive">
           {task.error}
@@ -223,8 +237,7 @@ export function ImageTasks({
     queryKey: ['image-tasks', configID, page, status],
     queryFn: () => listImageTasks(configID, page, status),
     refetchInterval: (query) =>
-      pending ||
-      query.state.data?.data.items.some((task) => task.status === 'running')
+      pending || query.state.data?.data.items.some(imageTaskIsActive)
         ? 5000
         : false,
   })
@@ -238,6 +251,14 @@ export function ImageTasks({
     },
     onError: (err) => toast.error(err.message),
   })
+  const retry = useMutation({
+    mutationFn: retryImageSave,
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ['image-task', id] })
+      queryClient.invalidateQueries({ queryKey: ['image-tasks'] })
+    },
+    onError: (err) => toast.error(err.message),
+  })
   const total = data?.data.total ?? 0
   const pageSize = data?.data.page_size ?? 10
   const pages = historyPageCount(total, pageSize)
@@ -247,12 +268,13 @@ export function ImageTasks({
   const selection = useTaskHistorySelection({
     items: data?.data.items ?? [],
     scope: `${configID ?? 'all'}:${page}:${status}`,
-    canDelete: (task) => task.status !== 'running',
+    canDelete: (task) => !imageTaskIsActive(task),
     remove: deleteImageTask,
     kind: 'image',
     onDeleted: handleDeleted,
   })
-  const busy = remove.isPending || selection.batchDelete.isPending
+  const busy =
+    remove.isPending || retry.isPending || selection.batchDelete.isPending
   useEffect(() => {
     if (data && page > pages) setPage(pages)
   }, [data, page, pages])
@@ -308,7 +330,11 @@ export function ImageTasks({
           </p>
         ) : !data?.data.items.length ? (
           <p className="p-12 text-center text-sm text-muted-foreground">
-            {t(status === 'all' ? 'imagegen.noTasks' : 'taskHistory.noMatchingTasks')}
+            {t(
+              status === 'all'
+                ? 'imagegen.noTasks'
+                : 'taskHistory.noMatchingTasks',
+            )}
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -379,8 +405,10 @@ export function ImageTasks({
                       <td className="px-3 py-3">
                         <TaskHistoryCheckbox
                           checked={selection.selected.has(task.task_id)}
-                          disabled={busy || task.status === 'running'}
-                          label={t('taskHistory.selectTask', { id: task.task_id })}
+                          disabled={busy || imageTaskIsActive(task)}
+                          label={t('taskHistory.selectTask', {
+                            id: task.task_id,
+                          })}
                           onChange={() => selection.toggle(task.task_id)}
                         />
                       </td>
@@ -499,7 +527,18 @@ export function ImageTasks({
                               </a>
                             </Button>
                           )}
-                          {task.status !== 'running' && (
+                          {task.can_retry_save && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={busy}
+                              onClick={() => retry.mutate(task.task_id)}
+                            >
+                              <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                              {t('imagegen.retrySave')}
+                            </Button>
+                          )}
+                          {!imageTaskIsActive(task) && (
                             <Button
                               variant="ghost"
                               size="icon"

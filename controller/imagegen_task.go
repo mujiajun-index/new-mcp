@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/internal/imagegentask"
+	"github.com/mujkjk/newmcp/internal/mcp/virtual"
 	"github.com/mujkjk/newmcp/model"
 	"gorm.io/gorm"
 )
@@ -18,7 +19,7 @@ func ListImageGenTasks(c *gin.Context) {
 	q := model.DB.Model(&model.ImageGenTask{}).Where("user_id = ?", c.GetInt64("user_id"))
 	if status := c.Query("status"); status != "" && status != "all" {
 		switch status {
-		case "running", "completed", "partial", "failed", "canceled", "interrupted":
+		case "queued", "running", "saving", "completed", "partial", "failed", "submission_unknown", "canceled", "interrupted":
 			q = q.Where("status = ?", status)
 		default:
 			common.Error(c, 400, "Invalid task status")
@@ -66,7 +67,12 @@ func GetImageGenTask(c *gin.Context) {
 }
 
 func DeleteImageGenTask(c *gin.Context) {
-	err := imagegentask.Delete(c.GetInt64("user_id"), c.Param("task_id"))
+	var err error
+	if virtual.ImageManager != nil {
+		err = virtual.ImageManager.Delete(c.GetInt64("user_id"), c.Param("task_id"))
+	} else {
+		err = imagegentask.Delete(c.GetInt64("user_id"), c.Param("task_id"))
+	}
 	if err != nil {
 		status := 500
 		message := "Could not delete image task history"
@@ -79,4 +85,26 @@ func DeleteImageGenTask(c *gin.Context) {
 		return
 	}
 	common.Success(c, nil)
+}
+
+func RetryImageGenSave(c *gin.Context) {
+	if virtual.ImageManager == nil {
+		common.Error(c, 503, "Image task manager not initialized")
+		return
+	}
+	t, err := virtual.ImageManager.RetrySave(c.GetInt64("user_id"), nil, c.Param("task_id"))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			common.Error(c, 404, "Image task not found")
+		} else {
+			common.Error(c, 400, err.Error())
+		}
+		return
+	}
+	views, err := imagegentask.Views([]model.ImageGenTask{*t})
+	if err != nil {
+		common.Error(c, 500, "Could not load image task")
+		return
+	}
+	common.Success(c, views[0])
 }

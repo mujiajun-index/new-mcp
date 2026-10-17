@@ -2029,3 +2029,21 @@ OpenRouter 将 `seconds` 转为整数 `duration`；未提供 `seconds` 时可传
 图片和视频接口中的 `expires_at=null` 表示永久保存。`VideoGenRetentionHours=0` 时，现存且未清理的视频暂停过期与自动清理；新保存视频不记录到期时间。永久视频计入每用户数量限制，其任务历史保留至手动删除。恢复正数时，旧有限期视频继续按原到期时间处理，新保存的永久视频仍无到期时间。
 
 服务端仅将上游凭证发送至配置来源，跨来源下载重定向移除凭证并校验目标地址；参考图需通过现有图片加载及归属校验。New API 的通义万相、豆包图生选择 JSON；multipart 上传实际图片字节，`metadata` 编码为 JSON 字符串，其他复杂扩展参数使用 JSON。OpenRouter 使用 JSON 首帧，内容由固定接口携带凭证流式获取后保存。`extra_body` 不可覆盖模型、提示词、参考图（包括 `frame_images`、`input_references`）、鉴权和本地任务控制字段。
+
+## 14. 图片异步任务
+
+完整配置和三种图片协议见[图片生成](./IMAGE-GENERATION.md)。路径基于 `/api/v1`，管理接口使用用户 JWT。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/imagegen/test` | 支持保存配置或草稿；`tool` 指定生成、编辑或查询，`arguments` 使用对应 MCP schema；生成默认短等 10 秒，网页传 0 |
+| GET | `/imagegen/tasks` | 当前用户列表，`config_id` 可选，`status` 可选，`page` 从 1 开始，`page_size` 默认 10，最多 100 |
+| GET | `/imagegen/tasks/:task_id` | 本地任务详情、参考图、图片结果及新签名 URL |
+| POST | `/imagegen/tasks/:task_id/retry-download` | 仅重试已有生成输出的保存；不调用生成上游 |
+| DELETE | `/imagegen/tasks/:task_id` | 删除结束任务的历史及私有输出缓存；活跃任务返回 409，共享图片资产继续按正常保留规则清理 |
+
+`/imagegen/test` 外层保持 `{data:{result,is_error,duration_ms}}`，内部 `result.structuredContent` 为任务视图。排队、生成、保存及短等待结束属于正常结果；Agent 使用 `get_image_status` 继续查询。列表与详情返回 `artifact_status`、`result_count`、`poll_after_seconds`、`can_retry_save`，不暴露密钥、连接快照、内部存储地址或租约。
+
+状态筛选支持 `queued/running/saving/completed/partial/failed/submission_unknown/canceled/interrupted`，省略或 `all` 返回全部。用户与配置筛选先于总数和分页，保存失败重试同样校验用户。跨配置 MCP 查询拒绝；禁用/删除配置不会取消已受理任务。
+
+生成 `arguments` 新增 `wait_seconds`（整数 0–30）与 `request_id`（1–128 字节）。相同用户、配置、ID 和输入返回已有任务，输入不同拒绝；不要以重新调用生成为轮询。`timeout_seconds` 控制后台生成，默认 180 秒，0 不设生成期限，客户端断开不再取消已入库任务。

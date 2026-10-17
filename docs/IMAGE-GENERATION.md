@@ -1,6 +1,6 @@
 # 内置图片生成 MCP
 
-在「图片生成」页面创建配置，每条配置绑定一个模型。先获取模型或手动填写模型名，再显式测试出图，保存并启用，最后在分组中添加 `imagegen_<配置 ID>` 服务。获取模型只读取模型列表，不生成图片；测试出图会调用上游。
+在「图片生成」页面创建配置，每条配置绑定一个模型。先获取模型或手动填写模型名，再显式测试出图，保存并启用，最后在分组中添加 `imagegen_<配置 ID>` 服务。获取模型只读取模型列表，不生成图片；测试出图会受理后台任务并调用上游。网页测试与 MCP 共用持久化任务，短等待结束后通过任务 ID 继续查询。
 
 需要文生视频或单图生成视频时，使用独立的[视频生成 MCP](./VIDEO-GENERATION.md)。视频复用配置、上传和分组交互，采用持久化异步任务与状态查询；验收范围见[视频验收记录](./VIDEO-GENERATION-ACCEPTANCE.md)。
 
@@ -10,11 +10,17 @@
 - `endpoint_url`：可留空使用当前协议的官方地址。OpenAI 为 `https://api.openai.com/v1`，Gemini 为 `https://generativelanguage.googleapis.com/v1beta`，OpenRouter 为 `https://openrouter.ai/api/v1`。支持网关根地址、反向代理路径前缀及已有版本后缀；OpenRouter 官方根地址自动补 `/api/v1`，其他网关根地址补 `/v1`。更新时省略字段保留已有地址，传空字符串恢复当前协议官方地址。页面预览最终地址。
 - `operation`：`generate`、`edit`、`both`（默认）。能力由配置和上游决定，不根据模型名猜测。
 - `edit_request_format`：OpenAI 兼容编辑接口格式。新建 OpenAI 兼容配置默认 `generations_json`，请求 `/v1/images/generations` 并传入顶层 `image` 数组；`multipart` 请求 `/v1/images/edits`；`generations_json_extra_body` 请求生成接口并传入 `extra_body.image`。按实际网关文档选择，已有配置保持所选格式，旧配置中未设置该字段时保持 multipart；Gemini 使用原生接口。
-- `timeout_seconds`：默认 180；0 仅跟随调用方期限。MCP 智能/批量执行显式的 `timeout_ms`、请求取消及更短的调用方期限优先。
+- `timeout_seconds`：默认 180 秒，控制后台生成阶段的上游请求；0 表示不设置生成超时，仍受服务关闭影响。客户端期限、智能/批量 `timeout_ms` 和断开连接只结束受理前的校验或本次短等待，已入库任务继续执行。保存阶段独立限制为 5 分钟。
 - `default_params`：JSON 对象。调用参数覆盖默认值，`extra_body` 深度合并；未填写的可选参数不发送。
 - API Key 只保存在独立配置中。列表、详情和虚拟服务配置不回显密钥；编辑时留空保留原密钥。
 
 「获取模型」仅提交协议、地址及凭证，不要求先填写配置名称、模型名或合法的生成默认参数。OpenRouter 读取专用图片模型目录，其他协议读取原有模型接口。搜索框默认 `image`，可修改或清空，也可手动填写模型 ID；不按模型名过滤或动态推断能力。
+
+### MCP 客户端提前超时
+
+此前同步图片生成会把 MCP 客户端取消传递给上游等待，因此 Cherry Studio 约 60 秒断开时，即使配置为 180 秒，也可能出现 `context canceled`。Cherry Studio 2.1.6 的 [MCP 超时策略源码](https://github.com/CherryHQ/cherry-studio/blob/v2.1.6/src/main/ai/mcp/mcpRequestOptions.ts)默认使用 60 秒，`timeout=0` 也回退到 60 秒。
+
+现在生成工具默认只等待 10 秒（可选 0–30 秒），未完成时正常返回 `task_id`。Agent 应调用同配置的 `get_image_status`，不要再次调用生成工具轮询。客户端取消不影响已入库任务；配置的 180 秒在后台继续生效。如果连任务 ID 都未收到，可查看任务历史，或用相同 `request_id` 和输入重放提交以找回任务。参考图加载和校验发生在受理前，最多 30 秒；此阶段取消不会提交生成。
 
 OpenAI 默认参数示例（实际支持的参数、尺寸、质量由上游模型决定）：
 
@@ -95,16 +101,16 @@ multipart `/v1/images/edits` 是兼容协议，不限定只能连接 OpenAI 官�
 
 两种工具提供 `n`（1–10，默认 1）、`size`、`quality`、`background`、`output_format`、`aspect_ratio` 和 `resolution`，不使用 Gemini 的 `image_size`。未设置的参数不发送，尺寸组合及参考图数量限制由上游模型校验；可通过 `extra_body` 传入 `seed`、`output_compression` 或 `provider` 路由及提供商扩展，不能覆盖模型、提示词、参考图或流式设置。采用同步非流式请求，不做自动接口切换或失败重试。
 
-解析响应的 `data[].b64_json`、`media_type`、可选 `url` 及 `usage`，复用现有存储、配额、签名下载和 inline 限额。实际 MIME 仍由图片字节确认。共享图片存储支持 PNG、JPEG、WebP；显式请求 SVG 会在调用上游前拒绝。本次接入的是专用 Image API，未增加 Chat Completions 图片模式或异步任务。
+解析响应的 `data[].b64_json`、`media_type`、可选 `url` 及 `usage`，复用现有存储、配额、签名下载和 inline 限额。实际 MIME 仍由图片字节确认。共享图片存储支持 PNG、JPEG、WebP；显式请求 SVG 会在调用上游前拒绝。上游仍使用专用同步 Image API，本地统一转为异步任务管理；未增加 Chat Completions 图片模式。
 
 ## MCP 工具
 
-按 `operation` 暴露 `generate_image`、`edit_image`；支持编辑时附带 `upload_image`。在网关中工具名带服务前缀，例如 `imagegen_1__generate_image`。
+按 `operation` 暴露 `generate_image`、`edit_image`，所有配置均暴露 `get_image_status`；支持编辑时附带 `upload_image`。在网关中工具名带服务前缀，例如 `imagegen_1__generate_image`。
 
-内置工具默认描述使用英文，说明能力范围、参数用法、上传流程及返回结果。详情页的 `upload_image` 描述直接使用后端注册文案；`generate_image` 和 `edit_image` 可自定义描述或恢复默认后保存。已有配置中的旧内置默认描述自动使用新版文案，自定义描述保留。启动时同步已注册服务的工具缓存。
+内置工具默认描述使用英文，说明能力范围、参数用法、上传流程及返回结果。详情页的 `upload_image` 描述直接使用后端注册文案；`generate_image`、`edit_image` 和 `get_image_status` 可自定义描述或恢复默认后保存。已有配置中的旧内置默认描述自动使用新版文案，自定义描述保留。启动时同步已注册服务的工具缓存。
 
 ```json
-{"prompt":"绘制一幅水彩山景","return_mode":"url"}
+{"prompt":"绘制一幅水彩山景","return_mode":"url","wait_seconds":10,"request_id":"drawing-001"}
 ```
 
 ```json
@@ -122,9 +128,40 @@ multipart `/v1/images/edits` 是兼容协议，不限定只能连接 OpenAI 官�
 - mask 必须是 PNG，尺寸与首图一致，透明区域用于重绘；需要标准 OpenAI multipart 编辑接口及支持该能力的模型。Gemini / JSON 生成接口编辑的 mask 在访问上游前拒绝。
 - Gemini 支持 `aspect_ratio`、`image_size`，参考图通过 `inlineData` 输入；单次请求不模拟多张生成循环。
 
+### 短等待与查询
+
+生成参数新增 `wait_seconds`（整数 0–30，默认 10）和可选 `request_id`（1–128 字节）；它们只在本地使用，不能放入 `default_params` 或 `extra_body`，不会发送上游。相同用户、配置、`request_id` 和输入返回同一任务；输入不同则拒绝。草稿还核对协议、连接、模型、默认参数等有效配置。未提供 ID 时每次调用视为新提交。
+
+查询同配置任务：
+
+```json
+{"task_id":"<生成返回的本地 UUID>","wait_seconds":0,"return_mode":"url"}
+```
+
+查询支持 `wait_seconds`（默认 0，上限 30）和 `return_mode`（`url` / `inline`）。保存失败且 `can_retry_save=true` 时，传 `retry_download=true` 仅重试已有生成结果的下载、存储。不得传任意上游 ID；工具校验用户与配置归属。配置移除 MCP 入口后，仍可通过网页和任务 API 查看已有任务。
+
+### 任务状态与恢复
+
+| 状态 | 含义 |
+| --- | --- |
+| `queued` | 已持久化，等待后台 worker |
+| `running` | 正在等待同步上游返回 |
+| `saving` | 已获得生成结果，正在下载和保存 |
+| `completed` | 所有图片已保存 |
+| `partial` | 部分图片保存成功，可按 `can_retry_save` 重试其余结果 |
+| `failed` | 明确拒绝、校验或保存失败，具体见错误 |
+| `submission_unknown` | 网络超时、非明确的服务器错误或生成中断，无法确认上游结果 |
+| `canceled` / `interrupted` | 升级前同步任务的历史状态 |
+
+先入库再提交，每实例最多 4 个后台任务，数据库租约每 10 秒续期、30 秒到期，领取和状态更新核对持有者。连接、模型和有效参数按现有凭证机制密封快照，配置更改、停用、删除不影响已受理任务；草稿任务也可恢复。已排队任务重启后继续执行；已获得输出的 `saving` 任务从私有结果文件恢复保存。
+
+图片上游没有可查询的异步任务 ID，正在同步生成的请求无法在进程重启后接续。过期的 `running` 租约转为 `submission_unknown`，不会自动重新 POST；HTTP 4xx 等明确拒绝为失败；HTTP 503 返回明确的 `image queue is full, please retry later`（可带 request id）同样标记失败。启动时会修正此前误标为结果不确定的同类队列拒绝历史，保留任务 ID、错误、创建时间及耗时，不重新生成。网络/期限/其他一般 5xx 保守标为结果不确定。查询和重试保存均不重新生成，避免重复费用。
+
+获得上游结果后先写入独立私有对象 `imagegen/tasks/<task_id>/<lease>.json`，随后逐张保存并记录输出序号。保存重试跳过已保存的图片，不增加任务、不重复记录结果。凭证在输出落盘后从快照清除；全部保存成功后清除连接参数快照及临时结果文件。部分保存失败保留无凭证快照和临时结果以供重试；删除任务时同步清理私有结果文件。如果私有结果文件本身写入失败，仍尽力保存本次内存中的图片，但不能承诺重启恢复或后续保存重试。
+
 ## 结果与存储
 
-默认返回 MCP 文本、图片 `resource_link` 和 `structuredContent`，包含 `task_id`、协议、模型、链接、实际 MIME、字节数、宽高、失效时间、修订提示词及可用的上游文本/用量。生成和上传共用本地/S3 存储、按用户配额、内容去重、签名 URL 和自动清理。
+所有调用返回 MCP 文本和 `structuredContent`，包含任务状态、`artifact_status`、`poll_after_seconds`、`can_retry_save` 及错误。排队、生成、保存及短等待结束返回正常结果；图片保存成功后附带 `resource_link`，结果包含 `task_id`、协议、模型、链接、实际 MIME、字节数、宽高、失效时间、修订提示词及可用的上游文本/用量。生成和上传共用本地/S3 存储、按用户配额、内容去重、签名 URL 和自动清理。
 
 `return_mode=inline` 会追加 MCP 原生 `image` 内容。序列化响应合计超过 `ImageGenInlineMaxBytes`（默认 1 MiB；0 使用默认值）时保留链接并给出说明。图片有效期按 `UploadRetentionHours` 计算；管理员更改保留规则后，实际有效期随规则变化。系统设置“文件储存”中的图片保留时间支持 0，表示永久保存，现存图片不再过期或被保留期清理，生成/上传和列表接口的 `expires_at` 返回 `null`；恢复正数后按当前时长重新判断有效期。
 
@@ -150,9 +187,10 @@ multipart `/v1/images/edits` 是兼容协议，不限定只能连接 OpenAI 官�
 | POST | `/test` | 测试当前配置，传 `tool`、`arguments` 和可选 `config_id` |
 | POST | `/:id/enable`、`/:id/disable` | 注册 / 移除虚拟服务 |
 | GET | `/tasks` | 当前用户的图片任务历史；支持 `config_id`、`page`、`page_size`（默认 10，最多 100） |
-| GET / DELETE | `/tasks/:task_id` | 任务详情 / 删除历史记录（运行中返回 409） |
+| GET / DELETE | `/tasks/:task_id` | 任务详情 / 删除历史记录（排队、生成、保存中返回 409） |
+| POST | `/tasks/:task_id/retry-download` | 重试已有输出的保存，不重新生成 |
 
-历史列表支持 `status` 状态筛选：省略或 `all` 返回全部，可用 `completed/running/partial/failed/canceled/interrupted`；筛选先于分页和总数统计，并与 `config_id`、用户归属条件同时生效。页面在刷新按钮左侧提供下拉框，默认“全部状态”，“成功”对应 `completed`；切换时回到第一页并清空勾选。
+历史列表支持 `status` 状态筛选：省略或 `all` 返回全部，可用 `completed/queued/running/saving/partial/failed/submission_unknown/canceled/interrupted`；筛选先于分页和总数统计，并与 `config_id`、用户归属条件同时生效。页面在刷新按钮左侧提供下拉框，默认“全部状态”，“成功”对应 `completed`；切换时回到第一页并清空勾选。
 
 新配置默认不注册。启用、禁用、删除及已注册配置更新通过事务修改数据库，成功提交后更新虚拟注册表；重复启用幂等。禁用/删除清理分组关联，重启恢复处理器并更新工具缓存。
 
@@ -164,18 +202,25 @@ multipart `/v1/images/edits` 是兼容协议，不限定只能连接 OpenAI 官�
 
 任务历史支持本页多选和全选可删除任务，选中后显示与市场管理一致的批量操作栏，可批量删除或取消选择；运行中任务禁止勾选。批量删除沿用单条历史删除接口及用户归属检查，最多并行处理 4 条，部分失败会提示数量并保留失败项选择。切换页码或配置时清空选择，任务重新运行时自动取消其选择。分页与市场管理统一：左侧显示总条数，右侧箭头按钮和当前页/总页数，每页 10 条；删除后及数据刷新时自动回到有效页。
 
-任务为同步调用记录，不会自动重新提交生成请求。状态包含 `running`、`completed`、`partial`、`failed`、`canceled`、`interrupted`；服务重启将未完成记录标记为中断。删除配置不会删除历史。删除任务只移除任务及结果元数据，图片继续按正常存储保留规则清理，以免破坏其他任务或上传记录对相同内容的引用。
+网页测试立即显示后台任务，每 5 秒查询；列表、详情对排队、生成、保存状态自动刷新，列表提供保存失败重试入口。所有活跃任务禁止删除。恢复规则见上文，不会自动重新提交结果不确定的生成请求。删除配置不会删除历史。删除任务只移除任务及结果元数据，图片继续按正常存储保留规则清理，以免破坏其他任务或上传记录对相同内容的引用。
 
 生成结果在共享图片存储中标记为 `imagegen`，不展示在管理员图片管理或用户上传列表中，仍计入存储配额并参与自动清理。同一用户主动上传相同内容后，该上传仍正常展示。历史读取时按当前保留时间和图片存储记录计算可用性、签名链接；已过期或已清理的图片展示为不可用，任务本身保留。
 
 图生图任务在请求上游前记录已校验的参考图和可选 mask。详情的“输入图片”区域按输入顺序仅展示小缩略图，点击后在弹窗查看大图、尺寸、格式、大小、保留时间、完整链接及复制链接/查看原图入口，mask 单独标注；上游生成失败仍保留输入记录。自有上传复用当前用户的图片资产；外部 URL、data URL 和 base64 输入保存实际校验后的图片字节，生成可用的本地签名链接，保证历史预览对应本次提交的内容。参考图缓存标记为 `reference`，不额外出现在上传管理列表；原有手动上传仍可见。参考图遵循图片保留时间与配额，0 为永久保存，过期或已删除显示占位提示；删除历史不立即删除共享图片。
 
-历史只保存参考图资产 ID 和图片元数据，不保存模型 API Key、连接快照、参考图 base64 或旧签名链接；查询按用户归属重新生成链接。更新前的图片任务只记录参考图数量，无法可靠补回原图，详情提示未保存参考图。
+公开历史只展示参考图元数据；数据库另有私有任务快照，用于后台执行和恢复。参考图只记录资产 ID，不在数据库保存参考图 base64 或旧签名链接；查询按用户归属重新生成链接。更新前的图片任务只记录参考图数量，无法可靠补回原图，详情提示未保存参考图。
 
 ## 验证
 
-`go test ./...` 覆盖协议请求、模拟网关模型、真实 API/MCP 路由、用户隔离、注册事务和恢复、分组工具禁用、直接/智能/批量执行、mask、超时取消、内联降级、部分保存失败、下载限制以及本地/模拟 S3 保存。已有上传回归测试继续运行。前端验证使用 `npm run build:check`。
+`go test ./...` 覆盖协议请求、模拟网关模型、真实 API/MCP 路由、用户隔离、注册事务和恢复、分组工具禁用、直接/智能/批量执行、mask、异步受理、客户端断开、幂等、并发租约、排队及保存阶段恢复、结果不确定、保存重试不重复生成、超时、内联降级、部分保存失败、下载限制以及本地/模拟 S3 保存。已有上传回归测试继续运行。前端验证使用 `npm run build:check`。
+
+2026-10-17 异步改造验证记录：
+
+- 相关后端包测试通过：`internal/imagegentask`、图片协议、共享存储与参考图、视频协议回归、`service`、`controller`、`router`、`model`。
+- 本地模拟网关验证客户端短等待取消后继续完成、同请求 ID 并发去重、多实例租约、草稿快照恢复、生成中断结果不确定、400/429/503/超时分类、保存失败及部分保存重试、结果序号去重、公开 MCP 查询和原分组权限。
+- SQLite 旧多图历史升级与重复迁移通过；MySQL/PostgreSQL 未提供专用 DSN，实际迁移尚未执行。
+- 前端 `npm run build:check`、任务历史及视频参数脚本测试通过。没有调用真实付费图片网关；CherryStudio 的实际 Agent 轮询仍需部署后刷新工具列表验收。
 
 模拟网关测试验证 GPT Image、Qwen、Seedream、OpenAI 图片接口上的 Imagen 及 Gemini 的请求格式，并覆盖 `seed`、`watermark`、`prompt_extend`。真实 New API 账号及具体上游模型的在线验收需要可用网关、授权密钥和模型额度。
 
-设计参考：[writingmate/imagegen-mcp](https://github.com/writingmate/imagegen-mcp)、[OpenAI Images API](https://developers.openai.com/api/reference/resources/images/methods/generate)。首版同步非流式；Replicate、任意 HTTP 模板和独立异步任务不在本次范围内。
+设计参考：[writingmate/imagegen-mcp](https://github.com/writingmate/imagegen-mcp)、[OpenAI Images API](https://developers.openai.com/api/reference/resources/images/methods/generate)。上游保持同步非流式，本地异步封装；Replicate、任意 HTTP 模板、上游原生异步图片协议不在本次范围内。

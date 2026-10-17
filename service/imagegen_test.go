@@ -50,9 +50,14 @@ func imageGenTestSetup(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	virtual.UploadStore = UploadStore
+	oldManager := virtual.ImageManager
+	virtual.ImageManager = imagegentask.NewManager(db, UploadStore)
+	manager := virtual.ImageManager
 	sqlDB, _ := db.DB()
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() {
+		manager.Close()
+		virtual.ImageManager = oldManager
 		_ = sqlDB.Close()
 		model.DB, VirtualRegistry, UploadStore, virtual.UploadStore = oldDB, oldRegistry, oldStore, oldVStore
 	})
@@ -331,7 +336,7 @@ func TestImageGenOpenRouterConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tool := range tools {
-		if tool.Name == "upload_image" {
+		if tool.Name == "upload_image" || tool.Name == "get_image_status" {
 			continue
 		}
 		props := tool.InputSchema.Properties
@@ -413,9 +418,10 @@ func TestImageGenDefaultDescriptionsUpgradeAndCacheSync(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := map[string]string{
-				"generate_image": detail.GenerateImageDesc,
-				"edit_image":     detail.EditImageDesc,
-				"upload_image":   detail.UploadImageDesc,
+				"generate_image":   detail.GenerateImageDesc,
+				"edit_image":       detail.EditImageDesc,
+				"upload_image":     detail.UploadImageDesc,
+				"get_image_status": detail.GetImageStatusDesc,
 			}
 			if len(tools) != len(want) {
 				t.Fatalf("missing registered tools: %+v", tools)
@@ -583,8 +589,7 @@ func TestImageGenPartialDeliveryQuotaAndCancellation(t *testing.T) {
 		var p map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&p)
 		if p["prompt"] == "slow" {
-			<-r.Context().Done()
-			return
+			time.Sleep(150 * time.Millisecond)
 		}
 		fmt.Fprintf(w, `{"data":[{"b64_json":"%s"},{"b64_json":"%s"}]}`, base64.StdEncoding.EncodeToString(a), base64.StdEncoding.EncodeToString(b))
 	}))
@@ -627,12 +632,16 @@ func TestImageGenPartialDeliveryQuotaAndCancellation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	result, err := s.Test(ctx, 1, &dto.ImageGenProbeReq{ConfigID: c.ID, Arguments: json.RawMessage(`{"prompt":"slow"}`)})
-	if err != nil || !result.IsError || !strings.Contains(result.Error, "deadline") {
-		t.Fatalf("preview cancellation: %+v %v", result, err)
+	if err != nil || result.IsError {
+		t.Fatalf("accepted preview must survive caller cancellation: %+v %v", result, err)
 	}
-	var canceled model.ImageGenTask
-	if err := db.Where("source = ? AND status = ?", "test", "canceled").First(&canceled).Error; err != nil || canceled.FinishedAt == nil {
-		t.Fatalf("canceled request history not finalized: %+v %v", canceled, err)
+	var accepted model.ImageGenTask
+	if err := db.Where("source = ?", "test").First(&accepted).Error; err != nil {
+		t.Fatal(err)
+	}
+	finished, err := virtual.ImageManager.Wait(context.Background(), 1, accepted.ID, 2)
+	if err != nil || finished.Status != "completed" {
+		t.Fatalf("client cancellation stopped accepted task: %+v %v", finished, err)
 	}
 	// A zero config timeout is persisted and does not introduce the old 60s limit.
 	if err := s.Update(1, c.ID, &dto.ImageGenConfigReq{TimeoutSeconds: igPtr(0)}); err != nil {
@@ -730,11 +739,8 @@ func TestImageGenServiceTestDeadlineRules(t *testing.T) {
 		svc, _ := model.GetServiceByID(1, *cfg.RegisteredServiceID)
 		VirtualRegistry.Register(svc.ID, 1, svc.Name, nil, func(ctx context.Context, _ int64, _ map[string]interface{}, _ string, _ json.RawMessage) (json.RawMessage, error) {
 			deadline, hasDeadline := ctx.Deadline()
-			if seconds == 0 && hasDeadline {
-				t.Error("zero timeout gained a fixed service-test deadline")
-			}
-			if seconds > 0 && (!hasDeadline || time.Until(deadline) > 2*time.Second) {
-				t.Error("configured deadline not applied")
+			if !hasDeadline || time.Until(deadline) > 40*time.Second || time.Until(deadline) < 35*time.Second {
+				t.Error("async tool test must use a short caller deadline independent of generation timeout")
 			}
 			return json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`), nil
 		})

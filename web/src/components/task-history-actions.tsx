@@ -29,7 +29,17 @@ export function TaskHistoryStatusFilter({
   const { t } = useTranslation();
   const statuses =
     kind === "image"
-      ? ["completed", "failed", "running", "partial", "canceled", "interrupted"]
+      ? [
+          "completed",
+          "failed",
+          "queued",
+          "running",
+          "saving",
+          "partial",
+          "submission_unknown",
+          "canceled",
+          "interrupted",
+        ]
       : [
           "completed",
           "failed",

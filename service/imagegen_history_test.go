@@ -183,7 +183,7 @@ func TestImageGenTaskHistoryLifecycleAndStorageSeparation(t *testing.T) {
 		t.Fatal("upstream failure", failed, err)
 	}
 	var failedTask model.ImageGenTask
-	if err := db.Where("status = ?", "failed").First(&failedTask).Error; err != nil || !strings.Contains(failedTask.Error, "503") || strings.Contains(failedTask.Error, "secret-image-key") {
+	if err := db.Where("status = ?", "submission_unknown").First(&failedTask).Error; err != nil || !strings.Contains(failedTask.Error, "503") || strings.Contains(failedTask.Error, "secret-image-key") {
 		t.Fatalf("failure history: %+v %v", failedTask, err)
 	}
 	if err := s.Delete(1, cfg.ID); err != nil {

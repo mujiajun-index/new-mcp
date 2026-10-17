@@ -29,6 +29,12 @@ func TestImageGenHistoryMigrationPreservesUploads(t *testing.T) {
 	if err := db.Exec(`INSERT INTO imagegen_tasks (id, user_id, prompt, status) VALUES ('legacy-task', 1, 'old prompt', 'completed')`).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec(`CREATE TABLE imagegen_task_images (id integer PRIMARY KEY AUTOINCREMENT, task_id text NOT NULL, upload_id integer NOT NULL)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO imagegen_task_images (task_id, upload_id) VALUES ('legacy-task', 1), ('legacy-task', 1)`).Error; err != nil {
+		t.Fatal(err)
+	}
 	for range 2 {
 		if err := db.AutoMigrate(&UploadedImage{}, &ImageGenTask{}, &ImageGenTaskImage{}); err != nil {
 			t.Fatal(err)
@@ -57,5 +63,9 @@ func TestImageGenHistoryMigrationPreservesUploads(t *testing.T) {
 	var persisted ImageGenTask
 	if err := db.First(&persisted, "id = ?", "persisted-task").Error; err != nil || persisted.ReferenceImages != references {
 		t.Fatal("repeated migration lost reference metadata", err)
+	}
+	var images []ImageGenTaskImage
+	if err := db.Where("task_id = ?", "legacy-task").Find(&images).Error; err != nil || len(images) != 2 || images[0].OutputIndex != nil || legacy.IdempotencyKey != nil {
+		t.Fatalf("nullable async indexes did not preserve legacy multi-image history: %+v %v", images, err)
 	}
 }

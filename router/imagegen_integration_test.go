@@ -16,10 +16,12 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/mujkjk/newmcp/common"
+	"github.com/mujkjk/newmcp/internal/imagegentask"
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/internal/mcp/handler"
 	"github.com/mujkjk/newmcp/internal/mcp/virtual"
@@ -57,6 +59,9 @@ func testImageGenAPIAndMCPWorkflow(t *testing.T, provider string) {
 		t.Fatal(err)
 	}
 	service.UploadStore, virtual.UploadStore = store, store
+	oldManager := virtual.ImageManager
+	manager := imagegentask.NewManager(db, store)
+	virtual.ImageManager = manager
 	gateway := handler.NewGatewayHandler(pool, bridge.NewToolRouter(pool), VirtualRegistry)
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
@@ -66,6 +71,8 @@ func testImageGenAPIAndMCPWorkflow(t *testing.T, provider string) {
 	sqlDB, _ := db.DB()
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() {
+		manager.Close()
+		virtual.ImageManager = oldManager
 		gateway.Close()
 		pool.CloseAll()
 		f.server.Close()
@@ -117,8 +124,7 @@ func testImageGenAPIAndMCPWorkflow(t *testing.T, provider string) {
 				}
 			}
 			if body["prompt"] == "slow" {
-				<-r.Context().Done()
-				return
+				time.Sleep(150 * time.Millisecond)
 			}
 		} else {
 			t.Errorf("unexpected image API route: %s", r.URL.Path)
@@ -208,6 +214,11 @@ func testImageGenAPIAndMCPWorkflow(t *testing.T, provider string) {
 		t.Fatal("direct call", reply)
 	}
 	result := reply["result"].(map[string]any)
+	generatedTaskID := result["structuredContent"].(map[string]any)["task_id"].(string)
+	queryReply := call(f.key, "/mcp", fmt.Sprintf("imagegen_%d__get_image_status", id), map[string]any{"task_id": generatedTaskID})
+	if queryReply["error"] != nil || queryReply["result"].(map[string]any)["structuredContent"].(map[string]any)["status"] != "completed" {
+		t.Fatal("MCP task status", queryReply)
+	}
 	images := result["structuredContent"].(map[string]any)["images"].([]any)
 	url := images[0].(map[string]any)["url"].(string)
 	downloaded, err := http.Get(url)
@@ -274,12 +285,12 @@ func testImageGenAPIAndMCPWorkflow(t *testing.T, provider string) {
 	}
 	db.Delete(&filter)
 	reply = call(f.key, "/smart/mcp", "mcp.execute", map[string]any{"tool_id": toolID, "arguments": map[string]any{"prompt": "slow"}, "timeout_ms": 50})
-	if reply["error"] == nil || !strings.Contains(fmt.Sprint(reply), "deadline") {
-		t.Fatal("explicit execute timeout", reply)
+	if reply["error"] != nil || !strings.Contains(fmt.Sprint(reply), "task_id") {
+		t.Fatal("short wait must return accepted task", reply)
 	}
 	reply = call(f.key, "/smart/mcp", "mcp.execute_batch", map[string]any{"tool_id": toolID, "arguments_list": []any{map[string]any{"prompt": "slow"}}, "timeout_ms": 50})
-	if reply["result"].(map[string]any)["isError"] != true || !strings.Contains(fmt.Sprint(reply), "deadline") {
-		t.Fatal("batch timeout", reply)
+	if reply["result"].(map[string]any)["isError"] == true || !strings.Contains(fmt.Sprint(reply), "task_id") {
+		t.Fatal("batch short wait must return accepted task", reply)
 	}
 	if code, _ := apiRequest("POST", path+"/disable", token, nil); code != 200 {
 		t.Fatal("disable")

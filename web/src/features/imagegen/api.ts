@@ -22,8 +22,10 @@ export interface ImageGenConfig {
   timeout_seconds: number
   generate_image_desc: string
   edit_image_desc: string
+  get_image_status_desc: string
   generate_image_desc_default: string
   edit_image_desc_default: string
+  get_image_status_desc_default: string
   upload_image_desc: string
   has_api_key: boolean
   auto_register: boolean
@@ -45,13 +47,20 @@ export interface ImageTask {
   reference_count: number
   reference_images?: TaskReferenceImage[]
   status:
+    | 'queued'
     | 'running'
+    | 'saving'
+    | 'submission_unknown'
     | 'completed'
     | 'partial'
     | 'failed'
     | 'canceled'
     | 'interrupted'
   error?: string
+  artifact_status?: string
+  can_retry_save?: boolean
+  poll_after_seconds?: number
+  result_count?: number
   warnings: string[]
   text?: string
   usage?: Record<string, unknown>
@@ -73,7 +82,7 @@ export interface ImageTask {
 export async function listImageTasks(
   configID: number | undefined,
   page: number,
-  status = 'all'
+  status = 'all',
 ): Promise<{
   data: { items: ImageTask[]; total: number; page_size: number }
 }> {
@@ -97,6 +106,24 @@ export async function deleteImageTask(id: string) {
   return (await api.delete(`/imagegen/tasks/${encodeURIComponent(id)}`)).data
 }
 
+export function imageTaskIsActive(task?: ImageTask) {
+  return !!task && ['queued', 'running', 'saving'].includes(task.status)
+}
+
+export function newImageRequestID() {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(
+    '',
+  )
+}
+
+export async function retryImageSave(id: string): Promise<{ data: ImageTask }> {
+  return (
+    await api.post(`/imagegen/tasks/${encodeURIComponent(id)}/retry-download`)
+  ).data
+}
+
 export function imageDownloadURL(url: string) {
   return `${url}${url.includes('?') ? '&' : '?'}download=1`
 }
@@ -114,6 +141,7 @@ export type ConfigInput = Partial<
     | 'timeout_seconds'
     | 'generate_image_desc'
     | 'edit_image_desc'
+    | 'get_image_status_desc'
   >
 > & { api_key?: string }
 export interface ProbeInput extends ConfigInput {
@@ -127,12 +155,12 @@ export async function getImageGenConfigs(): Promise<{
   return (await api.get('/imagegen')).data
 }
 export async function getImageGenConfig(
-  id: number
+  id: number,
 ): Promise<{ data: ImageGenConfig }> {
   return (await api.get(`/imagegen/${id}`)).data
 }
 export async function createImageGenConfig(
-  data: ConfigInput
+  data: ConfigInput,
 ): Promise<{ data: ImageGenConfig }> {
   return (await api.post('/imagegen', data)).data
 }
@@ -149,17 +177,16 @@ export async function disableImageGenConfig(id: number) {
   return (await api.post(`/imagegen/${id}/disable`)).data
 }
 export async function listImageGenModels(
-  data: ProbeInput
+  data: ProbeInput,
 ): Promise<{ data: Array<{ id: string; name: string }> }> {
   return (await api.post('/imagegen/models', data, { timeout: 20_000 })).data
 }
 export async function testImageGenConfig(
-  data: ProbeInput
+  data: ProbeInput,
 ): Promise<{ data: ToolCallResult }> {
-  const seconds = data.timeout_seconds ?? 180
   return (
     await api.post('/imagegen/test', data, {
-      timeout: seconds === 0 ? 0 : (seconds + 5) * 1000,
+      timeout: 65_000,
     })
   ).data
 }
@@ -177,7 +204,7 @@ export function imageEndpoint(
   provider: ImageGenProvider,
   model: string,
   operation = 'generate',
-  editRequestFormat: EditRequestFormat = 'multipart'
+  editRequestFormat: EditRequestFormat = 'multipart',
 ) {
   let endpoint = base.trim() || defaultImageEndpoint(provider)
   if (provider === 'openrouter') {

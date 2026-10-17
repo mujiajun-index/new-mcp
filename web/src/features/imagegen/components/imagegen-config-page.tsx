@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { ImageTasks } from './image-tasks'
+import { ImageTasks, ImageTaskDetail } from './image-tasks'
 import {
   ArrowLeft,
   CheckCircle2,
+  Copy,
   ImagePlus,
   List,
   Lock,
@@ -41,6 +42,7 @@ import {
 import {
   ContentBlock,
   TestResultPanel,
+  copyText,
 } from '@/features/services/components/test-result-panel'
 import type { ToolCallResult } from '@/types'
 import {
@@ -53,6 +55,9 @@ import {
   testImageGenConfig,
   imageEndpoint,
   defaultImageEndpoint,
+  getImageTask,
+  imageTaskIsActive,
+  newImageRequestID,
 } from '../api'
 import type { ConfigInput, EditRequestFormat, ImageGenProvider } from '../api'
 
@@ -76,19 +81,32 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
   const [tools, setTools] = useState({
     generate_image_desc: '',
     edit_image_desc: '',
+    get_image_status_desc: '',
   })
   const [defaults, setDefaults] = useState('{}')
   const [models, setModels] = useState<Array<{ id: string; name: string }>>([])
   const [modelsOpen, setModelsOpen] = useState(false)
   const [modelSearch, setModelSearch] = useState('image')
   const [testOperation, setTestOperation] = useState<'generate' | 'edit'>(
-    'generate'
+    'generate',
   )
   const [prompt, setPrompt] = useState('')
   const [references, setReferences] = useState('')
   const [mask, setMask] = useState('')
   const [uploading, setUploading] = useState(false)
   const [result, setResult] = useState<ToolCallResult | null>(null)
+  const [taskID, setTaskID] = useState<string | null>(null)
+  const { data: testTask, isError: testTaskError } = useQuery({
+    queryKey: ['image-task', taskID],
+    queryFn: () => getImageTask(taskID!),
+    enabled: !!taskID,
+    refetchInterval: (query) =>
+      imageTaskIsActive(query.state.data?.data) ? 5000 : false,
+  })
+  const taskPending =
+    !!taskID &&
+    !testTaskError &&
+    (!testTask || imageTaskIsActive(testTask.data))
   const { data, isLoading, isError } = useQuery({
     queryKey: ['imagegen-config', id],
     queryFn: () => getImageGenConfig(id!),
@@ -111,6 +129,7 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
     setTools({
       generate_image_desc: config.generate_image_desc,
       edit_image_desc: config.edit_image_desc,
+      get_image_status_desc: config.get_image_status_desc,
     })
     setDefaults(JSON.stringify(config.default_params, null, 2))
     setTestOperation(config.operation === 'edit' ? 'edit' : 'generate')
@@ -184,6 +203,8 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
         tool: testOperation === 'generate' ? 'generate_image' : 'edit_image',
         arguments: {
           prompt,
+          wait_seconds: 0,
+          request_id: newImageRequestID(),
           ...(testOperation === 'edit'
             ? {
                 images: references
@@ -195,8 +216,18 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
             : {}),
         },
       }),
-    onMutate: () => setResult(null),
-    onSuccess: (res) => setResult(res.data),
+    onMutate: () => {
+      setResult(null)
+      setTaskID(null)
+    },
+    onSuccess: (res) => {
+      setResult(res.data)
+      const content = res.data.result?.structuredContent as
+        | { task_id?: unknown }
+        | undefined
+      const id = content?.task_id
+      if (typeof id === 'string') setTaskID(id)
+    },
     onError: (err) => toast.error(err.message),
     onSettled: () =>
       queryClient.invalidateQueries({ queryKey: ['image-tasks'] }),
@@ -231,7 +262,7 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
     form.provider,
     form.model_name,
     testOperation,
-    form.edit_request_format
+    form.edit_request_format,
   )
   if (id && isLoading)
     return (
@@ -494,7 +525,7 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
                     form.provider,
                     form.model_name,
                     'edit',
-                    form.edit_request_format
+                    form.edit_request_format,
                   )}
                 </code>
               </p>
@@ -515,7 +546,7 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
             {t(
               form.provider === 'openrouter'
                 ? 'imagegen.openRouterDefaultsHint'
-                : 'imagegen.defaultsHint'
+                : 'imagegen.defaultsHint',
             )}
           </p>
         </div>
@@ -567,17 +598,26 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
             {t('imagegen.registeredToolsHint')}
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
-            {(['generate', 'edit'] as const)
+            {(['generate', 'edit', 'status'] as const)
               .filter(
-                (v) => config.operation === 'both' || config.operation === v
+                (v) =>
+                  v === 'status' ||
+                  config.operation === 'both' ||
+                  config.operation === v,
               )
               .map((v) => {
                 const field =
-                  v === 'generate' ? 'generate_image_desc' : 'edit_image_desc'
+                  v === 'generate'
+                    ? 'generate_image_desc'
+                    : v === 'edit'
+                      ? 'edit_image_desc'
+                      : 'get_image_status_desc'
                 const defaultDescription =
                   v === 'generate'
                     ? config.generate_image_desc_default
-                    : config.edit_image_desc_default
+                    : v === 'edit'
+                      ? config.edit_image_desc_default
+                      : config.get_image_status_desc_default
                 const saving =
                   saveTool.isPending &&
                   saveTool.variables?.[field] !== undefined
@@ -587,7 +627,9 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
                       <span className="inline-flex items-center justify-center rounded-md bg-primary/10 p-1.5">
                         <Wrench className="h-3.5 w-3.5 text-primary" />
                       </span>
-                      <span className="text-sm font-semibold">{v}_image</span>
+                      <span className="text-sm font-semibold">
+                        {v === 'status' ? 'get_image_status' : `${v}_image`}
+                      </span>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor={`imagegen-${field}`} className="text-xs">
@@ -772,6 +814,7 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
             !prompt.trim() ||
             uploading ||
             test.isPending ||
+            taskPending ||
             (testOperation === 'edit' && !references.trim())
           }
           onClick={() => test.mutate()}
@@ -783,7 +826,30 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
           )}
           {t('imagegen.testGenerate')}
         </Button>
-        {result && (
+        {taskID && (
+          <div className="space-y-4 rounded-xl border p-4">
+            <div className="flex items-center justify-between gap-2">
+              <code className="break-all text-xs text-muted-foreground">
+                {taskID}
+              </code>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0"
+                aria-label={t('imagegen.copyTask')}
+                onClick={() =>
+                  copyText(taskID)
+                    .then(() => toast.success(t('common.copied')))
+                    .catch(() => toast.error(t('common.copyFailed')))
+                }
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <ImageTaskDetail id={taskID} />
+          </div>
+        )}
+        {!taskID && result && (
           <TestResultPanel result={result}>
             {result.result?.content?.map((block, i) => (
               <ContentBlock key={i} block={block} index={i} />
@@ -791,7 +857,13 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
           </TestResultPanel>
         )}
       </section>
-      {id && <ImageTasks key={id} configID={id} pending={test.isPending} />}
+      {id && (
+        <ImageTasks
+          key={id}
+          configID={id}
+          pending={test.isPending || taskPending}
+        />
+      )}
       <Dialog open={modelsOpen} onOpenChange={setModelsOpen}>
         <DialogContent>
           <DialogHeader>
@@ -800,7 +872,7 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
               {t(
                 form.provider === 'openrouter'
                   ? 'imagegen.openRouterModelsHint'
-                  : 'imagegen.modelsHint'
+                  : 'imagegen.modelsHint',
               )}
             </DialogDescription>
           </DialogHeader>
@@ -814,7 +886,7 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
               .filter((m) =>
                 `${m.id} ${m.name}`
                   .toLowerCase()
-                  .includes(modelSearch.toLowerCase())
+                  .includes(modelSearch.toLowerCase()),
               )
               .map((m) => (
                 <button

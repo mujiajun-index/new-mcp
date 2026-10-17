@@ -37,7 +37,7 @@ func ImageGenHandler(ctx context.Context, serviceID int64, config map[string]int
 		}
 		return handleUploadImageFor(ctx, uid, args, model.EditImageToolName)
 	}
-	return RunImageGen(ctx, UploadStore, uid, cfg, tool, args)
+	return RunImageGenAsync(ctx, uid, cfg, tool, args, "mcp")
 }
 
 type generatedImageMeta struct {
@@ -50,8 +50,8 @@ type generatedImageMeta struct {
 	RevisedPrompt string     `json:"revised_prompt,omitempty"`
 }
 
-// RunImageGen is shared with the authenticated preview endpoint. It does not
-// require registration, allowing a user to test a draft configuration.
+// RunImageGen retains the synchronous internal compatibility helper. Public
+// MCP handlers and authenticated draft tests use RunImageGenAsync instead.
 func RunImageGen(ctx context.Context, store storage.Storage, userID int64, cfg *model.ImageGenConfig, tool string, raw json.RawMessage, source ...string) (json.RawMessage, error) {
 	if userID == 0 || cfg.UserID != userID {
 		return nil, fmt.Errorf("image service is not accessible to this user")
