@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -139,9 +140,21 @@ func TestUploadServeSecureEndToEnd(t *testing.T) {
 	if ct := getW.Header().Get("Content-Type"); ct != "image/png" {
 		t.Fatalf("content-type=%q want image/png", ct)
 	}
+	if getW.Header().Get("Content-Disposition") != "" {
+		t.Fatal("preview must not force a download")
+	}
+	downloadW := httptest.NewRecorder()
+	engine.ServeHTTP(downloadW, httptest.NewRequest(http.MethodGet, signedPath+"&download=1", nil))
+	disposition, params, err := mime.ParseMediaType(downloadW.Header().Get("Content-Disposition"))
+	if err != nil || disposition != "attachment" || params["filename"] != "image-"+strings.TrimPrefix(u.Path, "/u/")+".png" {
+		t.Fatalf("download response missing image attachment: %q %v", downloadW.Header().Get("Content-Disposition"), err)
+	}
+	if downloadW.Code != http.StatusOK || downloadW.Header().Get("Content-Type") != "image/png" || !bytes.Equal(downloadW.Body.Bytes(), png) {
+		t.Fatal("download changed image content")
+	}
 
 	// Tampered signature → 403.
-	tampered := u.Path + "?s=deadbeefdeadbeefdeadbeef"
+	tampered := u.Path + "?s=deadbeefdeadbeefdeadbeef&download=1"
 	tw := httptest.NewRecorder()
 	engine.ServeHTTP(tw, httptest.NewRequest(http.MethodGet, tampered, nil))
 	if tw.Code != http.StatusForbidden {
@@ -156,7 +169,7 @@ func TestUploadServeSecureEndToEnd(t *testing.T) {
 		t.Fatalf("age row: %v", err)
 	}
 	ew := httptest.NewRecorder()
-	engine.ServeHTTP(ew, httptest.NewRequest(http.MethodGet, signedPath, nil))
+	engine.ServeHTTP(ew, httptest.NewRequest(http.MethodGet, signedPath+"&download=1", nil))
 	if ew.Code != http.StatusGone {
 		t.Fatalf("expired status=%d want 410", ew.Code)
 	}

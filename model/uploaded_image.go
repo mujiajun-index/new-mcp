@@ -37,12 +37,13 @@ type UploadedImage struct {
 	ID         int64     `json:"id" gorm:"primaryKey;autoIncrement"`
 	UserID     int64     `json:"user_id" gorm:"not null;uniqueIndex:idx_uploaded_images_user_storage,priority:1"`
 	StorageKey string    `json:"storage_key" gorm:"size:128;not null;uniqueIndex:idx_uploaded_images_user_storage,priority:2;index:idx_uploaded_images_storage_key_lookup"` // content-addressed "ab/<sha256>"
-	ShortID    string    `json:"short_id" gorm:"size:16;not null;default:''"` // short URL handle (/u/<sid>)
-	MediaType  string    `json:"media_type" gorm:"size:64;not null"`               // sniffed magic-byte mime, e.g. image/png
-	Size       int64     `json:"size" gorm:"not null"`                              // decoded byte length
-	Backend    string    `json:"backend" gorm:"size:16;not null"`                   // "local" | "s3" — which backend holds the blob
-	Status     string    `json:"status" gorm:"size:16;not null;default:'uploaded';index"` // pending | uploaded (V1.1 presigned-PUT slots)
-	CreatedAt  time.Time `json:"created_at" gorm:"index"`                          // retention clock; reaped when older than now-retention
+	ShortID    string    `json:"short_id" gorm:"size:16;not null;default:''"`                                                                                               // short URL handle (/u/<sid>)
+	MediaType  string    `json:"media_type" gorm:"size:64;not null"`                                                                                                        // sniffed magic-byte mime, e.g. image/png
+	Size       int64     `json:"size" gorm:"not null"`                                                                                                                      // decoded byte length
+	Backend    string    `json:"backend" gorm:"size:16;not null"`                                                                                                           // "local" | "s3" — which backend holds the blob
+	Status     string    `json:"status" gorm:"size:16;not null;default:'uploaded';index"`                                                                                   // pending | uploaded (V1.1 presigned-PUT slots)
+	Source     string    `json:"-" gorm:"size:16;not null;default:'upload';index"`                                                                                          // upload | imagegen; shared uploads remain upload
+	CreatedAt  time.Time `json:"created_at" gorm:"index"`                                                                                                                   // retention clock; reaped when older than now-retention
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
@@ -53,6 +54,8 @@ func (UploadedImage) TableName() string { return "uploaded_images" }
 const (
 	UploadStatusPending  = "pending"
 	UploadStatusUploaded = "uploaded"
+	ImageSourceUpload    = "upload"
+	ImageSourceGenerated = "imagegen"
 )
 
 func (u *UploadedImage) Insert() error { return DB.Create(u).Error }
@@ -169,7 +172,7 @@ func MarkUploaded(key, mediaType string, size int64) error {
 func ListUploadsByUser(userID int64, offset, limit int) ([]UploadedImage, int64, error) {
 	var imgs []UploadedImage
 	var total int64
-	q := DB.Model(&UploadedImage{}).Where("user_id = ? AND status = ?", userID, UploadStatusUploaded)
+	q := DB.Model(&UploadedImage{}).Where("user_id = ? AND status = ? AND source <> ?", userID, UploadStatusUploaded, ImageSourceGenerated)
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
@@ -184,7 +187,7 @@ func ListUploadsByUser(userID int64, offset, limit int) ([]UploadedImage, int64,
 func ListAllUploads(filterUserID int64, offset, limit int) ([]UploadedImage, int64, error) {
 	var imgs []UploadedImage
 	var total int64
-	q := DB.Model(&UploadedImage{}).Where("status = ?", UploadStatusUploaded)
+	q := DB.Model(&UploadedImage{}).Where("status = ? AND source <> ?", UploadStatusUploaded, ImageSourceGenerated)
 	if filterUserID > 0 {
 		q = q.Where("user_id = ?", filterUserID)
 	}

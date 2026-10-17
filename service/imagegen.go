@@ -395,7 +395,7 @@ func (s *ImageGenService) Test(ctx context.Context, uid int64, r *dto.ImageGenPr
 		tool = model.GenerateImageToolName
 	}
 	start := time.Now()
-	raw, err := virtual.RunImageGen(ctx, UploadStore, uid, c, tool, r.Arguments)
+	raw, err := virtual.RunImageGen(ctx, UploadStore, uid, c, tool, r.Arguments, "test")
 	if err != nil {
 		return &dto.CallToolResult{IsError: true, Error: err.Error(), DurationMs: time.Since(start).Milliseconds()}, nil
 	}

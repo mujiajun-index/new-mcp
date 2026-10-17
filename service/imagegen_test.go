@@ -20,6 +20,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/mujkjk/newmcp/dto"
 	"github.com/mujkjk/newmcp/internal/imageasset"
+	"github.com/mujkjk/newmcp/internal/imagegentask"
 	"github.com/mujkjk/newmcp/internal/mcp/imagegen"
 	"github.com/mujkjk/newmcp/internal/mcp/virtual"
 	"github.com/mujkjk/newmcp/internal/storage"
@@ -37,7 +38,7 @@ func imageGenTestSetup(t *testing.T) *gorm.DB {
 	oldDB, oldRegistry, oldStore, oldVStore := model.DB, VirtualRegistry, UploadStore, virtual.UploadStore
 	model.DB = db
 	VirtualRegistry = virtual.NewVirtualToolRegistry()
-	if err := db.AutoMigrate(&model.ImageGenConfig{}, &model.McpService{}, &model.McpGroup{}, &model.McpGroupService{}, &model.McpGroupTool{}, &model.McpGroupItem{}, &model.UploadedImage{}, &model.Option{}); err != nil {
+	if err := db.AutoMigrate(&model.ImageGenConfig{}, &model.ImageGenTask{}, &model.ImageGenTaskImage{}, &model.McpService{}, &model.McpGroup{}, &model.McpGroupService{}, &model.McpGroupTool{}, &model.McpGroupItem{}, &model.UploadedImage{}, &model.Option{}); err != nil {
 		t.Fatal(err)
 	}
 	model.InitOptionMap()
@@ -574,7 +575,7 @@ func (s *imageFailStore) Put(ctx context.Context, key string, r io.Reader, mime 
 }
 
 func TestImageGenPartialDeliveryQuotaAndCancellation(t *testing.T) {
-	imageGenTestSetup(t)
+	db := imageGenTestSetup(t)
 	a, b := imageGenPNG(t, 1, 1), imageGenPNG(t, 2, 2)
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -608,6 +609,14 @@ func TestImageGenPartialDeliveryQuotaAndCancellation(t *testing.T) {
 	if !res.IsError || len(res.Structured.Images) != 1 || len(res.Structured.Warnings) != 1 || calls != 1 {
 		t.Fatalf("partial results: %s", raw)
 	}
+	var partial model.ImageGenTask
+	if err := db.Where("status = ?", "partial").First(&partial).Error; err != nil {
+		t.Fatal("partial delivery history missing", err)
+	}
+	view, err := imagegentask.Views([]model.ImageGenTask{partial})
+	if err != nil || len(view[0].Images) != 1 || len(view[0].Warnings) != 1 || view[0].Images[0].URL == "" {
+		t.Fatalf("partial history lost successful result: %+v %v", view, err)
+	}
 	model.UpdateOption("MaxUploadsPerUser", "1")
 	before := calls
 	if _, err := virtual.RunImageGen(context.Background(), UploadStore, 1, &c.ImageGenConfig, "generate_image", json.RawMessage(`{"prompt":"draw"}`)); err == nil || calls != before {
@@ -620,6 +629,10 @@ func TestImageGenPartialDeliveryQuotaAndCancellation(t *testing.T) {
 	result, err := s.Test(ctx, 1, &dto.ImageGenProbeReq{ConfigID: c.ID, Arguments: json.RawMessage(`{"prompt":"slow"}`)})
 	if err != nil || !result.IsError || !strings.Contains(result.Error, "deadline") {
 		t.Fatalf("preview cancellation: %+v %v", result, err)
+	}
+	var canceled model.ImageGenTask
+	if err := db.Where("source = ? AND status = ?", "test", "canceled").First(&canceled).Error; err != nil || canceled.FinishedAt == nil {
+		t.Fatalf("canceled request history not finalized: %+v %v", canceled, err)
 	}
 	// A zero config timeout is persisted and does not introduce the old 60s limit.
 	if err := s.Update(1, c.ID, &dto.ImageGenConfigReq{TimeoutSeconds: igPtr(0)}); err != nil {

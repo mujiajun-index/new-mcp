@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	frontend "github.com/mujkjk/newmcp" // package frontend: embedded web/dist SPA assets
+	"github.com/mujkjk/newmcp/internal/imagegentask"
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/internal/mcp/camera"
 	"github.com/mujkjk/newmcp/internal/mcp/cloud"
@@ -31,6 +32,9 @@ var (
 )
 
 func InitGateway() {
+	if err := imagegentask.RecoverInterrupted(); err != nil {
+		log.Printf("[imagegen] could not recover interrupted tasks: %v", err)
+	}
 	SessionPool = bridge.NewSessionPool()
 	toolRouter := bridge.NewToolRouter(SessionPool)
 	VirtualRegistry = virtual.NewVirtualToolRegistry()

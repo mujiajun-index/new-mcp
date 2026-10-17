@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
+import { ImageTasks } from './image-tasks'
 import {
   ArrowLeft,
   CheckCircle2,
@@ -197,6 +198,8 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
     onMutate: () => setResult(null),
     onSuccess: (res) => setResult(res.data),
     onError: (err) => toast.error(err.message),
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: ['image-tasks'] }),
   })
   async function upload(file: File, asMask: boolean) {
     setUploading(true)
@@ -391,9 +394,7 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
           </div>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="imagegen-endpoint">
-            {t('imagegen.endpointUrl')}
-          </Label>
+          <Label htmlFor="imagegen-endpoint">{t('imagegen.endpointUrl')}</Label>
           <Input
             id="imagegen-endpoint"
             placeholder={defaultImageEndpoint(form.provider)}
@@ -788,6 +789,7 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
           </TestResultPanel>
         )}
       </section>
+      {id && <ImageTasks key={id} configID={id} pending={test.isPending} />}
       <Dialog open={modelsOpen} onOpenChange={setModelsOpen}>
         <DialogContent>
           <DialogHeader>

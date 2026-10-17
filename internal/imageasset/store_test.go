@@ -132,6 +132,13 @@ func TestSaveWithLocalAndS3Backend(t *testing.T) {
 			if err != nil || !second.Deduped || result.URL != second.URL {
 				t.Fatalf("dedup %v %v", second, err)
 			}
+			generated, err := SaveGenerated(ctx, store, 2, bytes.NewReader(data), 1024)
+			if err != nil || generated.UploadID == result.UploadID || generated.Key != result.Key {
+				t.Fatalf("generated image shared blob: %+v %v", generated, err)
+			}
+			if _, total, err := model.ListAllUploads(0, 0, 20); err != nil || total != 1 {
+				t.Fatalf("generated images leaked into upload management: %d %v", total, err)
+			}
 			model.UpdateOption("UploadRetentionHours", "0")
 			permanent, err := Save(ctx, store, 1, bytes.NewReader(data), 1024)
 			if err != nil || permanent.ExpiresAt != nil || !permanent.Deduped {

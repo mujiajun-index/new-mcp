@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/png"
 	"io"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/internal/mcp/handler"
 	"github.com/mujkjk/newmcp/internal/mcp/virtual"
@@ -40,7 +42,7 @@ func testImageGenAPIAndMCPWorkflow(t *testing.T, provider string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&model.Option{}, &model.User{}, &model.ApiKey{}, &model.McpCallLog{}, &model.ImageGenConfig{}, &model.UploadedImage{}, &model.McpService{}, &model.McpGroup{}, &model.McpGroupService{}, &model.McpGroupTool{}, &model.McpGroupItem{}, &model.SmartSearchConfig{}); err != nil {
+	if err := db.AutoMigrate(&model.Option{}, &model.User{}, &model.ApiKey{}, &model.McpCallLog{}, &model.ImageGenConfig{}, &model.ImageGenTask{}, &model.ImageGenTaskImage{}, &model.UploadedImage{}, &model.McpService{}, &model.McpGroup{}, &model.McpGroupService{}, &model.McpGroupTool{}, &model.McpGroupItem{}, &model.SmartSearchConfig{}); err != nil {
 		t.Fatal(err)
 	}
 	oldDB, oldRegistry, oldSvcRegistry, oldPool, oldSvcPool, oldHandler, oldStore, oldVStore := model.DB, VirtualRegistry, service.VirtualRegistry, SessionPool, service.SessionPool, gatewayHandler, service.UploadStore, virtual.UploadStore
@@ -81,6 +83,11 @@ func testImageGenAPIAndMCPWorkflow(t *testing.T, provider string) {
 	}
 	token, _ := middleware.GenerateToken(&owner)
 	otherToken, _ := middleware.GenerateToken(&other)
+	admin := model.User{ID: 3, Username: "image-admin", Status: 1, Role: common.RoleAdminUser, Group: "default", AffCode: "admin"}
+	if err := db.Create(&admin).Error; err != nil {
+		t.Fatal(err)
+	}
+	adminToken, _ := middleware.GenerateToken(&admin)
 	f.key = f.addKey(t, "images", `{"groups":["images"]}`)
 	blockedKey := f.addKey(t, "blocked", `{"groups":["different-group"]}`)
 	var payload bytes.Buffer
@@ -212,11 +219,28 @@ func testImageGenAPIAndMCPWorkflow(t *testing.T, provider string) {
 	if downloaded.StatusCode != 200 || !bytes.Equal(got, imageBytes) {
 		t.Fatal("download")
 	}
+	if downloaded.Header.Get("Content-Disposition") != "" {
+		t.Fatal("image preview must remain inline")
+	}
+	downloaded, err = http.Get(url + "&download=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ = io.ReadAll(downloaded.Body)
+	downloaded.Body.Close()
+	disposition, params, err := mime.ParseMediaType(downloaded.Header.Get("Content-Disposition"))
+	if err != nil || disposition != "attachment" || !strings.HasPrefix(params["filename"], "generated-image-") || !strings.HasSuffix(params["filename"], ".png") {
+		t.Fatal("generated image download must use an attachment filename", downloaded.Header.Get("Content-Disposition"), err)
+	}
+	if downloaded.StatusCode != 200 || downloaded.Header.Get("Content-Type") != "image/png" || !bytes.Equal(got, imageBytes) {
+		t.Fatal("generated image attachment changed the image")
+	}
 	editID := fmt.Sprintf("imagegen_%d__edit_image", id)
 	reply = call(f.key, "/mcp/group/images", editID, map[string]any{"prompt": "edit", "images": []string{url}})
 	if reply["error"] != nil {
 		t.Fatal("reference edit", reply)
 	}
+	editTaskID := reply["result"].(map[string]any)["structuredContent"].(map[string]any)["task_id"].(string)
 	reply = call(f.key, "/smart/mcp", "mcp.execute", map[string]any{"tool_id": toolID, "arguments": map[string]any{"prompt": "draw"}})
 	if reply["error"] != nil {
 		t.Fatal("smart execute", reply)
@@ -265,5 +289,63 @@ func testImageGenAPIAndMCPWorkflow(t *testing.T, provider string) {
 	}
 	if code, _ := apiRequest("DELETE", path, token, nil); code != 200 {
 		t.Fatal("delete")
+	}
+	code, reply = apiRequest("GET", fmt.Sprintf("/imagegen/tasks?config_id=%d&page_size=2", id), token, nil)
+	if code != 200 {
+		t.Fatal("list history", code, reply)
+	}
+	history := reply["data"].(map[string]any)
+	if history["total"] != float64(7) || len(history["items"].([]any)) != 2 || history["page_size"] != float64(2) {
+		t.Fatal("task pagination or denied calls added history", reply)
+	}
+	code, reply = apiRequest("GET", "/imagegen/tasks/"+editTaskID, token, nil)
+	if code != 200 {
+		t.Fatal("history lost after config deletion", reply)
+	}
+	editTask := reply["data"].(map[string]any)
+	if editTask["operation"] != "edit" || editTask["status"] != "completed" || editTask["source"] != "mcp" || editTask["reference_count"] != float64(1) || len(editTask["images"].([]any)) != 1 {
+		t.Fatal("editing history", reply)
+	}
+	encoded, _ := json.Marshal(reply)
+	if bytes.Contains(encoded, []byte("upstream-secret")) || bytes.Contains(encoded, []byte("upload_id")) {
+		t.Fatal("history leaked private fields", string(encoded))
+	}
+	for _, method := range []string{"GET", "DELETE"} {
+		if code, _ := apiRequest(method, "/imagegen/tasks/"+editTaskID, otherToken, nil); code != 404 {
+			t.Fatal("cross-user history access", method, code)
+		}
+	}
+	code, reply = apiRequest("GET", "/imagegen/tasks", otherToken, nil)
+	if code != 200 || reply["data"].(map[string]any)["total"] != float64(0) {
+		t.Fatal("cross-user history list", reply)
+	}
+	if code, _ := apiRequest("GET", "/imagegen/tasks?config_id=bad", token, nil); code != 400 {
+		t.Fatal("invalid task filter", code)
+	}
+	code, reply = apiRequest("GET", "/admin/vision/uploads", adminToken, nil)
+	if code != 200 || reply["pagination"].(map[string]any)["total"] != float64(0) {
+		t.Fatal("generated images visible in admin uploads", code, reply)
+	}
+	active := model.ImageGenTask{ID: "active-image-task", UserID: 1, Status: "running"}
+	if err := db.Create(&active).Error; err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := apiRequest("DELETE", "/imagegen/tasks/"+active.ID, token, nil); code != 409 {
+		t.Fatal("running task was deletable", code)
+	}
+	if code, _ := apiRequest("DELETE", "/imagegen/tasks/"+editTaskID, token, nil); code != 200 {
+		t.Fatal("delete history", code)
+	}
+	if code, _ := apiRequest("GET", "/imagegen/tasks/"+editTaskID, token, nil); code != 404 {
+		t.Fatal("deleted history still visible", code)
+	}
+	// Removing history cannot break another task's deduplicated image link.
+	downloaded, err = http.Get(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	downloaded.Body.Close()
+	if downloaded.StatusCode != 200 {
+		t.Fatal("history deletion broke shared image")
 	}
 }

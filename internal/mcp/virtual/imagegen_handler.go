@@ -6,11 +6,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/internal/imageasset"
+	"github.com/mujkjk/newmcp/internal/imagegentask"
 	"github.com/mujkjk/newmcp/internal/mcp/imagegen"
 	"github.com/mujkjk/newmcp/internal/storage"
 	"github.com/mujkjk/newmcp/model"
@@ -49,7 +51,43 @@ type generatedImageMeta struct {
 
 // RunImageGen is shared with the authenticated preview endpoint. It does not
 // require registration, allowing a user to test a draft configuration.
-func RunImageGen(ctx context.Context, store storage.Storage, userID int64, cfg *model.ImageGenConfig, tool string, raw json.RawMessage) (json.RawMessage, error) {
+func RunImageGen(ctx context.Context, store storage.Storage, userID int64, cfg *model.ImageGenConfig, tool string, raw json.RawMessage, source ...string) (json.RawMessage, error) {
+	if userID == 0 || cfg.UserID != userID {
+		return nil, fmt.Errorf("image service is not accessible to this user")
+	}
+	if tool != model.GenerateImageToolName && tool != model.EditImageToolName {
+		return nil, fmt.Errorf("unknown image tool: %s", tool)
+	}
+	if cfg.TimeoutSeconds > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(cfg.TimeoutSeconds)*time.Second)
+		defer cancel()
+	}
+	origin := "mcp"
+	if len(source) > 0 {
+		origin = source[0]
+	}
+	task, err := imagegentask.Start(ctx, userID, cfg, tool, origin, raw)
+	if err != nil {
+		return nil, err
+	}
+	var images []model.ImageGenTaskImage
+	result, runErr := runImageGen(ctx, store, userID, cfg, tool, raw, task.ID, &images)
+	historyErr := runErr
+	if historyErr == nil {
+		historyErr = ctx.Err()
+	}
+	if err := imagegentask.Finish(task, images, result, historyErr, cfg.ApiKey); err != nil {
+		// A history write failure must not discard already paid-for image links.
+		log.Printf("[imagegen] could not finish task %s history: %v", task.ID, err)
+		if runErr != nil {
+			return nil, fmt.Errorf("%w (could not update task history)", runErr)
+		}
+	}
+	return result, runErr
+}
+
+func runImageGen(ctx context.Context, store storage.Storage, userID int64, cfg *model.ImageGenConfig, tool string, raw json.RawMessage, taskID string, images *[]model.ImageGenTaskImage) (json.RawMessage, error) {
 	operation := "generate"
 	switch tool {
 	case model.GenerateImageToolName:
@@ -63,11 +101,6 @@ func RunImageGen(ctx context.Context, store storage.Storage, userID int64, cfg *
 		}
 	default:
 		return nil, fmt.Errorf("unknown image tool: %s", tool)
-	}
-	if cfg.TimeoutSeconds > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(cfg.TimeoutSeconds)*time.Second)
-		defer cancel()
 	}
 	var args map[string]any
 	if err := json.Unmarshal(raw, &args); err != nil || args == nil {
@@ -177,18 +210,19 @@ func RunImageGen(ctx context.Context, store storage.Storage, userID int64, cfg *
 			warnings = append(warnings, fmt.Sprintf("image %d: %v", i+1, err))
 			continue
 		}
-		saved, err := imageasset.Save(ctx, store, userID, bytes.NewReader(data), max)
+		saved, err := imageasset.SaveGenerated(ctx, store, userID, bytes.NewReader(data), max)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("image %d: save failed: %v", i+1, err))
 			continue
 		}
 		metadata = append(metadata, generatedImageMeta{saved.URL, inspected.MIME, saved.Size, w, h, saved.ExpiresAt, img.RevisedPrompt})
+		*images = append(*images, model.ImageGenTaskImage{UploadID: saved.UploadID, MIME: inspected.MIME, Size: saved.Size, Width: w, Height: h, RevisedPrompt: img.RevisedPrompt})
 		content = append(content, map[string]any{"type": "resource_link", "uri": saved.URL, "name": fmt.Sprintf("generated-image-%d", i+1), "mimeType": inspected.MIME, "size": saved.Size})
 		if mode == "inline" {
 			inline = append(inline, map[string]any{"type": "image", "data": base64.StdEncoding.EncodeToString(data), "mimeType": inspected.MIME})
 		}
 	}
-	structured := map[string]any{"provider": cfg.Provider, "model": cfg.ModelName, "operation": operation, "images": metadata}
+	structured := map[string]any{"task_id": taskID, "provider": cfg.Provider, "model": cfg.ModelName, "operation": operation, "images": metadata}
 	if result.Text != "" {
 		structured["text"] = result.Text
 	}

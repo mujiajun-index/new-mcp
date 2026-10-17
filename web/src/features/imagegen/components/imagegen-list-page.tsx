@@ -29,6 +29,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ImageGenConfigListItem } from '../api'
+import { ImageTasks } from './image-tasks'
 
 function EnabledBadge({ enabled }: { enabled: boolean }) {
   const { t } = useTranslation()
@@ -50,6 +51,32 @@ const providerLabels: Record<string, string> = {
   openai: 'OpenAI',
   openrouter: 'OpenRouter',
   gemini: 'Gemini',
+}
+
+function ImageCapabilities({ config }: { config: ImageGenConfigListItem }) {
+  const { t } = useTranslation()
+  const editFormat =
+    config.provider === 'openai'
+      ? t(`imagegen.editRequestFormats.${config.edit_request_format || 'multipart'}`)
+      : config.provider === 'gemini'
+        ? 'JSON · generateContent'
+        : 'JSON · input_references'
+
+  return (
+    <div>
+      <span className="whitespace-nowrap text-xs">
+        {t(`imagegen.operations.${config.operation}`)}
+      </span>
+      {config.operation !== 'generate' && (
+        <p
+          className="mt-1 text-xs text-muted-foreground"
+          title={t('imagegen.editRequestFormat')}
+        >
+          {editFormat}
+        </p>
+      )}
+    </div>
+  )
 }
 
 export function ImageGenListPage() {
@@ -189,6 +216,10 @@ export function ImageGenListPage() {
                       label: t('imagegen.model'),
                       value: <span className="font-mono">{c.model_name}</span>,
                     },
+                    {
+                      label: t('imagegen.capabilities'),
+                      value: <ImageCapabilities config={c} />,
+                    },
                   ]}
                   actions={
                     <>
@@ -267,6 +298,9 @@ export function ImageGenListPage() {
                     {t('imagegen.model')}
                   </th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                    {t('imagegen.capabilities')}
+                  </th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">
                     {t('common.status')}
                   </th>
                   <th className="px-4 py-3 text-right font-medium text-muted-foreground">
@@ -300,6 +334,9 @@ export function ImageGenListPage() {
                         <span className="font-mono text-xs">
                           {c.model_name}
                         </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <ImageCapabilities config={c} />
                       </td>
                       <td className="px-4 py-3">
                         <EnabledBadge enabled={isEnabled} />
@@ -370,6 +407,7 @@ export function ImageGenListPage() {
           </div>
         )}
       </div>
+      <ImageTasks />
     </div>
   )
 }

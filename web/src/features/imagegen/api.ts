@@ -31,6 +31,67 @@ export interface ImageGenConfig {
   created_at: string
 }
 export type ImageGenConfigListItem = ImageGenConfig
+
+export interface ImageTask {
+  task_id: string
+  config_id: number
+  config_name: string
+  source: 'test' | 'mcp'
+  operation: 'generate' | 'edit'
+  provider: ImageGenProvider
+  model: string
+  prompt: string
+  reference_count: number
+  status:
+    | 'running'
+    | 'completed'
+    | 'partial'
+    | 'failed'
+    | 'canceled'
+    | 'interrupted'
+  error?: string
+  warnings: string[]
+  text?: string
+  usage?: Record<string, unknown>
+  duration_ms: number
+  created_at: string
+  finished_at: string | null
+  images: Array<{
+    url?: string
+    status: 'ready' | 'expired'
+    mime: string
+    size: number
+    width: number
+    height: number
+    revised_prompt?: string
+    expires_at: string | null
+  }>
+}
+
+export async function listImageTasks(
+  configID: number | undefined,
+  page: number
+): Promise<{
+  data: { items: ImageTask[]; total: number; page_size: number }
+}> {
+  return (
+    await api.get('/imagegen/tasks', {
+      params: { config_id: configID, page, page_size: 20 },
+    })
+  ).data
+}
+
+export async function getImageTask(id: string): Promise<{ data: ImageTask }> {
+  return (await api.get(`/imagegen/tasks/${encodeURIComponent(id)}`)).data
+}
+
+export async function deleteImageTask(id: string) {
+  return (await api.delete(`/imagegen/tasks/${encodeURIComponent(id)}`)).data
+}
+
+export function imageDownloadURL(url: string) {
+  return `${url}${url.includes('?') ? '&' : '?'}download=1`
+}
 export type ConfigInput = Partial<
   Pick<
     ImageGenConfig,
@@ -125,9 +186,7 @@ export function imageEndpoint(
       // Keep the preview usable while a custom base URL is being entered.
     }
   }
-  const root = endpoint
-    .replace(/\/+$/, '')
-    .replace(/\/(v1|v1beta)$/, '')
+  const root = endpoint.replace(/\/+$/, '').replace(/\/(v1|v1beta)$/, '')
   if (provider === 'openrouter') return `${root}/v1/images`
   return provider === 'gemini'
     ? `${root}/v1beta/models/${encodeURIComponent(model.replace(/^models\//, '') || '{model}')}:generateContent`

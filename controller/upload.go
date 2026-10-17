@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"strconv"
 	"time"
@@ -119,6 +120,19 @@ func GetVisionFileByShortID(c *gin.Context) {
 	// must not cache them. nosniff: respect the stored media type verbatim.
 	c.Header("Cache-Control", "private, no-store")
 	c.Header("X-Content-Type-Options", "nosniff")
+	if c.Query("download") == "1" {
+		ext := map[string]string{
+			"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif",
+		}[img.MediaType]
+		if ext == "" {
+			ext = ".bin"
+		}
+		prefix := "image-"
+		if img.Source == model.ImageSourceGenerated {
+			prefix = "generated-image-"
+		}
+		c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": prefix + img.ShortID + ext}))
+	}
 	c.DataFromReader(http.StatusOK, img.Size, img.MediaType, rc, nil)
 }
 
