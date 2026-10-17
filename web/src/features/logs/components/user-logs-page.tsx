@@ -209,7 +209,8 @@ export function UserLogsPage() {
 
   const formatTime = (dateStr: string) => {
     if (!dateStr) return '-'
-    return dayjs(dateStr).format('YYYY-MM-DD HH:mm:ss')
+    // 保留日志接口返回的日期时间，避免时区后缀触发浏览器本地时区换算。
+    return dayjs(dateStr.replace(/(Z|[+-]\d{2}:?\d{2})$/i, '')).format('YYYY-MM-DD HH:mm:ss')
   }
 
   const formatDuration = (ms: number) => {
