@@ -2002,7 +2002,7 @@ OpenRouter 配置与参数示例见[视频生成说明](./VIDEO-GENERATION.md#op
 | POST | `/videogen/tasks/:task_id/retry` | 使用当前已保存配置重新提交原任务，仅允许失败任务接受新的重试 |
 | DELETE | `/videogen/tasks/:task_id` | 删除停止处理的任务及其视频；进行中或被其他处理者领取时返回 409 |
 
-详情含 `task_id`、`config_id`、`source`、`operation`、`protocol`、`model`、`prompt`、`status`、`progress`、`artifact_status`、`tracking_paused`、`poll_after_seconds`、错误信息及 `videos`。不会返回上游 ID、凭证或连接快照。`protocol` 是本次提交使用的协议，旧任务按 `openai_video` 兼容。`status=completed` 表示生成成功，只有 `artifact_status=ready` 且 `videos` 非空才可下载。
+详情含 `task_id`、`config_id`、`config_name`、`source`、`operation`、`protocol`、`model`、`prompt`、`status`、`progress`、`artifact_status`、`tracking_paused`、`poll_after_seconds`、`created_at`、`stopped_at`、`duration_ms`、错误信息及 `videos`。列表与 MCP 状态结果使用相同任务视图。`stopped_at` 为本次停止跟踪时间，处理中为 `null`；`duration_ms` 为任务创建至停止跟踪的总毫秒数，包含排队、生成、保存及重试等待时间。进行中、缺少停止时间的旧记录或无效时间范围返回 `null`，不使用可能因清理而变化的 `updated_at` 计算耗时。不会返回上游 ID、凭证或连接快照。`protocol` 是本次提交使用的协议，旧任务按 `openai_video` 兼容。`status=completed` 表示生成成功，只有 `artifact_status=ready` 且 `videos` 非空才可下载。
 
 生成重试请求为 `{config_id?, request_id, arguments?}`：`request_id` 必填且最长 128 字节，同一次重试重复提交返回原任务的当前状态；改变输入时必须更换该 ID。返回的 `task_id` 与 URL 中的任务 ID 相同，不新增历史记录。`config_id` 默认使用原配置，草稿或原配置已删除时需选择其他属于当前用户的已保存配置。使用所选配置当前的模型、连接和默认参数，更新原记录的配置关联、模型、提示词及参数；保留创建时间、初始来源及原提交幂等映射，`retry_count` 加一。`arguments` 可替换原调用参数，省略时恢复私有输入快照；其中不能填写 `request_id` 或 `wait_seconds`。旧记录没有输入快照时仅恢复提示词，图生须补充参考图。进行中、已生成和 `submission_unknown` 任务不能接受新的重试；已经受理的同一次重试仍可重复查询当前结果。保存失败使用 `retry-download`。重试生成会重新调用上游，可能产生费用。
 

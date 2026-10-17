@@ -68,6 +68,8 @@ export interface VideoTask {
   error?: string;
   last_error?: string;
   created_at: string;
+  stopped_at: string | null;
+  duration_ms: number | null;
   expires_at?: string | null;
   videos: Array<{
     url: string;

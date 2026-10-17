@@ -57,31 +57,38 @@ function useVideoTaskActions(task: VideoTask, onDeleted?: () => void) {
 export function VideoTaskCard({
   task,
   onDeleted,
+  embedded = false,
 }: {
   task: VideoTask;
   onDeleted?: () => void;
+  embedded?: boolean;
 }) {
   const { t } = useTranslation();
   const { retry, resume, remove } = useVideoTaskActions(task, onDeleted);
   const active = taskIsActive(task);
+  const showFooter = !embedded;
   return (
-    <article className="space-y-3 rounded-xl border bg-card p-4 sm:p-5">
+    <article
+      className={
+        embedded
+          ? "space-y-5"
+          : "space-y-5 rounded-xl border bg-card p-4 sm:p-5"
+      }
+    >
       <div className="flex flex-wrap items-center gap-2">
-        {active ? (
-          <Loader2 className="h-4 w-4 animate-spin text-primary" />
-        ) : (
-          <Film className="h-4 w-4 text-muted-foreground" />
-        )}
-        <span className="min-w-0 break-all text-sm font-semibold">
+        <span className="min-w-0 break-all font-mono text-sm">
           {task.model}
         </span>
         <Badge
           variant={
             task.status === "failed" || task.status === "submission_unknown"
               ? "destructive"
-              : "secondary"
+              : task.status === "completed"
+                ? "success"
+                : "secondary"
           }
         >
+          {active && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
           {t(`videogen.status.${task.status}`)}
         </Badge>
         {task.status === "completed" && (
@@ -89,13 +96,75 @@ export function VideoTaskCard({
             {t(`videogen.artifact.${task.artifact_status}`)}
           </Badge>
         )}
-        <span className="ml-auto text-xs text-muted-foreground">
-          {new Date(task.created_at).toLocaleString()}
-        </span>
+        <Badge variant="outline">
+          {t(`videogen.operation.${task.operation}`)}
+        </Badge>
       </div>
-      <p className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">
-        {task.prompt}
-      </p>
+      <dl className="grid grid-cols-1 gap-3 text-xs text-muted-foreground sm:grid-cols-2">
+        <div>
+          <dt>{t("videogen.taskConfig")}</dt>
+          <dd className="mt-1 break-words text-foreground">
+            {task.config_name ||
+              (task.config_id
+                ? `#${task.config_id}`
+                : t("videogen.draftConfig"))}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("videogen.taskSource")}</dt>
+          <dd className="mt-1 text-foreground">
+            {t(`videogen.taskSources.${task.source}`, {
+              defaultValue: task.source || "—",
+            })}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("common.createdAt")}</dt>
+          <dd className="mt-1 text-foreground">
+            {new Date(task.created_at).toLocaleString()}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("videogen.taskDuration")}</dt>
+          <dd
+            className="mt-1 text-foreground"
+            title={t("videogen.taskDurationHint")}
+          >
+            {task.duration_ms != null
+              ? `${(task.duration_ms / 1000).toFixed(1)}s`
+              : "—"}
+          </dd>
+        </div>
+        {!!task.retry_count && (
+          <div>
+            <dt>{t("videogen.retryCount")}</dt>
+            <dd className="mt-1 text-foreground">{task.retry_count}</dd>
+          </div>
+        )}
+      </dl>
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-medium">{t("videogen.prompt")}</h3>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 px-2 text-xs"
+            disabled={!task.prompt}
+            onClick={() =>
+              copyText(task.prompt)
+                .then(() => toast.success(t("common.copied")))
+                .catch(() => toast.error(t("common.copyFailed")))
+            }
+          >
+            <Copy className="h-3.5 w-3.5" />
+            {t("common.copyPrompt")}
+          </Button>
+        </div>
+        <p className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-3 text-sm [overflow-wrap:anywhere]">
+          {task.prompt || "—"}
+        </p>
+      </div>
       {active && (
         <div className="space-y-1">
           <div className="flex justify-between text-xs text-muted-foreground">
@@ -118,17 +187,20 @@ export function VideoTaskCard({
         </div>
       )}
       {task.error && (
-        <p className="break-words rounded-md bg-destructive/10 p-3 text-xs text-destructive">
+        <p className="whitespace-pre-wrap break-words rounded-lg bg-destructive/10 p-3 text-xs text-destructive">
           {task.error}
         </p>
       )}
       {task.last_error && (
-        <p className="break-words text-xs text-muted-foreground">
+        <p className="whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-xs text-muted-foreground">
           {task.last_error}
         </p>
       )}
       {task.videos.map((video, index) => (
-        <div key={video.url} className="space-y-1">
+        <div
+          key={video.url}
+          className="min-w-0 space-y-2 rounded-lg border p-3"
+        >
           <ContentBlock
             block={{
               type: "resource_link",
@@ -149,61 +221,73 @@ export function VideoTaskCard({
           </p>
         </div>
       ))}
-      <div className="flex flex-wrap items-center gap-2 border-t pt-3">
-        <code className="min-w-0 break-all text-[11px] text-muted-foreground">
-          {task.task_id}
-        </code>
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label={t("videogen.copyTask")}
-          onClick={() =>
-            copyText(task.task_id)
-              .then(() => toast.success(t("videogen.copied")))
-              .catch(() => toast.error(t("common.copyFailed")))
-          }
-        >
-          <Copy className="h-3.5 w-3.5" />
-        </Button>
-        {task.tracking_paused && (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={resume.isPending}
-            onClick={() => resume.mutate()}
-          >
-            {t("videogen.resume")}
-          </Button>
-        )}
-        {task.status === "completed" && task.artifact_status === "failed" && (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={retry.isPending}
-            onClick={() => retry.mutate()}
-          >
-            <RefreshCw className="mr-2 h-3.5 w-3.5" />
-            {t("videogen.retrySave")}
-          </Button>
-        )}
-        {task.status === "failed" && (
-          <VideoTaskRetryDialog task={task} variant="outline" />
-        )}
-        {!active && (
-          <Button
-            className="ml-auto text-destructive"
-            size="sm"
-            variant="ghost"
-            disabled={remove.isPending}
-            onClick={() => {
-              if (confirm(t("videogen.deleteTaskConfirm"))) remove.mutate();
-            }}
-          >
-            <Trash2 className="mr-2 h-3.5 w-3.5" />
-            {t("common.delete")}
-          </Button>
-        )}
-      </div>
+      {task.artifact_status === "expired" && (
+        <div className="flex h-32 items-center justify-center gap-2 rounded-lg bg-muted text-sm text-muted-foreground">
+          <Film className="h-5 w-5" />
+          {t("videogen.artifact.expired")}
+        </div>
+      )}
+      {showFooter && (
+        <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+          {!embedded && (
+            <code className="min-w-0 break-all text-[11px] text-muted-foreground">
+              {task.task_id}
+            </code>
+          )}
+          {!embedded && (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={t("videogen.copyTask")}
+              onClick={() =>
+                copyText(task.task_id)
+                  .then(() => toast.success(t("videogen.copied")))
+                  .catch(() => toast.error(t("common.copyFailed")))
+              }
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {task.tracking_paused && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={resume.isPending}
+              onClick={() => resume.mutate()}
+            >
+              {t("videogen.resume")}
+            </Button>
+          )}
+          {task.status === "completed" && task.artifact_status === "failed" && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={retry.isPending}
+              onClick={() => retry.mutate()}
+            >
+              <RefreshCw className="mr-2 h-3.5 w-3.5" />
+              {t("videogen.retrySave")}
+            </Button>
+          )}
+          {task.status === "failed" && (
+            <VideoTaskRetryDialog task={task} variant="outline" />
+          )}
+          {!embedded && !active && (
+            <Button
+              className="ml-auto text-destructive"
+              size="sm"
+              variant="ghost"
+              disabled={remove.isPending}
+              onClick={() => {
+                if (confirm(t("videogen.deleteTaskConfirm"))) remove.mutate();
+              }}
+            >
+              <Trash2 className="mr-2 h-3.5 w-3.5" />
+              {t("common.delete")}
+            </Button>
+          )}
+        </div>
+      )}
     </article>
   );
 }
@@ -211,9 +295,11 @@ export function VideoTaskCard({
 export function VideoTaskResult({
   id,
   onDeleted,
+  embedded = false,
 }: {
   id: string;
   onDeleted?: () => void;
+  embedded?: boolean;
 }) {
   const { t } = useTranslation();
   const { data, isError } = useQuery({
@@ -227,7 +313,9 @@ export function VideoTaskResult({
       <p className="text-sm text-destructive">{t("videogen.taskLoadFailed")}</p>
     );
   if (!data) return <Loader2 className="h-4 w-4 animate-spin" />;
-  return <VideoTaskCard task={data.data} onDeleted={onDeleted} />;
+  return (
+    <VideoTaskCard task={data.data} onDeleted={onDeleted} embedded={embedded} />
+  );
 }
 
 function VideoTaskRow({
@@ -284,6 +372,16 @@ function VideoTaskRow({
           </div>
         </div>
       </td>
+      <td className="px-4 py-3 text-xs">
+        <span className="whitespace-nowrap">
+          {t(`videogen.operation.${task.operation}`)}
+        </span>
+        <p className="mt-1 whitespace-nowrap text-muted-foreground">
+          {t(`videogen.taskSources.${task.source}`, {
+            defaultValue: task.source || "—",
+          })}
+        </p>
+      </td>
       <td className="px-4 py-3">
         <p
           className="line-clamp-2 min-w-32 max-w-60 whitespace-pre-wrap break-words text-xs"
@@ -337,6 +435,14 @@ function VideoTaskRow({
       </td>
       <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">
         {new Date(task.created_at).toLocaleString()}
+      </td>
+      <td
+        className="whitespace-nowrap px-4 py-3 text-xs tabular-nums text-muted-foreground"
+        title={t("videogen.taskDurationHint")}
+      >
+        {task.duration_ms != null
+          ? `${(task.duration_ms / 1000).toFixed(1)}s`
+          : "—"}
       </td>
       <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">
         {task.expires_at
@@ -454,10 +560,12 @@ export function VideoTasks({ configID }: { configID?: number }) {
                 <tr className="border-b bg-muted/50">
                   {[
                     "videogen.task",
+                    "videogen.capabilities",
                     "videogen.prompt",
                     "videogen.generationStatus",
                     "videogen.savingStatus",
                     "common.createdAt",
+                    "videogen.taskDuration",
                     "videogen.expiresAt",
                   ].map((label) => (
                     <th
@@ -520,7 +628,7 @@ export function VideoTasks({ configID }: { configID?: number }) {
           if (!open) setSelectedTaskID(null);
         }}
       >
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>{t("videogen.taskDetail")}</DialogTitle>
             <DialogDescription className="break-all">
@@ -532,6 +640,7 @@ export function VideoTasks({ configID }: { configID?: number }) {
               key={selectedTaskID}
               id={selectedTaskID}
               onDeleted={handleDeleted}
+              embedded
             />
           )}
         </DialogContent>

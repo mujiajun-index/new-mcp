@@ -112,7 +112,24 @@ function ImageTaskDetail({ id }: { id: string }) {
         )}
       </dl>
       <div className="space-y-2">
-        <h3 className="text-sm font-medium">{t('imagegen.prompt')}</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-medium">{t('imagegen.prompt')}</h3>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 px-2 text-xs"
+            disabled={!task.prompt}
+            onClick={() =>
+              copyText(task.prompt)
+                .then(() => toast.success(t('common.copied')))
+                .catch(() => toast.error(t('common.copyFailed')))
+            }
+          >
+            <Copy className="h-3.5 w-3.5" />
+            {t('common.copyPrompt')}
+          </Button>
+        </div>
         <p className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-3 text-sm [overflow-wrap:anywhere]">
           {task.prompt || '—'}
         </p>
@@ -265,6 +282,7 @@ export function ImageTasks({
                     'imagegen.taskImages',
                     'common.createdAt',
                     'imagegen.taskDuration',
+                    'imagegen.expiresAt',
                   ].map((label) => (
                     <th
                       key={label}
@@ -285,6 +303,16 @@ export function ImageTasks({
               <tbody>
                 {data.data.items.map((task) => {
                   const ready = task.images.filter((image) => image.url)
+                  const expiryTimes = (
+                    ready.length ? ready : task.images
+                  ).flatMap((image) =>
+                    image.expires_at
+                      ? [new Date(image.expires_at).getTime()]
+                      : [],
+                  )
+                  const expiresAt = expiryTimes.length
+                    ? Math.min(...expiryTimes)
+                    : null
                   return (
                     <tr
                       key={task.task_id}
@@ -319,7 +347,7 @@ export function ImageTasks({
                                 copyText(task.task_id)
                                   .then(() => toast.success(t('common.copied')))
                                   .catch(() =>
-                                    toast.error(t('common.copyFailed'))
+                                    toast.error(t('common.copyFailed')),
                                   )
                               }
                             >
@@ -362,6 +390,22 @@ export function ImageTasks({
                         {task.finished_at
                           ? `${(task.duration_ms / 1000).toFixed(1)}s`
                           : '—'}
+                      </td>
+                      <td
+                        className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground"
+                        title={
+                          task.images.length > 1
+                            ? t('imagegen.earliestExpires')
+                            : undefined
+                        }
+                      >
+                        {expiresAt !== null
+                          ? new Date(expiresAt).toLocaleString()
+                          : ready.length
+                            ? t('imagegen.permanent')
+                            : task.images.length
+                              ? t('imagegen.imageExpired')
+                              : '—'}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1 whitespace-nowrap">

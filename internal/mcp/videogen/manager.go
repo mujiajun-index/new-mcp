@@ -663,6 +663,11 @@ func TaskView(t *model.VideoGenTask) map[string]any {
 	var out map[string]any
 	_ = json.Unmarshal(data, &out)
 	out["protocol"] = ProtocolName(t.Protocol)
+	out["stopped_at"] = t.StoppedAt
+	out["duration_ms"] = nil
+	if t.StoppedAt != nil && !t.CreatedAt.IsZero() && !t.StoppedAt.Before(t.CreatedAt) {
+		out["duration_ms"] = t.StoppedAt.Sub(t.CreatedAt).Milliseconds()
+	}
 	out["poll_after_seconds"] = 5
 	out["videos"] = []any{}
 	expiresAt := videoasset.EffectiveExpiration(t.ExpiresAt)
