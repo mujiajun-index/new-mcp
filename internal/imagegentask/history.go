@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/mujkjk/newmcp/internal/imageasset"
 	"github.com/mujkjk/newmcp/internal/storage"
+	"github.com/mujkjk/newmcp/internal/taskreference"
 	"github.com/mujkjk/newmcp/model"
 	"gorm.io/gorm"
 )
@@ -45,7 +46,7 @@ func redact(value, key string) string {
 }
 
 // Finish uses its own short deadline so cancellation of generation still leaves
-// a terminal history record. No request bodies, reference images or keys persist.
+// a terminal history record. No request bodies, reference bytes or keys persist.
 func Finish(task *model.ImageGenTask, images []model.ImageGenTaskImage, raw json.RawMessage, runErr error, key string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -117,9 +118,10 @@ type ImageView struct {
 
 type TaskView struct {
 	model.ImageGenTask
-	Warnings []string       `json:"warnings"`
-	Usage    map[string]any `json:"usage,omitempty"`
-	Images   []ImageView    `json:"images"`
+	Warnings        []string             `json:"warnings"`
+	Usage           map[string]any       `json:"usage,omitempty"`
+	Images          []ImageView          `json:"images"`
+	ReferenceImages []taskreference.View `json:"reference_images"`
 }
 
 // Views signs fresh links and checks the current retention clock. Cleanup or a
@@ -157,6 +159,7 @@ func Views(tasks []model.ImageGenTask) ([]TaskView, error) {
 	}
 	for _, task := range tasks {
 		v := TaskView{ImageGenTask: task, Warnings: []string{}, Images: []ImageView{}}
+		v.ReferenceImages = taskreference.Views(model.DB, task.UserID, task.ReferenceImages)
 		if task.FinishedAt != nil && task.DurationMs == 0 {
 			v.DurationMs = max(0, task.FinishedAt.Sub(task.CreatedAt).Milliseconds())
 		}

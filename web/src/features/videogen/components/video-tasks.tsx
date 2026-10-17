@@ -5,6 +5,7 @@ import { Copy, Download, Film, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { TaskReferenceImages } from "@/components/task-reference-images";
 import {
   Dialog,
   DialogContent,
@@ -165,6 +166,9 @@ export function VideoTaskCard({
           {task.prompt || "—"}
         </p>
       </div>
+      {task.operation === "image" && (
+        <TaskReferenceImages images={task.reference_images} />
+      )}
       {active && (
         <div className="space-y-1">
           <div className="flex justify-between text-xs text-muted-foreground">
@@ -516,7 +520,7 @@ export function VideoTasks({ configID }: { configID?: number }) {
   const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const [selectedTaskID, setSelectedTaskID] = useState<string | null>(null);
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ["video-tasks", configID, page],
     queryFn: () => listVideoTasks(configID, page),
     refetchInterval: (query) =>
@@ -530,11 +534,26 @@ export function VideoTasks({ configID }: { configID?: number }) {
   };
   return (
     <section className="space-y-4">
-      <div>
-        <h2 className="text-base font-semibold">{t("videogen.history")}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {t("videogen.historyHint")}
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold">{t("videogen.history")}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t("videogen.historyHint")}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={isFetching}
+          onClick={() => refetch()}
+          className="shrink-0 gap-2"
+        >
+          <RefreshCw
+            className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`}
+          />
+          {t("common.refresh")}
+        </Button>
       </div>
       <div className="overflow-hidden rounded-xl border bg-card">
         {isLoading ? (

@@ -636,6 +636,7 @@ CREATE TABLE `marketplace_item_keys` (
 | `protocol` | 提交协议快照，`openai_video` / `gemini_video` / `openrouter_video`；旧记录默认 `openai_video` |
 | `idempotency_key` / `request_hash` | 64 字符唯一幂等键 / 有效输入摘要，阻止重试重复生成 |
 | `request_params` | 不公开的最新调用参数快照；沿用现有凭证存储机制，不包含配置密钥和连接；MySQL 为 LONGTEXT，SQLite/PostgreSQL 为 TEXT |
+| `reference_images` | 私有 JSON 文本，记录已校验输入图的资产 ID、角色及图片元数据；不保存 base64 或签名链接，API 返回归属校验后的 `reference_images` 数组 |
 | `retry_requests` / `retry_count` | 不公开的重试请求哈希与输入摘要映射 / 已受理重试次数；请求映射为 JSON 文本，不保存原请求标识、输入或凭证；重启及并发重复请求不增加次数 |
 | `retry_of` | 旧版重试记录的来源关联，兼容保留；当前重试更新原任务，不新增该关联 |
 | `connection` / `upstream_id` | 私有连接快照（地址、模型、凭证及协议）/ 上游任务 ID，不返回 API；快照使用现有凭证机制 |
@@ -658,6 +659,8 @@ Gemini 原生视频沿用现有字段：`protocol=gemini_video`，`upstream_id` 
 手动重试失败生成会使用当前已保存配置更新原任务行，保留任务 ID、创建时间、初始来源和原提交的幂等键/摘要；重置上游 ID、进度、错误、保存状态、停止时间及跟踪时限，保存新的连接与参数快照。更新核对原状态、修订号和租约，同时写入重试请求映射与计数，避免不同实例重复受理。每次重试的哈希记录保留在任务上，较早的已受理请求重放也不生成新任务。调用参数快照仅在归属校验后的专用重试接口返回；普通列表、详情和 MCP 结果不暴露私有字段。AutoMigrate 追加重试状态字段，保留旧记录及旧版 `retry_of` 关系；输入与重试状态随任务历史到期清理。
 
 `user_id`、`config_id`、`status`、`artifact_status`、`next_poll_at`、`lease_until`、`expires_at`、`stopped_at` 按模型建立索引。到期视频清理与历史清理分开，未到期视频的历史保留。SQLite 新建、升级和重复迁移已验证；MySQL/PostgreSQL 的实际迁移验收仍需专用测试 DSN，见 [验证记录](./VIDEO-GENERATION-ACCEPTANCE.md)。
+
+图片与视频任务均新增私有 `reference_images` TEXT 字段，通过 AutoMigrate 追加，旧行为空。图片任务另保留 `reference_count`，参考图与 mask 使用不同角色；视频原任务重试在同一次条件更新中替换参考图元数据。参考图内容沿用 `uploaded_images` 和 local/S3，新增来源 `reference`，不展示于上传管理；原有上传被复用时保持其来源。查询只对当前任务用户的有效资产签名，过期/删除不抹掉历史元数据。参考图资产遵循图片保留与配额，删除任务历史不直接删除共享资产。
 
 ---
 

@@ -147,6 +147,27 @@ func TestSaveWithLocalAndS3Backend(t *testing.T) {
 			if err := store.Delete(ctx, result.Key); err != nil {
 				t.Fatal(err)
 			}
+			var referenceBytes bytes.Buffer
+			png.Encode(&referenceBytes, image.NewNRGBA(image.Rect(0, 0, 4, 5)))
+			reference, err := SaveReference(ctx, store, 3, bytes.NewReader(referenceBytes.Bytes()), 1024)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reader, err := store.Get(ctx, reference.Key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotReference, err := io.ReadAll(reader)
+			reader.Close()
+			if err != nil || !bytes.Equal(gotReference, referenceBytes.Bytes()) {
+				t.Fatal("reference round trip failed", err)
+			}
+			if _, total, err := model.ListUploadsByUser(3, 0, 20); err != nil || total != 0 {
+				t.Fatal("cached reference appeared in uploads", err)
+			}
+			if _, total, err := model.ListAllUploads(3, 0, 20); err != nil || total != 0 {
+				t.Fatal("cached reference appeared in admin uploads", err)
+			}
 		})
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/mujkjk/newmcp/internal/imageasset"
 	"github.com/mujkjk/newmcp/internal/mcp/imagegen"
 	"github.com/mujkjk/newmcp/internal/storage"
+	"github.com/mujkjk/newmcp/internal/taskreference"
 	"github.com/mujkjk/newmcp/internal/videoasset"
 	"github.com/mujkjk/newmcp/model"
 	"gorm.io/gorm"
@@ -244,6 +245,14 @@ func (m *Manager) submitTask(ctx context.Context, uid int64, cfg *model.VideoGen
 	if err != nil {
 		return nil, err
 	}
+	var recorded []taskreference.Image
+	if img != nil {
+		item, err := taskreference.Capture(ctx, m.Store, uid, *img, "reference")
+		if err != nil {
+			return nil, fmt.Errorf("record reference image: %w", err)
+		}
+		recorded = append(recorded, item)
+	}
 	connectionJSON, _ := json.Marshal(conn)
 	snapshot, err := common.Encrypt(string(connectionJSON))
 	if err != nil {
@@ -265,6 +274,7 @@ func (m *Manager) submitTask(ctx context.Context, uid int64, cfg *model.VideoGen
 	now := time.Now()
 	owner := uuid.NewString()
 	t := &model.VideoGenTask{ID: uuid.NewString(), UserID: uid, ConfigID: cfg.ID, ConfigName: cfg.Name, Source: source, Operation: operation, Protocol: conn.Protocol, Model: cfg.ModelName, Prompt: prompt, IdempotencyKey: idempotency, RequestHash: digest, RequestParams: requestParams, Connection: snapshot, Status: "submitting", ArtifactStatus: "pending", RequestTimeoutSeconds: cfg.RequestTimeoutSeconds, TaskTimeoutSeconds: cfg.TaskTimeoutSeconds, TrackingDeadline: now.Add(time.Duration(cfg.TaskTimeoutSeconds) * time.Second), NextPollAt: now, LeaseOwner: owner, LeaseUntil: now.Add(time.Duration(cfg.RequestTimeoutSeconds+15) * time.Second)}
+	t.ReferenceImages = taskreference.Encode(recorded)
 	if retry != nil {
 		// Replace the failed attempt in place while preserving the task identity
 		// and the original submission's idempotency mapping.
@@ -278,7 +288,8 @@ func (m *Manager) submitTask(ctx context.Context, uid int64, cfg *model.VideoGen
 		values := map[string]any{
 			"config_id": t.ConfigID, "config_name": t.ConfigName, "protocol": t.Protocol, "model": t.Model, "prompt": t.Prompt,
 			"request_params": t.RequestParams, "retry_requests": t.RetryRequests, "retry_count": t.RetryCount,
-			"connection": t.Connection, "upstream_id": "", "status": t.Status, "progress": 0,
+			"reference_images": t.ReferenceImages,
+			"connection":       t.Connection, "upstream_id": "", "status": t.Status, "progress": 0,
 			"artifact_status": "pending", "tracking_paused": false, "error": "", "last_error": "", "failures": 0,
 			"request_timeout_seconds": t.RequestTimeoutSeconds, "task_timeout_seconds": t.TaskTimeoutSeconds,
 			"tracking_deadline": t.TrackingDeadline, "next_poll_at": t.NextPollAt, "stopped_at": nil,
@@ -669,6 +680,15 @@ func TaskView(t *model.VideoGenTask) map[string]any {
 		out["duration_ms"] = t.StoppedAt.Sub(t.CreatedAt).Milliseconds()
 	}
 	out["poll_after_seconds"] = 5
+	references := t.ReferenceImages
+	if (references == "" || references == "null") && t.Operation == "image" && t.RequestParams != "" {
+		if args, _, err := storedTaskInput(t); err == nil {
+			if ref, ok := args["image"].(string); ok {
+				references = taskreference.LegacyUpload(model.DB, t.UserID, ref)
+			}
+		}
+	}
+	out["reference_images"] = taskreference.Views(model.DB, t.UserID, references)
 	out["videos"] = []any{}
 	expiresAt := videoasset.EffectiveExpiration(t.ExpiresAt)
 	if t.ArtifactStatus == "ready" {

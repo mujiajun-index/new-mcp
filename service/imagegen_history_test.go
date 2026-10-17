@@ -17,9 +17,75 @@ import (
 	"github.com/mujkjk/newmcp/dto"
 	"github.com/mujkjk/newmcp/internal/imageasset"
 	"github.com/mujkjk/newmcp/internal/imagegentask"
+	"github.com/mujkjk/newmcp/internal/mcp/imagegen"
+	"github.com/mujkjk/newmcp/internal/mcp/virtual"
 	"github.com/mujkjk/newmcp/model"
 	"gorm.io/gorm"
 )
+
+func TestImageGenHistoryKeepsReferenceImagesAndMaskOnFailure(t *testing.T) {
+	db := imageGenTestSetup(t)
+	first := imageGenPNG(t, 2, 2)
+	second := imageGenPNG(t, 3, 2)
+	output := imageGenPNG(t, 4, 3)
+	uploaded, err := imageasset.Save(context.Background(), UploadStore, 1, bytes.NewReader(first), 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Error(err)
+			return
+		}
+		defer r.MultipartForm.RemoveAll()
+		if r.FormValue("prompt") == "fail editing" {
+			w.WriteHeader(400)
+			io.WriteString(w, `{"error":{"message":"rejected"}}`)
+			return
+		}
+		fmt.Fprintf(w, `{"data":[{"b64_json":"%s"}]}`, base64.StdEncoding.EncodeToString(output))
+	}))
+	defer server.Close()
+	s := &ImageGenService{}
+	req := imageGenReq(server.URL)
+	req.EditRequestFormat = igPtr(imagegen.EditFormatMultipart)
+	detail, err := s.Create(1, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := model.GetImageGenConfig(1, detail.ID)
+	for _, prompt := range []string{"edit images", "fail editing"} {
+		raw, _ := json.Marshal(map[string]any{"prompt": prompt, "images": []string{uploaded.URL, base64.StdEncoding.EncodeToString(second)}, "mask": uploaded.URL})
+		_, runErr := virtual.RunImageGen(context.Background(), UploadStore, 1, cfg, model.EditImageToolName, raw, "test")
+		if (prompt == "fail editing") != (runErr != nil) {
+			t.Fatal("unexpected generation result", runErr)
+		}
+		var task model.ImageGenTask
+		if err := db.Where("prompt = ?", prompt).First(&task).Error; err != nil {
+			t.Fatal(err)
+		}
+		views, err := imagegentask.Views([]model.ImageGenTask{task})
+		if err != nil {
+			t.Fatal(err)
+		}
+		refs := views[0].ReferenceImages
+		if task.ReferenceCount != 2 || len(refs) != 3 || refs[0].URL != uploaded.URL || refs[0].Width != 2 || refs[1].Width != 3 || refs[2].Role != "mask" || refs[1].Status != "ready" {
+			t.Fatalf("lost inputs: %+v", refs)
+		}
+		if strings.Contains(task.ReferenceImages, "base64") || strings.Contains(task.ReferenceImages, "?s=") {
+			t.Fatal("input bytes or signed URLs stored in history")
+		}
+		if _, err := imagegentask.Get(2, task.ID); err == nil {
+			t.Fatal("cross-user access")
+		}
+		if err := imagegentask.Delete(1, task.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, total, err := model.ListAllUploads(0, 0, 20); err != nil || total != 1 {
+		t.Fatal("task references changed upload management", total, err)
+	}
+}
 
 func TestImageGenTaskHistoryLifecycleAndStorageSeparation(t *testing.T) {
 	db := imageGenTestSetup(t)

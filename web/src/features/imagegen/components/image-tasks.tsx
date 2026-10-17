@@ -12,6 +12,7 @@ import {
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { TaskReferenceImages } from '@/components/task-reference-images'
 import {
   Dialog,
   DialogContent,
@@ -134,6 +135,7 @@ function ImageTaskDetail({ id }: { id: string }) {
           {task.prompt || '—'}
         </p>
       </div>
+      {task.operation === 'edit' && <TaskReferenceImages images={task.reference_images} />}
       {task.error && (
         <p className="whitespace-pre-wrap break-words rounded-lg bg-destructive/10 p-3 text-xs text-destructive">
           {task.error}

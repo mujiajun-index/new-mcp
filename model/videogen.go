@@ -71,6 +71,7 @@ type VideoGenTask struct {
 	Protocol              string     `json:"protocol" gorm:"size:32;not null;default:openai_video"`
 	Model                 string     `json:"model" gorm:"size:128"`
 	Prompt                string     `json:"prompt" gorm:"type:text"`
+	ReferenceImages       string     `json:"-" gorm:"type:text"`
 	IdempotencyKey        string     `json:"-" gorm:"size:64;not null;uniqueIndex"`
 	RequestHash           string     `json:"-" gorm:"size:64"`
 	RequestParams         string     `json:"-"`

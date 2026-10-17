@@ -1,6 +1,7 @@
 import { api } from "@/lib/api";
 import i18n from "@/i18n/config";
 import type { ToolCallResult } from "@/types";
+import type { TaskReferenceImage } from "@/components/task-reference-images";
 
 export interface VideoGenConfig {
   id: number;
@@ -61,6 +62,7 @@ export interface VideoTask {
   retry_count?: number;
   model: string;
   prompt: string;
+  reference_images?: TaskReferenceImage[];
   status: string;
   progress: number;
   artifact_status: string;

@@ -42,7 +42,7 @@ type UploadedImage struct {
 	Size       int64     `json:"size" gorm:"not null"`                                                                                                                      // decoded byte length
 	Backend    string    `json:"backend" gorm:"size:16;not null"`                                                                                                           // "local" | "s3" — which backend holds the blob
 	Status     string    `json:"status" gorm:"size:16;not null;default:'uploaded';index"`                                                                                   // pending | uploaded (V1.1 presigned-PUT slots)
-	Source     string    `json:"-" gorm:"size:16;not null;default:'upload';index"`                                                                                          // upload | imagegen; shared uploads remain upload
+	Source     string    `json:"-" gorm:"size:16;not null;default:'upload';index"`                                                                                          // upload | imagegen | reference; shared uploads remain upload
 	CreatedAt  time.Time `json:"created_at" gorm:"index"`                                                                                                                   // retention clock; reaped when older than now-retention
 	UpdatedAt  time.Time `json:"updated_at"`
 }
@@ -56,6 +56,7 @@ const (
 	UploadStatusUploaded = "uploaded"
 	ImageSourceUpload    = "upload"
 	ImageSourceGenerated = "imagegen"
+	ImageSourceReference = "reference"
 )
 
 func (u *UploadedImage) Insert() error { return DB.Create(u).Error }
@@ -172,7 +173,7 @@ func MarkUploaded(key, mediaType string, size int64) error {
 func ListUploadsByUser(userID int64, offset, limit int) ([]UploadedImage, int64, error) {
 	var imgs []UploadedImage
 	var total int64
-	q := DB.Model(&UploadedImage{}).Where("user_id = ? AND status = ? AND source <> ?", userID, UploadStatusUploaded, ImageSourceGenerated)
+	q := DB.Model(&UploadedImage{}).Where("user_id = ? AND status = ? AND source NOT IN ?", userID, UploadStatusUploaded, []string{ImageSourceGenerated, ImageSourceReference})
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
@@ -187,7 +188,7 @@ func ListUploadsByUser(userID int64, offset, limit int) ([]UploadedImage, int64,
 func ListAllUploads(filterUserID int64, offset, limit int) ([]UploadedImage, int64, error) {
 	var imgs []UploadedImage
 	var total int64
-	q := DB.Model(&UploadedImage{}).Where("status = ? AND source <> ?", UploadStatusUploaded, ImageSourceGenerated)
+	q := DB.Model(&UploadedImage{}).Where("status = ? AND source NOT IN ?", UploadStatusUploaded, []string{ImageSourceGenerated, ImageSourceReference})
 	if filterUserID > 0 {
 		q = q.Where("user_id = ?", filterUserID)
 	}

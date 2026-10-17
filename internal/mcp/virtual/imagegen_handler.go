@@ -15,6 +15,7 @@ import (
 	"github.com/mujkjk/newmcp/internal/imagegentask"
 	"github.com/mujkjk/newmcp/internal/mcp/imagegen"
 	"github.com/mujkjk/newmcp/internal/storage"
+	"github.com/mujkjk/newmcp/internal/taskreference"
 	"github.com/mujkjk/newmcp/model"
 )
 
@@ -183,6 +184,26 @@ func runImageGen(ctx context.Context, store storage.Storage, userID int64, cfg *
 	}
 	if store == nil {
 		return nil, fmt.Errorf("image storage not initialized")
+	}
+	if operation == "edit" {
+		recorded := make([]taskreference.Image, 0, len(references)+1)
+		for _, img := range references {
+			item, err := taskreference.Capture(ctx, store, userID, img, "reference")
+			if err != nil {
+				return nil, fmt.Errorf("record reference image: %w", err)
+			}
+			recorded = append(recorded, item)
+		}
+		if mask != nil {
+			item, err := taskreference.Capture(ctx, store, userID, *mask, "mask")
+			if err != nil {
+				return nil, fmt.Errorf("record mask image: %w", err)
+			}
+			recorded = append(recorded, item)
+		}
+		if err := model.DB.WithContext(ctx).Model(&model.ImageGenTask{}).Where("id = ? AND user_id = ?", taskID, userID).Updates(map[string]any{"reference_images": taskreference.Encode(recorded), "reference_count": len(references)}).Error; err != nil {
+			return nil, fmt.Errorf("record reference images: %w", err)
+		}
 	}
 	if err := imageasset.CheckQuota(userID); err != nil {
 		return nil, err

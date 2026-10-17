@@ -1,5 +1,6 @@
 import { api } from '@/lib/api'
 import type { ToolCallResult } from '@/types'
+import type { TaskReferenceImage } from '@/components/task-reference-images'
 
 export type ImageGenProvider = 'openai' | 'gemini' | 'openrouter'
 
@@ -42,6 +43,7 @@ export interface ImageTask {
   model: string
   prompt: string
   reference_count: number
+  reference_images?: TaskReferenceImage[]
   status:
     | 'running'
     | 'completed'
