@@ -301,6 +301,65 @@ func TestImageGenJSONEditingWithStoredReference(t *testing.T) {
 	}
 }
 
+func TestImageGenOpenRouterConfiguration(t *testing.T) {
+	imageGenTestSetup(t)
+	s := &ImageGenService{}
+	req := imageGenReq("")
+	req.Provider = igPtr(imagegen.ProviderOpenRouter)
+	req.ModelName = igPtr("google/gemini-3.1-flash-image")
+	req.DefaultParams = igPtr(json.RawMessage(`{"resolution":"2K","aspect_ratio":"16:9","extra_body":{"seed":42}}`))
+	detail, err := s.Create(1, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Provider != imagegen.ProviderOpenRouter || detail.EndpointURL != imagegen.DefaultEndpoint(imagegen.ProviderOpenRouter) {
+		t.Fatal("OpenRouter configuration did not retain its protocol or official default URL")
+	}
+	if err := s.Enable(1, detail.ID); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := model.GetImageGenConfig(1, detail.ID)
+	svc, _ := model.GetServiceByID(1, *cfg.RegisteredServiceID)
+	var tools []struct {
+		Name        string `json:"name"`
+		InputSchema struct {
+			Properties map[string]any `json:"properties"`
+		} `json:"inputSchema"`
+	}
+	if err := json.Unmarshal([]byte(svc.ToolsCache), &tools); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range tools {
+		if tool.Name == "upload_image" {
+			continue
+		}
+		props := tool.InputSchema.Properties
+		if props["resolution"] == nil || props["aspect_ratio"] == nil || props["n"] == nil || props["image_size"] != nil || props["mask"] != nil {
+			t.Fatalf("wrong OpenRouter tool schema: %s %v", tool.Name, props)
+		}
+	}
+	if err := s.Update(1, detail.ID, &dto.ImageGenConfigReq{EndpointURL: igPtr("https://proxy.example/router/api/v1")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Update(1, detail.ID, &dto.ImageGenConfigReq{Name: igPtr("Renamed image config"), ApiKey: igPtr("")}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ = model.GetImageGenConfig(1, detail.ID)
+	if cfg.EndpointURL != "https://proxy.example/router/api/v1" || cfg.ApiKey != "secret-image-key" {
+		t.Fatal("an omitted endpoint or blank API key overwrote a saved connection")
+	}
+	if err := s.Update(1, detail.ID, &dto.ImageGenConfigReq{EndpointURL: igPtr("")}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ = model.GetImageGenConfig(1, detail.ID)
+	if cfg.EndpointURL != imagegen.DefaultEndpoint(imagegen.ProviderOpenRouter) {
+		t.Fatal("clearing the endpoint did not restore the protocol default")
+	}
+	if _, err := virtual.RunImageGen(context.Background(), UploadStore, 1, cfg, "edit_image", json.RawMessage(`{"prompt":"edit","images":["https://private.example/input.png"],"mask":"bad"}`)); err == nil || !strings.Contains(err.Error(), "OpenRouter Image API does not support mask") {
+		t.Fatalf("mask was not rejected before resolving input images: %v", err)
+	}
+}
+
 func TestImageGenDefaultDescriptionsUpgradeAndCacheSync(t *testing.T) {
 	db := imageGenTestSetup(t)
 	s := &ImageGenService{}

@@ -1687,6 +1687,7 @@
     "provider": "协议",
     "providers": {
       "openai": "OpenAI 兼容",
+      "openrouter": "OpenRouter 图片",
       "gemini": "Gemini"
     },
     "operation": "图片能力",
@@ -1699,6 +1700,10 @@
     "editRequestFormatHint": "按实际接口选择：JSON image 将参考图放在请求体顶层，JSON extra_body.image 将参考图放在嵌套对象中。同一模型在不同网关上可能需要不同格式。JSON 模式发送 data URL，不支持 mask。",
     "editEndpointPreview": "编辑请求地址",
     "endpointUrl": "API 基础地址",
+    "endpointDefaultHint": "留空使用当前协议的官方地址：{{endpoint}}",
+    "openRouterHint": "使用 OpenRouter 图片协议，支持文生图和参考图编辑，不支持 mask；具体能力由所选模型决定。",
+    "openRouterDefaultsHint": "例如：{\"resolution\":\"2K\",\"aspect_ratio\":\"16:9\",\"extra_body\":{\"seed\":42}}。提供商路由和扩展选项放入 extra_body.provider，参数由上游模型校验。",
+    "openRouterModelsHint": "展示 OpenRouter 图片模型目录，也可清空或修改搜索词、手动填写模型 ID；具体能力由上游模型决定。",
     "endpointPreview": "实际请求地址",
     "keepKey": "留空保留已有密钥",
     "fetchModels": "获取模型",

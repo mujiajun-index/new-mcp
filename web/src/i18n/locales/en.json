@@ -1687,6 +1687,7 @@
     "provider": "Protocol",
     "providers": {
       "openai": "OpenAI Compatible",
+      "openrouter": "OpenRouter Images",
       "gemini": "Gemini"
     },
     "operation": "Image capabilities",
@@ -1699,6 +1700,10 @@
     "editRequestFormatHint": "Match the actual API: JSON image places references at the top level; JSON extra_body.image places them in a nested object. The same model may require different formats across gateways. JSON modes send data URLs and do not support masks.",
     "editEndpointPreview": "Editing request URL",
     "endpointUrl": "API base URL",
+    "endpointDefaultHint": "Leave blank to use this protocol's official URL: {{endpoint}}",
+    "openRouterHint": "Use the OpenRouter Image API for text-to-image and reference editing. Masks are not supported; model capabilities vary.",
+    "openRouterDefaultsHint": "For example: {\"resolution\":\"2K\",\"aspect_ratio\":\"16:9\",\"extra_body\":{\"seed\":42}}. Put provider routing and options in extra_body.provider. Parameters are validated by the upstream model.",
+    "openRouterModelsHint": "Browse the OpenRouter image model catalog, change or clear the search, or enter a model ID manually. Capabilities depend on the upstream model.",
     "endpointPreview": "Request URL",
     "keepKey": "Leave empty to keep the saved key",
     "fetchModels": "Fetch Models",

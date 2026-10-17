@@ -96,6 +96,9 @@ func RunImageGen(ctx context.Context, store storage.Storage, userID int64, cfg *
 	if _, ok := params["mask"]; ok && cfg.Provider == "gemini" {
 		return nil, fmt.Errorf("Gemini does not support mask")
 	}
+	if _, ok := params["mask"]; ok && cfg.Provider == imagegen.ProviderOpenRouter {
+		return nil, fmt.Errorf("OpenRouter Image API does not support mask; use reference images and a prompt")
+	}
 	if _, ok := params["mask"]; ok && !imagegen.SupportsMask(cfg.Provider, cfg.EditRequestFormat) {
 		return nil, fmt.Errorf("mask is not supported by the configured JSON generations editing interface")
 	}

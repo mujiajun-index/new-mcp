@@ -23,6 +23,7 @@ type Client struct {
 }
 
 const (
+	ProviderOpenRouter                 = "openrouter"
 	EditFormatMultipart                = "multipart"
 	EditFormatGenerationsJSON          = "generations_json"
 	EditFormatGenerationsJSONExtraBody = "generations_json_extra_body"
@@ -34,7 +35,7 @@ func ValidateEditRequestFormat(provider, format string) error {
 	case "", EditFormatMultipart:
 		return nil
 	case EditFormatGenerationsJSON, EditFormatGenerationsJSONExtraBody:
-		if provider == "openai" {
+		if provider == "openai" || provider == ProviderOpenRouter {
 			return nil
 		}
 	}
@@ -59,16 +60,35 @@ type ModelInfo struct {
 	Name string `json:"name"`
 }
 
+func DefaultEndpoint(provider string) string {
+	switch provider {
+	case "openai":
+		return "https://api.openai.com/v1"
+	case "gemini":
+		return "https://generativelanguage.googleapis.com/v1beta"
+	case ProviderOpenRouter:
+		return "https://openrouter.ai/api/v1"
+	default:
+		return ""
+	}
+}
+
 // BaseURL accepts root URLs, reverse-proxy prefixes and versioned roots.
 func BaseURL(raw, provider string) (string, error) {
+	if strings.TrimSpace(raw) == "" {
+		raw = DefaultEndpoint(provider)
+	}
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u == nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return "", fmt.Errorf("endpoint_url must be an http(s) API base URL without credentials or query")
 	}
-	if provider != "openai" && provider != "gemini" {
+	if provider != "openai" && provider != "gemini" && provider != ProviderOpenRouter {
 		return "", fmt.Errorf("unsupported image provider: %s", provider)
 	}
 	u.Path = strings.TrimRight(u.Path, "/")
+	if provider == ProviderOpenRouter && strings.EqualFold(u.Hostname(), "openrouter.ai") && u.Path == "" {
+		u.Path = "/api"
+	}
 	for _, version := range []string{"/v1beta", "/v1"} {
 		if strings.HasSuffix(u.Path, version) {
 			u.Path = strings.TrimSuffix(u.Path, version)
@@ -91,6 +111,9 @@ func (c *Client) Endpoint(operation string) (string, error) {
 	base, err := BaseURL(c.EndpointURL, c.Provider)
 	if err != nil {
 		return "", err
+	}
+	if c.Provider == ProviderOpenRouter {
+		return base + "/images", nil
 	}
 	if c.Provider == "gemini" {
 		return base + "/models/" + url.PathEscape(strings.TrimPrefix(c.Model, "models/")) + ":generateContent", nil
@@ -123,6 +146,9 @@ func merge(dst, src map[string]any) {
 }
 func ValidateParams(provider string, p map[string]any, defaults bool) error {
 	allowed := map[string]bool{"n": true, "size": true, "quality": true, "background": true, "output_format": true, "aspect_ratio": true, "image_size": true, "extra_body": true}
+	if provider == ProviderOpenRouter {
+		allowed["resolution"] = true
+	}
 	if !defaults {
 		for _, k := range []string{"prompt", "images", "mask", "return_mode"} {
 			allowed[k] = true
@@ -138,7 +164,7 @@ func ValidateParams(provider string, p map[string]any, defaults bool) error {
 		if !ok {
 			return fmt.Errorf("extra_body must be an object")
 		}
-		protected := map[string]bool{"model": true, "prompt": true, "image": true, "images": true, "mask": true, "stream": true, "partial_images": true, "contents": true, "return_mode": true, "api_key": true, "authorization": true}
+		protected := map[string]bool{"model": true, "prompt": true, "image": true, "images": true, "mask": true, "stream": true, "partial_images": true, "contents": true, "return_mode": true, "api_key": true, "authorization": true, "input_references": true, "models": true, "messages": true}
 		for k := range obj {
 			if protected[strings.ToLower(k)] {
 				return fmt.Errorf("extra_body cannot override %s", k)
@@ -177,7 +203,7 @@ func ValidateParams(provider string, p map[string]any, defaults bool) error {
 			}
 		}
 	}
-	for _, k := range []string{"size", "quality", "background", "output_format", "aspect_ratio", "image_size"} {
+	for _, k := range []string{"size", "quality", "background", "output_format", "aspect_ratio", "image_size", "resolution"} {
 		if v, ok := p[k]; ok {
 			if _, valid := v.(string); !valid {
 				return fmt.Errorf("%s must be a string", k)
@@ -198,6 +224,13 @@ func ValidateParams(provider string, p map[string]any, defaults bool) error {
 			if _, ok := p[k]; ok {
 				return fmt.Errorf("%s is an OpenAI parameter; use Gemini aspect_ratio/image_size or extra_body", k)
 			}
+		}
+	} else if provider == ProviderOpenRouter {
+		if _, ok := p["image_size"]; ok {
+			return fmt.Errorf("image_size is a Gemini parameter; use OpenRouter resolution or size")
+		}
+		if format, _ := p["output_format"].(string); strings.EqualFold(strings.TrimSpace(format), "svg") {
+			return fmt.Errorf("SVG output is not supported by image storage; request png, jpeg or webp")
 		}
 	} else {
 		for _, k := range []string{"aspect_ratio", "image_size"} {
@@ -223,6 +256,9 @@ func (c *Client) Run(ctx context.Context, operation string, p map[string]any, im
 	}
 	if mask != nil && c.Provider == "openai" && !SupportsMask(c.Provider, c.EditRequestFormat) {
 		return nil, fmt.Errorf("mask is not supported by this editing interface; use the OpenAI multipart edits interface with a model that supports masks")
+	}
+	if mask != nil && c.Provider == ProviderOpenRouter {
+		return nil, fmt.Errorf("OpenRouter Image API does not support mask; use reference images and a prompt")
 	}
 	if operation == "edit" && len(images) == 0 {
 		return nil, fmt.Errorf("images are required for editing")
@@ -263,6 +299,21 @@ func (c *Client) Run(ctx context.Context, operation string, p map[string]any, im
 		}
 		if _, ok := body["n"]; !ok {
 			body["n"] = 1
+		}
+		if c.Provider == ProviderOpenRouter {
+			body["stream"] = false
+			for _, key := range []string{"aspect_ratio", "resolution"} {
+				if v, ok := p[key]; ok && v != "" {
+					body[key] = v
+				}
+			}
+			if operation == "edit" {
+				refs := make([]any, 0, len(images))
+				for _, img := range images {
+					refs = append(refs, map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:" + img.MIME + ";base64," + base64.StdEncoding.EncodeToString(img.Bytes)}})
+				}
+				body["input_references"] = refs
+			}
 		}
 	}
 	if c.Provider == "openai" && operation == "edit" && !SupportsMask(c.Provider, c.EditRequestFormat) {
@@ -437,6 +488,7 @@ func parseOpenAI(raw []byte) (*Result, error) {
 		URL     string `json:"url"`
 		Base64  string `json:"b64_json"`
 		Revised string `json:"revised_prompt"`
+		MIME    string `json:"media_type"`
 	}
 	data := bytes.TrimSpace(response.Data)
 	if len(data) > 0 && data[0] == '{' {
@@ -447,7 +499,7 @@ func parseOpenAI(raw []byte) (*Result, error) {
 	}
 	result := &Result{Usage: response.Usage}
 	for _, e := range entries {
-		img := Image{URL: e.URL, RevisedPrompt: e.Revised}
+		img := Image{URL: e.URL, RevisedPrompt: e.Revised, MIME: e.MIME}
 		if e.Base64 != "" {
 			b, err := base64.StdEncoding.DecodeString(e.Base64)
 			if err != nil {
@@ -521,7 +573,11 @@ func (c *Client) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, err := c.request(ctx, http.MethodGet, base+"/models", nil, "")
+	path := "/models"
+	if c.Provider == ProviderOpenRouter {
+		path = "/images/models"
+	}
+	raw, err := c.request(ctx, http.MethodGet, base+path, nil, "")
 	if err != nil {
 		return nil, err
 	}

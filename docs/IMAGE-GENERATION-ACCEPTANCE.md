@@ -57,3 +57,12 @@ MCP 生成、编辑和下载的完整调用链另由路由集成测试自动验�
 - 服务集成验证真实本地存储签名读取、配置更新后的 MCP 与网页测试调用、mask schema 缓存同步、非法协议更新回滚；新增字段的旧 SQLite 表升级连续执行两次，保留注册关联和密钥。
 - Go 全量测试、前端类型检查及生产构建通过。隔离网页手工验证下拉选择、保存后重新加载、生成接口地址预览、JSON 编辑模式不显示 mask，以及模拟编辑成功返回预览图片和下载链接。
 - 本轮未对用户业务配置写入变更，也未调用真实模型重新出图。实际 New API 渠道的请求转换和可用容量仍需在选择正确格式后联调。
+
+## OpenRouter 图片协议（2026-10-16）
+
+- 新增 `provider=openrouter`，按 [OpenRouter 官方图片协议](https://openrouter.ai/docs/guides/overview/multimodal/image-generation)调用专用 `/api/v1/images` 和 `/api/v1/images/models`。沿用视频配置的可留空官方地址、自定义网关前缀及连接字段独立校验；已有协议和已保存的非空地址保留。
+- 模拟上游验证官方根地址、版本后缀、代理前缀、Bearer 鉴权、生成与多参考图编辑、data URL 字节和 MIME、参数省略与覆盖、提供商路由、base64 / URL / usage 解析，以及固定模型和输入字段的保护。
+- 配置与服务测试验证默认地址、显式清空恢复默认、更新保留密钥、OpenRouter 工具 schema 和 mask 提前拒绝。模型列表查询不依赖配置名称、模型或生成默认参数。
+- 路由集成分别覆盖 OpenAI 与 OpenRouter 的「配置 → 测试 → 启用 → 加入分组 → MCP 生成 / 编辑 → 签名下载」，以及注册幂等、启动恢复、用户隔离、工具权限、智能执行、批量执行和取消期限。
+- `go test ./... -timeout 240s` 通过，包含现有视频协议和共享图片存储回归；`npm run typecheck`、`npm run build:check` 通过。
+- 本轮使用模拟上游，未调用真实 OpenRouter 模型、未产生真实出图费用，也未进行浏览器验收。支持同步专用 Image API，未增加 Chat Completions 图片模式；存储格式仍为 PNG、JPEG、WebP。

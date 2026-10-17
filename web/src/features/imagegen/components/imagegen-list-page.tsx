@@ -48,7 +48,7 @@ function EnabledBadge({ enabled }: { enabled: boolean }) {
 
 const providerLabels: Record<string, string> = {
   openai: 'OpenAI',
-
+  openrouter: 'OpenRouter',
   gemini: 'Gemini',
 }
 

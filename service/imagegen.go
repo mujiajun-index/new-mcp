@@ -80,24 +80,43 @@ func (s *ImageGenService) Get(uid, id int64) (*ImageGenDetail, error) {
 	return imageGenDetail(c), nil
 }
 
-func applyImageGenReq(c *model.ImageGenConfig, r *dto.ImageGenConfigReq) error {
-	if r.Name != nil {
-		c.Name = strings.TrimSpace(*r.Name)
-	}
-	if r.Description != nil {
-		c.Description = *r.Description
-	}
+func applyImageGenConnection(c *model.ImageGenConfig, r *dto.ImageGenConfigReq) error {
 	if r.Provider != nil {
-		c.Provider = *r.Provider
-	}
-	if r.ModelName != nil {
-		c.ModelName = strings.TrimSpace(*r.ModelName)
+		c.Provider = strings.TrimSpace(*r.Provider)
 	}
 	if r.EndpointURL != nil {
 		c.EndpointURL = strings.TrimSpace(*r.EndpointURL)
 	}
 	if r.ApiKey != nil && strings.TrimSpace(*r.ApiKey) != "" {
 		c.ApiKey = strings.TrimSpace(*r.ApiKey)
+	}
+	if c.EndpointURL == "" {
+		c.EndpointURL = imagegen.DefaultEndpoint(c.Provider)
+	}
+	if len(c.EndpointURL) > 512 || len(c.ApiKey) > 512 {
+		return fmt.Errorf("endpoint or API key is too long")
+	}
+	if _, err := imagegen.BaseURL(c.EndpointURL, c.Provider); err != nil {
+		return err
+	}
+	if c.ApiKey == "" {
+		return fmt.Errorf("API key is required")
+	}
+	return nil
+}
+
+func applyImageGenReq(c *model.ImageGenConfig, r *dto.ImageGenConfigReq) error {
+	if err := applyImageGenConnection(c, r); err != nil {
+		return err
+	}
+	if r.Name != nil {
+		c.Name = strings.TrimSpace(*r.Name)
+	}
+	if r.Description != nil {
+		c.Description = *r.Description
+	}
+	if r.ModelName != nil {
+		c.ModelName = strings.TrimSpace(*r.ModelName)
 	}
 	if r.Operation != nil {
 		c.Operation = *r.Operation
@@ -131,17 +150,8 @@ func applyImageGenReq(c *model.ImageGenConfig, r *dto.ImageGenConfigReq) error {
 	if c.ModelName == "" || len(c.ModelName) > 128 {
 		return fmt.Errorf("model_name is required (max 128 bytes)")
 	}
-	if len(c.EndpointURL) > 512 || len(c.ApiKey) > 512 {
-		return fmt.Errorf("endpoint or API key is too long")
-	}
-	if _, err := imagegen.BaseURL(c.EndpointURL, c.Provider); err != nil {
-		return err
-	}
 	if err := imagegen.ValidateEditRequestFormat(c.Provider, c.EditRequestFormat); err != nil {
 		return err
-	}
-	if c.ApiKey == "" {
-		return fmt.Errorf("API key is required")
 	}
 	if c.Operation != "generate" && c.Operation != "edit" && c.Operation != "both" {
 		return fmt.Errorf("operation must be generate, edit or both")
@@ -312,10 +322,16 @@ func buildImageGenTools(c *model.ImageGenConfig) []map[string]interface{} {
 		name, desc := model.GenerateImageToolName, c.GenerateImageDesc
 		required := []string{"prompt"}
 		properties := map[string]any{"prompt": map[string]any{"type": "string", "minLength": 1, "description": "Description of the desired image or edit"}, "return_mode": map[string]any{"type": "string", "enum": []string{"url", "inline"}, "default": "url", "description": "Return stored image links; inline also includes MCP images within the response limit"}, "extra_body": map[string]any{"type": "object", "description": "Additional native upstream parameters (for example seed, watermark, prompt_extend)"}}
-		if c.Provider == "openai" {
+		if c.Provider == "openai" || c.Provider == imagegen.ProviderOpenRouter {
 			properties["n"] = map[string]any{"type": "integer", "minimum": 1, "maximum": 10, "description": "Number of images; defaults to 1"}
 			for _, key := range []string{"size", "quality", "background", "output_format"} {
 				properties[key] = map[string]any{"type": "string", "description": "Optional upstream " + key + "; omitted when unset"}
+			}
+			if c.Provider == imagegen.ProviderOpenRouter {
+				for _, key := range []string{"aspect_ratio", "resolution"} {
+					properties[key] = map[string]any{"type": "string", "description": "Optional OpenRouter " + key + "; supported values depend on the model"}
+				}
+				properties["extra_body"] = map[string]any{"type": "object", "description": "OpenRouter Image API options such as seed, output_compression and provider routing/options. Cannot override model, prompt, input_references or streaming."}
 			}
 		} else {
 			for _, key := range []string{"aspect_ratio", "image_size"} {
@@ -349,10 +365,13 @@ func (s *ImageGenService) probe(uid int64, r *dto.ImageGenProbeReq, modelsOnly b
 			return nil, fmt.Errorf("image configuration not found")
 		}
 	}
-	if modelsOnly && r.ModelName == nil && c.ModelName == "" {
-		c.ModelName = "model-list"
+	var err error
+	if modelsOnly {
+		err = applyImageGenConnection(c, &r.ImageGenConfigReq)
+	} else {
+		err = applyImageGenReq(c, &r.ImageGenConfigReq)
 	}
-	if err := applyImageGenReq(c, &r.ImageGenConfigReq); err != nil {
+	if err != nil {
 		return nil, err
 	}
 	return c, nil

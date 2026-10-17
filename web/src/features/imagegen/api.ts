@@ -1,6 +1,8 @@
 import { api } from '@/lib/api'
 import type { ToolCallResult } from '@/types'
 
+export type ImageGenProvider = 'openai' | 'gemini' | 'openrouter'
+
 export type EditRequestFormat =
   | 'multipart'
   | 'generations_json'
@@ -10,7 +12,7 @@ export interface ImageGenConfig {
   id: number
   name: string
   description: string
-  provider: 'openai' | 'gemini'
+  provider: ImageGenProvider
   model_name: string
   endpoint_url: string
   operation: 'generate' | 'edit' | 'both'
@@ -93,17 +95,40 @@ export async function testImageGenConfig(
   ).data
 }
 
+export function defaultImageEndpoint(provider: ImageGenProvider = 'openai') {
+  return {
+    openai: 'https://api.openai.com/v1',
+    gemini: 'https://generativelanguage.googleapis.com/v1beta',
+    openrouter: 'https://openrouter.ai/api/v1',
+  }[provider]
+}
+
 export function imageEndpoint(
   base: string,
-  provider: string,
+  provider: ImageGenProvider,
   model: string,
   operation = 'generate',
   editRequestFormat: EditRequestFormat = 'multipart'
 ) {
-  const root = base
-    .trim()
+  let endpoint = base.trim() || defaultImageEndpoint(provider)
+  if (provider === 'openrouter') {
+    try {
+      const url = new URL(endpoint)
+      if (
+        url.hostname.toLowerCase() === 'openrouter.ai' &&
+        !url.pathname.replace(/\//g, '')
+      ) {
+        url.pathname = '/api'
+        endpoint = url.toString()
+      }
+    } catch {
+      // Keep the preview usable while a custom base URL is being entered.
+    }
+  }
+  const root = endpoint
     .replace(/\/+$/, '')
     .replace(/\/(v1|v1beta)$/, '')
+  if (provider === 'openrouter') return `${root}/v1/images`
   return provider === 'gemini'
     ? `${root}/v1beta/models/${encodeURIComponent(model.replace(/^models\//, '') || '{model}')}:generateContent`
     : `${root}/v1/images/${operation === 'edit' && editRequestFormat === 'multipart' ? 'edits' : 'generations'}`

@@ -30,6 +30,12 @@ import (
 )
 
 func TestImageGenAPIAndMCPWorkflow(t *testing.T) {
+	for _, provider := range []string{"openai", "openrouter"} {
+		t.Run(provider, func(t *testing.T) { testImageGenAPIAndMCPWorkflow(t, provider) })
+	}
+}
+
+func testImageGenAPIAndMCPWorkflow(t *testing.T, provider string) {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "imagegen.db")), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		t.Fatal(err)
@@ -80,23 +86,35 @@ func TestImageGenAPIAndMCPWorkflow(t *testing.T) {
 	var payload bytes.Buffer
 	png.Encode(&payload, image.NewNRGBA(image.Rect(0, 0, 3, 2)))
 	imageBytes := payload.Bytes()
+	modelPath, generationPath := "/v1/models", "/v1/images/generations"
+	if provider == "openrouter" {
+		modelPath, generationPath = "/proxy/api/v1/images/models", "/proxy/api/v1/images"
+	}
 	var generationCalls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer upstream-secret" {
 			t.Error("bad upstream key")
 		}
-		if r.URL.Path == "/v1/models" {
+		if r.URL.Path == modelPath {
 			fmt.Fprint(w, `{"data":[{"id":"qwen-image-edit"},{"id":"unfiltered-chat-model"}]}`)
 			return
 		}
 		generationCalls.Add(1)
-		if r.URL.Path == "/v1/images/generations" {
+		if r.URL.Path == generationPath {
 			var body map[string]any
 			json.NewDecoder(r.Body).Decode(&body)
+			if provider == "openrouter" && body["prompt"] == "edit" {
+				refs, ok := body["input_references"].([]any)
+				if !ok || len(refs) != 1 || refs[0].(map[string]any)["image_url"].(map[string]any)["url"] != "data:image/png;base64,"+base64.StdEncoding.EncodeToString(imageBytes) {
+					t.Error("stored reference was not validated and sent through the OpenRouter protocol")
+				}
+			}
 			if body["prompt"] == "slow" {
 				<-r.Context().Done()
 				return
 			}
+		} else {
+			t.Errorf("unexpected image API route: %s", r.URL.Path)
 		}
 		fmt.Fprintf(w, `{"data":[{"b64_json":"%s"}]}`, base64.StdEncoding.EncodeToString(imageBytes))
 	}))
@@ -120,7 +138,16 @@ func TestImageGenAPIAndMCPWorkflow(t *testing.T) {
 		json.Unmarshal(raw, &result)
 		return resp.StatusCode, result
 	}
-	code, reply := apiRequest("POST", "/imagegen", token, map[string]any{"name": "Image model", "model_name": "qwen-image-edit", "endpoint_url": upstream.URL + "/v1", "api_key": "upstream-secret"})
+	endpoint := upstream.URL + strings.TrimSuffix(modelPath, "/models")
+	if provider == "openrouter" {
+		endpoint = strings.TrimSuffix(endpoint, "/images")
+	}
+	connection := map[string]any{"provider": provider, "endpoint_url": endpoint, "api_key": "upstream-secret", "default_params": map[string]any{"not-a-generation-parameter": true}, "timeout_seconds": -1}
+	code, reply := apiRequest("POST", "/imagegen/models", token, connection)
+	if code != 200 || len(reply["data"].([]any)) != 2 || generationCalls.Load() != 0 {
+		t.Fatal("model discovery required unrelated generation fields", reply)
+	}
+	code, reply = apiRequest("POST", "/imagegen", token, map[string]any{"name": "Image model", "provider": provider, "model_name": "qwen-image-edit", "endpoint_url": endpoint, "api_key": "upstream-secret"})
 	if code != 201 {
 		t.Fatalf("create %d %v", code, reply)
 	}

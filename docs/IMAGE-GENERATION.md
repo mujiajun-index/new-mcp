@@ -6,13 +6,15 @@
 
 ## 配置
 
-- `provider`：`openai` 或 `gemini`。OpenAI 兼容模式可连接 New API 图片接口；Gemini 使用原生 `generateContent`。
-- `endpoint_url`：网关根地址、反向代理路径前缀或带 `/v1`、`/v1beta` 的基础地址均可；页面预览最终地址。
+- `provider`：`openai`、`gemini` 或 `openrouter`。OpenAI 兼容模式可连接 New API 图片接口；Gemini 使用原生 `generateContent`；OpenRouter 使用独立图片 API。协议由配置显式选择，不根据模型名称推断。
+- `endpoint_url`：可留空使用当前协议的官方地址。OpenAI 为 `https://api.openai.com/v1`，Gemini 为 `https://generativelanguage.googleapis.com/v1beta`，OpenRouter 为 `https://openrouter.ai/api/v1`。支持网关根地址、反向代理路径前缀及已有版本后缀；OpenRouter 官方根地址自动补 `/api/v1`，其他网关根地址补 `/v1`。更新时省略字段保留已有地址，传空字符串恢复当前协议官方地址。页面预览最终地址。
 - `operation`：`generate`、`edit`、`both`（默认）。能力由配置和上游决定，不根据模型名猜测。
 - `edit_request_format`：OpenAI 兼容编辑接口格式。新建 OpenAI 兼容配置默认 `generations_json`，请求 `/v1/images/generations` 并传入顶层 `image` 数组；`multipart` 请求 `/v1/images/edits`；`generations_json_extra_body` 请求生成接口并传入 `extra_body.image`。按实际网关文档选择，已有配置保持所选格式，旧配置中未设置该字段时保持 multipart；Gemini 使用原生接口。
 - `timeout_seconds`：默认 180；0 仅跟随调用方期限。MCP 智能/批量执行显式的 `timeout_ms`、请求取消及更短的调用方期限优先。
 - `default_params`：JSON 对象。调用参数覆盖默认值，`extra_body` 深度合并；未填写的可选参数不发送。
 - API Key 只保存在独立配置中。列表、详情和虚拟服务配置不回显密钥；编辑时留空保留原密钥。
+
+「获取模型」仅提交协议、地址及凭证，不要求先填写配置名称、模型名或合法的生成默认参数。OpenRouter 读取专用图片模型目录，其他协议读取原有模型接口。搜索框默认 `image`，可修改或清空，也可手动填写模型 ID；不按模型名过滤或动态推断能力。
 
 OpenAI 默认参数示例（实际支持的参数、尺寸、质量由上游模型决定）：
 
@@ -67,6 +69,34 @@ multipart `/v1/images/edits` 是兼容协议，不限定只能连接 OpenAI 官�
 
 上述 JSON 编辑请求的最终结构为 `{"model":"已配置模型","prompt":"调用提示词","n":1,"size":"1K","extra_body":{"response_format":"url","image":["data:image/png;base64,..."]}}`。参考图由服务写入，不能在默认参数或扩展字段中覆盖。适配格式由用户显式配置；上游失败不会自动切换接口或再次生成。
 
+### OpenRouter 图片协议
+
+协议选择 `openrouter`，使用 OpenRouter API Key，地址可留空或填写官方地址，也可使用兼容中转网关及其路径前缀。文生图和参考图编辑都请求 `POST /api/v1/images`；模型目录为 `GET /api/v1/images/models`。接口契约以 [OpenRouter 官方图片文档](https://openrouter.ai/docs/guides/overview/multimodal/image-generation)为准。
+
+配置示例：
+
+```json
+{
+  "name": "OpenRouter 图片",
+  "provider": "openrouter",
+  "model_name": "google/gemini-3.1-flash-image",
+  "endpoint_url": "https://openrouter.ai/api/v1",
+  "api_key": "<OPENROUTER_API_KEY>",
+  "operation": "both",
+  "default_params": {
+    "resolution": "2K",
+    "aspect_ratio": "16:9",
+    "extra_body": {"seed": 42}
+  }
+}
+```
+
+继续使用 `generate_image` 和 `edit_image`。编辑工具的 `images` 经现有图片格式、所有者、签名和下载校验后，编码为 data URL，构造 `input_references` 的 `image_url` 结构；不直接转发 localhost 或私有存储链接。OpenRouter 使用固定 JSON 图片协议，忽略仅供 OpenAI 兼容接口使用的 `edit_request_format`，不支持 mask。
+
+两种工具提供 `n`（1–10，默认 1）、`size`、`quality`、`background`、`output_format`、`aspect_ratio` 和 `resolution`，不使用 Gemini 的 `image_size`。未设置的参数不发送，尺寸组合及参考图数量限制由上游模型校验；可通过 `extra_body` 传入 `seed`、`output_compression` 或 `provider` 路由及提供商扩展，不能覆盖模型、提示词、参考图或流式设置。采用同步非流式请求，不做自动接口切换或失败重试。
+
+解析响应的 `data[].b64_json`、`media_type`、可选 `url` 及 `usage`，复用现有存储、配额、签名下载和 inline 限额。实际 MIME 仍由图片字节确认。共享图片存储支持 PNG、JPEG、WebP；显式请求 SVG 会在调用上游前拒绝。本次接入的是专用 Image API，未增加 Chat Completions 图片模式或异步任务。
+
 ## MCP 工具
 
 按 `operation` 暴露 `generate_image`、`edit_image`；支持编辑时附带 `upload_image`。在网关中工具名带服务前缀，例如 `imagegen_1__generate_image`。
@@ -88,6 +118,7 @@ multipart `/v1/images/edits` 是兼容协议，不限定只能连接 OpenAI 官�
 
 - `images` 支持 HTTP(S) URL、data URL、base64，1 到 16 张。客户端本地图片先调用 `upload_image`，执行其返回的上传命令，再把 `image_url` 传给 `edit_image`。网页也可上传参考图和 mask。Agent 无法执行上传命令时，管理员可在「图片管理」（`/admin/uploads`）手动上传 PNG/JPEG/WebP 并复制地址，作为 `images` 数组的一项交给 Agent；调用需使用上传账号的 API Key。
 - OpenAI 支持可选 `n`（1 到 10，默认 1）、字符串 `size`、`quality`、`background`、`output_format`；multipart 编辑请求单图字段为 `image`，多图为 `image[]`；JSON 编辑格式始终使用图片数组。
+- OpenRouter 支持上述图片数量及通用生成参数，另提供 `aspect_ratio`、`resolution`；图片输入使用专用 JSON 参考图结构，不暴露 mask。
 - mask 必须是 PNG，尺寸与首图一致，透明区域用于重绘；需要标准 OpenAI multipart 编辑接口及支持该能力的模型。Gemini / JSON 生成接口编辑的 mask 在访问上游前拒绝。
 - Gemini 支持 `aspect_ratio`、`image_size`，参考图通过 `inlineData` 输入；单次请求不模拟多张生成循环。
 

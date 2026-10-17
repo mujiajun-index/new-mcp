@@ -51,13 +51,14 @@ import {
   listImageGenModels,
   testImageGenConfig,
   imageEndpoint,
+  defaultImageEndpoint,
 } from '../api'
-import type { ConfigInput, EditRequestFormat } from '../api'
+import type { ConfigInput, EditRequestFormat, ImageGenProvider } from '../api'
 
 const initial = {
   name: '',
   description: '',
-  provider: 'openai' as 'openai' | 'gemini',
+  provider: 'openai' as ImageGenProvider,
   model_name: '',
   endpoint_url: '',
   api_key: '',
@@ -161,8 +162,9 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
   const fetchModels = useMutation({
     mutationFn: () =>
       listImageGenModels({
-        ...payload(),
-        name: form.name || undefined,
+        provider: form.provider,
+        endpoint_url: form.endpoint_url,
+        api_key: form.api_key.trim() || undefined,
         config_id: id,
       }),
     onSuccess: (res) => {
@@ -211,9 +213,7 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
       setUploading(false)
     }
   }
-  const canConnect =
-    !!form.endpoint_url.trim() &&
-    (!!form.api_key.trim() || !!config?.has_api_key)
+  const canConnect = !!form.api_key.trim() || !!config?.has_api_key
   const supportsMask =
     form.provider === 'openai' && form.edit_request_format === 'multipart'
   const canSave =
@@ -224,10 +224,7 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
     form.timeout_seconds >= 0 &&
     form.timeout_seconds <= 86400
   const endpoint = imageEndpoint(
-    form.endpoint_url ||
-      (form.provider === 'openai'
-        ? 'https://api.openai.com'
-        : 'https://generativelanguage.googleapis.com'),
+    form.endpoint_url,
     form.provider,
     form.model_name,
     testOperation,
@@ -335,12 +332,12 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
             <Label htmlFor="imagegen-provider">{t('imagegen.provider')}</Label>
             <Select
               value={form.provider}
-              onValueChange={(v: 'openai' | 'gemini') => {
+              onValueChange={(v: ImageGenProvider) => {
                 setForm({
                   ...form,
                   provider: v,
                   edit_request_format:
-                    v === 'gemini' ? 'multipart' : 'generations_json',
+                    v === 'openai' ? 'generations_json' : 'multipart',
                 })
                 setMask('')
                 setModels([])
@@ -354,6 +351,9 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
                   {t('imagegen.providers.openai')}
                 </SelectItem>
                 <SelectItem value="gemini">Gemini</SelectItem>
+                <SelectItem value="openrouter">
+                  {t('imagegen.providers.openrouter')}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -363,7 +363,11 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
               <Input
                 id="imagegen-model"
                 className="min-w-0 flex-1"
-                placeholder="gpt-image-1 / qwen-image-plus"
+                placeholder={
+                  form.provider === 'openrouter'
+                    ? 'google/gemini-3.1-flash-image / openai/gpt-image-2'
+                    : 'gpt-image-1 / qwen-image-plus'
+                }
                 value={form.model_name}
                 onChange={(e) =>
                   setForm({ ...form, model_name: e.target.value })
@@ -388,23 +392,26 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
         </div>
         <div className="space-y-2">
           <Label htmlFor="imagegen-endpoint">
-            {t('imagegen.endpointUrl')} *
+            {t('imagegen.endpointUrl')}
           </Label>
           <Input
             id="imagegen-endpoint"
-            placeholder="https://gateway.example.com/v1"
+            placeholder={defaultImageEndpoint(form.provider)}
             value={form.endpoint_url}
             onChange={(e) => {
               setForm({ ...form, endpoint_url: e.target.value })
               setModels([])
             }}
           />
-          {form.endpoint_url.trim() && (
-            <p className="break-all text-xs text-muted-foreground">
-              {t('imagegen.endpointPreview')}:{' '}
-              <code className="text-primary">{endpoint}</code>
-            </p>
-          )}
+          <p className="text-xs text-muted-foreground">
+            {t('imagegen.endpointDefaultHint', {
+              endpoint: defaultImageEndpoint(form.provider),
+            })}
+          </p>
+          <p className="break-all text-xs text-muted-foreground">
+            {t('imagegen.endpointPreview')}:{' '}
+            <code className="text-primary">{endpoint}</code>
+          </p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="imagegen-key">API Key{id ? '' : ' *'}</Label>
@@ -417,6 +424,11 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
             onChange={(e) => setForm({ ...form, api_key: e.target.value })}
           />
         </div>
+        {form.provider === 'openrouter' && (
+          <p className="text-xs text-muted-foreground">
+            {t('imagegen.openRouterHint')}
+          </p>
+        )}
         <div className="space-y-2 max-w-xs">
           <Label htmlFor="imagegen-operation">{t('imagegen.operation')}</Label>
           <Select
@@ -497,7 +509,11 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
             onChange={(e) => setDefaults(e.target.value)}
           />
           <p className="text-xs text-muted-foreground">
-            {t('imagegen.defaultsHint')}
+            {t(
+              form.provider === 'openrouter'
+                ? 'imagegen.openRouterDefaultsHint'
+                : 'imagegen.defaultsHint'
+            )}
           </p>
         </div>
         <div className="space-y-2 max-w-xs">
@@ -776,7 +792,13 @@ export function ImageGenConfigPage({ id }: { id?: number }) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('imagegen.selectModel')}</DialogTitle>
-            <DialogDescription>{t('imagegen.modelsHint')}</DialogDescription>
+            <DialogDescription>
+              {t(
+                form.provider === 'openrouter'
+                  ? 'imagegen.openRouterModelsHint'
+                  : 'imagegen.modelsHint'
+              )}
+            </DialogDescription>
           </DialogHeader>
           <Input
             value={modelSearch}
