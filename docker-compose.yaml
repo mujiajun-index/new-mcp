@@ -18,7 +18,7 @@ services:
       - DB_TYPE=sqlite
       - DB_PATH=/app/data/newmcp.db
       # - DB_TYPE=mysql
-      # - SQL_DSN=newmcp:password@tcp(mysql:3306)/newmcp?charset=utf8mb4&parseTime=True
+      # - SQL_DSN=newmcp:password@tcp(mysql:3306)/newmcp?charset=utf8mb4&parseTime=True&loc=Asia%2FShanghai
       - SESSION_SECRET=change-me-to-a-random-string
       - CRYPTO_SECRET=change-me-to-a-random-string
     # Uncomment the following to use MySQL instead of SQLite:

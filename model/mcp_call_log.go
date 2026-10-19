@@ -93,10 +93,13 @@ type LogFilter struct {
 	Type        int // 0=全部(哨兵),否则按 LogType 过滤
 }
 
-// parseLogDate 兼容两种日期传参:完整时间 "2006-01-02 15:04:05" 与纯日期 "2006-01-02"。
-// created_at 按进程本地时间落库,用 ParseInLocation 保持同一时区口径(time.Parse 会按
-// UTC 解析,东八区下会整体偏移 8 小时)。
+// parseLogDate 接收带时区的 RFC3339 时间，兼容旧版无时区时间与纯日期。
+// created_at 按进程本地时间落库，显式时区输入也转到同一时区，确保 SQLite 的
+// 日期字符串比较与落库口径一致；旧版输入仍按进程本地时间解析。
 func parseLogDate(s string) (time.Time, bool) {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t.In(time.Local), true
+	}
 	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02"} {
 		if t, err := time.ParseInLocation(layout, s, time.Local); err == nil {
 			return t, true

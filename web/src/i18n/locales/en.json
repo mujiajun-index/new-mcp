@@ -195,6 +195,7 @@
     "ipWhitelist": "IP Whitelist",
     "ipPlaceholder": "Leave empty for no restriction",
     "expires": "Expires",
+    "time": "Time",
     "lastUsed": "Last Used",
     "status": "Status",
     "copyPrefix": "Copy prefix",
@@ -232,7 +233,11 @@
     "justNow": "Just now",
     "minutesAgo": "{{count}} min ago",
     "hoursAgo": "{{count}} hr ago",
-    "daysAgo": "{{count}} days ago"
+    "daysAgo": "{{count}} days ago",
+    "monthsAgo_one": "{{count}} month ago",
+    "monthsAgo_other": "{{count}} months ago",
+    "yearsAgo_one": "{{count}} year ago",
+    "yearsAgo_other": "{{count}} years ago"
   },
   "logs": {
     "title": "Call Logs",

@@ -10,6 +10,7 @@
     "typecheck": "tsc -b",
     "test:videogen-params": "node --test ../scripts/video-json-params.test.mjs",
     "test:task-history": "node --test ../scripts/task-history.test.mjs",
+    "test:datetime": "node --test ../scripts/datetime.test.mjs",
     "lint": "eslint .",
     "preview": "rsbuild preview",
     "format": "prettier --write .",

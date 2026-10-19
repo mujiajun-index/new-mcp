@@ -4,6 +4,7 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
@@ -167,6 +168,6 @@ func (s *MarketplaceTagService) toItem(t *model.MarketplaceTag) *dto.Marketplace
 		Color:       t.Color,
 		SortOrder:   t.SortOrder,
 		Status:      t.Status,
-		CreatedAt:   t.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:   t.CreatedAt.Format(time.RFC3339),
 	}
 }

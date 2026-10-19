@@ -26,10 +26,10 @@ func (s *ApiKeyService) List(userID int64, keyword string, page, pageSize int) (
 	for i, k := range keys {
 		var expiresAt, lastUsedAt string
 		if k.ExpiresAt != nil {
-			expiresAt = k.ExpiresAt.Format("2006-01-02T15:04:05Z")
+			expiresAt = k.ExpiresAt.Format(time.RFC3339)
 		}
 		if k.LastUsedAt != nil {
-			lastUsedAt = k.LastUsedAt.Format("2006-01-02T15:04:05Z")
+			lastUsedAt = k.LastUsedAt.Format(time.RFC3339)
 		}
 
 		var groups []string
@@ -53,7 +53,7 @@ func (s *ApiKeyService) List(userID int64, keyword string, page, pageSize int) (
 			AllowIPs:       k.AllowIPs,
 			ExpiresAt:      expiresAt,
 			LastUsedAt:     lastUsedAt,
-			CreatedAt:      k.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:      k.CreatedAt.Format(time.RFC3339),
 		}
 	}
 	return items, total, nil
@@ -121,7 +121,7 @@ func (s *ApiKeyService) Create(userID int64, req *dto.CreateApiKeyReq) (*dto.Api
 
 	var expiresAt string
 	if apiKey.ExpiresAt != nil {
-		expiresAt = apiKey.ExpiresAt.Format("2006-01-02T15:04:05Z")
+		expiresAt = apiKey.ExpiresAt.Format(time.RFC3339)
 	}
 
 	return &dto.ApiKeyCreateResult{
@@ -248,9 +248,5 @@ func generateRandomHex(n int) string {
 }
 
 func parseTime(s string) (time.Time, error) {
-	t, err := time.Parse(time.RFC3339Nano, s)
-	if err != nil {
-		t, err = time.Parse("2006-01-02T15:04:05Z", s)
-	}
-	return t, err
+	return time.Parse(time.RFC3339Nano, s)
 }

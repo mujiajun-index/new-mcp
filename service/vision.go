@@ -33,7 +33,7 @@ func (s *VisionService) List(userID int64) ([]dto.VisionConfigListItem, error) {
 			AutoRegister:        c.AutoRegister,
 			RegisteredServiceID: c.RegisteredServiceID,
 			Status:              c.Status,
-			CreatedAt:           c.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:           c.CreatedAt.Format(time.RFC3339),
 		}
 	}
 	return items, nil
@@ -378,7 +378,7 @@ func (s *VisionService) toDetail(vc *model.VisionConfig) *dto.VisionConfigDetail
 		AnalyzeImageDescDefault: model.DefaultAnalyzeImageDesc,
 		ExtraConfig:             vc.ExtraConfig,
 		Status:                  vc.Status,
-		CreatedAt:               vc.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt:               vc.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:               vc.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:               vc.UpdatedAt.Format(time.RFC3339),
 	}
 }

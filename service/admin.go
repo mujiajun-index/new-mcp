@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
@@ -50,7 +51,7 @@ func (s *AdminService) ListUsers(actorRole string, page, pageSize int, keyword, 
 			RequestCount: u.RequestCount,
 			Group:        u.Group,
 			Remark:       u.Remark,
-			CreatedAt:    u.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:    u.CreatedAt.Format(time.RFC3339),
 		}
 	}
 	return items, total, nil
@@ -80,12 +81,12 @@ func (s *AdminService) GetUserDetail(actorRole string, userID int64) (*dto.UserD
 		RequestCount: user.RequestCount,
 		Group:        user.Group,
 		Remark:       user.Remark,
-		CreatedAt:    user.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:    user.CreatedAt.Format(time.RFC3339),
 		RegisterIP:   user.RegisterIP,
 		LastLoginIP:  user.LastLoginIP,
 	}
 	if user.LastLoginAt != nil {
-		resp.LastLoginAt = user.LastLoginAt.Format("2006-01-02T15:04:05Z")
+		resp.LastLoginAt = user.LastLoginAt.Format(time.RFC3339)
 	}
 	return resp, nil
 }
@@ -220,7 +221,7 @@ func (s *AdminService) CreateUser(actor model.Operator, req *dto.AdminCreateUser
 		Status:      user.Status,
 		Quota:       user.Quota,
 		Group:       user.Group,
-		CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:   user.CreatedAt.Format(time.RFC3339),
 	}, nil
 }
 
@@ -409,7 +410,7 @@ func (s *AdminService) GetLogsForUser(userID int64, isAdmin bool, filter *dto.Lo
 			DurationMs:        l.DurationMs,
 			ErrorMessage:      l.ErrorMessage,
 			ClientIP:          l.ClientIP,
-			CreatedAt:         l.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:         l.CreatedAt.Format(time.RFC3339),
 			BillingStatus:     l.BillingStatus,
 			BillingType:       l.BillingType,
 			UnitPrice:         l.UnitPrice,

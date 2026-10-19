@@ -37,7 +37,7 @@ func (s *ConnectionService) List(userID int64) ([]dto.ConnectionListItem, error)
 			ExposeMode:       c.ExposeMode,
 			AutoConnect:      c.AutoConnect,
 			Status:           c.Status,
-			CreatedAt:        c.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:        c.CreatedAt.Format(time.RFC3339),
 		}
 	}
 	return items, nil
@@ -257,10 +257,10 @@ func (s *ConnectionService) toDetail(conn *model.CloudEndpoint) *dto.ConnectionD
 
 	var tokenExpiresAt, lastConnectedAt string
 	if conn.TokenExpiresAt != nil {
-		tokenExpiresAt = conn.TokenExpiresAt.Format("2006-01-02T15:04:05Z")
+		tokenExpiresAt = conn.TokenExpiresAt.Format(time.RFC3339)
 	}
 	if conn.LastConnectedAt != nil {
-		lastConnectedAt = conn.LastConnectedAt.Format("2006-01-02T15:04:05Z")
+		lastConnectedAt = conn.LastConnectedAt.Format(time.RFC3339)
 	}
 
 	return &dto.ConnectionDetail{

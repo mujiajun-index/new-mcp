@@ -68,7 +68,7 @@ func (s *McpServiceService) List(userID int64, page, pageSize int, filters map[s
 			HealthStatus:       svc.HealthStatus,
 			ToolsCount:         len(tools),
 			Status:             svc.Status,
-			CreatedAt:          svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:          svc.CreatedAt.Format(time.RFC3339),
 			MarketplaceOffline: offline[svc.ID],
 		}
 	}
@@ -1233,7 +1233,7 @@ func (s *McpServiceService) GetServicesOverview(userID int64, isAdmin bool) (*dt
 			HealthStatus:       svc.HealthStatus,
 			ToolsCount:         len(tools),
 			Status:             svc.Status,
-			CreatedAt:          svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:          svc.CreatedAt.Format(time.RFC3339),
 			MarketplaceOffline: offline[svc.ID],
 		}
 
@@ -1467,7 +1467,7 @@ func (s *McpServiceService) toServiceListItems(services []model.McpService) []dt
 			HealthStatus:  svc.HealthStatus,
 			ToolsCount:    len(tools),
 			Status:        svc.Status,
-			CreatedAt:     svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:     svc.CreatedAt.Format(time.RFC3339),
 		}
 	}
 	return items
@@ -1483,11 +1483,11 @@ func (s *McpServiceService) toDetail(svc *model.McpService) *dto.ServiceDetail {
 
 	var toolsUpdatedAt string
 	if svc.ToolsUpdatedAt != nil {
-		toolsUpdatedAt = svc.ToolsUpdatedAt.Format("2006-01-02T15:04:05Z")
+		toolsUpdatedAt = svc.ToolsUpdatedAt.Format(time.RFC3339)
 	}
 	var lastHealthCheck string
 	if svc.LastHealthCheck != nil {
-		lastHealthCheck = svc.LastHealthCheck.Format("2006-01-02T15:04:05Z")
+		lastHealthCheck = svc.LastHealthCheck.Format(time.RFC3339)
 	}
 
 	var tags []string
@@ -1517,7 +1517,7 @@ func (s *McpServiceService) toDetail(svc *model.McpService) *dto.ServiceDetail {
 		ProtocolVersion:  svc.ProtocolVersion,
 		Tags:             tags,
 		Status:           svc.Status,
-		CreatedAt:        svc.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:        svc.CreatedAt.Format(time.RFC3339),
 		PassiveConnected: svc.PassiveConnected,
 	}
 	if svc.Source == "imagegen" {

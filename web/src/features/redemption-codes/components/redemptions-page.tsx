@@ -17,6 +17,7 @@ import { MobileListCard } from '@/components/ui/mobile-list-card'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import { currencySymbol } from '@/lib/billing'
+import { toDateTimeLocalValue } from '@/lib/datetime'
 import { toast } from 'sonner'
 import { Plus, Search, Trash2, Copy, Ticket, Ban, CheckCircle2 } from 'lucide-react'
 import type { RedemptionItem } from '@/types'
@@ -376,7 +377,7 @@ export function RedemptionsPage() {
                   <Input
                     type="datetime-local"
                     disabled={form.neverExpires}
-                    value={form.expires_at ? form.expires_at.slice(0, 16) : ''}
+                    value={toDateTimeLocalValue(form.expires_at)}
                     onChange={(e) => setForm({ ...form, neverExpires: false, expires_at: e.target.value ? new Date(e.target.value).toISOString() : '' })}
                   />
                 </div>

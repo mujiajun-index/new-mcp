@@ -81,7 +81,7 @@ DB_PATH=./data/newmcp.db
 
 # MySQL
 # DB_TYPE=mysql
-# SQL_DSN=newmcp:newmcp@tcp(localhost:3306)/newmcp?charset=utf8mb4&parseTime=True
+# SQL_DSN=newmcp:newmcp@tcp(localhost:3306)/newmcp?charset=utf8mb4&parseTime=True&loc=Asia%2FShanghai
 
 # PostgreSQL
 # DB_TYPE=postgres
@@ -177,7 +177,8 @@ services:
       - "3000:3000"
     environment:
       - DB_TYPE=mysql
-      - SQL_DSN=newmcp:newmcp@tcp(mysql:3306)/newmcp?charset=utf8mb4&parseTime=True
+      - SQL_DSN=newmcp:newmcp@tcp(mysql:3306)/newmcp?charset=utf8mb4&parseTime=True&loc=Asia%2FShanghai
+      - TZ=Asia/Shanghai
       - REDIS_CONN_STRING=redis://redis:6379
       - SESSION_SECRET=${SESSION_SECRET}
       - CRYPTO_SECRET=${CRYPTO_SECRET}
@@ -293,6 +294,11 @@ make build
 | `SESSION_SECRET` | - | Session 密钥 (多实例必须设置) |
 | `CRYPTO_SECRET` | - | 加密密钥 (加密 API Key 等敏感数据) |
 | `LOG_LEVEL` | `info` | 日志级别: debug/info/warn/error |
+| `TZ` | 容器/系统默认时区 | 进程本地时区；按北京时间计算“今日”可设置 `Asia/Shanghai` |
+
+MySQL 连接串使用 `parseTime=True&loc=Asia%2FShanghai`，并设置进程环境变量 `TZ=Asia/Shanghai`。日志的 `created_at` 在 MySQL 的 DATETIME 列中按北京时间存储，例如 `2026-10-17 16:34:10`，不带 `Z` 或时区后缀。只设置 `TZ` 不会改变 MySQL 驱动默认的 UTC 连接时区，必须同时设置 `loc`。
+
+注册、登录、日志、密钥、摄像头、服务与市场等接口的日期时间字符串统一使用 RFC3339 格式保留真实时区，例如返回 `2026-10-17T16:34:10+08:00`。图片、视频和上传任务的时间也保留时区。前端按浏览器时区转换显示：东八区显示 `16:34:10`，UTC 显示 `08:34:10`。时间范围筛选携带时区，有效期输入框显示浏览器当地时间并在提交时转换为带时区的时间。更新时前后端需一起重新构建部署。
 
 > [!NOTE]
 > MCP 端点地址由**系统设置**中的**服务器地址**（`ServerAddress`）决定，管理员可在后台运行时动态修改，无需配置环境变量。

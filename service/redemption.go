@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
@@ -150,10 +151,10 @@ func toRedemptionItem(r *model.Redemption) dto.RedemptionItem {
 		Status:    r.Status,
 		UserID:    r.UserID,
 		ExpiredAt: r.ExpiredAt,
-		CreatedAt: r.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		CreatedAt: r.CreatedAt.Format(time.RFC3339),
 	}
 	if r.RedeemedAt != nil {
-		item.RedeemedAt = r.RedeemedAt.Format("2006-01-02T15:04:05Z")
+		item.RedeemedAt = r.RedeemedAt.Format(time.RFC3339)
 	}
 	return item
 }

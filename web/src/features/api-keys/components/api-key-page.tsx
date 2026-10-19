@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { getApiKeys, createApiKey, updateApiKey, deleteApiKey, getApiKeyFullKey, batchDeleteApiKeys, batchUpdateApiKeyStatus } from '../api'
 import { getGroups } from '@/features/groups/api'
 import { cn } from '@/lib/utils'
+import { toDateTimeLocalValue } from '@/lib/datetime'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,14 +20,15 @@ import { formatQuotaCurrency } from '@/lib/billing'
 import { toast } from 'sonner'
 import {
   Plus, Trash2, Copy, Key, X, Pencil, ToggleLeft, ToggleRight,
-  Infinity, Search, CheckSquare, Square, Clock, Shield, Loader2,
+  Infinity, Search, CheckSquare, Square, Shield, Loader2,
   ChevronDown, Eye, Check,
 } from 'lucide-react'
 import type { ApiKeyListItem, GroupListItem } from '@/types'
 
-function formatRelativeTime(dateStr: string, localeStr: string, t: (k: string, opts?: any) => string) {
+function formatRelativeTime(dateStr: string, t: (k: string, opts?: any) => string) {
   if (!dateStr) return '-'
   const date = new Date(dateStr)
+  if (Number.isNaN(date.getTime())) return '-'
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
   const seconds = Math.floor(diffMs / 1000)
@@ -37,7 +39,8 @@ function formatRelativeTime(dateStr: string, localeStr: string, t: (k: string, o
   if (hours < 24) return t('apiKeys.hoursAgo', { count: hours })
   const days = Math.floor(hours / 24)
   if (days < 30) return t('apiKeys.daysAgo', { count: days })
-  return date.toLocaleDateString(localeStr)
+  if (days < 365) return t('apiKeys.monthsAgo', { count: Math.floor(days / 30) })
+  return t('apiKeys.yearsAgo', { count: Math.floor(days / 365) })
 }
 
 function isExpired(key: ApiKeyListItem) {
@@ -191,12 +194,30 @@ function KeyCell({ apiKey }: { apiKey: ApiKeyListItem }) {
   )
 }
 
-function formatLastUsed(value: unknown, t: (k: string, opts?: any) => string, localeStr: string): string {
-  if (!value) return '-'
-  if (typeof value === 'string') {
-    return formatRelativeTime(value, localeStr, t)
-  }
-  return String(value)
+function ApiKeyTimeCell({ apiKey }: { apiKey: ApiKeyListItem }) {
+  const { t, i18n } = useTranslation()
+  const locale = i18n.language?.startsWith('zh') ? 'zh-CN' : 'en-US'
+
+  return (
+    <TooltipProvider>
+      <div className="space-y-1 whitespace-nowrap text-xs text-muted-foreground">
+        {[
+          { label: t('common.createdAt'), value: apiKey.created_at },
+          { label: t('apiKeys.lastUsed'), value: apiKey.last_used_at },
+        ].map(({ label, value }) => (
+          <Tooltip key={label}>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-2">
+                <span>{label}</span>
+                <span>{formatRelativeTime(value, t)}</span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>{value ? new Date(value).toLocaleString(locale) : '-'}</TooltipContent>
+          </Tooltip>
+        ))}
+      </div>
+    </TooltipProvider>
+  )
 }
 
 function GroupMultiSelect({
@@ -581,7 +602,7 @@ export function ApiKeyPage() {
                 <Input
                   type="datetime-local"
                   disabled={form.never_expires}
-                  value={form.expires_at ? form.expires_at.slice(0, 16) : ''}
+                  value={toDateTimeLocalValue(form.expires_at)}
                   onChange={e => {
                     const v = e.target.value
                     setForm({ ...form, expires_at: v ? new Date(v).toISOString() : '' })
@@ -750,13 +771,8 @@ export function ApiKeyPage() {
                       ),
                     },
                     {
-                      label: t('apiKeys.lastUsed'),
-                      value: (
-                        <span className="inline-flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {formatLastUsed(key.last_used_at, t, locale)}
-                        </span>
-                      ),
+                      label: t('apiKeys.time'),
+                      value: <ApiKeyTimeCell apiKey={key} />,
                     },
                   ]}
                   actions={
@@ -789,7 +805,7 @@ export function ApiKeyPage() {
                 <TableHead className="px-4">{t('apiKeys.groups')}</TableHead>
                 <TableHead className="px-4">{t('apiKeys.quota')}</TableHead>
                 <TableHead className="px-4">{t('apiKeys.status')}</TableHead>
-                <TableHead className="px-4">{t('apiKeys.lastUsed')}</TableHead>
+                <TableHead className="px-4">{t('apiKeys.time')}</TableHead>
                 <TableHead className="px-4">{t('apiKeys.expires')}</TableHead>
                 <TableHead className="px-4 text-right">{t('common.actions')}</TableHead>
               </TableRow>
@@ -838,17 +854,7 @@ export function ApiKeyPage() {
                       </button>
                     </TableCell>
                     <TableCell className="px-4">
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                              <Clock className="h-3 w-3" />
-                              {formatLastUsed(key.last_used_at, t, locale)}
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>{key.last_used_at ? new Date(key.last_used_at).toLocaleString(locale) : '-'}</TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                      <ApiKeyTimeCell apiKey={key} />
                     </TableCell>
                     <TableCell className="px-4 text-xs text-muted-foreground">
                       {key.expires_at ? (

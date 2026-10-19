@@ -148,8 +148,8 @@ export function UserLogsPage() {
 
   const apiFilter = useMemo(() => {
     const f: LogFilter = { ...applied.filter }
-    if (applied.range.start) f.start_date = dayjs(applied.range.start).format('YYYY-MM-DD HH:mm:ss')
-    if (applied.range.end) f.end_date = dayjs(applied.range.end).format('YYYY-MM-DD HH:mm:ss')
+    if (applied.range.start) f.start_date = applied.range.start.toISOString()
+    if (applied.range.end) f.end_date = applied.range.end.toISOString()
     return f
   }, [applied])
 
@@ -209,8 +209,8 @@ export function UserLogsPage() {
 
   const formatTime = (dateStr: string) => {
     if (!dateStr) return '-'
-    // 保留日志接口返回的日期时间，避免时区后缀触发浏览器本地时区换算。
-    return dayjs(dateStr.replace(/(Z|[+-]\d{2}:?\d{2})$/i, '')).format('YYYY-MM-DD HH:mm:ss')
+    // 接口返回真实时区，统一转换为浏览器本地时间显示。
+    return dayjs(dateStr).format('YYYY-MM-DD HH:mm:ss')
   }
 
   const formatDuration = (ms: number) => {

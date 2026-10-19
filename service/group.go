@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
@@ -36,7 +37,7 @@ func (s *GroupService) List(userID int64, page, pageSize int) ([]dto.GroupListIt
 			ExposeMode:  g.ExposeMode,
 			ToolsCount:  toolsCount,
 			Status:      g.Status,
-			CreatedAt:   g.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:   g.CreatedAt.Format(time.RFC3339),
 		}
 	}
 	return items, total, nil

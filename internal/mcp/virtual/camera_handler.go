@@ -50,7 +50,7 @@ func handleCapture(cameraID int64) (json.RawMessage, error) {
 	resp := map[string]interface{}{
 		"content": []map[string]interface{}{
 			{"type": "image", "data": b64, "mimeType": "image/jpeg"},
-			{"type": "text", "text": fmt.Sprintf("Captured at: %s", capturedAt.Format("2006-01-02 15:04:05"))},
+			{"type": "text", "text": fmt.Sprintf("Captured at: %s", capturedAt.Format(time.RFC3339))},
 		},
 	}
 	return json.Marshal(resp)

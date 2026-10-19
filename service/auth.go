@@ -193,7 +193,7 @@ func (s *AuthService) GetProfile(userID int64) (*dto.ProfileResp, error) {
 		UsedQuota:    user.UsedQuota,
 		RequestCount: user.RequestCount,
 		Group:        user.Group,
-		CreatedAt:    user.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:    user.CreatedAt.Format(time.RFC3339),
 	}, nil
 }
 

@@ -46,7 +46,7 @@ func (s *CameraService) List(userID int64) ([]dto.CameraListItem, error) {
 			HasStreamKey:        c.StreamKey != "",
 			StreamKeyExpiresAt:  streamKeyExpiresAt(&c),
 			Status:              c.Status,
-			CreatedAt:           c.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:           c.CreatedAt.Format(time.RFC3339),
 		}
 	}
 	return items, nil
@@ -299,8 +299,8 @@ func (s *CameraService) toDetail(cam *model.Camera) *dto.CameraDetail {
 		HasStreamKey:        cam.StreamKey != "",
 		StreamKeyExpiresAt:  streamKeyExpiresAt(cam),
 		Status:              cam.Status,
-		CreatedAt:           cam.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt:           cam.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:           cam.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:           cam.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -309,7 +309,7 @@ func streamKeyExpiresAt(cam *model.Camera) string {
 	if cam.StreamKey == "" || cam.StreamKeyExpiresAt == nil {
 		return ""
 	}
-	return cam.StreamKeyExpiresAt.Format("2006-01-02T15:04:05Z")
+	return cam.StreamKeyExpiresAt.Format(time.RFC3339)
 }
 
 // cameraLiveURL 用 ServerAddress option 拼完整推流页链接(仿 storage.ShortURL)。
@@ -324,7 +324,7 @@ func (s *CameraService) streamKeyInfo(cam *model.Camera) *dto.CameraStreamKey {
 	}
 	expires := ""
 	if cam.StreamKeyExpiresAt != nil {
-		expires = cam.StreamKeyExpiresAt.Format("2006-01-02T15:04:05Z")
+		expires = cam.StreamKeyExpiresAt.Format(time.RFC3339)
 	}
 	return &dto.CameraStreamKey{
 		StreamKey: cam.StreamKey,

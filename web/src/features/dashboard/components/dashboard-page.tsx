@@ -43,7 +43,7 @@ export function DashboardPage() {
       page: 1,
       page_size: 6,
       type: 2,
-      start_date: dayjs().subtract(24, 'hour').format('YYYY-MM-DD HH:mm:ss'),
+      start_date: dayjs().subtract(24, 'hour').toISOString(),
     }),
     refetchInterval: 60 * 1000,
   })

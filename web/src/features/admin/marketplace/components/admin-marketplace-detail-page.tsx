@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import dayjs from 'dayjs'
 import { useParams, useNavigate, useRouter } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -218,7 +219,7 @@ export function AdminMarketplaceDetailPage() {
         <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
           <div><span className="text-muted-foreground">{t('marketplace.price')}</span>: {priceLabel(item.billing_type, item.price_per_call, config.displayCurrency)}</div>
           <div><span className="text-muted-foreground">{t('services.transportType')}</span>: {item.transport_type}</div>
-          <div><span className="text-muted-foreground">{t('common.createdAt')}</span>: {item.created_at.slice(0, 10)}</div>
+          <div><span className="text-muted-foreground">{t('common.createdAt')}</span>: {dayjs(item.created_at).format('YYYY-MM-DD')}</div>
           <div><span className="text-muted-foreground">{t('services.protocolVersion')}</span>: {item.protocol_version || '-'}</div>
         </div>
         {item.description && <p className="mt-3 text-sm text-muted-foreground">{item.description}</p>}
