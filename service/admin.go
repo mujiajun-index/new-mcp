@@ -410,6 +410,7 @@ func (s *AdminService) GetLogsForUser(userID int64, isAdmin bool, filter *dto.Lo
 			DurationMs:        l.DurationMs,
 			ErrorMessage:      l.ErrorMessage,
 			ClientIP:          l.ClientIP,
+			IPType:            l.IPType,
 			CreatedAt:         l.CreatedAt.Format(time.RFC3339),
 			BillingStatus:     l.BillingStatus,
 			BillingType:       l.BillingType,
@@ -458,6 +459,7 @@ func dtoToModelFilter(f *dto.LogFilter) *model.LogFilter {
 		Username:    f.Username,
 		ServiceName: f.ServiceName,
 		ApiKeyName:  f.ApiKeyName,
+		IPType:      f.IPType,
 		Keyword:     f.Keyword,
 		Type:        f.Type,
 	}

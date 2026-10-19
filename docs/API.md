@@ -931,7 +931,11 @@ passive-ws (被动 WebSocket 接入):
 > **API Key 绑定**: `api_key_id` 关联一个已有 API Key，该 Key 的 `permissions.groups` 决定此连接可暴露的 MCP 分组和工具范围。
 
 ### GET /connections/:id
-获取连接详情（含连接状态）。
+获取连接详情（含连接状态）。普通用户仅可查看自己的配置；管理员和超级管理员也可只读查看其他用户的配置。
+
+响应包含 `user_id` 和 `read_only`。管理员查看其他用户时，`read_only=true`，另返回所属用户 `username`、绑定令牌名称 `api_key_name`，WSS URL 仅保留协议、主机和端口，其余敏感部分显示为 `****`（例如 `wss://api.xiaozhi.me/****?****`）。SSH 等配置仅保留主机、端口、用户名和认证类型，其余字段及原始错误信息遮罩，避免凭据泄漏。配置所有者的详情和编辑行为保持原样。
+
+此只读权限不开放修改、删除、连接/断开或密钥重绑；这些操作仍严格校验配置归属。
 
 ### PUT /connections/:id
 更新连接配置（如更换 URL、切换分组）。

@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
+import dayjs from 'dayjs'
 import { getConnection, deleteConnection, connectConnection, disconnectConnection, updateConnection } from '../api'
 import { getApiKeys } from '@/features/api-keys/api'
+import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -22,22 +24,28 @@ export function ConnectionDetailPage() {
   const navigate = useNavigate()
   const { id } = useParams({ strict: false }) as { id: string }
   const queryClient = useQueryClient()
+  const { auth } = useAuthStore()
   const connId = Number(id)
 
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({ name: '', wss_url: '', api_key_id: 0, expose_mode: 'smart' as 'smart' | 'direct' })
 
   const { data, isLoading } = useQuery({
-    queryKey: ['connection', id],
+    queryKey: ['connection', id, auth.user?.id, auth.user?.role],
     queryFn: () => getConnection(connId),
-  })
-
-  const { data: keysData } = useQuery({
-    queryKey: ['api-keys'],
-    queryFn: () => getApiKeys(),
+    enabled: !!auth.user,
   })
 
   const conn = data?.data
+  const canEdit = !!conn && !conn.read_only && conn.user_id === auth.user?.id
+  const isEditing = editing && canEdit
+
+  const { data: keysData } = useQuery({
+    queryKey: ['api-keys', auth.user?.id],
+    queryFn: () => getApiKeys(),
+    enabled: canEdit,
+  })
+
   const apiKeys = (keysData?.data || []).filter((k: { status: number }) => k.status === 1)
   const isDisabled = conn ? conn.status !== 1 : false
 
@@ -55,7 +63,7 @@ export function ConnectionDetailPage() {
   }
 
   useEffect(() => {
-    if (conn && !editing) {
+    if (conn && !isEditing) {
       setForm({
         name: conn.name || '',
         wss_url: conn.wss_url || '',
@@ -63,7 +71,7 @@ export function ConnectionDetailPage() {
         expose_mode: conn.expose_mode || 'smart',
       })
     }
-  }, [conn, editing])
+  }, [conn, isEditing])
 
   const deleteMutation = useMutation({
     mutationFn: () => deleteConnection(connId),
@@ -102,14 +110,17 @@ export function ConnectionDetailPage() {
   if (isLoading) return <div className="flex items-center justify-center py-20 text-muted-foreground">{t('common.loading')}</div>
   if (!conn) return <div className="flex items-center justify-center py-20 text-muted-foreground">{t('connections.detail.notFound')}</div>
 
-  const boundKey = apiKeys.find((k: { id: number }) => k.id === (editing ? form.api_key_id : conn.api_key_id))
+  const boundKey = apiKeys.find((k: { id: number }) => k.id === (isEditing ? form.api_key_id : conn.api_key_id))
+  const boundKeyLabel = canEdit
+    ? boundKey ? `${boundKey.name} (${boundKey.key_prefix}...)` : '-'
+    : conn.api_key_id ? `${conn.api_key_name || t('connections.detail.bindApiKey')} #${conn.api_key_id}` : '-'
 
   return (
     <div className={`p-6 lg:p-8 space-y-6${isDisabled ? ' opacity-60' : ''}`}>
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate({ to: '/connections' })}>
+          <Button variant="ghost" size="icon" onClick={() => navigate({ to: canEdit ? '/connections' : '/logs' })}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
@@ -118,9 +129,10 @@ export function ConnectionDetailPage() {
               {statusLabels[conn.connection_status] || conn.connection_status}
               {isDisabled && <span className="ml-2 text-zinc-500">{t('connections.detail.disabledHint')}</span>}
             </p>
+            {conn.read_only && <p className="mt-1 text-xs text-muted-foreground">{t('connections.detail.adminReadOnly')}</p>}
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        {canEdit && <div className="flex flex-wrap gap-2">
           {/* Enable/Disable toggle */}
           <Button
             variant="outline"
@@ -129,7 +141,7 @@ export function ConnectionDetailPage() {
           >
             {isDisabled ? t('common.enabled') : t('common.disabled')}
           </Button>
-          {!editing && (
+          {!isEditing && (
             <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
               <Pencil className="h-4 w-4 mr-1.5" />{t('common.edit')}
             </Button>
@@ -147,7 +159,7 @@ export function ConnectionDetailPage() {
           <Button variant="outline" size="sm" className="text-destructive" onClick={() => { if (confirm(t('connections.detail.deleteConfirm'))) deleteMutation.mutate() }}>
             <Trash2 className="h-4 w-4" />
           </Button>
-        </div>
+        </div>}
       </div>
 
       {/* Basic config */}
@@ -160,7 +172,7 @@ export function ConnectionDetailPage() {
           {/* Name */}
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">{t('connections.detail.name')}</Label>
-            {editing ? (
+            {isEditing ? (
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             ) : (
               <p className="text-sm">{conn.name}</p>
@@ -173,11 +185,18 @@ export function ConnectionDetailPage() {
             <p className="text-sm">{cloudTypeLabels[conn.cloud_type] || conn.cloud_type}</p>
           </div>
 
+          {conn.read_only && (
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">{t('connections.detail.owner')}</Label>
+              <p className="text-sm">{conn.username || '-'} #{conn.user_id}</p>
+            </div>
+          )}
+
           {/* WSS URL */}
           {conn.cloud_type !== 'ssh' && (
             <div className="space-y-1.5 sm:col-span-2">
               <Label className="text-xs text-muted-foreground">{t('connections.detail.wssUrl')}</Label>
-              {editing ? (
+              {isEditing ? (
                 <Input value={form.wss_url} onChange={(e) => setForm({ ...form, wss_url: e.target.value })} placeholder="wss://example.com/ws" />
               ) : (
                 <code className="block text-sm break-all rounded-md bg-muted/50 px-3 py-2">{conn.wss_url || '-'}</code>
@@ -188,7 +207,7 @@ export function ConnectionDetailPage() {
           {/* Bound API Key */}
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">{t('connections.detail.bindApiKey')}</Label>
-            {editing ? (
+            {isEditing ? (
               apiKeys.length === 0 ? (
                 <p className="text-xs text-muted-foreground py-2">{t('connections.detail.createApiKeyFirst')}</p>
               ) : (
@@ -208,14 +227,14 @@ export function ConnectionDetailPage() {
                 </div>
               )
             ) : (
-              <p className="text-sm">{boundKey ? `${boundKey.name} (${boundKey.key_prefix}...)` : '-'}</p>
+              <p className="text-sm">{boundKeyLabel}</p>
             )}
           </div>
 
           {/* Expose Mode */}
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">{t('connections.detail.exposeModeHint')}</Label>
-            {editing ? (
+            {isEditing ? (
               <div className="flex gap-2 pt-1">
                 <button
                   type="button"
@@ -249,7 +268,7 @@ export function ConnectionDetailPage() {
         </div>
 
         {/* Edit actions */}
-        {editing && (
+        {isEditing && (
           <div className="flex justify-end gap-2 pt-2 border-t">
             <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
               <X className="h-4 w-4 mr-1.5" />{t('common.cancel')}
@@ -282,11 +301,19 @@ export function ConnectionDetailPage() {
           </div>
           <div>
             <p className="text-xs text-muted-foreground">{t('connections.detail.lastConnect')}</p>
-            <p className="mt-0.5 text-sm">{conn.last_connected_at || '-'}</p>
+            <p className="mt-0.5 text-sm">{conn.last_connected_at ? dayjs(conn.last_connected_at).format('YYYY-MM-DD HH:mm:ss') : '-'}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">{t('connections.detail.lastError')}</p>
             <p className="mt-0.5 text-sm">{conn.last_error || '-'}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">{t('connections.detail.peerHost')}</p>
+            <p className="mt-0.5 text-sm font-mono break-all">{conn.peer_host || '-'}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">{t('connections.detail.lastUpdatedIP')}</p>
+            <p className="mt-0.5 text-sm font-mono break-all">{conn.last_updated_ip || '-'}</p>
           </div>
         </div>
       </div>

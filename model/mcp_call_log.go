@@ -11,37 +11,38 @@ import (
 )
 
 type McpCallLog struct {
-	ID              int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	UserID          int64     `json:"user_id" gorm:"index"`
-	Username        string    `json:"username" gorm:"size:128;index;default:''"`
-	ApiKeyID        int64     `json:"api_key_id" gorm:"index;default:0"`
-	ApiKeyName      string    `json:"api_key_name" gorm:"size:128;default:''"`
-	DeviceID        *int64    `json:"device_id"`
-	GroupID         int64     `json:"group_id" gorm:"index;default:0"`
-	GroupName       string    `json:"group_name" gorm:"size:128;index;default:''"`
-	ServiceID       int64     `json:"service_id" gorm:"index;default:0"`
-	ServiceName     string    `json:"service_name" gorm:"size:128;default:''"`
-	ToolName        string    `json:"tool_name" gorm:"size:255;not null;index"`
-	Method          string    `json:"method" gorm:"size:64"`
-	RequestID       string    `json:"request_id" gorm:"size:64;index;default:''"`
-	RequestPayload  string    `json:"request_payload" gorm:"type:mediumtext"`
-	ResponseStatus  string    `json:"response_status" gorm:"size:16;index"`
-	ResponsePayload string    `json:"response_payload" gorm:"type:mediumtext"`
-	DurationMs      int       `json:"duration_ms" gorm:"default:0"`
-	ErrorMessage    string    `json:"error_message" gorm:"type:text"`
+	ID              int64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	UserID          int64  `json:"user_id" gorm:"index"`
+	Username        string `json:"username" gorm:"size:128;index;default:''"`
+	ApiKeyID        int64  `json:"api_key_id" gorm:"index;default:0"`
+	ApiKeyName      string `json:"api_key_name" gorm:"size:128;default:''"`
+	DeviceID        *int64 `json:"device_id"`
+	GroupID         int64  `json:"group_id" gorm:"index;default:0"`
+	GroupName       string `json:"group_name" gorm:"size:128;index;default:''"`
+	ServiceID       int64  `json:"service_id" gorm:"index;default:0"`
+	ServiceName     string `json:"service_name" gorm:"size:128;default:''"`
+	ToolName        string `json:"tool_name" gorm:"size:255;not null;index"`
+	Method          string `json:"method" gorm:"size:64"`
+	RequestID       string `json:"request_id" gorm:"size:64;index;default:''"`
+	RequestPayload  string `json:"request_payload" gorm:"type:mediumtext"`
+	ResponseStatus  string `json:"response_status" gorm:"size:16;index"`
+	ResponsePayload string `json:"response_payload" gorm:"type:mediumtext"`
+	DurationMs      int    `json:"duration_ms" gorm:"default:0"`
+	ErrorMessage    string `json:"error_message" gorm:"type:text"`
 	// 商业化计费列(§4.5):skipped(自有/未启用/免费) / charged(已扣) / refunded(失败退款) / blocked(余额不足拒绝) / debt(FailOpen 欠账)
 	BillingStatus     string  `json:"billing_status" gorm:"size:16;default:skipped;index"`
-	BillingType       string  `json:"billing_type" gorm:"size:16"`        // 本次解析到的计费类型 free/per_call
+	BillingType       string  `json:"billing_type" gorm:"size:16"`          // 本次解析到的计费类型 free/per_call
 	UnitPrice         float64 `json:"unit_price" gorm:"type:decimal(10,6)"` // 本次单价快照(展示货币)
-	QuotaConsumed     int64   `json:"quota_consumed" gorm:"default:0"`    // 本次实扣额度(quota)
-	PriceScope        string  `json:"price_scope" gorm:"size:16"`         // tool/service/marketplace/global
-	MarketplaceItemID *int64  `json:"marketplace_item_id" gorm:"index"`   // 市场来源服务关联的市场项 ID
+	QuotaConsumed     int64   `json:"quota_consumed" gorm:"default:0"`      // 本次实扣额度(quota)
+	PriceScope        string  `json:"price_scope" gorm:"size:16"`           // tool/service/marketplace/global
+	MarketplaceItemID *int64  `json:"marketplace_item_id" gorm:"index"`     // 市场来源服务关联的市场项 ID
 	// 多秘钥调用所用秘钥的池内序号(服务池 mcp_service_keys 或条目池
 	// marketplace_item_keys 的 sort_order);0 = 单秘钥/不适用。
-	KeyIndex int    `json:"key_index" gorm:"default:0"`
-	ClientIP string `json:"client_ip" gorm:"size:64"`
-	UserAgent       string    `json:"user_agent" gorm:"size:512"`
-	CreatedAt       time.Time `json:"created_at" gorm:"index"`
+	KeyIndex  int       `json:"key_index" gorm:"default:0"`
+	ClientIP  string    `json:"client_ip" gorm:"size:64"`
+	IPType    string    `json:"ip_type" gorm:"size:16;index;default:''"` // client / cloud_peer / unknown
+	UserAgent string    `json:"user_agent" gorm:"size:512"`
+	CreatedAt time.Time `json:"created_at" gorm:"index"`
 	// 统一日志扩展:区分日志类型 + 人类可读描述 + 结构化元数据(见 model/log.go)。
 	// 历史行经回填后 type=Consume;新写入由各 Record* 助手显式赋值。
 	Type    int    `json:"type" gorm:"index;default:2"`        // 日志类型(LogType*);默认 Consume
@@ -89,6 +90,7 @@ type LogFilter struct {
 	Username    string
 	ServiceName string
 	ApiKeyName  string // 令牌名称(含手动测试占位 tool-test)
+	IPType      string // client / cloud_peer / unknown
 	Keyword     string
 	Type        int // 0=全部(哨兵),否则按 LogType 过滤
 }
@@ -114,6 +116,9 @@ func applyLogFilter(query *gorm.DB, f *LogFilter) *gorm.DB {
 	}
 	if f.Type != 0 {
 		query = query.Where("type = ?", f.Type)
+	}
+	if f.IPType != "" {
+		query = query.Where("ip_type = ?", f.IPType)
 	}
 	if f.StartDate != "" {
 		if t, ok := parseLogDate(f.StartDate); ok {
@@ -374,7 +379,7 @@ func GetCallLogStats(filter *LogFilter) (*LogStatsResult, error) {
 
 	today := startOfToday()
 	var todayCount int64
-	DB.Model(&McpCallLog{}).Where("type = ?", LogTypeConsume).Where("created_at >= ?", today).Count(&todayCount)
+	applyLogFilter(DB.Model(&McpCallLog{}), &LogFilter{Type: LogTypeConsume, IPType: statFilter.IPType}).Where("created_at >= ?", today).Count(&todayCount)
 
 	return &LogStatsResult{
 		TotalCalls:    total,
@@ -452,7 +457,7 @@ func getCallLogStatsInternal(userID int64, filter *LogFilter) (*LogStatsResult, 
 		todayQuery = todayQuery.Where("user_id = ?", userID)
 	}
 	var todayCount int64
-	todayQuery.Where("type = ?", LogTypeConsume).Where("created_at >= ?", today).Count(&todayCount)
+	applyLogFilter(todayQuery, &LogFilter{Type: LogTypeConsume, IPType: userFilter.IPType}).Where("created_at >= ?", today).Count(&todayCount)
 
 	return &LogStatsResult{
 		TotalCalls:    total,

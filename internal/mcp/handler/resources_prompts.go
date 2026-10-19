@@ -603,6 +603,8 @@ func (h *GatewayHandler) recordConsumeLog(logCtx *LogContext, serviceID int64, s
 		DurationMs:     int(time.Since(start).Milliseconds()),
 		ErrorMessage:   truncate(errMsg, 65535),
 		ClientIP:       logCtx.ClientIP,
+		IPType:         logCtx.ipType(),
+		Extra:          logCtx.extraJSON(),
 		UserAgent:      truncate(logCtx.UserAgent, 512),
 	}
 	// 计费结算结果:市场来源且条目有价时由 readUpstreamResource/getUpstreamPrompt 结算

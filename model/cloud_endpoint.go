@@ -7,27 +7,33 @@ import (
 )
 
 type CloudEndpoint struct {
-	ID               int64          `json:"id" gorm:"primaryKey;autoIncrement"`
-	UserID           int64          `json:"user_id" gorm:"not null;index"`
-	Name             string         `json:"name" gorm:"size:128;not null"`
-	CloudType        string         `json:"cloud_type" gorm:"size:32;not null;default:custom;index"`
-	WssURL           string         `json:"wss_url" gorm:"size:1024"`
-	CloudConfig      string         `json:"cloud_config" gorm:"type:varchar(4096);default:'{}'"`
-	RemoteID         string         `json:"remote_id" gorm:"size:128"`
-	TokenExpiresAt   *time.Time     `json:"token_expires_at"`
-	ApiKeyID         *int64         `json:"api_key_id" gorm:"index"`
-	GroupID          *int64         `json:"group_id" gorm:"index"`
+	ID             int64      `json:"id" gorm:"primaryKey;autoIncrement"`
+	UserID         int64      `json:"user_id" gorm:"not null;index"`
+	Name           string     `json:"name" gorm:"size:128;not null"`
+	CloudType      string     `json:"cloud_type" gorm:"size:32;not null;default:custom;index"`
+	WssURL         string     `json:"wss_url" gorm:"size:1024"`
+	CloudConfig    string     `json:"cloud_config" gorm:"type:varchar(4096);default:'{}'"`
+	RemoteID       string     `json:"remote_id" gorm:"size:128"`
+	TokenExpiresAt *time.Time `json:"token_expires_at"`
+	ApiKeyID       *int64     `json:"api_key_id" gorm:"index"`
+	GroupID        *int64     `json:"group_id" gorm:"index"`
 	// 无 default 标签:default:true 时 GORM 在 INSERT 省略零值 false,「手动连接」
 	// 落库变回自动连接,重启后 CloudManager 会违背用户意愿自动拉起。
-	AutoConnect      bool           `json:"auto_connect"`
-	ExposeMode       string         `json:"expose_mode" gorm:"size:16;default:smart"`
-	ConnectionStatus string         `json:"connection_status" gorm:"size:16;default:disconnected;index"`
-	LastConnectedAt  *time.Time     `json:"last_connected_at"`
-	LastError        string         `json:"last_error" gorm:"type:text"`
-	Status           int            `json:"status" gorm:"default:1"`
-	CreatedAt        time.Time      `json:"created_at"`
-	UpdatedAt        time.Time      `json:"updated_at"`
-	DeletedAt        gorm.DeletedAt `json:"-" gorm:"index"`
+	AutoConnect      bool       `json:"auto_connect"`
+	ExposeMode       string     `json:"expose_mode" gorm:"size:16;default:smart"`
+	ConnectionStatus string     `json:"connection_status" gorm:"size:16;default:disconnected;index"`
+	LastConnectedAt  *time.Time `json:"last_connected_at"`
+	// 最近一次成功连接的对端信息,由服务端写入,不包含 WSS URL 中的凭据。
+	PeerIP   string `json:"peer_ip" gorm:"size:64;default:''"`
+	PeerPort int    `json:"peer_port" gorm:"default:0"`
+	PeerHost string `json:"peer_host" gorm:"size:255;default:''"`
+	// 最近一次成功创建或修改配置的操作者请求 IP，由服务端获取。
+	LastUpdatedIP string         `json:"last_updated_ip" gorm:"size:64;default:''"`
+	LastError     string         `json:"last_error" gorm:"type:text"`
+	Status        int            `json:"status" gorm:"default:1"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
+	DeletedAt     gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 func (CloudEndpoint) TableName() string { return "cloud_endpoints" }
@@ -49,7 +55,8 @@ func (c *CloudEndpoint) Insert() error {
 }
 
 func (c *CloudEndpoint) Update() error {
-	return DB.Save(c).Error
+	// Configuration edits must not overwrite peer data written by a concurrent handshake.
+	return DB.Omit("peer_ip", "peer_port", "peer_host").Save(c).Error
 }
 
 func (c *CloudEndpoint) Delete() error {

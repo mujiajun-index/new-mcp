@@ -95,6 +95,7 @@ type LogItem struct {
 	DurationMs     int    `json:"duration_ms"`
 	ErrorMessage   string `json:"error_message"`
 	ClientIP       string `json:"client_ip"`
+	IPType         string `json:"ip_type"`
 	CreatedAt      string `json:"created_at"`
 	// 计费列(§4.5)
 	BillingStatus     string  `json:"billing_status"`
@@ -128,6 +129,7 @@ type LogFilter struct {
 	Username    string `form:"username"`
 	ServiceName string `form:"service_name"`
 	ApiKeyName  string `form:"api_key_name"` // 令牌名称(含手动测试占位 tool-test)
+	IPType      string `form:"ip_type" binding:"omitempty,oneof=client cloud_peer unknown"`
 	Keyword     string `form:"keyword"`
 	Type        int    `form:"type"` // 0=全部(哨兵),否则按 LogType 过滤
 }

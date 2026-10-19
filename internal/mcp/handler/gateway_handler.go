@@ -43,16 +43,17 @@ type RPCError struct {
 }
 
 type LogContext struct {
-	ApiKeyID     int64
-	UserID       int64
-	Username     string
-	ApiKeyName   string
-	GroupSlug    string
-	ClientIP     string
-	UserAgent    string
-	ExposeMode   string // "direct" or "smart"
-	SessionID    string // Only handshake-era HTTP/WebSocket clients use sessions.
-	ConnectionID string // Private cancellation namespace for one WebSocket connection.
+	ApiKeyID        int64
+	UserID          int64
+	Username        string
+	ApiKeyName      string
+	GroupSlug       string
+	ClientIP        string
+	UserAgent       string
+	ExposeMode      string               // "direct" or "smart"
+	SessionID       string               // Only handshake-era HTTP/WebSocket clients use sessions.
+	ConnectionID    string               // Private cancellation namespace for one WebSocket connection.
+	CloudConnection *CloudConnectionInfo // Cloud connection and peer snapshot, when applicable.
 }
 
 // 定价条目种类别名(billing.EntryKind*):本包内 billing 常被用作
@@ -467,6 +468,8 @@ func (h *GatewayHandler) handleToolsCall(ctx context.Context, req *JSONRPCReques
 		ErrorMessage:   truncate(errMsg, 65535),
 		KeyIndex:       keyIndex,
 		ClientIP:       logCtx.ClientIP,
+		IPType:         logCtx.ipType(),
+		Extra:          logCtx.extraJSON(),
 		UserAgent:      truncate(logCtx.UserAgent, 512),
 	}
 	applyBillingToLog(callLog, billing)
@@ -980,6 +983,8 @@ func (h *GatewayHandler) handleExecuteBatch(ctx context.Context, reqID interface
 			ErrorMessage:   truncate(errMsg, 65535),
 			KeyIndex:       oc.KeyIndex,
 			ClientIP:       logCtx.ClientIP,
+			IPType:         logCtx.ipType(),
+			Extra:          logCtx.extraJSON(),
 			UserAgent:      truncate(logCtx.UserAgent, 512),
 		}
 		applyBillingToLog(l, oc.Billing)

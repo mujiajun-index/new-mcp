@@ -1,7 +1,7 @@
 import { useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { useSearch } from '@tanstack/react-router'
+import { Link, useSearch } from '@tanstack/react-router'
 import dayjs from 'dayjs'
 import { getUserLogs, getUserLogStats } from '@/features/logs/api'
 import { useAuthStore } from '@/stores/auth-store'
@@ -102,6 +102,44 @@ function getOperatorDisplay(extra?: string): string | null {
     /* ignore malformed extra */
   }
   return null
+}
+
+function LogIPCell({ log }: { log: { client_ip?: string; ip_type?: string; extra?: string } }) {
+  const { t } = useTranslation()
+  let cloud: { id: number; name: string; cloud_type?: string; peer_host?: string } | null = null
+  try {
+    const extra = log.extra ? JSON.parse(log.extra) : null
+    const info = extra?.cloud_connection
+    if (extra?.source === 'cloud' && info && typeof info === 'object' && typeof info.id === 'number') {
+      cloud = {
+        id: info.id,
+        name: typeof info.name === 'string' ? info.name : '',
+        cloud_type: typeof info.cloud_type === 'string' ? info.cloud_type : undefined,
+        peer_host: typeof info.peer_host === 'string' ? info.peer_host : undefined,
+      }
+    }
+  } catch {
+    // Historical records may have malformed extra data.
+  }
+  if (!cloud) {
+    return (
+      <div className="truncate font-mono" title={log.client_ip}>{log.client_ip || '-'}</div>
+    )
+  }
+
+  const platform = cloud.cloud_type === 'xiaozhi'
+    ? t('connections.platform_xiaozhi')
+    : cloud.cloud_type === 'custom' ? t('connections.platform_custom_wss') : t('logs.cloudConnection')
+  const name = `${cloud.name || platform} #${cloud.id}`
+  const host = cloud.peer_host || t('common.unknown')
+  const hint = [`${t('logs.cloudConnection')}: ${name}`, `${t('logs.cloudPeer')}: ${host}`].join('\n')
+  return (
+    <div className="min-w-0 space-y-0.5" title={hint}>
+      <div className="truncate text-[10px] text-muted-foreground">{t('logs.ipTypeCloudPeer')}</div>
+      <div className="truncate font-mono">{host}</div>
+      <Link to="/connections/$id" params={{ id: String(cloud.id) }} className="block truncate text-[10px] text-muted-foreground hover:underline">{name}</Link>
+    </div>
+  )
 }
 
 // 默认时间范围:今天 00:00:00 ~ 23:59:59(与选择器「今天」预设同口径;
@@ -232,6 +270,7 @@ export function UserLogsPage() {
     !!filter.group_name,
     !!filter.status,
     hasTypeFilter,
+    ...(isAdmin ? [!!filter.ip_type] : []),
   ].filter(Boolean).length
   const advancedFilterCount = [
     !!filter.keyword,
@@ -336,6 +375,21 @@ export function UserLogsPage() {
       </Select>
     </LogsFilterField>
   )
+  const ipTypeFilter = (
+    <LogsFilterField>
+      <Select value={filter.ip_type ?? 'all'} onValueChange={v => updateFilter('ip_type', v === 'all' ? '' : v)}>
+        <SelectTrigger className="h-8 text-sm" aria-label={t('logs.ipType')}>
+          <SelectValue placeholder={t('logs.ipType')} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">{t('logs.ipTypeAll')}</SelectItem>
+          <SelectItem value="client">{t('logs.ipTypeClient')}</SelectItem>
+          <SelectItem value="cloud_peer">{t('logs.ipTypeCloudPeer')}</SelectItem>
+          <SelectItem value="unknown">{t('logs.ipTypeUnknown')}</SelectItem>
+        </SelectContent>
+      </Select>
+    </LogsFilterField>
+  )
   const keywordFilter = (
     <LogsFilterField>
       <LogsFilterInput
@@ -403,6 +457,7 @@ export function UserLogsPage() {
               {groupNameFilter}
               {typeFilter}
               {statusFilter}
+              {isAdmin && ipTypeFilter}
             </>
           }
           advancedFilters={advancedFilters}
@@ -413,6 +468,7 @@ export function UserLogsPage() {
               {groupNameFilter}
               {typeFilter}
               {statusFilter}
+              {isAdmin && ipTypeFilter}
               {advancedFilters}
             </>
           }
@@ -593,7 +649,7 @@ function LogMobileCard({ log, isAdmin, showBilling, fmtMoney, formatTime, format
           ...(isAdmin && log.username ? [{ label: t('logs.username'), value: log.username }] : []),
           ...(operator ? [{ label: t('logs.operator'), value: operator }] : []),
           ...(quota !== 0 ? [{ label: t('logs.billingConsumed'), value: <QuotaDelta value={quota} fmt={fmtMoney} /> }] : []),
-          { label: 'IP', value: <span className="font-mono">{log.client_ip || '-'}</span> },
+          { label: 'IP', value: <LogIPCell log={log} /> },
           { label: t('logs.time'), value: formatTime(log.created_at) },
         ]}
       />
@@ -626,7 +682,7 @@ function LogMobileCard({ log, isAdmin, showBilling, fmtMoney, formatTime, format
           { label: t('logs.billing'), value: <span className="font-medium tabular-nums">{fmtMoney(log.quota_consumed)}</span> },
         ] : []),
         { label: t('logs.groupName'), value: log.group_name || '-' },
-        { label: 'IP', value: <span className="font-mono">{log.client_ip}</span> },
+        { label: 'IP', value: <LogIPCell log={log} /> },
         { label: t('logs.time'), value: formatTime(log.created_at) },
         ...(isAdmin ? [
           {
@@ -717,7 +773,7 @@ function LogRow({ log, isAdmin, showBilling, fmtMoney, formatTime, formatDuratio
             <QuotaDelta value={quota} fmt={fmtMoney} />
           </div>
         </TableCell>
-        <TableCell className="text-xs text-muted-foreground font-mono truncate" title={log.client_ip}>{log.client_ip || '-'}</TableCell>
+        <TableCell className="text-xs text-muted-foreground"><LogIPCell log={log} /></TableCell>
       </TableRow>
     )
   }
@@ -785,7 +841,7 @@ function LogRow({ log, isAdmin, showBilling, fmtMoney, formatTime, formatDuratio
           <span className="text-xs text-muted-foreground">-</span>
         )}
       </TableCell>
-      <TableCell className="text-xs text-muted-foreground font-mono truncate" title={log.client_ip}>{log.client_ip || '-'}</TableCell>
+      <TableCell className="text-xs text-muted-foreground"><LogIPCell log={log} /></TableCell>
     </TableRow>
   )
 }

@@ -67,6 +67,7 @@ func recordManualTestLog(ctx context.Context, svc *model.McpService, userID int6
 		Username:       username,
 		ApiKeyName:     ManualTestTokenName, // 无真实令牌,占位标识手动测试来源
 		ClientIP:       clientIP,
+		IPType:         model.LogIPTypeClient,
 		ServiceID:      svc.ID,
 		ServiceName:    svc.Name,
 		ToolName:       target,

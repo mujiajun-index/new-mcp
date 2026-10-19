@@ -334,7 +334,13 @@ CREATE TABLE `cloud_endpoints` (
     `auto_connect`      TINYINT         COMMENT '1=自动连接, 0=手动连接(应用层显式写入,无 DB 默认)',
     `connection_status`  VARCHAR(16)    DEFAULT 'disconnected' COMMENT 'connected, disconnected, error',
     `last_connected_at` DATETIME        DEFAULT NULL COMMENT '最后连接时间',
+    `peer_ip`           VARCHAR(64)     DEFAULT '' COMMENT '最近一次成功连接的对端 IP (非终端用户 IP)',
+    `peer_port`         INT             DEFAULT 0 COMMENT '最近一次成功连接的对端端口',
+    `peer_host`         VARCHAR(255)    DEFAULT '' COMMENT '最近一次成功连接的目标主机名 (不含 URL 凭据)',
     `last_error`        TEXT            DEFAULT '' COMMENT '最近一次连接错误信息',
+
+    -- 配置修改审计（创建时初始化，修改配置/启停配置/重绑密钥成功时更新，连接状态变化不覆盖）
+    `last_updated_ip`   VARCHAR(64)     DEFAULT '' COMMENT '最后创建或更新配置的操作者请求 IP，历史记录留空',
 
     `status`            TINYINT         DEFAULT 1 COMMENT '1=启用, 2=禁用',
     `created_at`        DATETIME        DEFAULT CURRENT_TIMESTAMP,
@@ -382,12 +388,14 @@ CREATE TABLE `mcp_call_logs` (
     `marketplace_item_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '市场来源服务调用关联的市场项 ID',
 
     `client_ip`        VARCHAR(64)     DEFAULT '' COMMENT '客户端 IP',
+    `ip_type`          VARCHAR(16)     DEFAULT '' COMMENT 'IP 来源: client / cloud_peer / unknown (空值由迁移回填)',
     `user_agent`       VARCHAR(512)    DEFAULT '' COMMENT 'User-Agent',
 
     `created_at`       DATETIME        DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_user_id` (`user_id`),
     KEY `idx_created_at` (`created_at`),
+    KEY `idx_ip_type` (`ip_type`),
     KEY `idx_tool_name` (`tool_name`),
     KEY `idx_service_id` (`service_id`),
     KEY `idx_group_id` (`group_id`),

@@ -522,6 +522,9 @@ export interface ConnectionListItem {
   name: string
   cloud_type: CloudType
   remote_id: string
+  peer_ip: string
+  peer_port: number
+  peer_host: string
   connection_status: string
   expose_mode: 'direct' | 'smart'
   auto_connect: boolean
@@ -531,6 +534,9 @@ export interface ConnectionListItem {
 
 export interface ConnectionDetail {
   id: number
+  user_id: number
+  username?: string
+  read_only: boolean
   name: string
   cloud_type: CloudType
   wss_url: string
@@ -538,10 +544,15 @@ export interface ConnectionDetail {
   remote_id: string
   token_expires_at: string
   api_key_id: number
+  api_key_name?: string
   auto_connect: boolean
   connection_status: string
   expose_mode: 'direct' | 'smart'
   last_connected_at: string
+  last_updated_ip: string
+  peer_ip: string
+  peer_port: number
+  peer_host: string
   last_error: string
   status: number
 }
@@ -756,6 +767,7 @@ export interface LogFilter {
   username?: string
   service_name?: string
   api_key_name?: string
+  ip_type?: 'client' | 'cloud_peer' | 'unknown'
   keyword?: string
   type?: number // 0=全部(哨兵),否则按日志类型(LogType)过滤
   page?: number

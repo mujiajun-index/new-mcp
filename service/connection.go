@@ -42,6 +42,9 @@ func (s *ConnectionService) List(userID int64) ([]dto.ConnectionListItem, error)
 			Name:             c.Name,
 			CloudType:        c.CloudType,
 			RemoteID:         c.RemoteID,
+			PeerIP:           c.PeerIP,
+			PeerPort:         c.PeerPort,
+			PeerHost:         c.PeerHost,
 			ConnectionStatus: c.ConnectionStatus,
 			ExposeMode:       c.ExposeMode,
 			AutoConnect:      c.AutoConnect,
@@ -52,7 +55,7 @@ func (s *ConnectionService) List(userID int64) ([]dto.ConnectionListItem, error)
 	return items, nil
 }
 
-func (s *ConnectionService) Create(userID int64, req *dto.CreateConnectionReq) (*dto.ConnectionDetail, error) {
+func (s *ConnectionService) Create(userID int64, req *dto.CreateConnectionReq, clientIP string) (*dto.ConnectionDetail, error) {
 	if req.ApiKeyID != nil {
 		if err := validateConnectionApiKey(userID, *req.ApiKeyID); err != nil {
 			return nil, err
@@ -80,6 +83,7 @@ func (s *ConnectionService) Create(userID int64, req *dto.CreateConnectionReq) (
 		AutoConnect:      autoConnect,
 		ExposeMode:       req.ExposeMode,
 		ConnectionStatus: common.ConnDisconnected,
+		LastUpdatedIP:    clientIP,
 		Status:           common.StatusEnabled,
 	}
 
@@ -111,7 +115,7 @@ func (s *ConnectionService) GetByID(userID, connID int64) (*dto.ConnectionDetail
 	return s.toDetail(conn), nil
 }
 
-func (s *ConnectionService) Update(userID, connID int64, req *dto.UpdateConnectionReq) error {
+func (s *ConnectionService) Update(userID, connID int64, req *dto.UpdateConnectionReq, clientIP string) error {
 	conn, err := model.GetConnectionByID(userID, connID)
 	if err != nil {
 		return err
@@ -144,6 +148,7 @@ func (s *ConnectionService) Update(userID, connID int64, req *dto.UpdateConnecti
 	if req.ExposeMode != nil {
 		conn.ExposeMode = *req.ExposeMode
 	}
+	conn.LastUpdatedIP = clientIP
 	return conn.Update()
 }
 
@@ -167,10 +172,10 @@ func (s *ConnectionService) Connect(userID, connID int64) error {
 		return fmt.Errorf("连接已禁用，请先启用后再连接")
 	}
 	if CloudManager == nil {
-		conn.ConnectionStatus = common.ConnConnected
-		now := time.Now()
-		conn.LastConnectedAt = &now
-		return conn.Update()
+		return model.DB.Model(conn).Updates(map[string]any{
+			"connection_status": common.ConnConnected,
+			"last_connected_at": time.Now(),
+		}).Error
 	}
 	return CloudManager.RestartEndpoint(conn)
 }
@@ -183,11 +188,10 @@ func (s *ConnectionService) Disconnect(userID, connID int64) error {
 	if CloudManager != nil {
 		CloudManager.StopEndpoint(connID)
 	}
-	conn.ConnectionStatus = common.ConnDisconnected
-	return conn.Update()
+	return model.DB.Model(conn).Update("connection_status", common.ConnDisconnected).Error
 }
 
-func (s *ConnectionService) BindApiKey(userID, connID int64, apiKeyID int64) error {
+func (s *ConnectionService) BindApiKey(userID, connID int64, apiKeyID int64, clientIP string) error {
 	conn, err := model.GetConnectionByID(userID, connID)
 	if err != nil {
 		return err
@@ -196,6 +200,7 @@ func (s *ConnectionService) BindApiKey(userID, connID int64, apiKeyID int64) err
 		return err
 	}
 	conn.ApiKeyID = &apiKeyID
+	conn.LastUpdatedIP = clientIP
 	if err := conn.Update(); err != nil {
 		return err
 	}
@@ -293,6 +298,7 @@ func (s *ConnectionService) toDetail(conn *model.CloudEndpoint) *dto.ConnectionD
 
 	return &dto.ConnectionDetail{
 		ID:               conn.ID,
+		UserID:           conn.UserID,
 		Name:             conn.Name,
 		CloudType:        conn.CloudType,
 		WssURL:           conn.WssURL,
@@ -303,6 +309,10 @@ func (s *ConnectionService) toDetail(conn *model.CloudEndpoint) *dto.ConnectionD
 		AutoConnect:      conn.AutoConnect,
 		ConnectionStatus: conn.ConnectionStatus,
 		LastConnectedAt:  lastConnectedAt,
+		LastUpdatedIP:    conn.LastUpdatedIP,
+		PeerIP:           conn.PeerIP,
+		PeerPort:         conn.PeerPort,
+		PeerHost:         conn.PeerHost,
 		ExposeMode:       conn.ExposeMode,
 		LastError:        conn.LastError,
 		Status:           conn.Status,

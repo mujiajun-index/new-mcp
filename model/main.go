@@ -175,6 +175,9 @@ func migrateDB() error {
 	if err := DB.Model(&McpCallLog{}).Where("type = 0 OR type IS NULL").Update("type", LogTypeConsume).Error; err != nil {
 		return err
 	}
+	if err := backfillLogIPTypes(); err != nil {
+		return fmt.Errorf("backfill log IP types: %w", err)
+	}
 
 	// 邀请码回填:为历史存量用户(aff_code 列新增后为 NULL/空)补发邀请码,
 	// 使其立即可分享,无需等首次打开钱包页才惰性生成。仅补空值,不覆盖已有码。

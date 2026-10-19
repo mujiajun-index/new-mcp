@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
+	"net/url"
+	"strconv"
 	"sync"
 	"time"
 
@@ -16,10 +19,13 @@ import (
 )
 
 type XiaoZhiClient struct {
-	endpointID int64
-	wssURL     string
-	apiKeyID   int64
-	exposeMode string
+	endpointID   int64
+	wssURL       string
+	apiKeyID     int64
+	exposeMode   string
+	endpointName string
+	cloudType    string
+	peer         handler.CloudConnectionInfo
 
 	conn    *websocket.Conn
 	handler *handler.GatewayHandler
@@ -37,22 +43,47 @@ func NewXiaoZhiClient(ep *model.CloudEndpoint, h *handler.GatewayHandler) *XiaoZ
 		apiKeyID = *ep.ApiKeyID
 	}
 	return &XiaoZhiClient{
-		endpointID: ep.ID,
-		wssURL:     ep.WssURL,
-		apiKeyID:   apiKeyID,
-		exposeMode: ep.ExposeMode,
-		handler:    h,
-		done:       make(chan struct{}),
+		endpointID:   ep.ID,
+		endpointName: ep.Name,
+		cloudType:    ep.CloudType,
+		wssURL:       ep.WssURL,
+		apiKeyID:     apiKeyID,
+		exposeMode:   ep.ExposeMode,
+		handler:      h,
+		done:         make(chan struct{}),
 	}
 }
 
 func (c *XiaoZhiClient) Connect(ctx context.Context) error {
-	dialer := websocket.DefaultDialer
+	dialer := *websocket.DefaultDialer
 	dialer.HandshakeTimeout = 10 * time.Second
 
 	conn, _, err := dialer.DialContext(ctx, c.wssURL, nil)
 	if err != nil {
 		return fmt.Errorf("dial xiaozhi: %w", err)
+	}
+	peerIP, port, err := net.SplitHostPort(conn.RemoteAddr().String())
+	if err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("read cloud peer address: %w", err)
+	}
+	peerPort, _ := strconv.Atoi(port)
+	peerHost := ""
+	if address, err := url.Parse(c.wssURL); err == nil {
+		peerHost = address.Hostname()
+	}
+	// Save the successful handshake before accepting calls. Failed reconnects
+	// leave the last successful peer intact; log rows keep their own snapshot.
+	result := model.DB.Model(&model.CloudEndpoint{}).Where("id = ?", c.endpointID).Updates(map[string]interface{}{
+		"peer_ip": peerIP, "peer_port": peerPort, "peer_host": peerHost,
+		"connection_status": common.ConnConnected, "last_connected_at": time.Now(), "last_error": "",
+	})
+	if result.Error != nil || result.RowsAffected == 0 {
+		_ = conn.Close()
+		if result.Error != nil {
+			return fmt.Errorf("save cloud peer: %w", result.Error)
+		}
+		return fmt.Errorf("cloud connection configuration no longer exists")
 	}
 
 	conn.SetPingHandler(func(appData string) error {
@@ -61,12 +92,12 @@ func (c *XiaoZhiClient) Connect(ctx context.Context) error {
 
 	c.mu.Lock()
 	c.conn = conn
+	c.peer = handler.CloudConnectionInfo{ID: c.endpointID, Name: c.endpointName, CloudType: c.cloudType,
+		PeerIP: peerIP, PeerPort: peerPort, PeerHost: peerHost}
 	c.connected = true
 	c.done = make(chan struct{})
 	c.closeOnce = sync.Once{}
 	c.mu.Unlock()
-
-	c.updateStatus(common.ConnConnected, "")
 
 	ctx, c.cancel = context.WithCancel(context.Background())
 	go c.messageLoop(ctx)
@@ -102,19 +133,24 @@ func (c *XiaoZhiClient) Done() <-chan struct{} {
 }
 
 func (c *XiaoZhiClient) buildLogCtx() *handler.LogContext {
+	c.mu.Lock()
+	peer := c.peer
+	c.mu.Unlock()
 	info, err := bridge.ResolveApiKeyInfo(c.apiKeyID)
 	if err != nil {
 		return &handler.LogContext{
-			ApiKeyID:   c.apiKeyID,
-			ExposeMode: c.exposeMode,
+			ApiKeyID:        c.apiKeyID,
+			ExposeMode:      c.exposeMode,
+			CloudConnection: &peer,
 		}
 	}
 	return &handler.LogContext{
-		ApiKeyID:   info.ApiKeyID,
-		UserID:     info.UserID,
-		Username:   info.Username,
-		ApiKeyName: info.ApiKeyName,
-		ExposeMode: c.exposeMode,
+		ApiKeyID:        info.ApiKeyID,
+		UserID:          info.UserID,
+		Username:        info.Username,
+		ApiKeyName:      info.ApiKeyName,
+		ExposeMode:      c.exposeMode,
+		CloudConnection: &peer,
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
+	"github.com/mujkjk/newmcp/middleware"
 	"github.com/mujkjk/newmcp/service"
 )
 
@@ -29,7 +30,7 @@ func CreateConnection(c *gin.Context) {
 		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
 		return
 	}
-	resp, err := connectionService.Create(userID, &req)
+	resp, err := connectionService.Create(userID, &req, middleware.GetRequestIP(c))
 	if err != nil {
 		common.Error(c, http.StatusBadRequest, err.Error())
 		return
@@ -40,7 +41,7 @@ func CreateConnection(c *gin.Context) {
 func GetConnection(c *gin.Context) {
 	userID := c.GetInt64("user_id")
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
-	resp, err := connectionService.GetByID(userID, id)
+	resp, err := connectionService.GetForViewer(userID, id, c.GetString("role"))
 	if err != nil {
 		common.Error(c, http.StatusNotFound, "连接不存在")
 		return
@@ -56,7 +57,7 @@ func UpdateConnection(c *gin.Context) {
 		common.Error(c, http.StatusBadRequest, "请求参数错误")
 		return
 	}
-	if err := connectionService.Update(userID, id, &req); err != nil {
+	if err := connectionService.Update(userID, id, &req, middleware.GetRequestIP(c)); err != nil {
 		common.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -103,7 +104,7 @@ func BindConnectionApiKey(c *gin.Context) {
 		common.Error(c, http.StatusBadRequest, "请求参数错误")
 		return
 	}
-	if err := connectionService.BindApiKey(userID, id, req.ApiKeyID); err != nil {
+	if err := connectionService.BindApiKey(userID, id, req.ApiKeyID, middleware.GetRequestIP(c)); err != nil {
 		common.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
