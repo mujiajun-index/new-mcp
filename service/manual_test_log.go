@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/mujkjk/newmcp/dto"
@@ -11,6 +12,13 @@ import (
 // API 令牌,统一记为 "tool-test"(与前端日志页提示文案及令牌名称查询约定对齐,
 // 见 web/src/features/logs/components/user-logs-page.tsx)。
 const ManualTestTokenName = "tool-test"
+
+type manualTestClientIPKey struct{}
+
+// WithManualTestClientIP carries the resolved request IP to manual-test logs.
+func WithManualTestClientIP(ctx context.Context, clientIP string) context.Context {
+	return context.WithValue(ctx, manualTestClientIPKey{}, clientIP)
+}
 
 // manualTestBilling 手动测试的计费结算结果(仅市场服务工具测试产生;其余测试恒为
 // skipped=nil)。字段与网关计费列(§4.5)一一对应,由 recordManualTestLog 写入日志。
@@ -30,7 +38,7 @@ type manualTestBilling struct {
 // 时计费恒为 skipped;市场服务工具测试传入实际结算结果(charged/refunded/blocked...)。
 // keyIndex=多秘钥服务本次实际使用的池内序号(落 key_index 列;0=单秘钥/本地失败
 // 未调上游)。不递增用户请求次数(非网关请求);同步写入,手动测试非热路径。
-func recordManualTestLog(svc *model.McpService, userID int64, method, target string, res *dto.CallToolResult, bill *manualTestBilling, keyIndex int) {
+func recordManualTestLog(ctx context.Context, svc *model.McpService, userID int64, method, target string, res *dto.CallToolResult, bill *manualTestBilling, keyIndex int) {
 	if res == nil {
 		return
 	}
@@ -51,12 +59,14 @@ func recordManualTestLog(svc *model.McpService, userID int64, method, target str
 		}
 	}
 	extra, _ := json.Marshal(map[string]any{"manual_test": true})
+	clientIP, _ := ctx.Value(manualTestClientIPKey{}).(string)
 
 	l := &model.McpCallLog{
 		Type:           model.LogTypeConsume,
 		UserID:         userID,
 		Username:       username,
 		ApiKeyName:     ManualTestTokenName, // 无真实令牌,占位标识手动测试来源
+		ClientIP:       clientIP,
 		ServiceID:      svc.ID,
 		ServiceName:    svc.Name,
 		ToolName:       target,

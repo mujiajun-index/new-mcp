@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
+	"github.com/mujkjk/newmcp/middleware"
 	"github.com/mujkjk/newmcp/service"
 	"gorm.io/gorm"
 )
@@ -189,7 +190,8 @@ func CallServiceTool(c *gin.Context) {
 		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
 		return
 	}
-	resp, err := mcpServiceService.CallToolContext(c.Request.Context(), userID, id, &req)
+	ctx := service.WithManualTestClientIP(c.Request.Context(), middleware.GetRequestIP(c))
+	resp, err := mcpServiceService.CallToolContext(ctx, userID, id, &req)
 	if err != nil {
 		common.Error(c, http.StatusNotFound, "服务不存在")
 		return
@@ -206,7 +208,8 @@ func ReadServiceResource(c *gin.Context) {
 		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
 		return
 	}
-	resp, err := mcpServiceService.ReadResource(userID, id, &req)
+	ctx := service.WithManualTestClientIP(c.Request.Context(), middleware.GetRequestIP(c))
+	resp, err := mcpServiceService.ReadResourceContext(ctx, userID, id, &req)
 	if err != nil {
 		common.Error(c, http.StatusNotFound, "服务不存在")
 		return
@@ -223,7 +226,8 @@ func CallServicePrompt(c *gin.Context) {
 		common.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
 		return
 	}
-	resp, err := mcpServiceService.GetPrompt(userID, id, &req)
+	ctx := service.WithManualTestClientIP(c.Request.Context(), middleware.GetRequestIP(c))
+	resp, err := mcpServiceService.GetPromptContext(ctx, userID, id, &req)
 	if err != nil {
 		common.Error(c, http.StatusNotFound, "服务不存在")
 		return

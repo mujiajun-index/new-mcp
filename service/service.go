@@ -637,11 +637,11 @@ func (s *McpServiceService) CallToolContext(ctx context.Context, userID, service
 
 	// 平台托管(市场)服务:上游凭证在平台侧,测试即真实消耗平台上游,按网关价格正常计费。
 	if svc.Source == "marketplace" {
-		return s.callMarketplaceToolTested(svc, userID, req)
+		return s.callMarketplaceToolTested(ctx, svc, userID, req)
 	}
 
 	res, _, keyIndex := callToolTestedContext(ctx, svc, userID, req)
-	recordManualTestLog(svc, userID, "tools/call", req.Name, res, nil, keyIndex)
+	recordManualTestLog(ctx, svc, userID, "tools/call", req.Name, res, nil, keyIndex)
 	return res, nil
 }
 
@@ -738,38 +738,38 @@ func manualEntryFinalize(sess *billing.BillingSession, bill *manualTestBilling, 
 //   - 管理员默认同样计费(ChargeAdmin=true),仅显式关闭时豁免。
 //
 // 计费结算结果随手动测试日志落库(billing_status=charged/refunded/blocked/...)。
-func (s *McpServiceService) callMarketplaceToolTested(svc *model.McpService, userID int64, req *dto.CallToolReq) (*dto.CallToolResult, error) {
+func (s *McpServiceService) callMarketplaceToolTested(ctx context.Context, svc *model.McpService, userID int64, req *dto.CallToolReq) (*dto.CallToolResult, error) {
 	bill := &manualTestBilling{Status: "skipped", ItemID: svc.MarketplaceItemID}
 
 	if svc.MarketplaceItemID == nil {
 		res := &dto.CallToolResult{IsError: true, Error: "市场服务缺少关联市场项,无法测试"}
-		recordManualTestLog(svc, userID, "tools/call", req.Name, res, bill, 0)
+		recordManualTestLog(ctx, svc, userID, "tools/call", req.Name, res, bill, 0)
 		return res, nil
 	}
 	// 注入平台上游配置/凭证(同网关 materializeMarketplaceConfig);市场项下架等失败直接终止。
 	if mErr := s.materializeMarketplace(svc); mErr != nil {
 		res := &dto.CallToolResult{IsError: true, Error: mErr.Error()}
-		recordManualTestLog(svc, userID, "tools/call", req.Name, res, bill, 0)
+		recordManualTestLog(ctx, svc, userID, "tools/call", req.Name, res, bill, 0)
 		return res, nil
 	}
 	// 工具名先用快照缓存校验:不存在的工具直接拒绝,避免无效预扣/退款往返。
 	if !serviceHasTool(nil, svc, req.Name) {
 		res := &dto.CallToolResult{IsError: true, Error: "工具不存在: " + req.Name}
-		recordManualTestLog(svc, userID, "tools/call", req.Name, res, bill, 0)
+		recordManualTestLog(ctx, svc, userID, "tools/call", req.Name, res, bill, 0)
 		return res, nil
 	}
 
 	sess, abort := manualEntryPreConsume(svc.ID, *svc.MarketplaceItemID, userID, billing.EntryKindTool, req.Name, bill)
 	if abort != nil {
-		recordManualTestLog(svc, userID, "tools/call", req.Name, abort, bill, 0)
+		recordManualTestLog(ctx, svc, userID, "tools/call", req.Name, abort, bill, 0)
 		return abort, nil
 	}
 
-	res, callOK, keyIndex := callToolTested(svc, userID, req)
+	res, callOK, keyIndex := callToolTestedContext(ctx, svc, userID, req)
 	// 成败判定同网关(§6.6):传输层失败(callOK=false)退款;结果内 isError(工具层
 	// 失败,如上游 key 错误/余额不足)默认退款,ChargeOnClientError=true 才计费。
 	manualEntryFinalize(sess, bill, callOK && billing.ShouldChargeCall(nil, res.IsError))
-	recordManualTestLog(svc, userID, "tools/call", req.Name, res, bill, keyIndex)
+	recordManualTestLog(ctx, svc, userID, "tools/call", req.Name, res, bill, keyIndex)
 	return res, nil
 }
 
@@ -778,41 +778,37 @@ func (s *McpServiceService) callMarketplaceToolTested(svc *model.McpService, use
 // prompts/get 完全同口径;资源/提示无条目价缺省免费,显式继承按服务价)。call 的第二
 // 返回值 callOK=传输层成功(资源/提示读取无结果内 isError 概念,调用成功即扣费,同网关
 // err==nil 判定);第三返回值 keyIndex=多秘钥服务实际使用的池内序号,随日志落 key_index。
-func (s *McpServiceService) testMarketplaceEntry(svc *model.McpService, userID int64, kind, entryName, method, target string, call func() (*dto.CallToolResult, bool, int)) (*dto.CallToolResult, error) {
+func (s *McpServiceService) testMarketplaceEntry(ctx context.Context, svc *model.McpService, userID int64, kind, entryName, method, target string, call func() (*dto.CallToolResult, bool, int)) (*dto.CallToolResult, error) {
 	bill := &manualTestBilling{Status: "skipped", ItemID: svc.MarketplaceItemID}
 
 	if svc.MarketplaceItemID == nil {
 		res := &dto.CallToolResult{IsError: true, Error: "市场服务缺少关联市场项,无法测试"}
-		recordManualTestLog(svc, userID, method, target, res, bill, 0)
+		recordManualTestLog(ctx, svc, userID, method, target, res, bill, 0)
 		return res, nil
 	}
 	if mErr := s.materializeMarketplace(svc); mErr != nil {
 		res := &dto.CallToolResult{IsError: true, Error: mErr.Error()}
-		recordManualTestLog(svc, userID, method, target, res, bill, 0)
+		recordManualTestLog(ctx, svc, userID, method, target, res, bill, 0)
 		return res, nil
 	}
 
 	sess, abort := manualEntryPreConsume(svc.ID, *svc.MarketplaceItemID, userID, kind, entryName, bill)
 	if abort != nil {
-		recordManualTestLog(svc, userID, method, target, abort, bill, 0)
+		recordManualTestLog(ctx, svc, userID, method, target, abort, bill, 0)
 		return abort, nil
 	}
 
 	res, callOK, keyIndex := call()
 	manualEntryFinalize(sess, bill, callOK)
-	recordManualTestLog(svc, userID, method, target, res, bill, keyIndex)
+	recordManualTestLog(ctx, svc, userID, method, target, res, bill, keyIndex)
 	return res, nil
 }
 
-// callToolTested 工具测试的实际调用:虚拟服务分发或上游 tools/call,全部出口
+// callToolTestedContext 工具测试的实际调用:虚拟服务分发或上游 tools/call,全部出口
 // (连接失败/工具不存在/调用失败/结果解析)统一返回 CallToolResult 供外层落日志。
 // 第二返回值 callOK=上游调用在传输层成功(结果内 isError 的工具层错误由外层结合
 // ChargeOnClientError 判定,传输失败恒退款,同网关 §6.6);第三返回值 keyIndex=
 // 多秘钥服务本次实际使用的池内序号(落日志 key_index,0=单秘钥/未调上游)。
-func callToolTested(svc *model.McpService, userID int64, req *dto.CallToolReq) (*dto.CallToolResult, bool, int) {
-	return callToolTestedContext(context.Background(), svc, userID, req)
-}
-
 func callToolTestedContext(parent context.Context, svc *model.McpService, userID int64, req *dto.CallToolReq) (*dto.CallToolResult, bool, int) {
 	seconds := 60
 	if svc.Source == "videogen" || svc.Source == "imagegen" {
@@ -886,6 +882,10 @@ func callToolTestedContext(parent context.Context, svc *model.McpService, userID
 // 条目价扣费,无条目价免费;2026-08 起资源/提示纳入条目级定价);虚拟服务无资源能力;
 // 结果同样落调用日志(recordManualTestLog,计费结算结果随日志落库)。
 func (s *McpServiceService) ReadResource(userID, serviceID int64, req *dto.ReadResourceReq) (*dto.CallToolResult, error) {
+	return s.ReadResourceContext(context.Background(), userID, serviceID, req)
+}
+
+func (s *McpServiceService) ReadResourceContext(ctx context.Context, userID, serviceID int64, req *dto.ReadResourceReq) (*dto.CallToolResult, error) {
 	svc, err := model.GetServiceByID(userID, serviceID)
 	if err != nil {
 		return nil, err
@@ -894,19 +894,19 @@ func (s *McpServiceService) ReadResource(userID, serviceID int64, req *dto.ReadR
 		return &dto.CallToolResult{IsError: true, Error: "虚拟服务不支持资源测试"}, nil
 	}
 	if svc.Source == "marketplace" && svc.MarketplaceItemID != nil {
-		return s.testMarketplaceEntry(svc, userID, billing.EntryKindResource, req.URI, "resources/read", req.URI,
-			func() (*dto.CallToolResult, bool, int) { return readResourceTested(svc, req) })
+		return s.testMarketplaceEntry(ctx, svc, userID, billing.EntryKindResource, req.URI, "resources/read", req.URI,
+			func() (*dto.CallToolResult, bool, int) { return readResourceTested(ctx, svc, req) })
 	}
-	res, _, keyIndex := readResourceTested(svc, req)
-	recordManualTestLog(svc, userID, "resources/read", req.URI, res, nil, keyIndex)
+	res, _, keyIndex := readResourceTested(ctx, svc, req)
+	recordManualTestLog(ctx, svc, userID, "resources/read", req.URI, res, nil, keyIndex)
 	return res, nil
 }
 
 // readResourceTested 资源测试的实际调用,全部出口统一返回 CallToolResult 供外层落日志。
 // 第二返回值 callOK=上游 resources/read 传输层成功(计费成败判定,同网关 err==nil);
 // 第三返回值 keyIndex=多秘钥服务本次实际使用的池内序号(落日志,0=单秘钥/未调上游)。
-func readResourceTested(svc *model.McpService, req *dto.ReadResourceReq) (*dto.CallToolResult, bool, int) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+func readResourceTested(parent context.Context, svc *model.McpService, req *dto.ReadResourceReq) (*dto.CallToolResult, bool, int) {
+	ctx, cancel := context.WithTimeout(parent, 60*time.Second)
 	defer cancel()
 	start := time.Now()
 	adapter, closeAdapter, fail := acquireTestAdapter(ctx, svc)
@@ -937,6 +937,10 @@ func readResourceTested(svc *model.McpService, req *dto.ReadResourceReq) (*dto.C
 // ReadResource 同口径计费(按提示条目价扣费,无条目价免费);虚拟服务无提示能力;
 // 结果同样落调用日志(recordManualTestLog,计费结算结果随日志落库)。
 func (s *McpServiceService) GetPrompt(userID, serviceID int64, req *dto.GetPromptReq) (*dto.CallToolResult, error) {
+	return s.GetPromptContext(context.Background(), userID, serviceID, req)
+}
+
+func (s *McpServiceService) GetPromptContext(ctx context.Context, userID, serviceID int64, req *dto.GetPromptReq) (*dto.CallToolResult, error) {
 	svc, err := model.GetServiceByID(userID, serviceID)
 	if err != nil {
 		return nil, err
@@ -945,19 +949,19 @@ func (s *McpServiceService) GetPrompt(userID, serviceID int64, req *dto.GetPromp
 		return &dto.CallToolResult{IsError: true, Error: "虚拟服务不支持提示测试"}, nil
 	}
 	if svc.Source == "marketplace" && svc.MarketplaceItemID != nil {
-		return s.testMarketplaceEntry(svc, userID, billing.EntryKindPrompt, req.Name, "prompts/get", req.Name,
-			func() (*dto.CallToolResult, bool, int) { return getPromptTested(svc, req) })
+		return s.testMarketplaceEntry(ctx, svc, userID, billing.EntryKindPrompt, req.Name, "prompts/get", req.Name,
+			func() (*dto.CallToolResult, bool, int) { return getPromptTested(ctx, svc, req) })
 	}
-	res, _, keyIndex := getPromptTested(svc, req)
-	recordManualTestLog(svc, userID, "prompts/get", req.Name, res, nil, keyIndex)
+	res, _, keyIndex := getPromptTested(ctx, svc, req)
+	recordManualTestLog(ctx, svc, userID, "prompts/get", req.Name, res, nil, keyIndex)
 	return res, nil
 }
 
 // getPromptTested 提示测试的实际调用,全部出口统一返回 CallToolResult 供外层落日志。
 // 第二返回值 callOK=上游 prompts/get 传输层成功(计费成败判定,同网关 err==nil);
 // 第三返回值 keyIndex=多秘钥服务本次实际使用的池内序号(落日志,0=单秘钥/未调上游)。
-func getPromptTested(svc *model.McpService, req *dto.GetPromptReq) (*dto.CallToolResult, bool, int) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+func getPromptTested(parent context.Context, svc *model.McpService, req *dto.GetPromptReq) (*dto.CallToolResult, bool, int) {
+	ctx, cancel := context.WithTimeout(parent, 60*time.Second)
 	defer cancel()
 	start := time.Now()
 	adapter, closeAdapter, fail := acquireTestAdapter(ctx, svc)

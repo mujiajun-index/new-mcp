@@ -20,6 +20,15 @@ var CloudManager *cloud.Manager
 
 type ConnectionService struct{}
 
+// validateConnectionApiKey limits bindings to existing, non-deleted keys owned by the caller.
+func validateConnectionApiKey(userID, apiKeyID int64) error {
+	var key model.ApiKey
+	if err := model.DB.Select("id").Where("id = ? AND user_id = ?", apiKeyID, userID).First(&key).Error; err != nil {
+		return fmt.Errorf("API Key 不存在或不属于当前用户")
+	}
+	return nil
+}
+
 func (s *ConnectionService) List(userID int64) ([]dto.ConnectionListItem, error) {
 	conns, err := model.ListConnectionsByUser(userID)
 	if err != nil {
@@ -44,6 +53,12 @@ func (s *ConnectionService) List(userID int64) ([]dto.ConnectionListItem, error)
 }
 
 func (s *ConnectionService) Create(userID int64, req *dto.CreateConnectionReq) (*dto.ConnectionDetail, error) {
+	if req.ApiKeyID != nil {
+		if err := validateConnectionApiKey(userID, *req.ApiKeyID); err != nil {
+			return nil, err
+		}
+	}
+
 	cloudConfigJSON := "{}"
 	if req.CloudConfig != nil {
 		b, _ := json.Marshal(req.CloudConfig)
@@ -100,6 +115,16 @@ func (s *ConnectionService) Update(userID, connID int64, req *dto.UpdateConnecti
 	conn, err := model.GetConnectionByID(userID, connID)
 	if err != nil {
 		return err
+	}
+	// Check the resulting binding even when only the address or other fields change.
+	apiKeyID := conn.ApiKeyID
+	if req.ApiKeyID != nil {
+		apiKeyID = req.ApiKeyID
+	}
+	if apiKeyID != nil {
+		if err := validateConnectionApiKey(userID, *apiKeyID); err != nil {
+			return err
+		}
 	}
 	if req.Name != nil {
 		conn.Name = *req.Name
@@ -165,6 +190,9 @@ func (s *ConnectionService) Disconnect(userID, connID int64) error {
 func (s *ConnectionService) BindApiKey(userID, connID int64, apiKeyID int64) error {
 	conn, err := model.GetConnectionByID(userID, connID)
 	if err != nil {
+		return err
+	}
+	if err := validateConnectionApiKey(userID, apiKeyID); err != nil {
 		return err
 	}
 	conn.ApiKeyID = &apiKeyID
