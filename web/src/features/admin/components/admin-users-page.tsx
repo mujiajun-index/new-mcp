@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { getAdminUsers, createAdminUser, updateAdminUser, getAdminUserDetail, adjustUserQuota, deleteAdminUser, restoreAdminUser } from '@/features/admin/api'
-import type { AdminUserDetail } from '@/types'
+import type { AdminUserDetail, AdminUserItem } from '@/types'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -19,8 +19,35 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import { cn } from '@/lib/utils'
 import { formatQuotaCurrency } from '@/lib/billing'
+import { formatRelativeTime } from '@/lib/datetime'
 import { toast } from 'sonner'
 import { Plus, Pencil, Search, ChevronLeft, ChevronRight, Eye, Scale, Trash2, RotateCcw } from 'lucide-react'
+
+function UserTimeCell({ user }: { user: AdminUserItem }) {
+  const { t, i18n } = useTranslation()
+  const locale = i18n.language?.startsWith('zh') ? 'zh-CN' : 'en-US'
+
+  return (
+    <TooltipProvider>
+      <div className="space-y-1 whitespace-nowrap text-xs text-muted-foreground">
+        {[
+          { label: t('admin.users.registerTime'), value: user.created_at, emptyText: '-' },
+          { label: t('admin.users.lastLoginAt'), value: user.last_login_at, emptyText: t('admin.users.never') },
+        ].map(({ label, value, emptyText }) => (
+          <Tooltip key={label}>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-2">
+                <span>{label}</span>
+                <span>{value ? formatRelativeTime(value, t) : emptyText}</span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>{value ? new Date(value).toLocaleString(locale) : emptyText}</TooltipContent>
+          </Tooltip>
+        ))}
+      </div>
+    </TooltipProvider>
+  )
+}
 
 export function AdminUsersPage() {
   const { t } = useTranslation()
@@ -518,6 +545,7 @@ export function AdminUsersPage() {
                   { label: t('admin.users.email'), value: user.email || '-' },
                   { label: t('admin.users.groups'), value: user.group || '-' },
                 ]}
+                note={<UserTimeCell user={user} />}
                 actions={
                   <div className="flex items-center gap-1">
                     {deletedView ? (
@@ -564,6 +592,7 @@ export function AdminUsersPage() {
                 <TableHead>{t('admin.users.table.calls')}</TableHead>
                 <TableHead>{t('admin.users.table.status')}</TableHead>
                 <TableHead>{t('admin.users.table.groups')}</TableHead>
+                <TableHead>{t('admin.users.table.time')}</TableHead>
                 <TableHead className="text-right">{t('admin.users.table.actions')}</TableHead>
               </TableRow>
             </TableHeader>
@@ -579,6 +608,7 @@ export function AdminUsersPage() {
                   <TableCell className="text-sm tabular-nums">{user.request_count}</TableCell>
                   <TableCell>{deletedView ? <Badge variant="destructive">{t('admin.users.badgeDeleted')}</Badge> : statusLabel(user.status)}</TableCell>
                   <TableCell className="text-sm">{user.group}</TableCell>
+                  <TableCell><UserTimeCell user={user} /></TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
                       {deletedView ? (

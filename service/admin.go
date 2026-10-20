@@ -53,6 +53,9 @@ func (s *AdminService) ListUsers(actorRole string, page, pageSize int, keyword, 
 			Remark:       u.Remark,
 			CreatedAt:    u.CreatedAt.Format(time.RFC3339),
 		}
+		if u.LastLoginAt != nil {
+			items[i].LastLoginAt = u.LastLoginAt.Format(time.RFC3339)
+		}
 	}
 	return items, total, nil
 }

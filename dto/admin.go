@@ -56,6 +56,7 @@ type UserListItem struct {
 	Group        string `json:"group"`
 	Remark       string `json:"remark"`
 	CreatedAt    string `json:"created_at"`
+	LastLoginAt  string `json:"last_login_at"` // 为空字符串表示从未登录
 }
 
 // UserDetailResp 为管理员查看单个用户的详情，额外暴露审计字段（注册 IP、最后登录时间/IP）。

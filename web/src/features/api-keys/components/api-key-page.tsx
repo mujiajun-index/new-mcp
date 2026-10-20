@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { getApiKeys, createApiKey, updateApiKey, deleteApiKey, getApiKeyFullKey, batchDeleteApiKeys, batchUpdateApiKeyStatus } from '../api'
 import { getGroups } from '@/features/groups/api'
 import { cn } from '@/lib/utils'
-import { toDateTimeLocalValue } from '@/lib/datetime'
+import { formatRelativeTime, toDateTimeLocalValue } from '@/lib/datetime'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -24,24 +24,6 @@ import {
   ChevronDown, Eye, Check,
 } from 'lucide-react'
 import type { ApiKeyListItem, GroupListItem } from '@/types'
-
-function formatRelativeTime(dateStr: string, t: (k: string, opts?: any) => string) {
-  if (!dateStr) return '-'
-  const date = new Date(dateStr)
-  if (Number.isNaN(date.getTime())) return '-'
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const seconds = Math.floor(diffMs / 1000)
-  if (seconds < 60) return t('apiKeys.justNow')
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return t('apiKeys.minutesAgo', { count: minutes })
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return t('apiKeys.hoursAgo', { count: hours })
-  const days = Math.floor(hours / 24)
-  if (days < 30) return t('apiKeys.daysAgo', { count: days })
-  if (days < 365) return t('apiKeys.monthsAgo', { count: Math.floor(days / 30) })
-  return t('apiKeys.yearsAgo', { count: Math.floor(days / 365) })
-}
 
 function isExpired(key: ApiKeyListItem) {
   if (!key.expires_at) return false

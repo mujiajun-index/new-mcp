@@ -73,6 +73,7 @@ func TestUserAndAPIKeyTimeZones(t *testing.T) {
 				t.Fatalf("list users: total=%d items=%d err=%v", total, len(users), err)
 			}
 			assertAPITime(t, "users.created_at", users[0].CreatedAt, created)
+			assertAPITime(t, "users.last_login_at", users[0].LastLoginAt, login)
 
 			key := model.ApiKey{UserID: user.ID, Name: "time-test", KeyHash: fmt.Sprintf("test-hash-%d", i), KeyPrefix: "test", CreatedAt: created, LastUsedAt: &login, ExpiresAt: &expires}
 			if err := key.Insert(); err != nil {

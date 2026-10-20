@@ -139,7 +139,7 @@ func ListUsersWithPaged(offset, limit int, keyword string, excludeID int64, role
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	err := query.Offset(offset).Limit(limit).Order("id ASC").Find(&users).Error
+	err := query.Offset(offset).Limit(limit).Order("created_at DESC, id DESC").Find(&users).Error
 	return users, total, err
 }
 

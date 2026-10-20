@@ -721,11 +721,11 @@ export interface AdminUserItem {
   group: string
   remark: string
   created_at: string
+  last_login_at: string
 }
 
 export interface AdminUserDetail extends AdminUserItem {
   register_ip: string
-  last_login_at: string
   last_login_ip: string
 }
 

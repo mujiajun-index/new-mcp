@@ -64,16 +64,20 @@ func (s *AuthService) Register(registerIP string, req *dto.RegisterReq) (*dto.Au
 	if newUserQuota < 0 {
 		newUserQuota = 0
 	}
+	// 注册后直接签发 token，同时记录本次自动登录的时间与 IP。
+	now := time.Now()
 	user := &model.User{
-		Username:   req.Username,
-		Password:   hash,
-		Email:      req.Email,
-		Role:       common.RoleCommonUser,
-		Status:     common.StatusEnabled,
-		Group:      "default",
-		Quota:      newUserQuota,
-		InviterID:  inviterID,
-		RegisterIP: registerIP,
+		Username:    req.Username,
+		Password:    hash,
+		Email:       req.Email,
+		Role:        common.RoleCommonUser,
+		Status:      common.StatusEnabled,
+		Group:       "default",
+		Quota:       newUserQuota,
+		InviterID:   inviterID,
+		RegisterIP:  registerIP,
+		LastLoginAt: &now,
+		LastLoginIP: registerIP,
 	}
 	if err := user.Insert(); err != nil {
 		return nil, err

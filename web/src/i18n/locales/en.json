@@ -1122,6 +1122,7 @@
         "calls": "Calls",
         "status": "Status",
         "groups": "Groups",
+        "time": "Time",
         "actions": "Actions"
       },
       "createSuccess": "User created",
@@ -1138,7 +1139,7 @@
       "detail": "Detail",
       "registerIp": "Registration IP",
       "registerTime": "Registration Time",
-      "lastLoginAt": "Last Login Time",
+      "lastLoginAt": "Login Time",
       "lastLoginIp": "Last Login IP",
       "never": "Never",
       "adjustQuota": "Adjust Quota",

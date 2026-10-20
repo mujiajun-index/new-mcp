@@ -121,24 +121,37 @@ function LogIPCell({ log }: { log: { client_ip?: string; ip_type?: string; extra
   } catch {
     // Historical records may have malformed extra data.
   }
-  if (!cloud) {
-    return (
-      <div className="truncate font-mono" title={log.client_ip}>{log.client_ip || '-'}</div>
-    )
-  }
-
-  const platform = cloud.cloud_type === 'xiaozhi'
+  const platform = cloud?.cloud_type === 'xiaozhi'
     ? t('connections.platform_xiaozhi')
-    : cloud.cloud_type === 'custom' ? t('connections.platform_custom_wss') : t('logs.cloudConnection')
-  const name = `${cloud.name || platform} #${cloud.id}`
-  const host = cloud.peer_host || t('common.unknown')
-  const hint = [`${t('logs.cloudConnection')}: ${name}`, `${t('logs.cloudPeer')}: ${host}`].join('\n')
+    : cloud?.cloud_type === 'custom' ? t('connections.platform_custom_wss') : t('logs.cloudConnection')
+  const name = cloud ? `${cloud.name || platform} #${cloud.id}` : ''
+  const address = (cloud ? cloud.peer_host : log.client_ip) || ''
+  const host = address || (cloud ? t('common.unknown') : '-')
+  const hint = cloud
+    ? [`${t('logs.cloudConnection')}: ${name}`, `${t('logs.cloudPeer')}: ${host}`].join('\n')
+    : address
+
   return (
-    <div className="min-w-0 space-y-0.5" title={hint}>
-      <div className="truncate text-[10px] text-muted-foreground">{t('logs.ipTypeCloudPeer')}</div>
-      <div className="truncate font-mono">{host}</div>
-      <Link to="/connections/$id" params={{ id: String(cloud.id) }} className="block truncate text-[10px] text-muted-foreground hover:underline">{name}</Link>
-    </div>
+    <TooltipProvider delayDuration={100}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          {cloud ? (
+            <div tabIndex={0} className="min-w-0 space-y-0.5">
+              <div className="truncate text-[10px] text-muted-foreground">{t('logs.ipTypeCloudPeer')}</div>
+              <div className="truncate font-mono">{host}</div>
+              <Link to="/connections/$id" params={{ id: String(cloud.id) }} className="block truncate text-[10px] text-muted-foreground hover:underline">{name}</Link>
+            </div>
+          ) : (
+            <div tabIndex={address ? 0 : undefined} className="truncate font-mono">{host}</div>
+          )}
+        </TooltipTrigger>
+        {hint && (
+          <TooltipContent className="max-w-[min(420px,calc(100vw-2rem))] whitespace-pre-wrap break-all select-text">
+            {hint}
+          </TooltipContent>
+        )}
+      </Tooltip>
+    </TooltipProvider>
   )
 }
 
