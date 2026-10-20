@@ -13,6 +13,7 @@ import {
   AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { GitHubButton } from '@/components/github-button'
 import { Moon, Sun, LogOut, User, Monitor, Languages, Check, Menu } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -73,6 +74,7 @@ export function Header({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
+        <GitHubButton />
         {/* Theme toggle */}
         <Button
           variant="ghost"

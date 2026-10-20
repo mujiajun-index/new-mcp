@@ -321,6 +321,18 @@ export function AdminSettingsPage() {
                   onBlur={() => saveField('Footer')}
                 />
               </div>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium">{t('settings.showGitHub')}</p>
+                  <p className="text-xs text-muted-foreground">{t('settings.showGitHubDesc')}</p>
+                </div>
+                <Switch
+                  checked={localValues.ShowGitHub === 'true'}
+                  onCheckedChange={() => toggleBool('ShowGitHub')}
+                  disabled={updateMutation.isPending}
+                  aria-label={t('settings.showGitHub')}
+                />
+              </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">{t('settings.userGroupOptions')}</label>
                 <p className="text-xs text-muted-foreground">{t('settings.userGroupOptionsDesc')}</p>

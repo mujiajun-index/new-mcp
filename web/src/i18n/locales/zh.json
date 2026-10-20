@@ -1340,6 +1340,8 @@
     "systemName": "系统名称",
     "serverAddress": "服务器地址",
     "footer": "页脚内容",
+    "showGitHub": "显示 GitHub",
+    "showGitHubDesc": "开启后在导航栏显示 GitHub 仓库按钮",
     "userGroupOptions": "用户分组选项值",
     "userGroupOptionsDesc": "用户管理中分配分组时的可选项，用逗号分隔",
     "userGroupOptionsPlaceholder": "输入分组名，用逗号分隔，如: default,vip,svip",

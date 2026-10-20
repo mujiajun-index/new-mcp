@@ -1342,6 +1342,8 @@
     "systemName": "System Name",
     "serverAddress": "Server Address",
     "footer": "Footer",
+    "showGitHub": "Show GitHub",
+    "showGitHubDesc": "Show the GitHub repository button in the navigation bar when enabled",
     "userGroupOptions": "User Group Options",
     "userGroupOptionsDesc": "Selectable groups when assigning a user's group in user management, comma-separated",
     "userGroupOptionsPlaceholder": "Enter group names, comma-separated, e.g. default,vip,svip",

@@ -22,6 +22,7 @@ interface SystemConfig {
   systemName: string
   serverAddress: string
   footer: string
+  showGitHub: boolean
   registerEnabled: boolean
   emailVerificationEnabled: boolean
   smtpConfigured: boolean
@@ -51,6 +52,7 @@ export const useSystemConfigStore = create<SystemConfigState>()(
         systemName: 'NewMCP',
         serverAddress: 'http://localhost:3000',
         footer: '',
+        showGitHub: false,
         registerEnabled: true,
         emailVerificationEnabled: false,
         smtpConfigured: false,
@@ -77,6 +79,7 @@ export const useSystemConfigStore = create<SystemConfigState>()(
               systemName: data.SystemName ?? state.config.systemName,
               serverAddress: data.ServerAddress ?? state.config.serverAddress,
               footer: data.Footer ?? state.config.footer,
+              showGitHub: boolOr(data, 'ShowGitHub', false),
               registerEnabled: boolOr(data, 'RegisterEnabled', state.config.registerEnabled),
               emailVerificationEnabled: boolOr(data, 'EmailVerificationEnabled', state.config.emailVerificationEnabled),
               smtpConfigured: boolOr(data, 'SMTPConfigured', state.config.smtpConfigured),

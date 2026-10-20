@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import { useTheme } from '@/context/theme-provider'
 import { Button } from '@/components/ui/button'
+import { GitHubButton } from '@/components/github-button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
@@ -105,6 +106,7 @@ function LandingPage() {
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
+            <GitHubButton />
             {/* Theme toggle */}
             <Button
               variant="ghost"

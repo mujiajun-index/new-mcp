@@ -25,6 +25,7 @@ var defaultOptions = map[string]string{
 	"ServerAddress":                 "http://localhost:3000",
 	"MCPAllowedOrigins":             "", // Additional comma-separated origins for MCP HTTP/WebSocket clients.
 	"Footer":                        "MCP Protocol Gateway",
+	"ShowGitHub":                    "false",
 	"RegisterEnabled":               "true",
 	"EmailVerificationEnabled":      "false",
 	"EmailDomainRestrictionEnabled": "false",
@@ -120,6 +121,7 @@ var sensitiveKeys = map[string]bool{
 var publicKeys = map[string]bool{
 	"SystemName":               true,
 	"Footer":                   true,
+	"ShowGitHub":               true,
 	"ServerAddress":            true,
 	"RegisterEnabled":          true,
 	"EmailVerificationEnabled": true,
