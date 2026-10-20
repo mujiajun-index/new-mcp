@@ -30,7 +30,7 @@ docker-compose.*.yaml
 docs/
 reference/
 *.md
-LICENSE
+!THIRD_PARTY_NOTICES.md
 
 # OS
 .DS_Store

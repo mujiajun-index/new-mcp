@@ -30,7 +30,11 @@ RUN apk add --no-cache ca-certificates tzdata \
         curl
 WORKDIR /app
 
+LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later"
+
 COPY --from=backend-builder /newmcp /app/newmcp
+COPY --from=backend-builder /app/LICENSE /app/NOTICE /app/THIRD_PARTY_NOTICES.md /app/
+COPY --from=backend-builder /app/internal/mcp/systemone/LICENSE /app/licenses/system-one-connector/LICENSE
 
 ENV PORT=3000
 ENV GIN_MODE=release

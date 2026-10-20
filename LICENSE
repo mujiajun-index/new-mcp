@@ -105,8 +105,8 @@ form of a work.
 
   A "Standard Interface" means an interface that either is an official
 standard defined by a recognized standards body, or, in the case of
-interfaces specified for a particular programming language, one that is
-widely used among developers working in that language.
+interfaces specified for a particular programming language, one that
+is widely used among developers working in that language.
 
   The "System Libraries" of an executable work include anything, other
 than the work as a whole, that (a) is included in the normal form of
@@ -174,8 +174,8 @@ measures.
 
   When you convey a covered work, you waive any legal power to forbid
 circumvention of technological measures to the extent such circumvention
-is effected by exercising rights under this License with respect to the
-covered work, and you disclaim any intention to limit operation or
+is effected by exercising rights under this License with respect to
+the covered work, and you disclaim any intention to limit operation or
 modification of the work as a means of enforcing, against the work's
 users, your or third parties' legal rights to forbid circumvention of
 technological measures.
@@ -629,12 +629,12 @@ to attach them to the start of each source file to most effectively
 state the exclusion of warranty; and each file should have at least
 the "copyright" line and a pointer to where the full notice is found.
 
-    NewMCP - Unified MCP Service Management Platform
-    Copyright (C) 2025 mujkjk
+    <one line to give the program's name and a brief idea of what it does.>
+    Copyright (C) <year>  <name of author>
 
     This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as published
-    by the Free Software Foundation, either version 3 of the License, or
+    it under the terms of the GNU Affero General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
     This program is distributed in the hope that it will be useful,
@@ -659,11 +659,3 @@ specific requirements.
 if any, to sign a "copyright disclaimer" for the program, if necessary.
 For more information on this, and how to apply and follow the GNU AGPL, see
 <https://www.gnu.org/licenses/>.
-
----
-
-This project is licensed under the GNU Affero General Public License v3.0 (AGPLv3).
-
-If your organization's policies do not permit the use of AGPLv3-licensed software,
-or if you wish to avoid the open-source obligations of AGPLv3 for commercial use,
-please contact: jiajun25701@gmail.com
