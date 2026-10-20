@@ -111,18 +111,14 @@ func (s *SystemOneService) Update(userID, id int64, req *dto.SystemOneConfigReq)
 	})
 }
 
+// Keep the discovery schema simple for clients that cannot convert top-level
+// unions. systemone.Evaluate enforces the state/items requirement at runtime.
 func systemOneTools() string {
 	tool := []map[string]interface{}{{
 		"name":        "evaluate",
 		"description": "Evaluate observed state using a System One decision model (Jev, CLM or Laya). You MUST provide questions and at least one of: non-null state or a non-empty items object. Both may be provided: state then supplies shared context for each item. Returns typed answers and actual model probabilities, not prose. Ask narrow questions, provide evidence rather than your conclusion. noul is yes/no probability; choice selects among named options; score rates ordered levels. Use items for independent records (up to 500); min_confidence can abstain for noul or choice. Include a no-match choice when appropriate. Confidence measures probability concentration, not guaranteed correctness.",
 		"inputSchema": map[string]interface{}{
 			"type": "object", "required": []string{"questions"},
-			"anyOf": []map[string]interface{}{
-				{"required": []string{"state"}, "properties": map[string]interface{}{
-					"state": map[string]interface{}{"not": map[string]interface{}{"type": "null"}},
-				}},
-				{"required": []string{"items"}},
-			},
 			"properties": map[string]interface{}{
 				"state": map[string]interface{}{"description": "Observed evidence and relevant background as text or structured JSON. You MUST provide non-null state unless a non-empty items object is supplied. When both are provided, state is shared context for each item."},
 				"questions": map[string]interface{}{"type": "object", "description": "Question ID to typed judgment; IDs are not sent to the model, so instructions must be self-contained.",

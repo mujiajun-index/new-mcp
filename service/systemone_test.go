@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestSystemOneSchemaRequiresStateOrItems(t *testing.T) {
+func TestSystemOneSchemaCompatibility(t *testing.T) {
 	var tools []struct {
 		InputSchema jsonschema.Schema `json:"inputSchema"`
 	}
@@ -34,8 +34,9 @@ func TestSystemOneSchemaRequiresStateOrItems(t *testing.T) {
 		input string
 		valid bool
 	}{
-		{"neither", `{}`, false},
-		{"null state only", `{"state":null}`, false},
+		// Presence of state/items is enforced at runtime, not during discovery.
+		{"neither", `{}`, true},
+		{"null state only", `{"state":null}`, true},
 		{"null items only", `{"items":null}`, false},
 		{"empty items", `{"items":{}}`, false},
 		{"text state", `{"state":"payment failed"}`, true},
