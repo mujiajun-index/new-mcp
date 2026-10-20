@@ -38,13 +38,17 @@ export function DashboardPage() {
 
   const { data: recentLogs } = useQuery({
     queryKey: ['dashboard-recent-logs'],
-    // type: 2 = LogTypeConsume(MCP 调用消费);只取过去 24 小时内的最近 5 条调用。
-    queryFn: () => getUserLogs({
-      page: 1,
-      page_size: 6,
-      type: 2,
-      start_date: dayjs().subtract(24, 'hour').toISOString(),
-    }),
+    // type: 2 = LogTypeConsume(MCP 调用消费);只取本地时间今天全天的最近 6 条调用。
+    queryFn: () => {
+      const today = dayjs()
+      return getUserLogs({
+        page: 1,
+        page_size: 6,
+        type: 2,
+        start_date: today.startOf('day').toISOString(),
+        end_date: today.endOf('day').toISOString(),
+      })
+    },
     refetchInterval: 60 * 1000,
   })
 
