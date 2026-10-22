@@ -420,7 +420,7 @@ func (s *McpServiceService) delete(userID, serviceID int64) error {
 		return err
 	}
 	if svc.TransportType == "virtual" {
-		sourceLabel := map[string]string{"vision": "视觉", "camera": "摄像头", "systemone": "System One", "imagegen": "图片生成", "videogen": "视频生成"}[svc.Source]
+		sourceLabel := map[string]string{"vision": "视觉", "camera": "摄像头", "systemone": "System One", "imagegen": "图片生成", "videogen": "视频生成", "audiogen": "音频生成"}[svc.Source]
 		if sourceLabel == "" {
 			sourceLabel = "对应"
 		}
@@ -811,7 +811,7 @@ func (s *McpServiceService) testMarketplaceEntry(ctx context.Context, svc *model
 // 多秘钥服务本次实际使用的池内序号(落日志 key_index,0=单秘钥/未调上游)。
 func callToolTestedContext(parent context.Context, svc *model.McpService, userID int64, req *dto.CallToolReq) (*dto.CallToolResult, bool, int) {
 	seconds := 60
-	if svc.Source == "videogen" || svc.Source == "imagegen" {
+	if svc.Source == "videogen" || svc.Source == "imagegen" || svc.Source == "audiogen" {
 		seconds = 40
 	}
 	ctx, cancel := context.WithCancel(parent)
@@ -1528,7 +1528,7 @@ func (s *McpServiceService) toDetail(svc *model.McpService) *dto.ServiceDetail {
 		seconds := 40
 		d.ToolTimeoutSeconds = &seconds
 	}
-	if svc.Source == "videogen" {
+	if svc.Source == "videogen" || svc.Source == "audiogen" {
 		seconds := 40
 		d.ToolTimeoutSeconds = &seconds
 	}

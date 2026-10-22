@@ -11,6 +11,7 @@
     "test:videogen-params": "node --test ../scripts/video-json-params.test.mjs",
     "test:task-history": "node --test ../scripts/task-history.test.mjs",
     "test:datetime": "node --test ../scripts/datetime.test.mjs",
+    "test:audiogen-config": "node --test ../scripts/audio-config.test.mjs",
     "lint": "eslint .",
     "preview": "rsbuild preview",
     "format": "prettier --write .",

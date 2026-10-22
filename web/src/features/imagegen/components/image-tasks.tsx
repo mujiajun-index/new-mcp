@@ -1,3 +1,8 @@
+import {
+  TaskHistoryMobileCard,
+  TaskHistoryMobileSelectAll,
+} from '@/components/task-history-mobile-card'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -229,6 +234,7 @@ export function ImageTasks({
   pending?: boolean
 }) {
   const { t } = useTranslation()
+  const isMobile = useIsMobile()
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
   const [status, setStatus] = useState('all')
@@ -278,8 +284,62 @@ export function ImageTasks({
   useEffect(() => {
     if (data && page > pages) setPage(pages)
   }, [data, page, pages])
+  const taskActions = (task: ImageTask) => {
+    const ready = task.images.filter((asset) => !!asset.url)
+    return (
+      <>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setSelectedID(task.task_id)}
+        >
+          {t('imagegen.detail')}
+        </Button>
+        {ready[0]?.url && (
+          <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+            <a
+              href={imageDownloadURL(ready[0].url)}
+              download
+              aria-label={t('imagegen.downloadImage')}
+              title={t('imagegen.downloadImage')}
+            >
+              <Download className="h-4 w-4" />
+            </a>
+          </Button>
+        )}
+        {task.can_retry_save && (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() => retry.mutate(task.task_id)}
+          >
+            <RefreshCw className="mr-1 h-3.5 w-3.5" />
+            {t('imagegen.retrySave')}
+          </Button>
+        )}
+        {!imageTaskIsActive(task) && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-destructive hover:text-destructive"
+            disabled={busy}
+            aria-label={t('imagegen.deleteTask')}
+            title={t('imagegen.deleteTask')}
+            onClick={() => {
+              if (confirm(t('imagegen.deleteTaskConfirm')))
+                remove.mutate(task.task_id)
+            }}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        )}
+      </>
+    )
+  }
+
   return (
-    <section className="space-y-4">
+    <section className="min-w-0 space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold">{t('imagegen.history')}</h2>
@@ -287,9 +347,10 @@ export function ImageTasks({
             {t('imagegen.historyHint')}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
           <TaskHistoryStatusFilter
             kind="image"
+            className="min-w-0 flex-1 sm:flex-none"
             value={status}
             disabled={busy}
             onChange={(value) => {
@@ -336,6 +397,88 @@ export function ImageTasks({
                 : 'taskHistory.noMatchingTasks',
             )}
           </p>
+        ) : isMobile ? (
+          <div>
+            <TaskHistoryMobileSelectAll
+              checked={
+                selection.allSelected
+                  ? true
+                  : selection.selected.size > 0
+                    ? 'mixed'
+                    : false
+              }
+              disabled={busy || !selection.hasEligible}
+              onChange={selection.toggleAll}
+            />
+            <div className="divide-y">
+              {data.data.items.map((task) => {
+                const ready = task.images.filter((asset) => !!asset.url)
+                const times = (ready.length ? ready : task.images)
+                  .flatMap((asset) =>
+                    asset.expires_at
+                      ? [new Date(asset.expires_at).getTime()]
+                      : [],
+                  )
+                  .filter(Number.isFinite)
+                const expires = times.length
+                  ? new Date(Math.min(...times)).toLocaleString()
+                  : ready.length
+                    ? t('imagegen.permanent')
+                    : task.images.length
+                      ? t('imagegen.imageExpired')
+                      : '—'
+                return (
+                  <TaskHistoryMobileCard
+                    key={task.task_id}
+                    taskID={task.task_id}
+                    model={task.model}
+                    configName={
+                      configID === undefined
+                        ? task.config_name || t('imagegen.draftConfig')
+                        : undefined
+                    }
+                    prompt={task.prompt}
+                    badge={<TaskStatus task={task} />}
+                    meta={[
+                      {
+                        label: t('imagegen.capabilities'),
+                        value: t(`imagegen.operations.${task.operation}`),
+                      },
+                      {
+                        label: t('imagegen.taskSource'),
+                        value: t(`imagegen.taskSources.${task.source}`),
+                      },
+                      {
+                        label: t('imagegen.taskImages'),
+                        value: task.images.length
+                          ? t('imagegen.imageCount', {
+                              ready: ready.length,
+                              total: task.images.length,
+                            })
+                          : '—',
+                      },
+                      {
+                        label: t('imagegen.taskDuration'),
+                        value: task.finished_at
+                          ? `${(task.duration_ms / 1000).toFixed(1)}s`
+                          : '—',
+                      },
+                      {
+                        label: t('common.createdAt'),
+                        value: new Date(task.created_at).toLocaleString(),
+                      },
+                      { label: t('imagegen.expiresAt'), value: expires },
+                    ]}
+                    selected={selection.selected.has(task.task_id)}
+                    disabled={busy || imageTaskIsActive(task)}
+                    onToggle={() => selection.toggle(task.task_id)}
+                    onDetails={() => setSelectedID(task.task_id)}
+                    actions={taskActions(task)}
+                  />
+                )
+              })}
+            </div>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table
@@ -503,57 +646,7 @@ export function ImageTasks({
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1 whitespace-nowrap">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSelectedID(task.task_id)}
-                          >
-                            {t('imagegen.detail')}
-                          </Button>
-                          {ready[0]?.url && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              asChild
-                            >
-                              <a
-                                href={imageDownloadURL(ready[0].url)}
-                                download
-                                aria-label={t('imagegen.downloadImage')}
-                                title={t('imagegen.downloadImage')}
-                              >
-                                <Download className="h-4 w-4" />
-                              </a>
-                            </Button>
-                          )}
-                          {task.can_retry_save && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() => retry.mutate(task.task_id)}
-                            >
-                              <RefreshCw className="mr-1 h-3.5 w-3.5" />
-                              {t('imagegen.retrySave')}
-                            </Button>
-                          )}
-                          {!imageTaskIsActive(task) && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive hover:text-destructive"
-                              disabled={busy}
-                              aria-label={t('imagegen.deleteTask')}
-                              title={t('imagegen.deleteTask')}
-                              onClick={() => {
-                                if (confirm(t('imagegen.deleteTaskConfirm')))
-                                  remove.mutate(task.task_id)
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          )}
+                          {taskActions(task)}
                         </div>
                       </td>
                     </tr>
@@ -579,7 +672,7 @@ export function ImageTasks({
           if (!open) setSelectedID(null)
         }}
       >
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+        <DialogContent className="max-h-[90dvh] overflow-y-auto p-4 sm:max-w-3xl sm:p-6">
           <DialogHeader>
             <DialogTitle>{t('imagegen.taskDetail')}</DialogTitle>
             <DialogDescription className="break-all">

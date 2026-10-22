@@ -1,3 +1,8 @@
+import {
+  TaskHistoryMobileCard,
+  TaskHistoryMobileSelectAll,
+} from "@/components/task-history-mobile-card";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useEffect, useState } from "react";
 import {
   useIsMutating,
@@ -344,6 +349,7 @@ function VideoTaskRow({
   selected,
   selectionBusy,
   onToggle,
+  mobile = false,
 }: {
   task: VideoTask;
   configID?: number;
@@ -352,6 +358,7 @@ function VideoTaskRow({
   selected: boolean;
   selectionBusy: boolean;
   onToggle: () => void;
+  mobile?: boolean;
 }) {
   const { t } = useTranslation();
   const { retry, resume, remove } = useVideoTaskActions(task, onDeleted);
@@ -359,6 +366,160 @@ function VideoTaskRow({
   const busy =
     selectionBusy || retry.isPending || resume.isPending || remove.isPending;
   const video = task.videos[0];
+  const actions = (
+    <>
+      <Button variant="ghost" size="sm" onClick={onDetails}>
+        {t("videogen.detail")}
+      </Button>
+      {video && (
+        <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+          <a
+            href={videoDownloadURL(video.url)}
+            download
+            aria-label={t("videogen.download")}
+            title={t("videogen.download")}
+          >
+            <Download className="h-4 w-4" />
+          </a>
+        </Button>
+      )}
+      {task.tracking_paused && (
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onClick={() => resume.mutate()}
+        >
+          {t("videogen.resume")}
+        </Button>
+      )}
+      {task.status === "completed" && task.artifact_status === "failed" && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-1"
+          disabled={busy}
+          onClick={() => retry.mutate()}
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          {t("videogen.retrySave")}
+        </Button>
+      )}
+      {task.status === "failed" && (
+        <VideoTaskRetryDialog task={task} disabled={busy} />
+      )}
+      {!active && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-destructive hover:text-destructive"
+          aria-label={t("common.delete")}
+          title={t("common.delete")}
+          disabled={busy}
+          onClick={() => {
+            if (confirm(t("videogen.deleteTaskConfirm"))) remove.mutate();
+          }}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      )}
+    </>
+  );
+  if (mobile)
+    return (
+      <TaskHistoryMobileCard
+        taskID={task.task_id}
+        model={task.model}
+        configName={
+          configID === undefined
+            ? task.config_name || t("videogen.draftConfig")
+            : undefined
+        }
+        prompt={task.prompt}
+        badge={
+          <>
+            <Badge
+              variant={
+                task.status === "failed" || task.status === "submission_unknown"
+                  ? "destructive"
+                  : task.status === "completed"
+                    ? "success"
+                    : "secondary"
+              }
+            >
+              {active && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+              {t(`videogen.status.${task.status}`)}
+            </Badge>
+            {active && (
+              <span className="text-xs text-muted-foreground">
+                {task.progress}%
+              </span>
+            )}
+            {task.tracking_paused && (
+              <span className="text-xs text-muted-foreground">
+                {t("videogen.trackingPaused")}
+              </span>
+            )}
+          </>
+        }
+        meta={[
+          {
+            label: t("videogen.capabilities"),
+            value: t(`videogen.operation.${task.operation}`),
+          },
+          {
+            label: t("videogen.taskSource"),
+            value: t(`videogen.taskSources.${task.source}`, {
+              defaultValue: task.source || "—",
+            }),
+          },
+          {
+            label: t("videogen.savingStatus"),
+            value:
+              task.status === "completed" ? (
+                <Badge
+                  variant={
+                    task.artifact_status === "ready"
+                      ? "success"
+                      : task.artifact_status === "failed"
+                        ? "destructive"
+                        : "outline"
+                  }
+                >
+                  {t(`videogen.artifact.${task.artifact_status}`)}
+                </Badge>
+              ) : (
+                "—"
+              ),
+          },
+          {
+            label: t("videogen.taskDuration"),
+            value:
+              task.duration_ms != null
+                ? `${(task.duration_ms / 1000).toFixed(1)}s`
+                : "—",
+          },
+          {
+            label: t("common.createdAt"),
+            value: new Date(task.created_at).toLocaleString(),
+          },
+          {
+            label: t("videogen.expiresAt"),
+            value: task.expires_at
+              ? new Date(task.expires_at).toLocaleString()
+              : task.artifact_status === "ready"
+                ? t("videogen.permanentLabel")
+                : "—",
+          },
+        ]}
+        selected={selected}
+        disabled={busy || active}
+        onToggle={onToggle}
+        onDetails={onDetails}
+        actions={actions}
+      />
+    );
+
   return (
     <tr
       className={`border-b transition-colors last:border-0 hover:bg-muted/30 ${selected ? "bg-muted/40" : ""}`}
@@ -488,61 +649,7 @@ function VideoTaskRow({
       </td>
       <td className="px-4 py-3 text-right">
         <div className="flex items-center justify-end gap-1 whitespace-nowrap">
-          <Button variant="ghost" size="sm" onClick={onDetails}>
-            {t("videogen.detail")}
-          </Button>
-          {video && (
-            <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-              <a
-                href={videoDownloadURL(video.url)}
-                download
-                aria-label={t("videogen.download")}
-                title={t("videogen.download")}
-              >
-                <Download className="h-4 w-4" />
-              </a>
-            </Button>
-          )}
-          {task.tracking_paused && (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={busy}
-              onClick={() => resume.mutate()}
-            >
-              {t("videogen.resume")}
-            </Button>
-          )}
-          {task.status === "completed" && task.artifact_status === "failed" && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-1"
-              disabled={busy}
-              onClick={() => retry.mutate()}
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              {t("videogen.retrySave")}
-            </Button>
-          )}
-          {task.status === "failed" && (
-            <VideoTaskRetryDialog task={task} disabled={busy} />
-          )}
-          {!active && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-destructive hover:text-destructive"
-              aria-label={t("common.delete")}
-              title={t("common.delete")}
-              disabled={busy}
-              onClick={() => {
-                if (confirm(t("videogen.deleteTaskConfirm"))) remove.mutate();
-              }}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          )}
+          {actions}
         </div>
       </td>
     </tr>
@@ -551,6 +658,7 @@ function VideoTaskRow({
 
 export function VideoTasks({ configID }: { configID?: number }) {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const removing = useIsMutating({ mutationKey: ["delete-video-task"] }) > 0;
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState("all");
@@ -580,7 +688,7 @@ export function VideoTasks({ configID }: { configID?: number }) {
     if (data && page > totalPages) setPage(totalPages);
   }, [data, page, totalPages]);
   return (
-    <section className="space-y-4">
+    <section className="min-w-0 space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold">{t("videogen.history")}</h2>
@@ -588,9 +696,10 @@ export function VideoTasks({ configID }: { configID?: number }) {
             {t("videogen.historyHint")}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
           <TaskHistoryStatusFilter
             kind="video"
+            className="min-w-0 flex-1 sm:flex-none"
             value={status}
             disabled={busy}
             onChange={(value) => {
@@ -632,8 +741,41 @@ export function VideoTasks({ configID }: { configID?: number }) {
           </p>
         ) : !data?.data.items.length ? (
           <p className="p-12 text-center text-sm text-muted-foreground">
-            {t(status === "all" ? "videogen.noTasks" : "taskHistory.noMatchingTasks")}
+            {t(
+              status === "all"
+                ? "videogen.noTasks"
+                : "taskHistory.noMatchingTasks",
+            )}
           </p>
+        ) : isMobile ? (
+          <div>
+            <TaskHistoryMobileSelectAll
+              checked={
+                selection.allSelected
+                  ? true
+                  : selection.selected.size > 0
+                    ? "mixed"
+                    : false
+              }
+              disabled={busy || !selection.hasEligible}
+              onChange={selection.toggleAll}
+            />
+            <div className="divide-y">
+              {data.data.items.map((task) => (
+                <VideoTaskRow
+                  key={task.task_id}
+                  task={task}
+                  configID={configID}
+                  mobile
+                  onDetails={() => setSelectedTaskID(task.task_id)}
+                  onDeleted={() => handleDeleted([task.task_id])}
+                  selected={selection.selected.has(task.task_id)}
+                  selectionBusy={busy}
+                  onToggle={() => selection.toggle(task.task_id)}
+                />
+              ))}
+            </div>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table
@@ -715,7 +857,7 @@ export function VideoTasks({ configID }: { configID?: number }) {
           if (!open) setSelectedTaskID(null);
         }}
       >
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+        <DialogContent className="max-h-[90dvh] overflow-y-auto p-4 sm:max-w-3xl sm:p-6">
           <DialogHeader>
             <DialogTitle>{t("videogen.taskDetail")}</DialogTitle>
             <DialogDescription className="break-all">

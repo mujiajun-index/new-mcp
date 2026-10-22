@@ -64,6 +64,9 @@ const AuthenticatedConnectionsIndexLazyRouteImport = createFileRoute(
 const AuthenticatedCamerasIndexLazyRouteImport = createFileRoute(
   '/_authenticated/cameras/',
 )()
+const AuthenticatedAudiogenIndexLazyRouteImport = createFileRoute(
+  '/_authenticated/audiogen/',
+)()
 const AuthenticatedVisionCreateLazyRouteImport = createFileRoute(
   '/_authenticated/vision/create',
 )()
@@ -117,6 +120,12 @@ const AuthenticatedCamerasCreateLazyRouteImport = createFileRoute(
 )()
 const AuthenticatedCamerasIdLazyRouteImport = createFileRoute(
   '/_authenticated/cameras/$id',
+)()
+const AuthenticatedAudiogenCreateLazyRouteImport = createFileRoute(
+  '/_authenticated/audiogen/create',
+)()
+const AuthenticatedAudiogenIdLazyRouteImport = createFileRoute(
+  '/_authenticated/audiogen/$id',
 )()
 const AuthenticatedAdminUsersLazyRouteImport = createFileRoute(
   '/_authenticated/admin/users',
@@ -310,6 +319,14 @@ const AuthenticatedCamerasIndexLazyRoute =
   } as any).lazy(() =>
     import('./routes/_authenticated/cameras/index.lazy').then((d) => d.Route),
   )
+const AuthenticatedAudiogenIndexLazyRoute =
+  AuthenticatedAudiogenIndexLazyRouteImport.update({
+    id: '/audiogen/',
+    path: '/audiogen/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any).lazy(() =>
+    import('./routes/_authenticated/audiogen/index.lazy').then((d) => d.Route),
+  )
 const AuthenticatedVisionCreateLazyRoute =
   AuthenticatedVisionCreateLazyRouteImport.update({
     id: '/vision/create',
@@ -460,6 +477,22 @@ const AuthenticatedCamerasIdLazyRoute =
   } as any).lazy(() =>
     import('./routes/_authenticated/cameras/$id.lazy').then((d) => d.Route),
   )
+const AuthenticatedAudiogenCreateLazyRoute =
+  AuthenticatedAudiogenCreateLazyRouteImport.update({
+    id: '/audiogen/create',
+    path: '/audiogen/create',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any).lazy(() =>
+    import('./routes/_authenticated/audiogen/create.lazy').then((d) => d.Route),
+  )
+const AuthenticatedAudiogenIdLazyRoute =
+  AuthenticatedAudiogenIdLazyRouteImport.update({
+    id: '/audiogen/$id',
+    path: '/audiogen/$id',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any).lazy(() =>
+    import('./routes/_authenticated/audiogen/$id.lazy').then((d) => d.Route),
+  )
 const AuthenticatedAdminUsersLazyRoute =
   AuthenticatedAdminUsersLazyRouteImport.update({
     id: '/users',
@@ -566,6 +599,8 @@ export interface FileRoutesByFullPath {
   '/admin/system': typeof AuthenticatedAdminSystemLazyRoute
   '/admin/uploads': typeof AuthenticatedAdminUploadsLazyRoute
   '/admin/users': typeof AuthenticatedAdminUsersLazyRoute
+  '/audiogen/$id': typeof AuthenticatedAudiogenIdLazyRoute
+  '/audiogen/create': typeof AuthenticatedAudiogenCreateLazyRoute
   '/cameras/$id': typeof AuthenticatedCamerasIdLazyRoute
   '/cameras/create': typeof AuthenticatedCamerasCreateLazyRoute
   '/connections/$id': typeof AuthenticatedConnectionsIdLazyRoute
@@ -584,6 +619,7 @@ export interface FileRoutesByFullPath {
   '/videogen/create': typeof AuthenticatedVideogenCreateLazyRoute
   '/vision/$id': typeof AuthenticatedVisionIdLazyRoute
   '/vision/create': typeof AuthenticatedVisionCreateLazyRoute
+  '/audiogen/': typeof AuthenticatedAudiogenIndexLazyRoute
   '/cameras/': typeof AuthenticatedCamerasIndexLazyRoute
   '/connections/': typeof AuthenticatedConnectionsIndexLazyRoute
   '/groups/': typeof AuthenticatedGroupsIndexLazyRoute
@@ -617,6 +653,8 @@ export interface FileRoutesByTo {
   '/admin/system': typeof AuthenticatedAdminSystemLazyRoute
   '/admin/uploads': typeof AuthenticatedAdminUploadsLazyRoute
   '/admin/users': typeof AuthenticatedAdminUsersLazyRoute
+  '/audiogen/$id': typeof AuthenticatedAudiogenIdLazyRoute
+  '/audiogen/create': typeof AuthenticatedAudiogenCreateLazyRoute
   '/cameras/$id': typeof AuthenticatedCamerasIdLazyRoute
   '/cameras/create': typeof AuthenticatedCamerasCreateLazyRoute
   '/connections/$id': typeof AuthenticatedConnectionsIdLazyRoute
@@ -635,6 +673,7 @@ export interface FileRoutesByTo {
   '/videogen/create': typeof AuthenticatedVideogenCreateLazyRoute
   '/vision/$id': typeof AuthenticatedVisionIdLazyRoute
   '/vision/create': typeof AuthenticatedVisionCreateLazyRoute
+  '/audiogen': typeof AuthenticatedAudiogenIndexLazyRoute
   '/cameras': typeof AuthenticatedCamerasIndexLazyRoute
   '/connections': typeof AuthenticatedConnectionsIndexLazyRoute
   '/groups': typeof AuthenticatedGroupsIndexLazyRoute
@@ -671,6 +710,8 @@ export interface FileRoutesById {
   '/_authenticated/admin/system': typeof AuthenticatedAdminSystemLazyRoute
   '/_authenticated/admin/uploads': typeof AuthenticatedAdminUploadsLazyRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersLazyRoute
+  '/_authenticated/audiogen/$id': typeof AuthenticatedAudiogenIdLazyRoute
+  '/_authenticated/audiogen/create': typeof AuthenticatedAudiogenCreateLazyRoute
   '/_authenticated/cameras/$id': typeof AuthenticatedCamerasIdLazyRoute
   '/_authenticated/cameras/create': typeof AuthenticatedCamerasCreateLazyRoute
   '/_authenticated/connections/$id': typeof AuthenticatedConnectionsIdLazyRoute
@@ -689,6 +730,7 @@ export interface FileRoutesById {
   '/_authenticated/videogen/create': typeof AuthenticatedVideogenCreateLazyRoute
   '/_authenticated/vision/$id': typeof AuthenticatedVisionIdLazyRoute
   '/_authenticated/vision/create': typeof AuthenticatedVisionCreateLazyRoute
+  '/_authenticated/audiogen/': typeof AuthenticatedAudiogenIndexLazyRoute
   '/_authenticated/cameras/': typeof AuthenticatedCamerasIndexLazyRoute
   '/_authenticated/connections/': typeof AuthenticatedConnectionsIndexLazyRoute
   '/_authenticated/groups/': typeof AuthenticatedGroupsIndexLazyRoute
@@ -724,6 +766,8 @@ export interface FileRouteTypes {
     | '/admin/system'
     | '/admin/uploads'
     | '/admin/users'
+    | '/audiogen/$id'
+    | '/audiogen/create'
     | '/cameras/$id'
     | '/cameras/create'
     | '/connections/$id'
@@ -742,6 +786,7 @@ export interface FileRouteTypes {
     | '/videogen/create'
     | '/vision/$id'
     | '/vision/create'
+    | '/audiogen/'
     | '/cameras/'
     | '/connections/'
     | '/groups/'
@@ -775,6 +820,8 @@ export interface FileRouteTypes {
     | '/admin/system'
     | '/admin/uploads'
     | '/admin/users'
+    | '/audiogen/$id'
+    | '/audiogen/create'
     | '/cameras/$id'
     | '/cameras/create'
     | '/connections/$id'
@@ -793,6 +840,7 @@ export interface FileRouteTypes {
     | '/videogen/create'
     | '/vision/$id'
     | '/vision/create'
+    | '/audiogen'
     | '/cameras'
     | '/connections'
     | '/groups'
@@ -828,6 +876,8 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/system'
     | '/_authenticated/admin/uploads'
     | '/_authenticated/admin/users'
+    | '/_authenticated/audiogen/$id'
+    | '/_authenticated/audiogen/create'
     | '/_authenticated/cameras/$id'
     | '/_authenticated/cameras/create'
     | '/_authenticated/connections/$id'
@@ -846,6 +896,7 @@ export interface FileRouteTypes {
     | '/_authenticated/videogen/create'
     | '/_authenticated/vision/$id'
     | '/_authenticated/vision/create'
+    | '/_authenticated/audiogen/'
     | '/_authenticated/cameras/'
     | '/_authenticated/connections/'
     | '/_authenticated/groups/'
@@ -1033,6 +1084,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCamerasIndexLazyRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/audiogen/': {
+      id: '/_authenticated/audiogen/'
+      path: '/audiogen'
+      fullPath: '/audiogen/'
+      preLoaderRoute: typeof AuthenticatedAudiogenIndexLazyRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/vision/create': {
       id: '/_authenticated/vision/create'
       path: '/vision/create'
@@ -1159,6 +1217,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCamerasIdLazyRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/audiogen/create': {
+      id: '/_authenticated/audiogen/create'
+      path: '/audiogen/create'
+      fullPath: '/audiogen/create'
+      preLoaderRoute: typeof AuthenticatedAudiogenCreateLazyRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/audiogen/$id': {
+      id: '/_authenticated/audiogen/$id'
+      path: '/audiogen/$id'
+      fullPath: '/audiogen/$id'
+      preLoaderRoute: typeof AuthenticatedAudiogenIdLazyRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/admin/users': {
       id: '/_authenticated/admin/users'
       path: '/users'
@@ -1276,6 +1348,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedLogsLazyRoute: typeof AuthenticatedLogsLazyRoute
   AuthenticatedSettingsLazyRoute: typeof AuthenticatedSettingsLazyRoute
   AuthenticatedWalletLazyRoute: typeof AuthenticatedWalletLazyRoute
+  AuthenticatedAudiogenIdLazyRoute: typeof AuthenticatedAudiogenIdLazyRoute
+  AuthenticatedAudiogenCreateLazyRoute: typeof AuthenticatedAudiogenCreateLazyRoute
   AuthenticatedCamerasIdLazyRoute: typeof AuthenticatedCamerasIdLazyRoute
   AuthenticatedCamerasCreateLazyRoute: typeof AuthenticatedCamerasCreateLazyRoute
   AuthenticatedConnectionsIdLazyRoute: typeof AuthenticatedConnectionsIdLazyRoute
@@ -1294,6 +1368,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedVideogenCreateLazyRoute: typeof AuthenticatedVideogenCreateLazyRoute
   AuthenticatedVisionIdLazyRoute: typeof AuthenticatedVisionIdLazyRoute
   AuthenticatedVisionCreateLazyRoute: typeof AuthenticatedVisionCreateLazyRoute
+  AuthenticatedAudiogenIndexLazyRoute: typeof AuthenticatedAudiogenIndexLazyRoute
   AuthenticatedCamerasIndexLazyRoute: typeof AuthenticatedCamerasIndexLazyRoute
   AuthenticatedConnectionsIndexLazyRoute: typeof AuthenticatedConnectionsIndexLazyRoute
   AuthenticatedGroupsIndexLazyRoute: typeof AuthenticatedGroupsIndexLazyRoute
@@ -1312,6 +1387,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedLogsLazyRoute: AuthenticatedLogsLazyRoute,
   AuthenticatedSettingsLazyRoute: AuthenticatedSettingsLazyRoute,
   AuthenticatedWalletLazyRoute: AuthenticatedWalletLazyRoute,
+  AuthenticatedAudiogenIdLazyRoute: AuthenticatedAudiogenIdLazyRoute,
+  AuthenticatedAudiogenCreateLazyRoute: AuthenticatedAudiogenCreateLazyRoute,
   AuthenticatedCamerasIdLazyRoute: AuthenticatedCamerasIdLazyRoute,
   AuthenticatedCamerasCreateLazyRoute: AuthenticatedCamerasCreateLazyRoute,
   AuthenticatedConnectionsIdLazyRoute: AuthenticatedConnectionsIdLazyRoute,
@@ -1332,6 +1409,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedVideogenCreateLazyRoute: AuthenticatedVideogenCreateLazyRoute,
   AuthenticatedVisionIdLazyRoute: AuthenticatedVisionIdLazyRoute,
   AuthenticatedVisionCreateLazyRoute: AuthenticatedVisionCreateLazyRoute,
+  AuthenticatedAudiogenIndexLazyRoute: AuthenticatedAudiogenIndexLazyRoute,
   AuthenticatedCamerasIndexLazyRoute: AuthenticatedCamerasIndexLazyRoute,
   AuthenticatedConnectionsIndexLazyRoute:
     AuthenticatedConnectionsIndexLazyRoute,

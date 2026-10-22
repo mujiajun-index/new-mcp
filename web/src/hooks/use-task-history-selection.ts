@@ -16,7 +16,7 @@ export function useTaskHistorySelection<T extends { task_id: string }>({
   scope: string;
   canDelete: (task: T) => boolean;
   remove: (id: string) => Promise<unknown>;
-  kind: "image" | "video";
+  kind: "image" | "video" | "audio";
   onDeleted: (ids: string[]) => void;
 }) {
   const { t } = useTranslation();
@@ -65,8 +65,8 @@ export function useTaskHistorySelection<T extends { task_id: string }>({
       setSelection({ scope, ids: new Set(failed.map((task) => task.id)) });
       deleted.forEach((id) => {
         queryClient.removeQueries({ queryKey: [`${kind}-task`, id] });
-        if (kind === "video")
-          queryClient.removeQueries({ queryKey: ["video-retry-input", id] });
+        if (kind !== "image")
+          queryClient.removeQueries({ queryKey: [`${kind}-retry-input`, id] });
       });
       if (failed.length) {
         toast.warning(

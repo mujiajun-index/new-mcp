@@ -90,6 +90,7 @@ export function ServiceDetailPage() {
   const sourceLabels: Record<string, { label: string; color: string }> = {
     'imagegen': { label: t('services.sourceImageGen'), color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
     'videogen': { label: t('services.sourceVideoGen'), color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
+    'audiogen': { label: t('audiogen.title'), color: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300' },
     'vision': { label: t('services.sourceVision'), color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
     'camera': { label: t('services.sourceCamera'), color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
   }

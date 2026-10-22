@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -20,11 +21,13 @@ export function TaskHistoryStatusFilter({
   value,
   disabled,
   onChange,
+  className,
 }: {
-  kind: "image" | "video";
+  kind: "image" | "video" | "audio";
   value: string;
   disabled?: boolean;
   onChange: (value: string) => void;
+  className?: string;
 }) {
   const { t } = useTranslation();
   const statuses =
@@ -40,19 +43,21 @@ export function TaskHistoryStatusFilter({
           "canceled",
           "interrupted",
         ]
-      : [
-          "completed",
-          "failed",
-          "submitting",
-          "queued",
-          "in_progress",
-          "unknown",
-          "submission_unknown",
-        ];
+      : kind === "audio"
+        ? ["completed", "failed", "queued", "running", "submission_unknown"]
+        : [
+            "completed",
+            "failed",
+            "submitting",
+            "queued",
+            "in_progress",
+            "unknown",
+            "submission_unknown",
+          ];
   return (
     <Select value={value} onValueChange={onChange} disabled={disabled}>
       <SelectTrigger
-        className="h-8 w-36 text-xs [&>span]:truncate"
+        className={cn("h-8 w-36 text-xs [&>span]:truncate", className)}
         aria-label={t("taskHistory.filterStatus")}
       >
         <SelectValue />
@@ -64,7 +69,7 @@ export function TaskHistoryStatusFilter({
             {status === "completed"
               ? t("taskHistory.success")
               : t(
-                  `${kind === "image" ? "imagegen.taskStatus" : "videogen.status"}.${status}`,
+                  `${kind === "image" ? "imagegen.taskStatus" : kind === "audio" ? "audiogen.status" : "videogen.status"}.${status}`,
                 )}
           </SelectItem>
         ))}
@@ -78,11 +83,13 @@ export function TaskHistoryCheckbox({
   disabled,
   label,
   onChange,
+  className,
 }: {
   checked: boolean | "mixed";
   disabled?: boolean;
   label: string;
   onChange: () => void;
+  className?: string;
 }) {
   const Icon =
     checked === "mixed" ? MinusSquare : checked ? CheckSquare : Square;
@@ -95,7 +102,10 @@ export function TaskHistoryCheckbox({
       title={label}
       disabled={disabled}
       onClick={onChange}
-      className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
+      className={cn(
+        "flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40",
+        className,
+      )}
     >
       <Icon className={`h-4 w-4 ${checked ? "text-primary" : ""}`} />
     </button>
@@ -111,7 +121,7 @@ export function TaskHistoryBatchActions({
 }: {
   count: number;
   busy: boolean;
-  kind: "image" | "video";
+  kind: "image" | "video" | "audio";
   onDelete: () => void;
   onClear: () => void;
 }) {
@@ -129,7 +139,16 @@ export function TaskHistoryBatchActions({
         className="gap-1.5"
         disabled={busy}
         onClick={() => {
-          if (confirm(t(`taskHistory.${kind}DeleteConfirm`, { count })))
+          if (
+            confirm(
+              t(
+                kind === "audio"
+                  ? "audiogen.deleteTasksConfirm"
+                  : `taskHistory.${kind}DeleteConfirm`,
+                { count },
+              ),
+            )
+          )
             onDelete();
         }}
       >

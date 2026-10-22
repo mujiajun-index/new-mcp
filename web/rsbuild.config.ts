@@ -50,6 +50,7 @@ export default defineConfig(({ envMode }) => {
       proxy: {
         '/api/': { target: 'http://localhost:3000', changeOrigin: true, ws: true },
         '/v/': { target: 'http://localhost:3000', changeOrigin: true },
+		'/a/': { target: 'http://localhost:3000', changeOrigin: true },
         '/mcp/': { target: 'http://localhost:3000', changeOrigin: true, ws: true },
       },
     },

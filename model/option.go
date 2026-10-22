@@ -100,6 +100,12 @@ var defaultOptions = map[string]string{
 	"VideoGenMaxBytes":       "268435456",
 	"VideoGenRetentionHours": "24",
 	"VideoGenHistoryDays":    "30",
+	"AudioGenConcurrency":    "4",
+	"AudioGenInputMaxBytes":  "26214400",
+	"AudioGenMaxBytes":       "134217728",
+	"AudioGenInlineMaxBytes": "1048576",
+	"AudioGenRetentionHours": "24",
+	"AudioGenHistoryDays":    "30",
 	"MaxVideosPerUser":       "0",
 	"VisionInlineMaxBytes":   "10240", // base64 内联软阈值(字节);超过引导走上传;0=关闭(退回 V1.0)
 	// --- 图像读取时变换(resize / 重压缩;§13.2 网关侧 resize)---

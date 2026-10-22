@@ -3,6 +3,8 @@ import { initReactI18next } from 'react-i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
 import zh from './locales/zh.json'
 import en from './locales/en.json'
+import audioZh from './locales/audiogen.zh.json'
+import audioEn from './locales/audiogen.en.json'
 
 export const SUPPORTED_LANGUAGES = ['zh', 'en'] as const
 export type AppLanguage = (typeof SUPPORTED_LANGUAGES)[number]
@@ -14,8 +16,8 @@ i18n
   .use(initReactI18next)
   .init({
     resources: {
-      zh: { translation: zh },
-      en: { translation: en },
+      zh: { translation: { ...zh, audiogen: audioZh, nav: { ...zh.nav, audiogen: audioZh.title } } },
+      en: { translation: { ...en, audiogen: audioEn, nav: { ...en.nav, audiogen: audioEn.title } } },
     },
     supportedLngs: [...SUPPORTED_LANGUAGES],
     // Strip the region so e.g. zh-CN -> zh, en-US -> en and matches a supported

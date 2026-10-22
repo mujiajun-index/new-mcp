@@ -49,6 +49,18 @@ func (s *SettingsService) GetPublicSettings() map[string]string {
 }
 
 func (s *SettingsService) UpdateSetting(actor model.Operator, key string, value string) error {
+	if strings.HasPrefix(key, "AudioGen") {
+		if err := validateNonNegativeInt(value); err != nil {
+			return err
+		}
+		n, _ := strconv.ParseInt(value, 10, 64)
+		if key == "AudioGenConcurrency" && n > 64 {
+			return fmt.Errorf("%w: audio concurrency must be 1-64", ErrInvalidSetting)
+		}
+		if (n == 0 && key != "AudioGenRetentionHours" && key != "AudioGenHistoryDays" && key != "AudioGenInlineMaxBytes") || n > 10<<30 {
+			return fmt.Errorf("%w: invalid audio generation limit", ErrInvalidSetting)
+		}
+	}
 	if model.IsSensitiveKey(key) && value == "***" {
 		return nil
 	}

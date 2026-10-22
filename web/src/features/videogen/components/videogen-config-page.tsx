@@ -72,6 +72,12 @@ const initial = {
   task_timeout_seconds: 3600,
 };
 
+const requiredMark = (
+  <span aria-hidden="true" className="text-destructive">
+    *
+  </span>
+);
+
 const descriptionFields = [
   ["generate_video_desc", "generate_video", "generate_video_desc_default"],
   [
@@ -271,11 +277,28 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
       if (fileInput.current) fileInput.current.value = "";
     }
   }
-  const canConnect = !!form.api_key.trim() || !!config?.has_api_key;
+  const bytes = (value: string) => new TextEncoder().encode(value).length;
+  const canConnect =
+    bytes(form.api_key.trim()) <= 512 &&
+    (!!form.api_key.trim() || !!config?.has_api_key);
+  const validDefaults = (() => {
+    try {
+      return (
+        bytes(
+          JSON.stringify(jsonObject(defaults, t("videogen.defaultParams"))),
+        ) <= 65536
+      );
+    } catch {
+      return false;
+    }
+  })();
   const canSave =
     canConnect &&
     !!form.name.trim() &&
+    bytes(form.name.trim()) <= 128 &&
     !!form.model_name.trim() &&
+    bytes(form.model_name.trim()) <= 128 &&
+    validDefaults &&
     Number.isInteger(form.request_timeout_seconds) &&
     form.request_timeout_seconds >= 1 &&
     form.request_timeout_seconds <= 300 &&
@@ -360,9 +383,12 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
         <h2 className="text-sm font-semibold">{t("videogen.basicConfig")}</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="video-name">{t("videogen.name")} *</Label>
+            <Label htmlFor="video-name">
+              {t("videogen.name")} {requiredMark}
+            </Label>
             <Input
               id="video-name"
+              aria-required="true"
               value={form.name}
               maxLength={128}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -420,10 +446,13 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
             </Select>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="video-model">{t("videogen.model")} *</Label>
+            <Label htmlFor="video-model">
+              {t("videogen.model")} {requiredMark}
+            </Label>
             <div className="flex gap-2">
               <Input
                 id="video-model"
+                aria-required="true"
                 className="min-w-0 flex-1"
                 value={form.model_name}
                 placeholder={t("videogen.modelPlaceholder")}
@@ -475,10 +504,11 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
         </div>
         <div className="space-y-2">
           <Label htmlFor="video-key">
-            API Key{config?.has_api_key ? "" : " *"}
+            API Key {!config?.has_api_key && requiredMark}
           </Label>
           <Input
             id="video-key"
+            aria-required={!config?.has_api_key}
             type="password"
             autoComplete="new-password"
             value={form.api_key}
@@ -560,10 +590,11 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
         <div className="grid max-w-2xl gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="video-request-timeout">
-              {t("videogen.requestTimeout")}
+              {t("videogen.requestTimeout")} {requiredMark}
             </Label>
             <Input
               id="video-request-timeout"
+              aria-required="true"
               type="number"
               min={1}
               max={300}
@@ -578,10 +609,11 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
           </div>
           <div className="space-y-2">
             <Label htmlFor="video-task-timeout">
-              {t("videogen.taskTimeout")}
+              {t("videogen.taskTimeout")} {requiredMark}
             </Label>
             <Input
               id="video-task-timeout"
+              aria-required="true"
               type="number"
               min={60}
               max={86400}
@@ -766,9 +798,12 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
           </Select>
         )}
         <div className="space-y-2">
-          <Label htmlFor="video-prompt">{t("videogen.prompt")}</Label>
+          <Label htmlFor="video-prompt">
+            {t("videogen.prompt")} {requiredMark}
+          </Label>
           <Textarea
             id="video-prompt"
+            aria-required="true"
             rows={4}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
@@ -777,11 +812,14 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
         </div>
         {selectedOperation === "image" && (
           <div className="space-y-2">
-            <Label htmlFor="video-image">{t("videogen.reference")}</Label>
+            <Label htmlFor="video-image">
+              {t("videogen.reference")} {requiredMark}
+            </Label>
             <div className="flex flex-wrap gap-2">
               <Input
                 className="min-w-0 flex-1"
                 id="video-image"
+                aria-required="true"
                 value={image}
                 onChange={(e) => setImage(e.target.value)}
                 placeholder="https://..."

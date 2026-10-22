@@ -11,7 +11,7 @@ import {
   LayoutDashboard, Server, FolderTree, Cloud, Eye, Camera,
   Key, Store, Settings, Shield, Users, Wrench,
   ClipboardCheck, ChevronLeft, Activity, Wallet, CreditCard, Ticket,
-  Images, Binary, ImagePlus, Film,
+  Images, Binary, ImagePlus, Film, AudioLines,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useSystemConfigStore } from '@/stores/system-config-store'
@@ -31,6 +31,7 @@ const mainNav: NavItem[] = [
   { label: 'nav.vision', icon: Eye, href: '/vision' },
   { label: 'nav.imagegen', icon: ImagePlus, href: '/imagegen' },
   { label: 'nav.videogen', icon: Film, href: '/videogen' },
+  { label: 'nav.audiogen', icon: AudioLines, href: '/audiogen' },
   { label: 'nav.systemOne', icon: Binary, href: '/system-one' },
   { label: 'nav.cameras', icon: Camera, href: '/cameras' },
   { label: 'nav.apiKeys', icon: Key, href: '/api-keys' },

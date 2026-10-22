@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	frontend "github.com/mujkjk/newmcp" // package frontend: embedded web/dist SPA assets
 	"github.com/mujkjk/newmcp/internal/imagegentask"
+	"github.com/mujkjk/newmcp/internal/mcp/audiogen"
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/internal/mcp/camera"
 	"github.com/mujkjk/newmcp/internal/mcp/cloud"
@@ -42,6 +43,7 @@ func InitGateway() {
 	GatewayHandler = handler.NewGatewayHandler(SessionPool, toolRouter, VirtualRegistry)
 
 	loadVirtualServices()
+	(&service.AudioGenService{}).SyncAllRegisteredTools()
 	if n := (&service.VideoGenService{}).SyncAllRegisteredTools(); n > 0 {
 		log.Printf("[virtual] refreshed tools_cache for %d video generation services", n)
 	}
@@ -90,6 +92,7 @@ func initUploadStorage() {
 	virtual.UploadStore = store
 	virtual.VideoManager = videogen.NewManager(model.DB, store)
 	virtual.ImageManager = imagegentask.NewManager(model.DB, store)
+	virtual.AudioManager = audiogen.NewManager(model.DB, store)
 	log.Printf("[storage] vision-upload backend=%s", store.Backend())
 
 	if !storage.IsSecretConfigured() {
@@ -112,6 +115,8 @@ func loadVirtualServices() {
 
 		virtualType, _ := config["virtual_type"].(string)
 		switch virtualType {
+		case "audiogen":
+			VirtualRegistry.Register(svc.ID, svc.UserID, svc.Name, config, virtual.AudioGenHandler)
 		case "videogen":
 			VirtualRegistry.Register(svc.ID, svc.UserID, svc.Name, config, virtual.VideoGenHandler)
 		case "imagegen":
@@ -230,6 +235,9 @@ func StopGateway() {
 func StartBackgroundJobs(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	backgroundJobsCancel = cancel
+	if virtual.AudioManager != nil {
+		virtual.AudioManager.Start(ctx)
+	}
 	if virtual.VideoManager != nil {
 		virtual.VideoManager.Start(ctx)
 	}
@@ -245,6 +253,9 @@ func StartBackgroundJobs(parent context.Context) {
 }
 
 func StopBackgroundJobs() {
+	if virtual.AudioManager != nil {
+		virtual.AudioManager.Close()
+	}
 	if backgroundJobsCancel != nil {
 		backgroundJobsCancel()
 		backgroundJobsCancel = nil

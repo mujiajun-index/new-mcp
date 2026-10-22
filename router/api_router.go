@@ -8,6 +8,9 @@ import (
 )
 
 func SetApiRouter(engine *gin.Engine) {
+	engine.GET("/a/:sid", controller.GetAudioFile)
+	engine.HEAD("/a/:sid", controller.GetAudioFile)
+	engine.PUT("/a/:sid", controller.PutAudioFile)
 	engine.GET("/v/:sid", controller.GetVideoFile)
 	engine.HEAD("/v/:sid", controller.GetVideoFile)
 	api := engine.Group("/api/v1")
@@ -124,6 +127,23 @@ func SetApiRouter(engine *gin.Engine) {
 		auth.PUT("/connections/:id/bind-apikey", controller.BindConnectionApiKey)
 
 		// Vision Configs
+		auth.GET("/audiogen", controller.ListAudioGenConfigs)
+		auth.POST("/audiogen", controller.CreateAudioGenConfig)
+		auth.GET("/audiogen/:id", controller.GetAudioGenConfig)
+		auth.PUT("/audiogen/:id", controller.UpdateAudioGenConfig)
+		auth.DELETE("/audiogen/:id", controller.DeleteAudioGenConfig)
+		auth.POST("/audiogen/:id/enable", controller.EnableAudioGenConfig)
+		auth.POST("/audiogen/:id/disable", controller.DisableAudioGenConfig)
+		auth.POST("/audiogen/models", controller.ListAudioGenModels)
+		auth.POST("/audiogen/test", controller.TestAudioGenConfig)
+		auth.POST("/audiogen/uploads", controller.UploadAudio)
+		auth.GET("/audiogen/tasks", controller.ListAudioGenTasks)
+		auth.POST("/audiogen/tasks/batch-delete", controller.BatchDeleteAudioGenTasks)
+		auth.GET("/audiogen/tasks/:task_id", controller.GetAudioGenTask)
+		auth.GET("/audiogen/tasks/:task_id/retry-input", controller.GetAudioGenRetryInput)
+		auth.POST("/audiogen/tasks/:task_id/retry", controller.RetryAudioGenTask)
+		auth.POST("/audiogen/tasks/:task_id/retry-download", controller.RetryAudioGenDownload)
+		auth.DELETE("/audiogen/tasks/:task_id", controller.DeleteAudioGenTask)
 		auth.GET("/videogen", controller.ListVideoGenConfigs)
 		auth.POST("/videogen", controller.CreateVideoGenConfig)
 		auth.GET("/videogen/:id", controller.GetVideoGenConfig)

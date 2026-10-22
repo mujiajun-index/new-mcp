@@ -853,6 +853,7 @@ export function AdminSettingsPage() {
                   />
                 </div>
                 {(['VideoGenMaxBytes', 'VideoGenRetentionHours', 'VideoGenHistoryDays', 'MaxVideosPerUser'] as const).map((key) => <div className="space-y-2" key={key}><label htmlFor={`setting-${key}`} className="text-sm font-medium">{t(`videogen.settings.${key}`)}</label><Input id={`setting-${key}`} type="number" min={key === 'MaxVideosPerUser' || key === 'VideoGenRetentionHours' ? 0 : 1} value={localValues[key] ?? ''} onChange={(e) => updateLocal(key, e.target.value)} onBlur={() => saveField(key)} /></div>)}
+                {(['AudioGenConcurrency', 'AudioGenInputMaxBytes', 'AudioGenMaxBytes', 'AudioGenInlineMaxBytes', 'AudioGenRetentionHours', 'AudioGenHistoryDays'] as const).map((key) => <div className="space-y-2" key={key}><label htmlFor={`setting-${key}`} className="text-sm font-medium">{t(`audiogen.settings.${key}`)}</label><Input id={`setting-${key}`} type="number" min={['AudioGenRetentionHours', 'AudioGenHistoryDays', 'AudioGenInlineMaxBytes'].includes(key) ? 0 : 1} value={localValues[key] ?? ''} onChange={(e) => updateLocal(key, e.target.value)} onBlur={() => saveField(key)} /></div>)}
                 <div className="space-y-2">
                   <label className="text-sm font-medium">{t('settings.signedURLTTLSeconds')}</label>
                   <Input

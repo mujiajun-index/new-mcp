@@ -40,7 +40,8 @@ export function ContentBlock({ block, index, downloadUri }: { block: McpContentB
     return <div className="space-y-2 rounded-md border p-3">
       {block.mimeType?.startsWith('image/') && <img src={block.uri} alt={block.name || ''} className="max-h-96 rounded-md" />}
       {block.mimeType?.startsWith('video/') && <video src={block.uri} controls preload="metadata" aria-label={block.name || t('videogen.title')} className="max-h-96 w-full rounded-md bg-black" />}
-      <div className="flex flex-wrap items-center gap-3 text-xs"><a href={downloadUri || block.uri} target={downloadUri ? undefined : '_blank'} rel="noreferrer" download className="text-primary hover:underline">{t(block.mimeType?.startsWith('video/') ? 'videogen.download' : 'imagegen.downloadImage')}</a><Button variant="ghost" size="sm" className="h-7 gap-1" onClick={() => copyText(block.uri!).catch(() => toast.error(t('common.copyFailed')))}><Copy className="h-3 w-3" />{t('imagegen.copyLink')}</Button></div>
+      {block.mimeType?.startsWith('audio/') && <audio src={block.uri} controls preload="metadata" aria-label={block.name || t('audiogen.title')} className="w-full" />}
+      <div className="flex flex-wrap items-center gap-3 text-xs"><a href={downloadUri || block.uri} target={downloadUri ? undefined : '_blank'} rel="noreferrer" download className="text-primary hover:underline">{t(block.mimeType?.startsWith('audio/') ? 'audiogen.download' : block.mimeType?.startsWith('video/') ? 'videogen.download' : 'imagegen.downloadImage')}</a><Button variant="ghost" size="sm" className="h-7 gap-1" onClick={() => copyText(block.uri!).catch(() => toast.error(t('common.copyFailed')))}><Copy className="h-3 w-3" />{t('imagegen.copyLink')}</Button></div>
     </div>
   }
   if (block.type === 'text' && typeof block.text === 'string') {
@@ -53,6 +54,7 @@ export function ContentBlock({ block, index, downloadUri }: { block: McpContentB
       </>
     )
   }
+  if (block.type === 'audio' && block.data) return <audio src={`data:${block.mimeType || 'audio/wav'};base64,${block.data}`} controls preload="metadata" className="w-full" aria-label={t('audiogen.title')} />
   if (block.type === 'image') {
     const src = block.data ? `data:${block.mimeType || 'image/png'};base64,${block.data}` : block.url
     if (src) {
