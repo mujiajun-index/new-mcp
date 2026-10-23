@@ -622,12 +622,12 @@ func TestImageGenPartialDeliveryQuotaAndCancellation(t *testing.T) {
 	if err != nil || len(view[0].Images) != 1 || len(view[0].Warnings) != 1 || view[0].Images[0].URL == "" {
 		t.Fatalf("partial history lost successful result: %+v %v", view, err)
 	}
-	model.UpdateOption("MaxUploadsPerUser", "1")
+	model.UpdateOption("MaxImagesPerUser", "1")
 	before := calls
 	if _, err := virtual.RunImageGen(context.Background(), UploadStore, 1, &c.ImageGenConfig, "generate_image", json.RawMessage(`{"prompt":"draw"}`)); err == nil || calls != before {
 		t.Fatal("quota must reject before paid generation")
 	}
-	model.UpdateOption("MaxUploadsPerUser", "0")
+	model.UpdateOption("MaxImagesPerUser", "0")
 	c.TimeoutSeconds = 0
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()

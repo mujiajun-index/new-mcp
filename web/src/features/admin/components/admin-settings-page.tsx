@@ -19,6 +19,7 @@ import {
 import { toast } from 'sonner'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import { SmartSearchSettings } from './smart-search-settings'
+import { StorageTuningSettings } from './storage-tuning-settings'
 import {
   Settings,
   Shield,
@@ -818,127 +819,12 @@ export function AdminSettingsPage() {
               )}
             </div>
 
-            {/* Upload tuning — takes effect immediately (read at request time) */}
-            <div className="rounded-xl border bg-card p-5 space-y-4">
-              <div className="space-y-1">
-                <h2 className="text-sm font-semibold">{t('settings.uploadTuning')}</h2>
-                <p className="text-xs text-muted-foreground">{t('settings.uploadTuningDesc')}</p>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">{t('settings.visionUploadMaxBytes')}</label>
-                  <Input
-                    type="number"
-                    value={localValues.VisionUploadMaxBytes ?? ''}
-                    onChange={(e) => updateLocal('VisionUploadMaxBytes', e.target.value)}
-                    onBlur={() => saveField('VisionUploadMaxBytes')}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">{t('settings.visionInlineMaxBytes')}</label>
-                  <Input
-                    type="number"
-                    value={localValues.VisionInlineMaxBytes ?? ''}
-                    onChange={(e) => updateLocal('VisionInlineMaxBytes', e.target.value)}
-                    onBlur={() => saveField('VisionInlineMaxBytes')}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">{t('settings.imageGenInlineMaxBytes')}</label>
-                  <Input
-                    type="number" min={0}
-                    value={localValues.ImageGenInlineMaxBytes ?? ''}
-                    onChange={(e) => updateLocal('ImageGenInlineMaxBytes', e.target.value)}
-                    onBlur={() => saveField('ImageGenInlineMaxBytes')}
-                  />
-                </div>
-                {(['VideoGenMaxBytes', 'VideoGenRetentionHours', 'VideoGenHistoryDays', 'MaxVideosPerUser'] as const).map((key) => <div className="space-y-2" key={key}><label htmlFor={`setting-${key}`} className="text-sm font-medium">{t(`videogen.settings.${key}`)}</label><Input id={`setting-${key}`} type="number" min={key === 'MaxVideosPerUser' || key === 'VideoGenRetentionHours' ? 0 : 1} value={localValues[key] ?? ''} onChange={(e) => updateLocal(key, e.target.value)} onBlur={() => saveField(key)} /></div>)}
-                {(['AudioGenConcurrency', 'AudioGenInputMaxBytes', 'AudioGenMaxBytes', 'AudioGenInlineMaxBytes', 'AudioGenRetentionHours', 'AudioGenHistoryDays'] as const).map((key) => <div className="space-y-2" key={key}><label htmlFor={`setting-${key}`} className="text-sm font-medium">{t(`audiogen.settings.${key}`)}</label><Input id={`setting-${key}`} type="number" min={['AudioGenRetentionHours', 'AudioGenHistoryDays', 'AudioGenInlineMaxBytes'].includes(key) ? 0 : 1} value={localValues[key] ?? ''} onChange={(e) => updateLocal(key, e.target.value)} onBlur={() => saveField(key)} /></div>)}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">{t('settings.signedURLTTLSeconds')}</label>
-                  <Input
-                    type="number"
-                    value={localValues.SignedURLTTLSeconds ?? ''}
-                    onChange={(e) => updateLocal('SignedURLTTLSeconds', e.target.value)}
-                    onBlur={() => saveField('SignedURLTTLSeconds')}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">{t('settings.presignedPutTTLSeconds')}</label>
-                  <Input
-                    type="number"
-                    value={localValues.PresignedPutTTLSeconds ?? ''}
-                    onChange={(e) => updateLocal('PresignedPutTTLSeconds', e.target.value)}
-                    onBlur={() => saveField('PresignedPutTTLSeconds')}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">{t('settings.uploadRetentionHours')}</label>
-                  <Input
-                    type="number"
-                    value={localValues.UploadRetentionHours ?? ''}
-                    min={0}
-                    onChange={(e) => updateLocal('UploadRetentionHours', e.target.value)}
-                    onBlur={() => saveField('UploadRetentionHours')}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">{t('settings.maxUploadsPerUser')}</label>
-                  <Input
-                    type="number"
-                    value={localValues.MaxUploadsPerUser ?? ''}
-                    onChange={(e) => updateLocal('MaxUploadsPerUser', e.target.value)}
-                    onBlur={() => saveField('MaxUploadsPerUser')}
-                  />
-                </div>
-              </div>
-
-              {/* Image read-path transforms (§13.2 gateway resize): applied to the
-                  in-memory bytes before sending upstream; the on-disk original and
-                  the GET path are never modified. Both default off. */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <p className="text-sm font-medium">{t('settings.visionResizeEnabled')}</p>
-                    <p className="text-xs text-muted-foreground">{t('settings.visionResizeDesc')}</p>
-                  </div>
-                  <Switch
-                    checked={localValues.VisionResizeEnabled === 'true'}
-                    onCheckedChange={() => toggleBool('VisionResizeEnabled')}
-                  />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">{t('settings.visionResizeMaxEdge')}</label>
-                    <Input
-                      type="number"
-                      value={localValues.VisionResizeMaxEdge ?? ''}
-                      onChange={(e) => updateLocal('VisionResizeMaxEdge', e.target.value)}
-                      onBlur={() => saveField('VisionResizeMaxEdge')}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">{t('settings.visionJPEGQuality')}</label>
-                    <Input
-                      type="number"
-                      value={localValues.VisionJPEGQuality ?? ''}
-                      onChange={(e) => updateLocal('VisionJPEGQuality', e.target.value)}
-                      onBlur={() => saveField('VisionJPEGQuality')}
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <p className="text-sm font-medium">{t('settings.visionCompressEnabled')}</p>
-                    <p className="text-xs text-muted-foreground">{t('settings.visionCompressDesc')}</p>
-                  </div>
-                  <Switch
-                    checked={localValues.VisionCompressEnabled === 'true'}
-                    onCheckedChange={() => toggleBool('VisionCompressEnabled')}
-                  />
-                </div>
-              </div>
-            </div>
+            <StorageTuningSettings
+              values={localValues}
+              onChange={updateLocal}
+              onSave={saveField}
+              onToggle={toggleBool}
+            />
           </div>
         </TabsContent>
       </Tabs>

@@ -100,7 +100,7 @@ func GetVisionFileByShortID(c *gin.Context) {
 		common.Error(c, http.StatusNotFound, "file not found")
 		return
 	}
-	if imageasset.Expired(img.CreatedAt) {
+	if imageasset.Expired(img.CreatedAt, img.Source) {
 		common.Error(c, http.StatusGone, "url expired")
 		return
 	}
@@ -248,7 +248,7 @@ func toUploadListItem(img model.UploadedImage) uploadListItem {
 		Backend:   img.Backend,
 		Status:    img.Status,
 		CreatedAt: img.CreatedAt,
-		ExpiresAt: imageasset.Expiration(img.CreatedAt),
+		ExpiresAt: imageasset.Expiration(img.CreatedAt, img.Source),
 	}
 }
 

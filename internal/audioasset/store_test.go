@@ -3,6 +3,7 @@ package audioasset
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"github.com/glebarez/sqlite"
 	"github.com/mujkjk/newmcp/internal/storage"
 	"github.com/mujkjk/newmcp/model"
@@ -79,5 +80,63 @@ func TestAudioFormatsSignaturesAndAssetOwnership(t *testing.T) {
 	}
 	if _, _, e = Load(context.Background(), db, store, 1, "http://127.0.0.1/private.wav", InputLimit()); e == nil || !strings.Contains(e.Error(), "private") {
 		t.Fatalf("private URL accepted: %v", e)
+	}
+}
+
+func TestPermanentRetentionUpdatesExistingAssetViews(t *testing.T) {
+	model.OptionMapMutex.Lock()
+	oldMap := model.OptionMap
+	model.OptionMap = map[string]string{"ServerAddress": "https://audio.example", "AudioGenRetentionHours": "24"}
+	model.OptionMapMutex.Unlock()
+	t.Cleanup(func() {
+		model.OptionMapMutex.Lock()
+		model.OptionMap = oldMap
+		model.OptionMapMutex.Unlock()
+	})
+	past, future := time.Now().Add(-time.Hour), time.Now().Add(time.Hour)
+	for _, hours := range []string{"24", "0", "24"} {
+		model.OptionMapMutex.Lock()
+		model.OptionMap["AudioGenRetentionHours"] = hours
+		model.OptionMapMutex.Unlock()
+		for _, test := range []struct {
+			name    string
+			expires *time.Time
+			status  string
+		}{
+			{"existing finite audio", &future, "ready"},
+			{"past expiry not yet cleaned", &past, "ready"},
+			{"saved permanently", nil, "ready"},
+			{"already cleaned", &past, "expired"},
+		} {
+			t.Run(hours+"/"+test.name, func(t *testing.T) {
+				asset := model.AudioAsset{ShortID: "test-audio", Status: test.status, ExpiresAt: test.expires}
+				raw, err := json.Marshal(View(&asset))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var view struct {
+					ExpiresAt *time.Time `json:"expires_at"`
+					Status    string     `json:"status"`
+					URL       string     `json:"url"`
+				}
+				if err := json.Unmarshal(raw, &view); err != nil {
+					t.Fatal(err)
+				}
+				wantExpiry := test.expires
+				if hours == "0" {
+					wantExpiry = nil
+				}
+				if (view.ExpiresAt == nil) != (wantExpiry == nil) || (wantExpiry != nil && !view.ExpiresAt.Equal(*wantExpiry)) {
+					t.Fatalf("wrong effective expiry: %s", raw)
+				}
+				wantExpired := test.status == "expired" || (wantExpiry != nil && wantExpiry.Before(time.Now()))
+				if Expired(&asset) != wantExpired || (view.Status == "expired") != wantExpired || (view.URL == "") != wantExpired {
+					t.Fatalf("expiry, status and access disagree: %s", raw)
+				}
+				if asset.ExpiresAt != test.expires {
+					t.Fatal("view overwrote the stored expiry")
+				}
+			})
+		}
 	}
 }

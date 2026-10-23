@@ -17,6 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/mujkjk/newmcp/internal/imageasset"
 	"github.com/mujkjk/newmcp/internal/mcp/imagegen"
 	"github.com/mujkjk/newmcp/internal/storage"
 	"github.com/mujkjk/newmcp/model"
@@ -51,6 +52,47 @@ func setupUploadTestStore(t *testing.T) {
 		t.Fatalf("new store: %v", err)
 	}
 	service.UploadStore = store
+}
+
+func TestGeneratedImageSignedReadUsesOwnRetention(t *testing.T) {
+	setupUploadTestDB(t)
+	setupUploadTestStore(t)
+	data, _ := base64.StdEncoding.DecodeString(testPngB64)
+	ctx := context.Background()
+	upload, err := imageasset.Save(ctx, service.UploadStore, 42, bytes.NewReader(data), 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	generated, err := imageasset.SaveGenerated(ctx, service.UploadStore, 42, bytes.NewReader(data), 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model.DB.Model(&model.UploadedImage{}).Where("id IN ?", []int64{upload.UploadID, generated.UploadID}).Update("created_at", time.Now().Add(-3*time.Hour))
+	engine := gin.New()
+	engine.GET("/u/:sid", GetVisionFileByShortID)
+	check := func(raw string, status int) {
+		t.Helper()
+		u, _ := url.Parse(raw)
+		response := httptest.NewRecorder()
+		engine.ServeHTTP(response, httptest.NewRequest(http.MethodGet, u.RequestURI(), nil))
+		if response.Code != status {
+			t.Fatalf("signed read status=%d want %d", response.Code, status)
+		}
+	}
+	model.UpdateOption("UploadRetentionHours", "0")
+	model.UpdateOption("ImageGenRetentionHours", "1")
+	check(upload.URL, http.StatusOK)
+	check(generated.URL, http.StatusGone)
+	if _, err := imagegen.LoadReference(ctx, service.UploadStore, 42, generated.URL, 1024); err == nil {
+		t.Fatal("expired generated image accepted as reference")
+	}
+	model.UpdateOption("UploadRetentionHours", "1")
+	model.UpdateOption("ImageGenRetentionHours", "0")
+	check(upload.URL, http.StatusGone)
+	check(generated.URL, http.StatusOK)
+	if _, err := imagegen.LoadReference(ctx, service.UploadStore, 42, generated.URL, 1024); err != nil {
+		t.Fatal("permanent generated image rejected as reference", err)
+	}
 }
 
 type uploadRespData struct {
@@ -179,7 +221,7 @@ func TestUploadServeSecureEndToEnd(t *testing.T) {
 	if permanent.Code != http.StatusOK || !bytes.Equal(permanent.Body.Bytes(), png) {
 		t.Fatal("permanent image was not readable", permanent.Code)
 	}
-	row, _ := model.GetUploadedImageByUserAndKey(42, first.Key)
+	row, _ := model.GetUploadedImageByUserAndKey(42, first.Key, model.ImageSourceUpload)
 	if toUploadListItem(*row).ExpiresAt != nil {
 		t.Fatal("permanent upload list must not include an expiry date")
 	}

@@ -83,6 +83,7 @@ func (m *Manager) Start(parent context.Context) {
 					m.ProcessDue()
 				case <-cleanup.C:
 					m.cleanupResults()
+					m.cleanupHistory()
 				}
 			}
 		})
@@ -409,7 +410,7 @@ func (m *Manager) loadReference(ctx context.Context, uid, id int64) (imagegen.Im
 	if err := m.DB.Where("id = ? AND user_id = ? AND status = ?", id, uid, model.UploadStatusUploaded).First(&row).Error; err != nil {
 		return imagegen.Image{}, err
 	}
-	if imageasset.Expired(row.CreatedAt) {
+	if imageasset.Expired(row.CreatedAt, row.Source) {
 		return imagegen.Image{}, fmt.Errorf("reference image has expired")
 	}
 	r, err := m.Store.Get(ctx, row.StorageKey)
@@ -459,7 +460,7 @@ func (m *Manager) saveResult(ctx context.Context, t *model.ImageGenTask, s *snap
 		var existing model.ImageGenTaskImage
 		if m.DB.Where("task_id = ? AND output_index = ?", t.ID, index).First(&existing).Error == nil {
 			var row model.UploadedImage
-			if m.DB.Where("id = ? AND user_id = ? AND status = ?", existing.UploadID, t.UserID, model.UploadStatusUploaded).First(&row).Error == nil && !imageasset.Expired(row.CreatedAt) {
+			if m.DB.Where("id = ? AND user_id = ? AND status = ?", existing.UploadID, t.UserID, model.UploadStatusUploaded).First(&row).Error == nil && !imageasset.Expired(row.CreatedAt, row.Source) {
 				saved++
 				continue
 			}
@@ -480,7 +481,7 @@ func (m *Manager) saveResult(ctx context.Context, t *model.ImageGenTask, s *snap
 		}
 		asset, err := imageasset.SaveGenerated(ctx, m.Store, t.UserID, bytes.NewReader(data), imagegen.MaxImageBytes())
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("image %d: save failed; check file storage and upload quota", index+1))
+			warnings = append(warnings, fmt.Sprintf("image %d: save failed; check file storage and generated image quota", index+1))
 			continue
 		}
 		item := model.ImageGenTaskImage{TaskID: t.ID, OutputIndex: &index, UploadID: asset.UploadID, MIME: inspected.MIME, Size: asset.Size, Width: w, Height: h, RevisedPrompt: img.RevisedPrompt}
@@ -564,12 +565,19 @@ func (m *Manager) Delete(uid int64, id string) error {
 			return err
 		}
 	}
-	return m.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("task_id = ?", id).Delete(&model.ImageGenTaskImage{}).Error; err != nil {
+	var keys []string
+	err = m.DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		keys, err = deleteTaskImages(tx, uid, id)
+		if err != nil {
 			return err
 		}
 		return tx.Where("id = ? AND user_id = ? AND lease_owner = ?", id, uid, owner).Delete(&model.ImageGenTask{}).Error
 	})
+	if err == nil {
+		deleteUnusedBlobs(m.ctx, m.DB, m.Store, keys)
+	}
+	return err
 }
 
 func (m *Manager) removeResult(t *model.ImageGenTask) {
@@ -582,6 +590,40 @@ func (m *Manager) cleanupResults() {
 	if freeLease(m.DB.Where("artifact_status = ? AND result_key <> ?", "ready", ""), time.Now()).Limit(50).Find(&rows).Error == nil {
 		for i := range rows {
 			m.removeResult(&rows[i])
+		}
+	}
+}
+
+func (m *Manager) cleanupHistory() {
+	days := model.GetOptionInt("ImageGenHistoryDays")
+	if days <= 0 {
+		return
+	}
+	now := time.Now()
+	// Keep the history that provides access to any still-valid output, just as
+	// video history cleanup does. Apply each asset source's current retention.
+	liveGenerated := m.DB.Where("uploaded_images.source = ?", model.ImageSourceGenerated)
+	if retention := imageasset.Retention(model.ImageSourceGenerated); retention > 0 {
+		liveGenerated = liveGenerated.Where("uploaded_images.created_at > ?", now.Add(-retention))
+	}
+	liveOther := m.DB.Where("uploaded_images.source <> ?", model.ImageSourceGenerated)
+	if retention := imageasset.Retention(model.ImageSourceUpload); retention > 0 {
+		liveOther = liveOther.Where("uploaded_images.created_at > ?", now.Add(-retention))
+	}
+	liveImages := m.DB.Model(&model.ImageGenTaskImage{}).Select("1").
+		Joins("JOIN uploaded_images ON uploaded_images.id = imagegen_task_images.upload_id").
+		Where("imagegen_task_images.task_id = imagegen_tasks.id AND uploaded_images.user_id = imagegen_tasks.user_id AND uploaded_images.status = ?", model.UploadStatusUploaded).
+		Where(liveGenerated.Or(liveOther))
+	var rows []model.ImageGenTask
+	err := freeLease(m.DB.WithContext(m.ctx).Where("finished_at <= ? AND status NOT IN ?", now.Add(-time.Duration(days)*24*time.Hour), []string{"queued", "running", "saving"}), now).
+		Where("NOT EXISTS (?)", liveImages).Order("finished_at ASC").Limit(100).Find(&rows).Error
+	if err != nil {
+		log.Printf("[image-task] list expired history: %v", err)
+		return
+	}
+	for _, task := range rows {
+		if err := m.Delete(task.UserID, task.ID); err != nil && !errors.Is(err, ErrActiveTask) {
+			log.Printf("[image-task] delete expired history: %v", err)
 		}
 	}
 }

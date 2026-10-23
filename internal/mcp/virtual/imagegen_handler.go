@@ -205,7 +205,7 @@ func runImageGen(ctx context.Context, store storage.Storage, userID int64, cfg *
 			return nil, fmt.Errorf("record reference images: %w", err)
 		}
 	}
-	if err := imageasset.CheckQuota(userID); err != nil {
+	if err := imageasset.CheckGeneratedQuota(userID); err != nil {
 		return nil, err
 	}
 	client := &imagegen.Client{Provider: cfg.Provider, EndpointURL: cfg.EndpointURL, APIKey: cfg.ApiKey, Model: cfg.ModelName, EditRequestFormat: cfg.EditRequestFormat}

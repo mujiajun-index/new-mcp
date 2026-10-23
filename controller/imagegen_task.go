@@ -9,6 +9,7 @@ import (
 	"github.com/mujkjk/newmcp/internal/imagegentask"
 	"github.com/mujkjk/newmcp/internal/mcp/virtual"
 	"github.com/mujkjk/newmcp/model"
+	"github.com/mujkjk/newmcp/service"
 	"gorm.io/gorm"
 )
 
@@ -71,7 +72,7 @@ func DeleteImageGenTask(c *gin.Context) {
 	if virtual.ImageManager != nil {
 		err = virtual.ImageManager.Delete(c.GetInt64("user_id"), c.Param("task_id"))
 	} else {
-		err = imagegentask.Delete(c.GetInt64("user_id"), c.Param("task_id"))
+		err = imagegentask.Delete(c.GetInt64("user_id"), c.Param("task_id"), service.UploadStore)
 	}
 	if err != nil {
 		status := 500

@@ -105,13 +105,18 @@ func migrateDB() error {
 		return err
 	}
 
-	// V1.1: uploaded_images 去重改为每用户独立。AutoMigrate 只加不删,这里显式
-	// drop 掉旧的 storage_key 全局唯一索引(GORM 默认名 idx_uploaded_images_storage_key),
-	// 否则两个用户传同字节仍会触发唯一冲突。新的 (user_id, storage_key) 复合唯一
-	// 由 AutoMigrate 按 struct tag 创建。存量数据无需回填(每 key 一行是合法子集)。
+	// Drop superseded constraints after AutoMigrate creates the unique
+	// (user_id, source, storage_key) index. Existing rows remain valid.
 	if DB.Migrator().HasIndex(&UploadedImage{}, "idx_uploaded_images_storage_key") {
 		if err := DB.Migrator().DropIndex(&UploadedImage{}, "idx_uploaded_images_storage_key"); err != nil {
 			return fmt.Errorf("drop legacy storage_key unique index: %w", err)
+		}
+	}
+	// Source-specific metadata keeps generated images independent of uploads;
+	// the new compound index is created by AutoMigrate before removing this one.
+	if DB.Migrator().HasIndex(&UploadedImage{}, "idx_uploaded_images_user_storage") {
+		if err := DB.Migrator().DropIndex(&UploadedImage{}, "idx_uploaded_images_user_storage"); err != nil {
+			return fmt.Errorf("drop image cross-source unique index: %w", err)
 		}
 	}
 	// 分组标识同理: endpoint_slug 的唯一性从全局改为每用户独立,drop 旧的全局唯一

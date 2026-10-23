@@ -86,6 +86,9 @@ var defaultOptions = map[string]string{
 	"StorageUseSSL":                "true",           // s3 端点是否走 https
 	"VisionUploadMaxBytes":         "10485760",       // 单图字节上限(解码后),10MB
 	"ImageGenInlineMaxBytes":       "1048576",        // 图片生成 MCP 内联响应上限,1MiB
+	"ImageGenRetentionHours":       "24",             // 已保存生成图片保留时长,0=永久
+	"ImageGenHistoryDays":          "30",             // 图片任务结束后的历史保留天数,0=永久
+	"MaxImagesPerUser":             "0",              // 每用户已保存生成图片数量上限,0=不限
 	"SignedURLTTLSeconds":          "3600",           // 签名 URL 有效期(秒),1h
 	"UploadRetentionHours":         "24",             // 图片保留时长(小时),0=永久保存
 	"UploadCleanupIntervalMinutes": "60",             // 过期清理扫描间隔(分钟)

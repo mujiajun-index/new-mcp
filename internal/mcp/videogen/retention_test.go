@@ -89,3 +89,56 @@ func TestPermanentVideoRetentionAndQuota(t *testing.T) {
 		t.Fatal("permanent video did not count toward quota", blocked.Error)
 	}
 }
+
+func TestPermanentVideoHistoryStillExpiresFiles(t *testing.T) {
+	m := managerFixture(t)
+	model.UpdateOption("VideoGenHistoryDays", "0")
+	old := time.Now().Add(-31 * 24 * time.Hour)
+	expired := time.Now().Add(-time.Hour)
+	recent := time.Now().Add(-time.Hour)
+	leasedUntil := time.Now().Add(time.Hour)
+	rows := []model.VideoGenTask{
+		{ID: uuid.NewString(), Status: "completed", ArtifactStatus: "ready", StorageKey: "video/1/expired", ExpiresAt: &expired, StoppedAt: &old},
+		{ID: uuid.NewString(), Status: "failed", StoppedAt: &old},
+		{ID: uuid.NewString(), Status: "failed", StoppedAt: &recent},
+		{ID: uuid.NewString(), Status: "running", StoppedAt: &old},
+		{ID: uuid.NewString(), Status: "failed", StoppedAt: &old, LeaseUntil: leasedUntil},
+	}
+	for i := range rows {
+		row := &rows[i]
+		row.UserID, row.IdempotencyKey, row.CreatedAt = 1, uuid.NewString(), old
+		if row.LeaseUntil.IsZero() {
+			row.LeaseUntil = unleasedAt
+		}
+		if err := m.DB.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := m.Store.Put(context.Background(), rows[0].StorageKey, strings.NewReader("expired video"), "video/mp4"); err != nil {
+		t.Fatal(err)
+	}
+	m.Cleanup()
+	for _, row := range rows {
+		if _, err := m.Get(1, nil, row.ID, false); err != nil {
+			t.Fatal("permanent video history was cleaned", err)
+		}
+	}
+	if _, err := m.Store.Stat(context.Background(), rows[0].StorageKey); err == nil {
+		t.Fatal("permanent history prevented expired file cleanup")
+	}
+	model.UpdateOption("VideoGenHistoryDays", "30")
+	m.Cleanup()
+	for i, row := range rows {
+		var count int64
+		if err := m.DB.Model(&model.VideoGenTask{}).Where("id = ?", row.ID).Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		want := int64(1)
+		if i < 2 {
+			want = 0
+		}
+		if count != want {
+			t.Fatalf("video history %s count = %d, want %d", row.ID, count, want)
+		}
+	}
+}

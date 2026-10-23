@@ -754,7 +754,7 @@ func (m *Manager) Cleanup() {
 	}
 	historyDays := model.GetOptionInt("VideoGenHistoryDays")
 	if historyDays <= 0 {
-		historyDays = 30
+		return
 	}
 	rows = nil
 	history := m.DB.Where("stopped_at <= ? AND lease_until <= ?", now.Add(-time.Duration(historyDays)*24*time.Hour), now)

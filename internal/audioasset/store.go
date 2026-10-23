@@ -31,8 +31,15 @@ func Option(key string, fallback int64) int64 {
 }
 func InputLimit() int64  { return max(1, Option("AudioGenInputMaxBytes", 25<<20)) }
 func OutputLimit() int64 { return max(1, Option("AudioGenMaxBytes", 128<<20)) }
+func Expiration(a *model.AudioAsset) *time.Time {
+	if Option("AudioGenRetentionHours", 24) == 0 {
+		return nil
+	}
+	return a.ExpiresAt
+}
 func Expired(a *model.AudioAsset) bool {
-	return a.Status == "expired" || (Option("AudioGenRetentionHours", 24) != 0 && a.ExpiresAt != nil && !a.ExpiresAt.After(time.Now()))
+	expires := Expiration(a)
+	return a.Status == "expired" || (expires != nil && !expires.After(time.Now()))
 }
 func Sign(method, sid string) string {
 	secret := common.SessionSecret
@@ -279,7 +286,7 @@ func View(a *model.AudioAsset) map[string]any {
 	if Expired(a) {
 		status = "expired"
 	}
-	v := map[string]any{"id": a.ID, "mime": a.MIME, "size": a.Size, "status": status, "expires_at": a.ExpiresAt}
+	v := map[string]any{"id": a.ID, "mime": a.MIME, "size": a.Size, "status": status, "expires_at": Expiration(a)}
 	if status == "ready" {
 		v["url"] = URL("GET", a.ShortID)
 	}

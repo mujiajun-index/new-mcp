@@ -111,7 +111,7 @@ func prepare(ctx context.Context, store storage.Storage, uid int64, cfg *model.I
 	}
 	delete(p, "images")
 	delete(p, "mask")
-	if err := imageasset.CheckQuota(uid); err != nil {
+	if err := imageasset.CheckGeneratedQuota(uid); err != nil {
 		return nil, err
 	}
 	return s, nil

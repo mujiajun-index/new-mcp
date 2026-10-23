@@ -14,7 +14,7 @@ import (
 // the metadata row. It returns when ctx is cancelled. A first sweep runs
 // immediately at startup — a short-lived server may never reach the first tick.
 // The sweep interval is read from options once at start; the retention cutoff
-// is recomputed every sweep, so an admin changing UploadRetentionHours takes
+// is recomputed for each source every sweep, so changing either image retention takes
 // effect on the next tick rather than only on rows inserted after the change.
 func StartCleanupLoop(ctx context.Context) {
 	if UploadStore == nil {
@@ -55,15 +55,18 @@ func StartCleanupLoop(ctx context.Context) {
 // deleted once the last row referencing it is gone (CountByKey refcount).
 func runCleanupSweep(ctx context.Context) {
 	const sweepLimit = 500
-	retention := uploadRetention()
-	if retention == 0 {
-		return
-	}
-	cutoff := time.Now().Add(-retention)
-	expired, err := model.ListExpiredUploads(cutoff, sweepLimit)
-	if err != nil {
-		log.Printf("[upload-cleanup] list expired: %v", err)
-		return
+	var expired []model.UploadedImage
+	for _, source := range []string{model.ImageSourceUpload, model.ImageSourceGenerated} {
+		retention := imageasset.Retention(source)
+		if retention == 0 {
+			continue
+		}
+		rows, err := model.ListExpiredUploads(time.Now().Add(-retention), source == model.ImageSourceGenerated, sweepLimit)
+		if err != nil {
+			log.Printf("[upload-cleanup] list expired %s: %v", source, err)
+			continue
+		}
+		expired = append(expired, rows...)
 	}
 	if len(expired) == 0 {
 		return
@@ -125,5 +128,5 @@ func cleanupInterval() time.Duration {
 }
 
 func uploadRetention() time.Duration {
-	return imageasset.Retention()
+	return imageasset.Retention(model.ImageSourceUpload)
 }

@@ -46,10 +46,12 @@ func Capture(ctx context.Context, store storage.Storage, uid int64, img imagegen
 	item := Image{Role: role, MIME: inspected.MIME, Size: int64(len(img.Bytes)), Width: width, Height: height}
 	sum := sha256.Sum256(img.Bytes)
 	key := storage.ContentKey(hex.EncodeToString(sum[:]))
-	if row, err := model.GetUploadedImageByUserAndKey(uid, key); err == nil && row.Status == model.UploadStatusUploaded && !imageasset.Expired(row.CreatedAt) {
-		// Reusing an upload neither consumes another quota slot nor extends its lifetime.
-		item.UploadID = row.ID
-		return item, nil
+	for _, source := range []string{model.ImageSourceUpload, model.ImageSourceReference} {
+		if row, err := model.GetUploadedImageByUserAndKey(uid, key, source); err == nil && row.Status == model.UploadStatusUploaded && !imageasset.Expired(row.CreatedAt, row.Source) {
+			// References have their own lifetime, independent of generated output.
+			item.UploadID = row.ID
+			return item, nil
+		}
 	}
 	saved, err := imageasset.SaveReference(ctx, store, uid, bytes.NewReader(img.Bytes), imagegen.MaxImageBytes())
 	if err != nil {
@@ -104,8 +106,8 @@ func Views(db *gorm.DB, uid int64, raw string) []View {
 	for _, img := range images {
 		v := View{Role: img.Role, Status: "expired", MIME: img.MIME, Size: img.Size, Width: img.Width, Height: img.Height}
 		if row, ok := assets[img.UploadID]; ok {
-			v.ExpiresAt = imageasset.Expiration(row.CreatedAt)
-			if row.Status == model.UploadStatusUploaded && !imageasset.Expired(row.CreatedAt) {
+			v.ExpiresAt = imageasset.Expiration(row.CreatedAt, row.Source)
+			if row.Status == model.UploadStatusUploaded && !imageasset.Expired(row.CreatedAt, row.Source) {
 				v.URL, v.Status = storage.ShortURL("GET", row.ShortID), "ready"
 			}
 		}

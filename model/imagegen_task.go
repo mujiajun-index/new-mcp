@@ -33,7 +33,7 @@ type ImageGenTask struct {
 	DurationMs      int64      `json:"duration_ms"`
 	CreatedAt       time.Time  `json:"created_at" gorm:"index:idx_imagegen_task_user_created,priority:2"`
 	UpdatedAt       time.Time  `json:"updated_at"`
-	FinishedAt      *time.Time `json:"finished_at"`
+	FinishedAt      *time.Time `json:"finished_at" gorm:"index"`
 }
 
 func (ImageGenTask) TableName() string { return "imagegen_tasks" }

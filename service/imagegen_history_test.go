@@ -78,7 +78,7 @@ func TestImageGenHistoryKeepsReferenceImagesAndMaskOnFailure(t *testing.T) {
 		if _, err := imagegentask.Get(2, task.ID); err == nil {
 			t.Fatal("cross-user access")
 		}
-		if err := imagegentask.Delete(1, task.ID); err != nil {
+		if err := imagegentask.Delete(1, task.ID, UploadStore); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -131,7 +131,7 @@ func TestImageGenTaskHistoryLifecycleAndStorageSeparation(t *testing.T) {
 	if _, err := imagegentask.Get(2, task.ID); err == nil {
 		t.Fatal("other user read history")
 	}
-	if err := imagegentask.Delete(2, task.ID); err == nil {
+	if err := imagegentask.Delete(2, task.ID, UploadStore); err == nil {
 		t.Fatal("other user deleted history")
 	}
 	if items, total, err := model.ListAllUploads(0, 0, 20); err != nil || total != 0 || len(items) != 0 {
@@ -140,13 +140,13 @@ func TestImageGenTaskHistoryLifecycleAndStorageSeparation(t *testing.T) {
 	if _, total, err := model.ListUploadsByUser(1, 0, 20); err != nil || total != 0 {
 		t.Fatal("generated output leaked into user uploads", total, err)
 	}
-	if n, _ := model.CountUploadsByUser(1); n != 1 {
-		t.Fatal("generated assets must still count toward quota", n)
+	if n, _ := model.CountUploadsByUser(1); n != 0 {
+		t.Fatal("generated assets counted toward upload quota", n)
 	}
 
-	// User uploads of the same bytes promote the shared row into upload management;
-	// subsequent generation cannot hide it or duplicate the blob.
-	if _, err := imageasset.Save(context.Background(), UploadStore, 1, bytes.NewReader(data), 1024); err != nil {
+	// Uploads of the same bytes share the blob but have independent metadata.
+	uploaded, err := imageasset.Save(context.Background(), UploadStore, 1, bytes.NewReader(data), 1024)
+	if err != nil || uploaded.UploadID == img.UploadID {
 		t.Fatal(err)
 	}
 	generated, err := imageasset.SaveGenerated(context.Background(), UploadStore, 1, bytes.NewReader(data), 1024)
@@ -165,7 +165,7 @@ func TestImageGenTaskHistoryLifecycleAndStorageSeparation(t *testing.T) {
 	if err != nil || view[0].Images[0].Status != "expired" || view[0].Images[0].URL != "" {
 		t.Fatalf("expired history: %+v %v", view, err)
 	}
-	model.UpdateOption("UploadRetentionHours", "0")
+	model.UpdateOption("ImageGenRetentionHours", "0")
 	view, err = imagegentask.Views([]model.ImageGenTask{task})
 	if err != nil || view[0].Images[0].Status != "ready" || view[0].Images[0].ExpiresAt != nil {
 		t.Fatalf("permanent history: %+v %v", view, err)
@@ -192,7 +192,7 @@ func TestImageGenTaskHistoryLifecycleAndStorageSeparation(t *testing.T) {
 	if persisted, err := imagegentask.Get(1, task.ID); err != nil || persisted.ConfigName != "Image model" {
 		t.Fatal("configuration deletion lost history", err)
 	}
-	if err := imagegentask.Delete(1, task.ID); err != nil {
+	if err := imagegentask.Delete(1, task.ID, UploadStore); err != nil {
 		t.Fatal(err)
 	}
 	var artifacts int64
@@ -211,7 +211,7 @@ func TestImageGenHistoryRecoveryAndDeleteRollback(t *testing.T) {
 	if task.ReferenceCount != 1 || task.Operation != "edit" || task.Source != "mcp" {
 		t.Fatal(task)
 	}
-	if err := imagegentask.Delete(1, task.ID); !errors.Is(err, imagegentask.ErrActiveTask) {
+	if err := imagegentask.Delete(1, task.ID, UploadStore); !errors.Is(err, imagegentask.ErrActiveTask) {
 		t.Fatal("running task deletion", err)
 	}
 	if err := imagegentask.RecoverInterrupted(); err != nil {
@@ -235,7 +235,7 @@ func TestImageGenHistoryRecoveryAndDeleteRollback(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := imagegentask.Delete(1, task.ID); err == nil {
+	if err := imagegentask.Delete(1, task.ID, UploadStore); err == nil {
 		t.Fatal("expected rollback")
 	}
 	var count int64
@@ -252,9 +252,12 @@ func TestImageGenHistoryRecoveryAndDeleteRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := imageasset.Save(context.Background(), UploadStore, 1, bytes.NewReader(data), 1024); err != nil {
+		t.Fatal(err)
+	}
 	db.Model(&artifact).Update("upload_id", saved.UploadID)
 	db.Callback().Delete().Remove("history_delete_failure")
-	if err := imagegentask.Delete(1, task.ID); err != nil {
+	if err := imagegentask.Delete(1, task.ID, UploadStore); err != nil {
 		t.Fatal(err)
 	}
 	r, err := UploadStore.Get(context.Background(), saved.Key)

@@ -1469,9 +1469,12 @@ canvas.toBlob(blob => {
 | 通用 | `ServerAddress` | string | 服务器地址 |
 | 通用 | `Footer` | string | 页脚内容 |
 | 视频 | `VideoGenMaxBytes` | int | 单文件上限，默认 268435456 字节（256 MiB） |
-| 文件储存 | `UploadRetentionHours` | int | 图片保留小时数，默认 24；0 表示永久保存，不自动过期或清理 |
+| 文件储存 | `UploadRetentionHours` | int | 上传及参考图片保留小时数，默认 24；0 表示永久保存，不自动过期或清理 |
+| 图片生成 | `ImageGenRetentionHours` | int | 已保存生成图片保留小时数，默认 24；0 表示永久保存，与上传图片独立 |
+| 图片生成 | `ImageGenHistoryDays` | int | 任务结束后的历史保留天数，默认 30；0 表示永久保留；仍有有效生成图片的记录保留 |
+| 图片生成 | `MaxImagesPerUser` | int | 每用户已保存生成图片数量上限，默认 0（不限）；过期图片不占用配额 |
 | 视频 | `VideoGenRetentionHours` | int | 保存成功后的文件保留小时数，默认 24；0 表示永久保存 |
-| 视频 | `VideoGenHistoryDays` | int | 停止跟踪后的历史保留时长，默认 30 天；未过期视频的记录保留 |
+| 视频 | `VideoGenHistoryDays` | int | 停止跟踪后的历史保留天数，默认 30；0 表示永久保留；未过期视频的记录保留 |
 | 视频 | `MaxVideosPerUser` | int | 每用户保存数量上限，默认 0（不限） |
 | 认证 | `RegisterEnabled` | bool | 是否允许用户注册 |
 | 认证 | `EmailVerificationEnabled` | bool | 是否开启邮箱验证 |

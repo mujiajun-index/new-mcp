@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -181,8 +182,8 @@ func Views(tasks []model.ImageGenTask) ([]TaskView, error) {
 		for _, img := range byTask[task.ID] {
 			item := ImageView{ImageGenTaskImage: img, Status: "expired"}
 			if row, ok := uploads[img.UploadID]; ok && row.UserID == task.UserID {
-				item.ExpiresAt = imageasset.Expiration(row.CreatedAt)
-				if row.Status == model.UploadStatusUploaded && !imageasset.Expired(row.CreatedAt) {
+				item.ExpiresAt = imageasset.Expiration(row.CreatedAt, row.Source)
+				if row.Status == model.UploadStatusUploaded && !imageasset.Expired(row.CreatedAt, row.Source) {
 					item.Status, item.URL = "ready", storage.ShortURL("GET", row.ShortID)
 				}
 			}
@@ -193,10 +194,11 @@ func Views(tasks []model.ImageGenTask) ([]TaskView, error) {
 	return views, nil
 }
 
-// Deleting history leaves shared content-addressed assets to normal retention
-// cleanup. A result may also be referenced by another task or a user upload.
-func Delete(uid int64, id string) error {
-	return model.DB.Transaction(func(tx *gorm.DB) error {
+// Deleting a task releases generated assets that no other output still uses.
+// Upload and reference rows retain their own lifetimes and shared file bytes.
+func Delete(uid int64, id string, store storage.Storage) error {
+	var keys []string
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		var task model.ImageGenTask
 		if err := tx.Where("id = ? AND user_id = ?", id, uid).First(&task).Error; err != nil {
 			return err
@@ -207,9 +209,57 @@ func Delete(uid int64, id string) error {
 		if task.ResultKey != "" {
 			return fmt.Errorf("use the image task manager to delete pending saved output")
 		}
-		if err := tx.Where("task_id = ?", id).Delete(&model.ImageGenTaskImage{}).Error; err != nil {
+		var err error
+		keys, err = deleteTaskImages(tx, uid, id)
+		if err != nil {
 			return err
 		}
 		return tx.Delete(&task).Error
 	})
+	if err == nil {
+		deleteUnusedBlobs(context.Background(), model.DB, store, keys)
+	}
+	return err
+}
+
+func deleteTaskImages(tx *gorm.DB, uid int64, id string) ([]string, error) {
+	var ids []int64
+	if err := tx.Model(&model.ImageGenTaskImage{}).Where("task_id = ?", id).Pluck("upload_id", &ids).Error; err != nil {
+		return nil, err
+	}
+	if err := tx.Where("task_id = ?", id).Delete(&model.ImageGenTaskImage{}).Error; err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var unused []model.UploadedImage
+	used := tx.Model(&model.ImageGenTaskImage{}).Select("upload_id")
+	if err := tx.Where("id IN ? AND user_id = ? AND source = ? AND id NOT IN (?)", ids, uid, model.ImageSourceGenerated, used).Find(&unused).Error; err != nil {
+		return nil, err
+	}
+	keys := make([]string, 0, len(unused))
+	for _, img := range unused {
+		if err := tx.Delete(&img).Error; err != nil {
+			return nil, err
+		}
+		keys = append(keys, img.StorageKey)
+	}
+	return keys, nil
+}
+
+func deleteUnusedBlobs(ctx context.Context, db *gorm.DB, store storage.Storage, keys []string) {
+	if store == nil {
+		return
+	}
+	for _, key := range keys {
+		var count int64
+		if err := db.Model(&model.UploadedImage{}).Where("storage_key = ?", key).Count(&count).Error; err != nil {
+			log.Printf("[image-task] check shared file references: %v", err)
+		} else if count == 0 {
+			if err := store.Delete(ctx, key); err != nil {
+				log.Printf("[image-task] delete unused saved image: %v", err)
+			}
+		}
+	}
 }
