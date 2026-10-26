@@ -1464,8 +1464,8 @@
     "tuningAudioGeneration": "Audio generation",
     "tuningAudioGenerationDesc": "Set audio concurrency, input and output sizes, inline responses, file retention and task history retention.",
     "tuningImageProcessing": "Image processing before sending upstream",
-    "visionUploadMaxBytes": "Per-image byte cap",
-    "visionInlineMaxBytes": "Base64 inline threshold (bytes)",
+    "visionUploadMaxBytes": "Per-image size limit (KB)",
+    "visionInlineMaxBytes": "Base64 inline threshold (KB)",
     "signedURLTTLSeconds": "Signed GET URL TTL (seconds)",
     "presignedPutTTLSeconds": "Presigned PUT URL TTL (seconds)",
     "uploadRetentionHours": "Image retention (hours, 0 = permanent)",
@@ -1479,7 +1479,7 @@
     "secretPlaceholder": "configured (leave blank to keep)",
     "storageS3Blocked": "Can't switch to s3: missing {{fields}}. Fill those fields first (they save instantly, but the backend switch needs a restart), then switch.",
     "storageS3Incomplete": "⚠️ Required s3 fields (Endpoint / Bucket / Access Key / Secret Key) are empty — the server will fail to start on restart. Complete them before restarting.",
-    "imageGenInlineMaxBytes": "Image generation inline response limit (bytes; 0 uses 1 MiB)"
+    "imageGenInlineMaxBytes": "Image generation inline response limit (KB; 0 uses 1024 KB)"
   },
   "billing": {
     "free": "Free",
@@ -1966,7 +1966,7 @@
       "expired": "Expired"
     },
     "settings": {
-      "VideoGenMaxBytes": "Maximum video file size (bytes)",
+      "VideoGenMaxBytes": "Maximum video file size (KB)",
       "VideoGenRetentionHours": "Saved video retention (hours, 0 = permanent)",
       "VideoGenHistoryDays": "Video history retention (days, 0 = permanent)",
       "MaxVideosPerUser": "Saved videos per user (0 = unlimited)"

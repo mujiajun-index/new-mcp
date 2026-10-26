@@ -142,3 +142,44 @@ func TestPermanentVideoHistoryStillExpiresFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestVideoSaveUsesRetentionChangedDuringDownload(t *testing.T) {
+	m := managerFixture(t)
+	model.UpdateOption("VideoGenRetentionHours", "24")
+	started, release := make(chan struct{}), make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			io.WriteString(w, `{"id":"changing-retention","status":"completed"}`)
+			return
+		}
+		close(started)
+		<-release
+		w.Write(mp4Bytes())
+	}))
+	defer server.Close()
+	released := false
+	defer func() {
+		if !released {
+			close(release)
+		}
+	}()
+	m.Start(context.Background())
+	task, err := m.Submit(context.Background(), 1, configFor(server.URL), "generate", "test", map[string]any{"prompt": "scene"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("video download did not start")
+	}
+	if _, err := model.UpdateMediaRetentionOption("VideoGenRetentionHours", "0"); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	released = true
+	row := awaitTask(t, m, task.ID, func(row *model.VideoGenTask) bool { return row.ArtifactStatus == "ready" })
+	if row.ExpiresAt != nil {
+		t.Fatal("newly saved video retained the old policy", row.ExpiresAt)
+	}
+}

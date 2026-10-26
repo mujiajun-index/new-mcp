@@ -1462,8 +1462,8 @@
     "tuningAudioGeneration": "音频生成",
     "tuningAudioGenerationDesc": "设置音频生成并发、输入输出大小、内联响应及文件和任务历史保留时间。",
     "tuningImageProcessing": "发送上游前的图片处理",
-    "visionUploadMaxBytes": "单图字节上限",
-    "visionInlineMaxBytes": "Base64 内联阈值（字节）",
+    "visionUploadMaxBytes": "单图大小上限（KB）",
+    "visionInlineMaxBytes": "Base64 内联阈值（KB）",
     "signedURLTTLSeconds": "签名 GET URL 有效期（秒）",
     "presignedPutTTLSeconds": "预签名 PUT URL 有效期（秒）",
     "uploadRetentionHours": "图片保留时间（小时，0 为永久保存）",
@@ -1477,7 +1477,7 @@
     "secretPlaceholder": "已配置（留空则不修改）",
     "storageS3Blocked": "无法切换到 s3：还缺少 {{fields}}。请先填写这些字段（保存即时生效，但后端切换需重启），再切换后端。",
     "storageS3Incomplete": "⚠️ s3 后端必填字段（Endpoint / Bucket / Access Key / Secret Key）有空值——重启服务会启动失败。请补全后再重启。",
-    "imageGenInlineMaxBytes": "图片生成内联响应上限（字节，0 默认 1MiB）"
+    "imageGenInlineMaxBytes": "图片生成内联响应上限（KB，0 默认 1024 KB）"
   },
   "billing": {
     "free": "免费",
@@ -1964,7 +1964,7 @@
       "expired": "已过期"
     },
     "settings": {
-      "VideoGenMaxBytes": "视频单文件大小上限（字节）",
+      "VideoGenMaxBytes": "视频单文件大小上限（KB）",
       "VideoGenRetentionHours": "已保存视频保留时间（小时，0 为永久保存）",
       "VideoGenHistoryDays": "视频历史保留时间（天，0 为永久）",
       "MaxVideosPerUser": "每用户已保存视频数量上限（0 为不限）"

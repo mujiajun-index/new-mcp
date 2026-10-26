@@ -13,9 +13,8 @@ import (
 // than the retention window it deletes the stored blob (UploadStore.Delete) and
 // the metadata row. It returns when ctx is cancelled. A first sweep runs
 // immediately at startup — a short-lived server may never reach the first tick.
-// The sweep interval is read from options once at start; the retention cutoff
-// is recomputed for each source every sweep, so changing either image retention takes
-// effect on the next tick rather than only on rows inserted after the change.
+// The sweep interval is read once at start. Each sweep uses the current policy
+// and each file's retention start, which is renewed when the policy changes.
 func StartCleanupLoop(ctx context.Context) {
 	if UploadStore == nil {
 		log.Printf("[upload-cleanup] storage not initialized; cleanup loop disabled")
@@ -54,6 +53,8 @@ func StartCleanupLoop(ctx context.Context) {
 // V1.1: blobs are shared across users (content-addressed), so the blob is only
 // deleted once the last row referencing it is gone (CountByKey refcount).
 func runCleanupSweep(ctx context.Context) {
+	model.MediaRetentionMutex.RLock()
+	defer model.MediaRetentionMutex.RUnlock()
 	const sweepLimit = 500
 	var expired []model.UploadedImage
 	for _, source := range []string{model.ImageSourceUpload, model.ImageSourceGenerated} {

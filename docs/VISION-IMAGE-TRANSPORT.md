@@ -187,7 +187,7 @@ local 与 s3 的差异**全部藏在 `Put`/`Get`/`Delete` 后面**：短 URL 句
 >
 > - `shortID`：12 字符 base62（`crypto/rand`，~71 bit），存于新列 `uploaded_images.short_id`（唯一索引，回填在 `migrateDB`）。两条插入路径（multipart `service.Upload`、`upload_image` 的 pending 行）经 `InsertWithGeneratedShortID` 生成。
 > - `s`：method 绑定的截断 HMAC（12 字节 = 96bit → 16 字符 base64url，`RawURLEncoding` 无 `=`）。GET/PUT 签名空间隔离，GET token 不能当 PUT 用（替代旧 `SignURLFor("PUT",…)` 的 purpose 切分）。截断到 96bit 舒适高于 RFC2104 / NIST SP 800-107 下限（80/64bit），主防线是不可猜的 short_id，HMAC 兜底"id 泄漏"场景。
-> - **URL 里不带 `expires`**：DB 行（`created_at` + retention / pending-TTL）是唯一过期权威。GET 寿命 = `UploadRetentionHours`；PUT 寿命 = `PresignedPutTTLSeconds`。故 `SignedURLTTLSeconds` 不再约束视觉 URL（仅保留作展示）。
+> - **URL 里不带 `expires`**：DB 行是唯一过期权威。新图片从 `created_at` 计算 GET 有效期；修改保留设置时，已有图片从持久化的 `retention_started_at` 重新计时，原创建时间不变。GET 寿命 = `UploadRetentionHours`；PUT 仍按创建时间 + `PresignedPutTTLSeconds` 校验。故 `SignedURLTTLSeconds` 不再约束视觉 URL（仅保留作展示）。
 > - 端点挂**根路由** `/u/:sid`（不在 `/api/v1` 下，以求短）：`GET` → `GetVisionFileByShortID`、`PUT` → `PutVisionFileByShortID`，均在公开组（`?s=` 即鉴权）。
 > - 解析：服务端按 sid 查 `GetUploadedImageByShortID` → 取 `storage_key`+`backend` → 统一经 `Storage.Get` 流式输出（local 直读盘；**s3 也经网关流式，不再 302 到 presigned**——与反向取图路径一致，长 presigned URL 永不暴露给模型）。
 > - 反向取图：`analyze_image` 对自家 `/u/` URL 经 `storage.OwnsShortURL`/`ShortIDFromURL` → 查行 → `fetchOwnImage(storage_key)`，沿用"自家 URL 反向取图不验签"约定（多一次索引查询，可忽略）。

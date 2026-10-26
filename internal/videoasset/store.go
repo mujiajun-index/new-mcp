@@ -85,9 +85,8 @@ func Retention() time.Duration {
 	return 24 * time.Hour
 }
 
-// Zero disables expiry for files that still exist. Preserve earlier deadlines
-// in the database so restoring finite retention can resume their expiry policy.
-// Files saved with no deadline remain permanent.
+// Zero disables expiry for files that still exist. Settings changes also renew
+// stored deadlines from the change time, including previously permanent files.
 func EffectiveExpiration(expiresAt *time.Time) *time.Time {
 	if Retention() == 0 {
 		return nil

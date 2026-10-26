@@ -410,7 +410,7 @@ func (m *Manager) loadReference(ctx context.Context, uid, id int64) (imagegen.Im
 	if err := m.DB.Where("id = ? AND user_id = ? AND status = ?", id, uid, model.UploadStatusUploaded).First(&row).Error; err != nil {
 		return imagegen.Image{}, err
 	}
-	if imageasset.Expired(row.CreatedAt, row.Source) {
+	if imageasset.Expired(&row) {
 		return imagegen.Image{}, fmt.Errorf("reference image has expired")
 	}
 	r, err := m.Store.Get(ctx, row.StorageKey)
@@ -460,7 +460,7 @@ func (m *Manager) saveResult(ctx context.Context, t *model.ImageGenTask, s *snap
 		var existing model.ImageGenTaskImage
 		if m.DB.Where("task_id = ? AND output_index = ?", t.ID, index).First(&existing).Error == nil {
 			var row model.UploadedImage
-			if m.DB.Where("id = ? AND user_id = ? AND status = ?", existing.UploadID, t.UserID, model.UploadStatusUploaded).First(&row).Error == nil && !imageasset.Expired(row.CreatedAt, row.Source) {
+			if m.DB.Where("id = ? AND user_id = ? AND status = ?", existing.UploadID, t.UserID, model.UploadStatusUploaded).First(&row).Error == nil && !imageasset.Expired(&row) {
 				saved++
 				continue
 			}
@@ -595,6 +595,8 @@ func (m *Manager) cleanupResults() {
 }
 
 func (m *Manager) cleanupHistory() {
+	model.MediaRetentionMutex.RLock()
+	defer model.MediaRetentionMutex.RUnlock()
 	days := model.GetOptionInt("ImageGenHistoryDays")
 	if days <= 0 {
 		return
@@ -604,11 +606,11 @@ func (m *Manager) cleanupHistory() {
 	// video history cleanup does. Apply each asset source's current retention.
 	liveGenerated := m.DB.Where("uploaded_images.source = ?", model.ImageSourceGenerated)
 	if retention := imageasset.Retention(model.ImageSourceGenerated); retention > 0 {
-		liveGenerated = liveGenerated.Where("uploaded_images.created_at > ?", now.Add(-retention))
+		liveGenerated = liveGenerated.Where("COALESCE(uploaded_images.retention_started_at, uploaded_images.created_at) > ?", now.Add(-retention))
 	}
 	liveOther := m.DB.Where("uploaded_images.source <> ?", model.ImageSourceGenerated)
 	if retention := imageasset.Retention(model.ImageSourceUpload); retention > 0 {
-		liveOther = liveOther.Where("uploaded_images.created_at > ?", now.Add(-retention))
+		liveOther = liveOther.Where("COALESCE(uploaded_images.retention_started_at, uploaded_images.created_at) > ?", now.Add(-retention))
 	}
 	liveImages := m.DB.Model(&model.ImageGenTaskImage{}).Select("1").
 		Joins("JOIN uploaded_images ON uploaded_images.id = imagegen_task_images.upload_id").

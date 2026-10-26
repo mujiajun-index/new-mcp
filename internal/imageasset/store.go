@@ -48,8 +48,10 @@ func SaveReference(ctx context.Context, store storage.Storage, userID int64, r i
 }
 
 func refresh(ctx context.Context, existing *model.UploadedImage, now time.Time) error {
-	return admitGenerated(ctx, existing.UserID, existing.Source == model.ImageSourceGenerated && Expired(existing.CreatedAt, existing.Source), func(db *gorm.DB) error {
-		return db.Model(existing).Update("created_at", now).Error
+	model.MediaRetentionMutex.RLock()
+	defer model.MediaRetentionMutex.RUnlock()
+	return admitGenerated(ctx, existing.UserID, existing.Source == model.ImageSourceGenerated && Expired(existing), func(db *gorm.DB) error {
+		return db.Model(existing).Updates(map[string]any{"created_at": now, "retention_started_at": nil}).Error
 	})
 }
 
@@ -100,7 +102,7 @@ func save(ctx context.Context, store storage.Storage, userID int64, r io.Reader,
 		return &Result{
 			UploadID:  existing.ID,
 			URL:       storage.ShortURL("GET", existing.ShortID),
-			ExpiresAt: Expiration(now, source),
+			ExpiresAt: Expiration(existing),
 			MediaType: existing.MediaType,
 			Size:      existing.Size,
 			Key:       key,
@@ -136,7 +138,7 @@ func save(ctx context.Context, store storage.Storage, userID int64, r io.Reader,
 			return &Result{
 				UploadID:  existing.ID,
 				URL:       storage.ShortURL("GET", existing.ShortID),
-				ExpiresAt: Expiration(now, source),
+				ExpiresAt: Expiration(existing),
 				MediaType: existing.MediaType,
 				Size:      existing.Size,
 				Key:       key,
@@ -150,7 +152,7 @@ func save(ctx context.Context, store storage.Storage, userID int64, r io.Reader,
 	return &Result{
 		UploadID:  img.ID,
 		URL:       storage.ShortURL("GET", img.ShortID),
-		ExpiresAt: Expiration(now, source),
+		ExpiresAt: Expiration(img),
 		MediaType: mediaType,
 		Size:      int64(len(data)),
 		Key:       key,
@@ -170,16 +172,20 @@ func Retention(source string) time.Duration {
 	return 24 * time.Hour
 }
 
-func Expiration(createdAt time.Time, source string) *time.Time {
-	if retention := Retention(source); retention > 0 {
-		expires := createdAt.Add(retention)
+func Expiration(img *model.UploadedImage) *time.Time {
+	if retention := Retention(img.Source); retention > 0 {
+		start := img.CreatedAt
+		if img.RetentionStartedAt != nil {
+			start = *img.RetentionStartedAt
+		}
+		expires := start.Add(retention)
 		return &expires
 	}
 	return nil
 }
 
-func Expired(createdAt time.Time, source string) bool {
-	expires := Expiration(createdAt, source)
+func Expired(img *model.UploadedImage) bool {
+	expires := Expiration(img)
 	return expires != nil && !expires.After(time.Now())
 }
 
@@ -224,6 +230,8 @@ func admitGenerated(ctx context.Context, uid int64, generated bool, save func(*g
 }
 
 func insertImage(ctx context.Context, store storage.Storage, img *model.UploadedImage, data []byte) error {
+	model.MediaRetentionMutex.RLock()
+	defer model.MediaRetentionMutex.RUnlock()
 	return admitGenerated(ctx, img.UserID, img.Source == model.ImageSourceGenerated, func(db *gorm.DB) error {
 		// All sources share the physical blob; only their metadata and policies differ.
 		var count int64
@@ -253,7 +261,7 @@ func checkGeneratedQuota(db *gorm.DB, userID int64) error {
 	}
 	q := db.Model(&model.UploadedImage{}).Where("user_id = ? AND status = ? AND source = ?", userID, model.UploadStatusUploaded, model.ImageSourceGenerated)
 	if retention := Retention(model.ImageSourceGenerated); retention > 0 {
-		q = q.Where("created_at > ?", time.Now().Add(-retention))
+		q = q.Where("COALESCE(retention_started_at, created_at) > ?", time.Now().Add(-retention))
 	}
 	var count int64
 	if err := q.Count(&count).Error; err != nil {

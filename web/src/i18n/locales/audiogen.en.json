@@ -169,9 +169,9 @@
   },
   "settings": {
     "AudioGenConcurrency": "Concurrent audio generations",
-    "AudioGenInputMaxBytes": "Input audio limit per task (bytes)",
-    "AudioGenMaxBytes": "Output audio limit per task (bytes)",
-    "AudioGenInlineMaxBytes": "MCP inline audio limit (bytes; 0 disables)",
+    "AudioGenInputMaxBytes": "Input audio limit per task (KB)",
+    "AudioGenMaxBytes": "Output audio limit per task (KB)",
+    "AudioGenInlineMaxBytes": "MCP inline audio limit (KB; 0 disables)",
     "AudioGenRetentionHours": "Audio retention (hours; 0 keeps forever)",
     "AudioGenHistoryDays": "Audio history retention (days; 0 keeps forever)"
   },

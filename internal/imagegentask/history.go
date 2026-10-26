@@ -182,8 +182,8 @@ func Views(tasks []model.ImageGenTask) ([]TaskView, error) {
 		for _, img := range byTask[task.ID] {
 			item := ImageView{ImageGenTaskImage: img, Status: "expired"}
 			if row, ok := uploads[img.UploadID]; ok && row.UserID == task.UserID {
-				item.ExpiresAt = imageasset.Expiration(row.CreatedAt, row.Source)
-				if row.Status == model.UploadStatusUploaded && !imageasset.Expired(row.CreatedAt, row.Source) {
+				item.ExpiresAt = imageasset.Expiration(&row)
+				if row.Status == model.UploadStatusUploaded && !imageasset.Expired(&row) {
 					item.Status, item.URL = "ready", storage.ShortURL("GET", row.ShortID)
 				}
 			}

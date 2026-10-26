@@ -78,7 +78,7 @@ func UploadVisionImage(c *gin.Context) {
 // on the PUBLIC root route GET /u/:sid (no UserAuth/APIKeyAuth) because the
 // consumer is an upstream vision provider — it has no JWT or sk-. Access is gated
 // solely by the method-bound HMAC in ?s= (VerifyShort "GET"); the DB row is the
-// sole expiry authority (created_at + retention), so the URL carries no expires.
+// sole expiry authority (retention start + retention), so the URL carries no expires.
 func GetVisionFileByShortID(c *gin.Context) {
 	if service.UploadStore == nil {
 		common.Error(c, http.StatusServiceUnavailable, "upload storage not initialized")
@@ -100,7 +100,7 @@ func GetVisionFileByShortID(c *gin.Context) {
 		common.Error(c, http.StatusNotFound, "file not found")
 		return
 	}
-	if imageasset.Expired(img.CreatedAt, img.Source) {
+	if imageasset.Expired(img) {
 		common.Error(c, http.StatusGone, "url expired")
 		return
 	}
@@ -211,7 +211,7 @@ func actingUserID(c *gin.Context) int64 {
 
 // uploadListItem is one row in the management list view. URL is a short
 // capability handle (/u/<sid>) that is stable for the row's lifetime; ExpiresAt
-// is an estimate (created_at + retention) for display only.
+// reflects the stored retention start and the current policy.
 type uploadListItem struct {
 	ID        int64      `json:"id"`
 	UserID    int64      `json:"user_id"`
@@ -248,7 +248,7 @@ func toUploadListItem(img model.UploadedImage) uploadListItem {
 		Backend:   img.Backend,
 		Status:    img.Status,
 		CreatedAt: img.CreatedAt,
-		ExpiresAt: imageasset.Expiration(img.CreatedAt, img.Source),
+		ExpiresAt: imageasset.Expiration(&img),
 	}
 }
 

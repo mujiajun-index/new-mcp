@@ -546,6 +546,14 @@ func (m *Manager) save(t *model.VideoGenTask, client *Client) {
 		m.finish(t, map[string]any{"artifact_status": "failed", "error": "Could not create video link", "storage_key": asset.Key, "stopped_at": time.Now()})
 		return
 	}
+	model.MediaRetentionMutex.RLock()
+	defer model.MediaRetentionMutex.RUnlock()
+	// A settings change may have completed while the video was downloading.
+	asset.ExpiresAt = nil
+	if retention := videoasset.Retention(); retention > 0 {
+		expires := time.Now().Add(retention)
+		asset.ExpiresAt = &expires
+	}
 	m.finish(t, map[string]any{"artifact_status": "ready", "storage_key": asset.Key, "backend": m.Store.Backend(), "short_id": sid, "mime": asset.MIME, "size": asset.Size, "expires_at": asset.ExpiresAt, "error": "", "connection": "", "stopped_at": time.Now()})
 }
 
@@ -735,6 +743,8 @@ func (m *Manager) Delete(uid int64, id string) error {
 }
 
 func (m *Manager) Cleanup() {
+	model.MediaRetentionMutex.RLock()
+	defer model.MediaRetentionMutex.RUnlock()
 	videoasset.CleanupTemps()
 	now := time.Now()
 	var rows []model.VideoGenTask

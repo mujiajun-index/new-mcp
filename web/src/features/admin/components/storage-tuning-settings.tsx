@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -139,6 +140,41 @@ interface StorageTuningSettingsProps {
   onToggle: (key: string) => void
 }
 
+function KilobyteInput({
+  id,
+  value,
+  min,
+  onChange,
+  onSave,
+}: {
+  id: string
+  value: string
+  min?: number
+  onChange: (value: string) => void
+  onSave: () => void
+}) {
+  // Keep the typed text while editing so entering decimal KB stays natural.
+  const [draft, setDraft] = useState<string | null>(null)
+  return (
+    <Input
+      id={id}
+      type="number"
+      min={min === undefined ? undefined : min / 1024}
+      step="any"
+      value={draft ?? (value === '' ? '' : String(Number(value) / 1024))}
+      onChange={(e) => {
+        const next = e.target.value
+        setDraft(next)
+        onChange(next === '' ? '' : String(Math.round(Number(next) * 1024)))
+      }}
+      onBlur={() => {
+        setDraft(null)
+        onSave()
+      }}
+    />
+  )
+}
+
 export function StorageTuningSettings({
   values,
   onChange,
@@ -154,14 +190,24 @@ export function StorageTuningSettings({
           <label htmlFor={`setting-${key}`} className="text-sm font-medium">
             {t(label)}
           </label>
-          <Input
-            id={`setting-${key}`}
-            type="number"
-            min={min}
-            value={values[key] ?? ''}
-            onChange={(e) => onChange(key, e.target.value)}
-            onBlur={() => onSave(key)}
-          />
+          {key.endsWith('Bytes') ? (
+            <KilobyteInput
+              id={`setting-${key}`}
+              min={min}
+              value={values[key] ?? ''}
+              onChange={(value) => onChange(key, value)}
+              onSave={() => onSave(key)}
+            />
+          ) : (
+            <Input
+              id={`setting-${key}`}
+              type="number"
+              min={min}
+              value={values[key] ?? ''}
+              onChange={(e) => onChange(key, e.target.value)}
+              onBlur={() => onSave(key)}
+            />
+          )}
         </div>
       ))}
     </div>

@@ -47,7 +47,7 @@ func Capture(ctx context.Context, store storage.Storage, uid int64, img imagegen
 	sum := sha256.Sum256(img.Bytes)
 	key := storage.ContentKey(hex.EncodeToString(sum[:]))
 	for _, source := range []string{model.ImageSourceUpload, model.ImageSourceReference} {
-		if row, err := model.GetUploadedImageByUserAndKey(uid, key, source); err == nil && row.Status == model.UploadStatusUploaded && !imageasset.Expired(row.CreatedAt, row.Source) {
+		if row, err := model.GetUploadedImageByUserAndKey(uid, key, source); err == nil && row.Status == model.UploadStatusUploaded && !imageasset.Expired(row) {
 			// References have their own lifetime, independent of generated output.
 			item.UploadID = row.ID
 			return item, nil
@@ -106,8 +106,8 @@ func Views(db *gorm.DB, uid int64, raw string) []View {
 	for _, img := range images {
 		v := View{Role: img.Role, Status: "expired", MIME: img.MIME, Size: img.Size, Width: img.Width, Height: img.Height}
 		if row, ok := assets[img.UploadID]; ok {
-			v.ExpiresAt = imageasset.Expiration(row.CreatedAt, row.Source)
-			if row.Status == model.UploadStatusUploaded && !imageasset.Expired(row.CreatedAt, row.Source) {
+			v.ExpiresAt = imageasset.Expiration(&row)
+			if row.Status == model.UploadStatusUploaded && !imageasset.Expired(&row) {
 				v.URL, v.Status = storage.ShortURL("GET", row.ShortID), "ready"
 			}
 		}

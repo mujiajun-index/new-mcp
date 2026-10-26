@@ -49,6 +49,15 @@ func (s *SettingsService) GetPublicSettings() map[string]string {
 }
 
 func (s *SettingsService) UpdateSetting(actor model.Operator, key string, value string) error {
+	if key == "UploadRetentionHours" || key == "ImageGenRetentionHours" || key == "VideoGenRetentionHours" || key == "AudioGenRetentionHours" {
+		if err := validateNonNegativeInt(value); err != nil {
+			return err
+		}
+		hours, _ := strconv.ParseInt(value, 10, 64)
+		if hours > 8760 {
+			return fmt.Errorf("%w: file retention must be 0–8760 hours (0 = permanent)", ErrInvalidSetting)
+		}
+	}
 	if strings.HasPrefix(key, "AudioGen") {
 		if err := validateNonNegativeInt(value); err != nil {
 			return err
@@ -69,15 +78,9 @@ func (s *SettingsService) UpdateSetting(actor model.Operator, key string, value 
 			return err
 		}
 	}
-	if key == "SharedStdioIdleTimeoutMinutes" || key == "SharedStdioMaxConcurrency" || key == "ImageGenInlineMaxBytes" || key == "MaxImagesPerUser" || key == "ImageGenRetentionHours" || key == "MaxVideosPerUser" || key == "UploadRetentionHours" {
+	if key == "SharedStdioIdleTimeoutMinutes" || key == "SharedStdioMaxConcurrency" || key == "ImageGenInlineMaxBytes" || key == "MaxImagesPerUser" || key == "MaxVideosPerUser" {
 		if err := validateNonNegativeInt(value); err != nil {
 			return err
-		}
-		if key == "ImageGenRetentionHours" {
-			hours, _ := strconv.ParseInt(value, 10, 64)
-			if hours > 8760 {
-				return fmt.Errorf("%w: image retention must be 0–8760 hours (0 = permanent)", ErrInvalidSetting)
-			}
 		}
 	}
 	if key == "ImageGenHistoryDays" || key == "VideoGenHistoryDays" {
@@ -89,17 +92,23 @@ func (s *SettingsService) UpdateSetting(actor model.Operator, key string, value 
 			return fmt.Errorf("%w: history retention must be 0–8760 days (0 = permanent)", ErrInvalidSetting)
 		}
 	}
-	if key == "VideoGenMaxBytes" || key == "VideoGenRetentionHours" {
+	if key == "VideoGenMaxBytes" {
 		if err := validateNonNegativeInt(value); err != nil {
 			return err
 		}
 		n, _ := strconv.ParseInt(value, 10, 64)
-		if (n == 0 && key == "VideoGenMaxBytes") || (key == "VideoGenMaxBytes" && n > 10<<30) || (key == "VideoGenRetentionHours" && n > 8760) {
-			return fmt.Errorf("%w: video size must be 1 byte–10 GiB; video retention must be 0–8760 hours (0 = permanent)", ErrInvalidSetting)
+		if n == 0 || n > 10<<30 {
+			return fmt.Errorf("%w: video size must be 1 byte–10 GiB", ErrInvalidSetting)
 		}
 	}
-	if err := model.UpdateOption(key, value); err != nil {
+	handled, err := model.UpdateMediaRetentionOption(key, value)
+	if err != nil {
 		return err
+	}
+	if !handled {
+		if err := model.UpdateOption(key, value); err != nil {
+			return err
+		}
 	}
 	// 审计:敏感 key 的值脱敏为 ***。
 	logValue := value

@@ -728,6 +728,8 @@ func (m *Manager) Delete(uid int64, id string) (err error) {
 	return m.DB.Where("id = ? AND user_id = ? AND status = ?", id, uid, "deleting").Delete(&model.AudioGenTask{}).Error
 }
 func (m *Manager) cleanup(ctx context.Context) {
+	model.MediaRetentionMutex.RLock()
+	defer model.MediaRetentionMutex.RUnlock()
 	// Small bounded batches keep normal task scheduling responsive.
 	var assets []model.AudioAsset
 	q := m.DB.Where("(status IN ? AND created_at < ?)", []string{"pending", "uploading"}, time.Now().Add(-15*time.Minute))
@@ -761,7 +763,13 @@ func (m *Manager) cleanup(ctx context.Context) {
 	}
 	if days := audioasset.Option("AudioGenHistoryDays", 30); days > 0 {
 		var tasks []model.AudioGenTask
-		_ = m.DB.Where("created_at < ? AND status NOT IN ? AND artifact_status NOT IN ?", time.Now().Add(-time.Duration(days)*24*time.Hour), []string{"queued", "running"}, []string{"pending", "saving"}).Limit(8).Find(&tasks).Error
+		liveOutputs := m.DB.Model(&model.AudioAsset{}).Select("1").
+			Where("audio_assets.task_id = audiogen_tasks.id AND audio_assets.user_id = audiogen_tasks.user_id AND source = ? AND status = ? AND storage_key <> ?", "generated", "ready", "")
+		if audioasset.Option("AudioGenRetentionHours", 24) > 0 {
+			liveOutputs = liveOutputs.Where("expires_at IS NULL OR expires_at > ?", time.Now())
+		}
+		_ = m.DB.Where("created_at < ? AND status NOT IN ? AND artifact_status NOT IN ?", time.Now().Add(-time.Duration(days)*24*time.Hour), []string{"queued", "running"}, []string{"pending", "saving"}).
+			Where("NOT EXISTS (?)", liveOutputs).Limit(8).Find(&tasks).Error
 		for _, t := range tasks {
 			_ = m.Delete(t.UserID, t.ID)
 		}

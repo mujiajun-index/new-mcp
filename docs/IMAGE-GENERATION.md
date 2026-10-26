@@ -163,7 +163,7 @@ multipart `/v1/images/edits` 是兼容协议，不限定只能连接 OpenAI 官�
 
 所有调用返回 MCP 文本和 `structuredContent`，包含任务状态、`artifact_status`、`poll_after_seconds`、`can_retry_save` 及错误。排队、生成、保存及短等待结束返回正常结果；图片保存成功后附带 `resource_link`，结果包含 `task_id`、协议、模型、链接、实际 MIME、字节数、宽高、失效时间、修订提示词及可用的上游文本/用量。生成和上传共用本地/S3 存储、按用户配额、内容去重、签名 URL 和自动清理。
 
-`return_mode=inline` 会追加 MCP 原生 `image` 内容。序列化响应合计超过 `ImageGenInlineMaxBytes`（默认 1 MiB；0 使用默认值）时保留链接并给出说明。生成图片的有效期独立按 `ImageGenRetentionHours`（默认 24 小时）计算；上传图片与参考缓存仍使用 `UploadRetentionHours`。管理员修改保留规则后，读取、历史列表与清理均采用对应来源的当前规则。设为 0 表示永久保存，`expires_at` 返回 `null`；恢复正数后按当前时长重新判断有效期。
+`return_mode=inline` 会追加 MCP 原生 `image` 内容。序列化响应合计超过 `ImageGenInlineMaxBytes`（默认 1 MiB；0 使用默认值）时保留链接并给出说明。生成图片的有效期独立按 `ImageGenRetentionHours`（默认 24 小时）计算；上传图片与参考缓存仍使用 `UploadRetentionHours`。管理员修改保留时长时，已有且未清理的对应来源图片从修改时刻重新计时，原创建时间保持不变；新增图片仍从自身创建时间计时。设为 0 表示永久保存，`expires_at` 返回 `null`；从永久改为 24 小时时，已有图片的到期时间为修改时刻加 24 小时。读取、历史列表、配额及清理共用该有效期，重复保存相同时长不会再次延长。
 
 `ImageGenHistoryDays` 独立控制图片任务历史，默认 30 天，0 表示永久保留。后台每分钟按任务结束时间分批清理超期历史，同时释放已过期且不再共享的输出及暂存结果；运行中、正在保存或持有有效租约的任务不会被清理。与视频一致，仍有有效生成图片的历史会继续保留，因此文件设为永久保存时，对应历史也保留。仅将历史设为永久不会阻止图片文件按自身规则过期。
 

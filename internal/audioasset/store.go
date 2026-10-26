@@ -210,16 +210,19 @@ func Save(ctx context.Context, db *gorm.DB, store storage.Storage, uid int64, ta
 		return nil, e
 	}
 	a := &model.AudioAsset{UserID: uid, TaskID: taskID, ShortID: sid, StorageKey: "audio/" + uuid.NewString(), Source: source, Status: "ready", MIME: mime, Size: int64(len(b))}
-	if hours := Option("AudioGenRetentionHours", 24); hours > 0 {
-		expires := time.Now().Add(time.Duration(hours) * time.Hour)
-		a.ExpiresAt = &expires
-	}
 	if e = store.Put(ctx, a.StorageKey, bytes.NewReader(b), mime); e != nil {
 		return nil, e
 	}
 	if e = ctx.Err(); e != nil {
 		_ = store.Delete(context.Background(), a.StorageKey)
 		return nil, e
+	}
+	model.MediaRetentionMutex.RLock()
+	defer model.MediaRetentionMutex.RUnlock()
+	a.CreatedAt = time.Now()
+	if hours := Option("AudioGenRetentionHours", 24); hours > 0 {
+		expires := a.CreatedAt.Add(time.Duration(hours) * time.Hour)
+		a.ExpiresAt = &expires
 	}
 	if e = db.Create(a).Error; e != nil {
 		_ = store.Delete(ctx, a.StorageKey)

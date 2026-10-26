@@ -312,11 +312,13 @@ func finishAudioUpload(c *gin.Context, a *model.AudioAsset, b []byte) error {
 		_ = db.Model(a).Update("status", "pending").Error
 		return e
 	}
+	model.MediaRetentionMutex.RLock()
+	defer model.MediaRetentionMutex.RUnlock()
 	a.Status = "ready"
 	a.MIME = mt
 	a.Size = int64(len(b))
 	if hours := audioasset.Option("AudioGenRetentionHours", 24); hours > 0 {
-		expiry := time.Now().Add(time.Duration(hours) * time.Hour)
+		expiry := a.CreatedAt.Add(time.Duration(hours) * time.Hour)
 		a.ExpiresAt = &expiry
 	}
 	if e = db.Save(a).Error; e != nil {

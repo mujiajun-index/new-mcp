@@ -13,14 +13,9 @@ import (
 // always map to the same StorageKey, so an upload of known bytes can be turned
 // into a no-op Put + a freshly signed URL by looking the key up here.
 //
-// Retention is dynamic: there is no ExpiresAt column. A row is reaped when
-// created_at is older than its source's retention cutoff, unless retention is
-// zero (permanent). The retention is evaluated by the
-// cleanup loop each tick. That means an admin LOWERING retention takes effect
-// on the very next sweep — existing uploads granted a longer window get pulled
-// in immediately — which is the behavior the design verification relies on.
-// TouchRefresh extends a row's life by resetting created_at, so a re-upload of
-// identical bytes restarts the clock.
+// Retention starts at CreatedAt for new rows. A policy change records a new
+// RetentionStartedAt for existing files without rewriting their creation time.
+// Zero retention is permanent. TouchRefresh renews deduplicated uploads.
 //
 // Like most models it has CreatedAt/UpdatedAt, but unlike them it has NO
 // gorm.DeletedAt: rows are ephemeral and the cleanup loop hard-deletes both the
@@ -34,17 +29,18 @@ import (
 // the last row referencing it goes away). Status tracks the presigned-PUT slot
 // lifecycle (pending → uploaded); multipart uploads insert straight to uploaded.
 type UploadedImage struct {
-	ID         int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	UserID     int64     `json:"user_id" gorm:"not null;uniqueIndex:idx_uploaded_images_user_source_storage,priority:1"`
-	StorageKey string    `json:"storage_key" gorm:"size:128;not null;uniqueIndex:idx_uploaded_images_user_source_storage,priority:3;index:idx_uploaded_images_storage_key_lookup"` // content-addressed "ab/<sha256>"
-	ShortID    string    `json:"short_id" gorm:"size:16;not null;default:''"`                                                                                                      // short URL handle (/u/<sid>)
-	MediaType  string    `json:"media_type" gorm:"size:64;not null"`                                                                                                               // sniffed magic-byte mime, e.g. image/png
-	Size       int64     `json:"size" gorm:"not null"`                                                                                                                             // decoded byte length
-	Backend    string    `json:"backend" gorm:"size:16;not null"`                                                                                                                  // "local" | "s3" — which backend holds the blob
-	Status     string    `json:"status" gorm:"size:16;not null;default:'uploaded';index"`                                                                                          // pending | uploaded (V1.1 presigned-PUT slots)
-	Source     string    `json:"-" gorm:"size:16;not null;default:'upload';index;uniqueIndex:idx_uploaded_images_user_source_storage,priority:2"`                                  // upload | imagegen | reference
-	CreatedAt  time.Time `json:"created_at" gorm:"index"`                                                                                                                          // retention clock; reaped when older than now-retention
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID                 int64      `json:"id" gorm:"primaryKey;autoIncrement"`
+	UserID             int64      `json:"user_id" gorm:"not null;uniqueIndex:idx_uploaded_images_user_source_storage,priority:1"`
+	StorageKey         string     `json:"storage_key" gorm:"size:128;not null;uniqueIndex:idx_uploaded_images_user_source_storage,priority:3;index:idx_uploaded_images_storage_key_lookup"` // content-addressed "ab/<sha256>"
+	ShortID            string     `json:"short_id" gorm:"size:16;not null;default:''"`                                                                                                      // short URL handle (/u/<sid>)
+	MediaType          string     `json:"media_type" gorm:"size:64;not null"`                                                                                                               // sniffed magic-byte mime, e.g. image/png
+	Size               int64      `json:"size" gorm:"not null"`                                                                                                                             // decoded byte length
+	Backend            string     `json:"backend" gorm:"size:16;not null"`                                                                                                                  // "local" | "s3" — which backend holds the blob
+	Status             string     `json:"status" gorm:"size:16;not null;default:'uploaded';index"`                                                                                          // pending | uploaded (V1.1 presigned-PUT slots)
+	Source             string     `json:"-" gorm:"size:16;not null;default:'upload';index;uniqueIndex:idx_uploaded_images_user_source_storage,priority:2"`                                  // upload | imagegen | reference
+	CreatedAt          time.Time  `json:"created_at" gorm:"index"`                                                                                                                          // initial retention clock; policy resets use RetentionStartedAt
+	UpdatedAt          time.Time  `json:"updated_at"`
+	RetentionStartedAt *time.Time `json:"-" gorm:"index"`
 }
 
 func (UploadedImage) TableName() string { return "uploaded_images" }
@@ -227,7 +223,9 @@ func ListPendingExpired(olderThan time.Time, limit int) ([]UploadedImage, error)
 // Called when an upload of identical bytes hits the dedup path, so a popular
 // image stays alive from its most recent request rather than its first.
 func TouchRefresh(id int64, now time.Time) error {
-	return DB.Model(&UploadedImage{}).Where("id = ?", id).Update("created_at", now).Error
+	MediaRetentionMutex.RLock()
+	defer MediaRetentionMutex.RUnlock()
+	return DB.Model(&UploadedImage{}).Where("id = ?", id).Updates(map[string]any{"created_at": now, "retention_started_at": nil}).Error
 }
 
 // ListExpiredUploads returns the selected policy's rows older than the cutoff,
@@ -235,7 +233,7 @@ func TouchRefresh(id int64, now time.Time) error {
 // limit. A bounded limit keeps each sweep's Storage.Delete fan-out predictable.
 func ListExpiredUploads(olderThan time.Time, generated bool, limit int) ([]UploadedImage, error) {
 	var imgs []UploadedImage
-	q := DB.Where("created_at < ?", olderThan).Order("created_at ASC")
+	q := DB.Where("status = ? AND COALESCE(retention_started_at, created_at) <= ?", UploadStatusUploaded, olderThan).Order("COALESCE(retention_started_at, created_at) ASC")
 	if generated {
 		q = q.Where("source = ?", ImageSourceGenerated)
 	} else {

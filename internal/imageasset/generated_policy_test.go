@@ -68,7 +68,7 @@ func TestGeneratedImageRetentionIsIndependent(t *testing.T) {
 	}
 	old := time.Now().Add(-3 * time.Hour)
 	db.Model(&model.UploadedImage{}).Where("id IN ?", []int64{upload.UploadID, generated.UploadID}).Update("created_at", old)
-	if !Expired(old, model.ImageSourceUpload) || Expired(old, model.ImageSourceGenerated) {
+	if !Expired(&model.UploadedImage{CreatedAt: old, Source: model.ImageSourceUpload}) || Expired(&model.UploadedImage{CreatedAt: old, Source: model.ImageSourceGenerated}) {
 		t.Fatal("upload retention affected generated image")
 	}
 	if _, err := Save(ctx, store, 1, bytes.NewReader(data), 1024); err != nil {
@@ -80,7 +80,7 @@ func TestGeneratedImageRetentionIsIndependent(t *testing.T) {
 	}
 	model.UpdateOption("UploadRetentionHours", "0")
 	model.UpdateOption("ImageGenRetentionHours", "1")
-	if Expiration(old, model.ImageSourceUpload) != nil || !Expired(old, model.ImageSourceGenerated) {
+	if Expiration(&model.UploadedImage{CreatedAt: old, Source: model.ImageSourceUpload}) != nil || !Expired(&model.UploadedImage{CreatedAt: old, Source: model.ImageSourceGenerated}) {
 		t.Fatal("permanent upload changed generated retention")
 	}
 	model.UpdateOption("ImageGenRetentionHours", "0")

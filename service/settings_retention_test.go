@@ -9,11 +9,11 @@ import (
 
 func TestPermanentRetentionSettings(t *testing.T) {
 	db := imageGenTestSetup(t)
-	if err := db.AutoMigrate(&model.McpCallLog{}); err != nil {
+	if err := db.AutoMigrate(&model.McpCallLog{}, &model.VideoGenTask{}, &model.AudioAsset{}); err != nil {
 		t.Fatal(err)
 	}
 	s := &SettingsService{}
-	for _, key := range []string{"UploadRetentionHours", "ImageGenRetentionHours", "ImageGenHistoryDays", "VideoGenRetentionHours", "VideoGenHistoryDays", "MaxImagesPerUser"} {
+	for _, key := range []string{"UploadRetentionHours", "ImageGenRetentionHours", "ImageGenHistoryDays", "VideoGenRetentionHours", "VideoGenHistoryDays", "AudioGenRetentionHours", "MaxImagesPerUser"} {
 		for _, value := range []string{"24", "0"} {
 			if err := s.UpdateSetting(model.Operator{}, key, value); err != nil || model.GetOptionString(key) != value {
 				t.Fatalf("setting %s=%s: %v", key, value, err)
@@ -31,7 +31,7 @@ func TestPermanentRetentionSettings(t *testing.T) {
 	if err := s.UpdateSetting(model.Operator{}, "VideoGenMaxBytes", "0"); !errors.Is(err, ErrInvalidSetting) {
 		t.Fatal("positive-only video size setting accepted zero", err)
 	}
-	for _, key := range []string{"ImageGenRetentionHours", "ImageGenHistoryDays", "VideoGenHistoryDays"} {
+	for _, key := range []string{"UploadRetentionHours", "ImageGenRetentionHours", "VideoGenRetentionHours", "AudioGenRetentionHours", "ImageGenHistoryDays", "VideoGenHistoryDays"} {
 		if err := s.UpdateSetting(model.Operator{}, key, "8760"); err != nil {
 			t.Fatal("retention rejected its upper bound", key, err)
 		}

@@ -2033,7 +2033,7 @@ OpenRouter 将 `seconds` 转为整数 `duration`；未提供 `seconds` 时可传
 
 `GET` / `HEAD /v/:sid?s=<signature>` 位于应用根路径，不带 `/api/v1`。返回 MP4/WebM，支持 Range（206、416）和浏览器拖动播放；附加 `download=1` 时返回 `Content-Disposition: attachment` 和带正确扩展名的文件名，供浏览器直接下载，仍使用相同签名、过期检查和 Range 能力。文件到期返回 410。链接使用独立于图片的签名域，持有有效链接即可读取文件，无需额外用户 JWT。过期检查以任务保存的 `expires_at` 为准。
 
-图片和视频接口中的 `expires_at=null` 表示永久保存。`VideoGenRetentionHours=0` 时，现存且未清理的视频暂停过期与自动清理；新保存视频不记录到期时间。永久视频计入每用户数量限制，其任务历史保留至手动删除。恢复正数时，旧有限期视频继续按原到期时间处理，新保存的永久视频仍无到期时间。
+图片、视频和音频接口中的 `expires_at=null` 表示永久保存。通过系统设置修改 `UploadRetentionHours`、`ImageGenRetentionHours`、`VideoGenRetentionHours` 或 `AudioGenRetentionHours` 时，已有且未清理的对应类型文件统一从修改时刻重新计算期限，原创建时间不变。比如从永久改为 24 小时，已有文件均在修改时刻加 24 小时到期；之后新增文件按自身创建/保存时间加 24 小时到期。改为 0 后清除有效期限，重复保存相同值不会再次续期。设置与已有文件的更新在同一事务中提交，待上传槽位和已清理的文件不会被恢复。永久视频计入每用户数量限制，其任务历史保留至手动删除。
 
 服务端仅将上游凭证发送至配置来源，跨来源下载重定向移除凭证并校验目标地址；参考图需通过现有图片加载及归属校验。New API 的通义万相、豆包图生选择 JSON；multipart 上传实际图片字节，`metadata` 编码为 JSON 字符串，其他复杂扩展参数使用 JSON。OpenRouter 使用 JSON 首帧，内容由固定接口携带凭证流式获取后保存。`extra_body` 不可覆盖模型、提示词、参考图（包括 `frame_images`、`input_references`）、鉴权和本地任务控制字段。
 
