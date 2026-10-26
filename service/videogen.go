@@ -66,14 +66,16 @@ func videoGenDescriptions(c *model.VideoGenConfig) []videoDescription {
 		generate, image = model.DefaultOpenRouterGenerateVideoDesc, model.DefaultOpenRouterGenerateVideoFromImageDesc
 	case videogen.ProtocolGemini:
 		generate, image = model.DefaultGeminiGenerateVideoDesc, model.DefaultGeminiGenerateVideoFromImageDesc
+	case videogen.ProtocolMiniMax:
+		generate, image = model.DefaultMiniMaxGenerateVideoDesc, model.DefaultMiniMaxGenerateVideoFromImageDesc
 	}
-	for _, builtin := range []string{"", model.DefaultGenerateVideoDesc, model.DefaultOpenRouterGenerateVideoDesc, model.DefaultGeminiGenerateVideoDesc} {
+	for _, builtin := range []string{"", model.DefaultGenerateVideoDesc, model.DefaultOpenRouterGenerateVideoDesc, model.DefaultGeminiGenerateVideoDesc, model.DefaultMiniMaxGenerateVideoDesc} {
 		if c.GenerateVideoDesc == builtin {
 			c.GenerateVideoDesc = generate
 			break
 		}
 	}
-	for _, builtin := range []string{"", model.DefaultGenerateVideoFromImageDesc, model.DefaultOpenRouterGenerateVideoFromImageDesc, model.DefaultGeminiGenerateVideoFromImageDesc} {
+	for _, builtin := range []string{"", model.DefaultGenerateVideoFromImageDesc, model.DefaultOpenRouterGenerateVideoFromImageDesc, model.DefaultGeminiGenerateVideoFromImageDesc, model.DefaultMiniMaxGenerateVideoFromImageDesc} {
 		if c.GenerateVideoFromImageDesc == builtin {
 			c.GenerateVideoFromImageDesc = image
 			break
@@ -147,7 +149,7 @@ func applyVideoGenReq(c *model.VideoGenConfig, r *dto.VideoGenConfigReq) error {
 	if c.ImageRequestFormat != "multipart" && c.ImageRequestFormat != "json" {
 		return fmt.Errorf("image_request_format must be multipart or json")
 	}
-	if c.Protocol == videogen.ProtocolOpenRouter || c.Protocol == videogen.ProtocolGemini {
+	if c.Protocol == videogen.ProtocolOpenRouter || c.Protocol == videogen.ProtocolGemini || c.Protocol == videogen.ProtocolMiniMax {
 		c.ImageRequestFormat = "json"
 	}
 	if c.RequestTimeoutSeconds < 1 || c.RequestTimeoutSeconds > 300 {
@@ -369,6 +371,12 @@ func buildVideoGenTools(c *model.VideoGenConfig) []map[string]any {
 			props["size"] = map[string]any{"type": "string", "description": "Gemini resolution, for example 720p or 1080p. Do not also set extra_body.resolution."}
 			delete(props, "metadata")
 			props["extra_body"] = map[string]any{"type": "object", "description": "Native Gemini camelCase parameters such as aspectRatio, resolution, durationSeconds, negativePrompt, personGeneration and seed. These fields become parameters directly; do not nest parameters or instances. One saved video per task. Cannot override prompt, model, image, video, reference frames, storage targets or local controls."}
+		}
+		if c.Protocol == videogen.ProtocolMiniMax {
+			props["seconds"] = map[string]any{"type": "integer", "minimum": 1, "maximum": 3600, "default": 5, "description": "MiniMax duration; supported values depend on the deployment/model. Do not also set extra_body.duration."}
+			props["size"] = map[string]any{"type": "string", "default": "768P", "description": "MiniMax resolution, for example 480P or 768P. Do not also set extra_body.resolution."}
+			delete(props, "metadata")
+			props["extra_body"] = map[string]any{"type": "object", "description": "Native MiniMax v2 options: ratio (default 16:9 for text, adaptive for first-frame), extra.prompt_expansion_mode and other generation options. Do not nest content or override prompt, model, references, credentials or local controls. Use either seconds or duration, and either size or resolution."}
 		}
 		if op == "image" {
 			name, desc = model.GenerateVideoFromImageToolName, c.GenerateVideoFromImageDesc

@@ -1962,9 +1962,9 @@ wss://api.newmcp.pro/mcp/passive/?token=<serviceID>.<random-secret>
 | 字段 | 类型 | 约束 / 默认 |
 | --- | --- | --- |
 | `name` / `description` | string | 配置名称必填；说明可选 |
-| `protocol` | string | `openai_video`（默认）、`gemini_video`（Gemini 原生 Veo）或 `openrouter_video`；页面显示 OpenAI、Gemini、OpenRouter |
+| `protocol` | string | `openai_video`（默认）、`gemini_video`、`openrouter_video` 或 `minimax_video`；页面显示 OpenAI、Gemini、OpenRouter、MiniMax |
 | `model_name` | string | 必填，允许手填；不设厂商模型白名单 |
-| `endpoint_url` | string | 可选；留空时 OpenAI 默认 `https://api.openai.com/v1`，Gemini 默认 `https://generativelanguage.googleapis.com/v1beta`，OpenRouter 默认 `https://openrouter.ai/api/v1`；更新时省略字段保留原地址，传空字符串恢复当前协议官方地址。保留代理前缀，Gemini 统一使用 `/v1beta`；OpenRouter 的官方根地址补 `/api/v1` |
+| `endpoint_url` | string | 可选；留空时 OpenAI 默认 `https://api.openai.com/v1`，Gemini 默认 `https://generativelanguage.googleapis.com/v1beta`，OpenRouter 默认 `https://openrouter.ai/api/v1`，MiniMax 默认 `https://api.minimax.io/v2`；自部署填写实际地址。更新时省略字段保留原地址，传空字符串恢复当前协议官方地址。保留代理前缀，Gemini 使用 `/v1beta`、MiniMax 视频使用 `/v2`，OpenRouter 官方根地址补 `/api/v1` |
 | `api_key` | string | 写入字段；更新为空保留原密钥，读取只返回 `has_api_key` |
 | `operation` | string | `generate`（文生）、`image`（图生）、`both`，默认 `both` |
 | `image_request_format` | string | New API 为 `multipart` / `json`，默认 `multipart`；OpenRouter 图生使用 JSON |
@@ -1979,9 +1979,13 @@ OpenRouter 配置与参数示例见[视频生成说明](./VIDEO-GENERATION.md#op
 
 Gemini 原生配置选择 `gemini_video`，参考[Gemini 接入说明](./VIDEO-GENERATION.md#gemini-原生视频协议gemini_video)。`seconds` 映射为整数 `parameters.durationSeconds`，`size` 映射为 `parameters.resolution`；`extra_body` 直接承载其他原生驼峰 `parameters` 字段，不嵌套 `instances` / `parameters`，不使用 `metadata`。固定 JSON 单图首帧和单个输出视频，不包含额外参考帧、延长、Vertex AI 或 Interactions API。
 
+MiniMax 原生 V2 配置选择 `minimax_video`，支持使用 `/v2/video_generation` 的自部署服务，详见 [MiniMax 接入说明](./VIDEO-GENERATION.md#minimax-原生视频协议minimax_video)。`prompt` 转为文本 `content`，单张参考图转为首帧 data URL；整数 `seconds` / `size` 分别转为 `duration` / `resolution`，默认 5 秒、768P。文生默认比例 16:9，图生默认 adaptive；其他原生参数放入 `extra_body`，不使用 `metadata`。模型名原样提交；轮询 `/v2/query/video_generation/{task_id}` 的 `task` 并从 `task.content.url` 下载，重试保存不重新提交生成。
+
 ### 13.2 模型目录与草稿测试
 
 `POST /videogen/models` 接受连接字段 `endpoint_url`、`api_key`、可选 `protocol`（默认 `openai_video`）及可选 `config_id`。提供 ID 时先载入当前用户的配置，再覆盖请求中的连接字段，API Key 留空保留已保存值；省略 ID 时只需密钥，地址可省略或留空使用当前协议官方地址，不要求填写 `name` 或 `model_name`，也不校验生成参数。OpenAI 使用 `/v1/models`，Gemini 分页查询 `/v1beta/models` 并筛选支持 `predictLongRunning` 的模型，OpenRouter 使用专用 `/api/v1/videos/models`（实际路径保留配置的代理前缀）。统一返回 `id` / `name`，不限制具体模型的时长、分辨率枚举。页面默认用 `video` 搜索，可修改为 `veo`、`hailuo` 或清空；Gemini 目录已按视频能力过滤，默认词匹配全部返回条目。查询目录成功不代表模型具有视频生成权限。
+
+MiniMax 模型目录使用同一代理前缀下的 `/v1/models`（视频生成虽使用 V2，目录仍为 V1）。不预设模型白名单；目录缺失或不包含视频模型时仍可直接手填部署注册的模型名。
 
 `POST /videogen/test` 同样支持草稿覆盖，另接受 `tool`（默认 `generate_video`）及 `arguments` 对象。已保存配置示例：
 
@@ -2019,7 +2023,7 @@ Gemini 原生配置选择 `gemini_video`，参考[Gemini 接入说明](./VIDEO-G
 
 生成重试请求为 `{config_id?, request_id, arguments?}`：`request_id` 必填且最长 128 字节，同一次重试重复提交返回原任务的当前状态；改变输入时必须更换该 ID。返回的 `task_id` 与 URL 中的任务 ID 相同，不新增历史记录。`config_id` 默认使用原配置，草稿或原配置已删除时需选择其他属于当前用户的已保存配置。使用所选配置当前的模型、连接和默认参数，更新原记录的配置关联、模型、提示词及参数；保留创建时间、初始来源及原提交幂等映射，`retry_count` 加一。`arguments` 可替换原调用参数，省略时恢复私有输入快照；其中不能填写 `request_id` 或 `wait_seconds`。旧记录没有输入快照时仅恢复提示词，图生须补充参考图。进行中、已生成和 `submission_unknown` 任务不能接受新的重试；已经受理的同一次重试仍可重复查询当前结果。保存失败使用 `retry-download`。重试生成会重新调用上游，可能产生费用。
 
-MCP 生成参数为必填 `prompt`，可选 `seconds`、`size`、`extra_body`、`wait_seconds`、`request_id`；`metadata` 仅在 `openai_video` 工具 schema 中提供，图生另需 `image`。等待上限 30 秒，生成默认 10 秒，状态查询默认 0 秒。进行中或短等待结束返回正常结果及任务 ID。已保存结果同时提供 `structuredContent.videos` 与 `resource_link`。MCP 状态工具校验用户和配置归属，不接受任意上游任务 ID。
+MCP 生成参数为必填 `prompt`，可选 `seconds`、`size`、`extra_body`、`wait_seconds`、`request_id`；`metadata` 仅在 `openai_video` 工具 schema 中提供，Gemini、OpenRouter、MiniMax 不提供此字段，图生另需 `image`。等待上限 30 秒，生成默认 10 秒，状态查询默认 0 秒。进行中或短等待结束返回正常结果及任务 ID。已保存结果同时提供 `structuredContent.videos` 与 `resource_link`。MCP 状态工具校验用户和配置归属，不接受任意上游任务 ID。
 
 OpenRouter 将 `seconds` 转为整数 `duration`；未提供 `seconds` 时可传 `extra_body.duration`，不可同时提供。`extra_body` 可传 `resolution`、`aspect_ratio`、`generate_audio`、`seed` 和 `provider.options` 等扩展。非空 `metadata` 在本地拒绝，提示使用 `extra_body`。图生固定使用 JSON `frame_images` 的首帧结构；URL 经现有图片加载和归属校验，base64/data URL 可直接提交而无需先保存为图片链接。上游查询及下载固定为配置前缀下的 `/videos/{id}`、`/videos/{id}/content?index=0`，不使用返回的任意 URL；`expired` 终态映射为 `failed`。精确字段参考 [OpenRouter 提交接口](https://openrouter.ai/docs/api/api-reference/video-generation/submit-a-video-generation-request)。
 

@@ -2,6 +2,15 @@
 
 首次验收日期：2026-10-12，后续验证按下方日期记录。环境为 Go 1.26.3 / Windows amd64、SQLite 3.41.2。已完成自动测试和隔离环境的页面模拟流程；真实视频生成、实际 S3 桶及 MySQL/PostgreSQL 验收尚未完成。使用说明见 [内置视频生成 MCP](./VIDEO-GENERATION.md)。
 
+## 2026-10-26 MiniMax 原生 V2 / 自部署 Hailuo
+
+- 根据已确认的 `/v2/video_generation` 接口新增 `minimax_video`；页面列表、配置选项和标题显示 MiniMax，固定 JSON，支持自部署地址、代理前缀及已有 `/v1`、`/v2` 后缀。地址留空使用官方 `https://api.minimax.io/v2`，模型名原样提交（自部署示例 `hailuo-3-max`，官方示例 `MiniMax-H3-Max`）。
+- 联网核对 [创建任务](https://platform.minimax.io/docs/api-reference/video-generation-v2-create)、[查询任务](https://platform.minimax.io/docs/api-reference/video-generation-v2-query) 和 [模型目录](https://platform.minimax.io/docs/api-reference/models/openai/list-models) 官方文档。提交 `content` 文本/单图首帧，通用 `seconds` / `size` 对应 `duration` / `resolution`；默认 5 秒、768P，文生比例 16:9、图生 adaptive。原生选项放入 `extra_body`，拒绝非空 `metadata` 和输入/凭证/任务字段覆盖，不固定模型参数枚举。
+- 模拟文生与草稿 data URL 图生覆盖客户端断开后继续、请求去重、管理器重建后凭快照恢复、配置修改不改变已有任务、429 查询临时错误、下载失败后仅重试保存、凭证清除和 MCP `resource_link`。失败生成的手动重试保留同一任务 ID、创建时间和记录数量。无需数据库迁移。
+- 覆盖非法任务 ID、查询响应 ID 不一致、参数类型与歧义、错误脱敏、跨用户/配置拒绝及私有跨来源下载拒绝；HTTP 200 内明确声明 400 的错误信封标记失败，不明确的 500 保持提交结果不确定。模型目录使用同代理前缀下 `/v1/models`，草稿查询不要求名称/模型，不创建配置。
+- `go test ./internal/mcp/videogen ./internal/mcp/virtual ./service ./router ./internal/mcp/imagegen ./internal/videoasset ./model -timeout 120s -count=1` 通过；`npm run build:check` 与 `npm run test:videogen-params`（中英文共 12 项）通过。
+- 生成包含最新前端的程序 `tmp/videogen-minimax/newmcp.exe`。未运行浏览器测试，未向真实自部署实例或官方付费模型提交生成。未修改业务配置、任务或重启业务服务；真实部署的模型权限、参数支持及视频质量仍需使用其凭证验收。
+
 ## 2026-10-17 Gemini 原生视频协议
 
 - 新增 `gemini_video`，页面列表、添加/编辑选项和详情标题统一为 OpenAI、Gemini、OpenRouter。基础地址留空使用 `https://generativelanguage.googleapis.com/v1beta`，支持代理前缀和 `models/` 模型前缀，不固定模型名称及参数枚举。

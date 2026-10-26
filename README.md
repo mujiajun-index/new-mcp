@@ -91,7 +91,7 @@ Create a configuration, test it, enable its virtual MCP service, and add that se
 |---------|--------------|
 | Vision | Image analysis with `analyze_image`, plus `upload_image` for local reference images |
 | Image Generation | OpenAI-compatible, Gemini, and OpenRouter protocols; text-to-image and image editing; persistent background tasks queried through `get_image_status` |
-| Video Generation | OpenAI-compatible, Gemini, and OpenRouter protocols; text-to-video and single-image-to-video; persistent tasks queried through `get_video_status`, playback, download, and save retries |
+| Video Generation | OpenAI-compatible, Gemini, OpenRouter, and native MiniMax V2 (including compatible self-hosted Hailuo) protocols; text-to-video and single-image-to-video; persistent tasks queried through `get_video_status`, playback, download, and save retries |
 | Cameras | Frame capture, frame analysis, and live camera streaming |
 | System One | Jev/CLM/Laya decision models exposed through `evaluate`, with probability, choice, score, and batch evaluation |
 

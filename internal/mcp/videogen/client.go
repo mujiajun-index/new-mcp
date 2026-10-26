@@ -1,4 +1,4 @@
-// Package videogen implements asynchronous OpenAI, Gemini and OpenRouter video protocols.
+// Package videogen implements asynchronous OpenAI, Gemini, OpenRouter and MiniMax video protocols.
 package videogen
 
 import (
@@ -68,9 +68,11 @@ const (
 	ProtocolOpenAI            = "openai_video"
 	ProtocolGemini            = "gemini_video"
 	ProtocolOpenRouter        = "openrouter_video"
+	ProtocolMiniMax           = "minimax_video"
 	DefaultOpenAIEndpoint     = "https://api.openai.com/v1"
 	DefaultGeminiEndpoint     = "https://generativelanguage.googleapis.com/v1beta"
 	DefaultOpenRouterEndpoint = "https://openrouter.ai/api/v1"
+	DefaultMiniMaxEndpoint    = "https://api.minimax.io/v2"
 )
 
 // Empty snapshots and configurations created before protocol selection retain
@@ -92,6 +94,8 @@ func DefaultEndpoint(protocol string) string {
 		return DefaultGeminiEndpoint
 	case ProtocolOpenRouter:
 		return DefaultOpenRouterEndpoint
+	case ProtocolMiniMax:
+		return DefaultMiniMaxEndpoint
 	default:
 		return ""
 	}
@@ -105,6 +109,8 @@ func BaseURLForProtocol(raw, protocol string) (string, error) {
 	case ProtocolOpenAI:
 	case ProtocolGemini:
 		return imagegen.BaseURL(raw, "gemini")
+	case ProtocolMiniMax:
+		return miniMaxBaseURL(raw)
 	case ProtocolOpenRouter:
 		u, err := url.Parse(strings.TrimSpace(raw))
 		if err == nil && strings.EqualFold(u.Hostname(), "openrouter.ai") && strings.Trim(u.Path, "/") == "" {
@@ -112,7 +118,7 @@ func BaseURLForProtocol(raw, protocol string) (string, error) {
 			raw = u.String()
 		}
 	default:
-		return "", fmt.Errorf("protocol must be openai_video, gemini_video or openrouter_video")
+		return "", fmt.Errorf("protocol must be openai_video, gemini_video, openrouter_video or minimax_video")
 	}
 	return imagegen.BaseURL(raw, "openai")
 }
@@ -123,6 +129,8 @@ func ValidateProtocolParams(protocol string, p map[string]any) error {
 		return nil
 	case ProtocolGemini:
 		return validateGeminiParams(p)
+	case ProtocolMiniMax:
+		return validateMiniMaxParams(p)
 	case ProtocolOpenRouter:
 		if metadata, _ := p["metadata"].(map[string]any); len(metadata) != 0 {
 			return fmt.Errorf("OpenRouter video does not use metadata; use extra_body for resolution, aspect_ratio or provider options")
@@ -143,7 +151,7 @@ func ValidateProtocolParams(protocol string, p map[string]any) error {
 		}
 		return nil
 	default:
-		return fmt.Errorf("protocol must be openai_video, gemini_video or openrouter_video")
+		return fmt.Errorf("protocol must be openai_video, gemini_video, openrouter_video or minimax_video")
 	}
 }
 
@@ -222,6 +230,9 @@ func (c *Client) BuildSubmit(ctx context.Context, p map[string]any, img *imagege
 	}
 	if ProtocolName(c.Protocol) == ProtocolGemini {
 		return c.buildGeminiSubmit(ctx, p, img)
+	}
+	if ProtocolName(c.Protocol) == ProtocolMiniMax {
+		return c.buildMiniMaxSubmit(ctx, p, img)
 	}
 	base, err := BaseURLForProtocol(c.EndpointURL, c.Protocol)
 	if err != nil {
@@ -354,6 +365,13 @@ func (c *Client) do(req *http.Request) (*Video, error) {
 		}
 		return op.video(), nil
 	}
+	if ProtocolName(c.Protocol) == ProtocolMiniMax {
+		task, err := c.parseMiniMaxResponse(raw)
+		if err != nil {
+			return nil, err
+		}
+		return task.video(), nil
+	}
 	var v Video
 	if err := json.Unmarshal(raw, &v); err != nil {
 		return nil, fmt.Errorf("invalid video API response")
@@ -376,6 +394,13 @@ func (c *Client) Submit(req *http.Request) (*Video, error) {
 }
 
 func (c *Client) Query(ctx context.Context, id string) (*Video, error) {
+	if ProtocolName(c.Protocol) == ProtocolMiniMax {
+		task, err := c.queryMiniMax(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		return task.video(), nil
+	}
 	if ProtocolName(c.Protocol) == ProtocolGemini {
 		op, err := c.queryGemini(ctx, id)
 		if err != nil {
@@ -396,6 +421,9 @@ func (c *Client) Query(ctx context.Context, id string) (*Video, error) {
 }
 
 func (c *Client) Content(ctx context.Context, id string, maxBytes int64) (*http.Response, error) {
+	if ProtocolName(c.Protocol) == ProtocolMiniMax {
+		return c.miniMaxContent(ctx, id, maxBytes)
+	}
 	if ProtocolName(c.Protocol) == ProtocolGemini {
 		return c.geminiContent(ctx, id, maxBytes)
 	}
@@ -423,6 +451,10 @@ func (c *Client) ListModels(ctx context.Context) ([]imagegen.ModelInfo, error) {
 		return nil, err
 	}
 	path := "/models"
+	if ProtocolName(c.Protocol) == ProtocolMiniMax {
+		// MiniMax's model catalog retains v1; video generation uses v2.
+		base = strings.TrimSuffix(base, "/v2") + "/v1"
+	}
 	if ProtocolName(c.Protocol) == ProtocolOpenRouter {
 		path = "/videos/models"
 	}

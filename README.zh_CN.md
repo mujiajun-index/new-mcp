@@ -91,7 +91,7 @@ NewMCP 是一个统一的 MCP（Model Context Protocol）服务管理平台。�
 |------|------|
 | 视觉理解 | 使用 `analyze_image` 分析图片，配合 `upload_image` 上传本地参考图 |
 | 图片生成 | OpenAI 兼容、Gemini、OpenRouter 协议；支持文生图、图片编辑及持久化后台任务，通过 `get_image_status` 查询 |
-| 视频生成 | OpenAI 兼容、Gemini、OpenRouter 协议；支持文生视频、单图图生视频、持久化任务、`get_video_status` 查询、播放、下载及重试保存 |
+| 视频生成 | OpenAI 兼容、Gemini、OpenRouter、MiniMax 原生 V2（兼容自部署 Hailuo）协议；支持文生视频、单图图生视频、持久化任务、`get_video_status` 查询、播放、下载及重试保存 |
 | 摄像头 | 抓拍画面、分析画面和实时推流 |
 | System One | 通过 `evaluate` 接入 Jev/CLM/Laya 决策模型，支持概率、选项、评分及批量评估 |
 

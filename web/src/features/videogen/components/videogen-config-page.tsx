@@ -155,7 +155,8 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
     form.operation === "both" ? testOperation : form.operation;
   const isOpenRouter = form.protocol === "openrouter_video";
   const isGemini = form.protocol === "gemini_video";
-  const jsonOnly = isOpenRouter || isGemini;
+  const isMiniMax = form.protocol === "minimax_video";
+  const jsonOnly = isOpenRouter || isGemini || isMiniMax;
   const refresh = () => {
     for (const key of [
       ["videogen-config", id],
@@ -442,6 +443,9 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
                 <SelectItem value="openrouter_video">
                   {t("videogen.openRouterProtocolLabel")}
                 </SelectItem>
+                <SelectItem value="minimax_video">
+                  {t("videogen.miniMaxProtocolLabel")}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -455,7 +459,11 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
                 aria-required="true"
                 className="min-w-0 flex-1"
                 value={form.model_name}
-                placeholder={t("videogen.modelPlaceholder")}
+                placeholder={
+                  isMiniMax
+                    ? "hailuo-3-max / MiniMax-H3-Max"
+                    : t("videogen.modelPlaceholder")
+                }
                 onChange={(e) =>
                   setForm({ ...form, model_name: e.target.value })
                 }
@@ -563,7 +571,9 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
                   ? "videogen.openRouterFormatHint"
                   : isGemini
                     ? "videogen.geminiFormatHint"
-                    : "videogen.formatHint",
+                    : isMiniMax
+                      ? "videogen.miniMaxFormatHint"
+                      : "videogen.formatHint",
               )}
             </p>
           </div>
@@ -583,7 +593,9 @@ export function VideoGenConfigPage({ id }: { id?: number }) {
                 ? "videogen.openRouterDefaultsHint"
                 : isGemini
                   ? "videogen.geminiDefaultsHint"
-                  : "videogen.defaultsHint",
+                  : isMiniMax
+                    ? "videogen.miniMaxDefaultsHint"
+                    : "videogen.defaultsHint",
             )}
           </p>
         </div>

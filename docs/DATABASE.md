@@ -623,7 +623,7 @@ CREATE TABLE `marketplace_item_keys` (
 | --- | --- |
 | `id` / `user_id` | 自增主键 / 属主索引 |
 | `name` / `description` | 配置名称（128 字节上限）/ 说明文本 |
-| `protocol` / `model_name` / `endpoint_url` | `openai_video`（默认）、`gemini_video` 或 `openrouter_video` / 手填模型 / 上游地址 |
+| `protocol` / `model_name` / `endpoint_url` | `openai_video`（默认）、`gemini_video`、`openrouter_video` 或 `minimax_video` / 手填模型 / 上游地址 |
 | `api_key` | 私有凭证文本，复用 `common.Encrypt`；未设置 `CRYPTO_SECRET` 时仅 base64 回退 |
 | `operation` / `image_request_format` | `generate/image/both` / `multipart/json` |
 | `default_params` | JSON 对象的文本存储 |
@@ -641,7 +641,7 @@ CREATE TABLE `marketplace_item_keys` (
 | `id` | UUID 字符串主键，API 字段名 `task_id` |
 | `user_id` / `config_id` / `config_name` | 用户归属 / 配置关联（草稿为 0）/ 提交时名称 |
 | `source` / `operation` / `model` / `prompt` | `mcp/test/retry` 调用来源、能力、模型及请求摘要 |
-| `protocol` | 提交协议快照，`openai_video` / `gemini_video` / `openrouter_video`；旧记录默认 `openai_video` |
+| `protocol` | 提交协议快照，`openai_video` / `gemini_video` / `openrouter_video` / `minimax_video`；旧记录默认 `openai_video` |
 | `idempotency_key` / `request_hash` | 64 字符唯一幂等键 / 有效输入摘要，阻止重试重复生成 |
 | `request_params` | 不公开的最新调用参数快照；沿用现有凭证存储机制，不包含配置密钥和连接；MySQL 为 LONGTEXT，SQLite/PostgreSQL 为 TEXT |
 | `reference_images` | 私有 JSON 文本，记录已校验输入图的资产 ID、角色及图片元数据；不保存 base64 或签名链接，API 返回归属校验后的 `reference_images` 数组 |
@@ -661,6 +661,8 @@ CREATE TABLE `marketplace_item_keys` (
 升级通过 AutoMigrate 追加任务 `protocol` 字段，已有任务及缺少协议的旧连接快照按 `openai_video` 解释，避免恢复时误用配置当前协议。新 OpenRouter 任务的行及连接快照均写入 `openrouter_video`，草稿任务同样适用；手动重试生成时更新为当前所选配置的协议。
 
 Gemini 原生视频沿用现有字段：`protocol=gemini_video`，`upstream_id` 存放 `models/{model}/operations/{id}` 或 `operations/{id}` 资源名。下载 URI 在保存时重新查询，不存入公开字段；无需新增表或列，草稿任务也可通过私有连接快照恢复。
+
+MiniMax 原生 V2 同样沿用现有字段：`protocol=minimax_video`，`upstream_id` 保存创建响应的 `task_id`，私有连接保存自部署地址、模型及凭证。重启和下载重试查询原 ID 的 `task.content.url`，无需新增表或列。失败生成的手动重试仍更新原任务行。
 
 明确的 HTTP 503 `video_queue_full` 拒绝提交记录为 `failed`。管理器启动时分批修正旧版误分类记录，条件要求原状态为 `submission_unknown`、上游 ID 和租约持有者为空、原错误是完整的 503 队列拒绝 JSON；更新核对原修订号与错误，避免覆盖其他实例改动。修正保留停止时间、错误及私有输入，并清除凭证快照，无需新增表字段。
 

@@ -7,7 +7,11 @@ export interface VideoGenConfig {
   id: number;
   name: string;
   description: string;
-  protocol: "openai_video" | "gemini_video" | "openrouter_video";
+  protocol:
+    | "openai_video"
+    | "gemini_video"
+    | "openrouter_video"
+    | "minimax_video";
   model_name: string;
   endpoint_url: string;
   operation: "generate" | "image" | "both";
@@ -189,9 +193,11 @@ export function defaultVideoEndpoint(
 ) {
   return protocol === "openrouter_video"
     ? "https://openrouter.ai/api/v1"
-    : protocol === "gemini_video"
-      ? "https://generativelanguage.googleapis.com/v1beta"
-      : "https://api.openai.com/v1";
+    : protocol === "minimax_video"
+      ? "https://api.minimax.io/v2"
+      : protocol === "gemini_video"
+        ? "https://generativelanguage.googleapis.com/v1beta"
+        : "https://api.openai.com/v1";
 }
 
 export function videoProtocolLabel(protocol: VideoGenConfig["protocol"]) {
@@ -199,6 +205,7 @@ export function videoProtocolLabel(protocol: VideoGenConfig["protocol"]) {
     openai_video: "videogen.protocolLabel",
     gemini_video: "videogen.geminiProtocolLabel",
     openrouter_video: "videogen.openRouterProtocolLabel",
+    minimax_video: "videogen.miniMaxProtocolLabel",
   };
   return i18n.t(keys[protocol] || protocol);
 }
@@ -209,6 +216,10 @@ export function videoEndpoint(
   model = "{model}",
 ) {
   let endpoint = base.trim() || defaultVideoEndpoint(protocol);
+  if (protocol === "minimax_video") {
+    const root = endpoint.replace(/\/+$/, "").replace(/\/v[12]$/, "");
+    return `${root}/v2/video_generation`;
+  }
   if (protocol === "gemini_video") {
     const root = endpoint.replace(/\/+$/, "").replace(/\/v1(?:beta)?$/, "");
     const modelID = model.trim().replace(/^models\//, "") || "{model}";

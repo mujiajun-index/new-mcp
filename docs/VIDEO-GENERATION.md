@@ -1,6 +1,6 @@
 # 内置视频生成 MCP
 
-> 更新日期：2026-10-17。使用说明与实际实现保持同步；验收结果见 [视频生成验收记录](./VIDEO-GENERATION-ACCEPTANCE.md)。
+> 更新日期：2026-10-26。使用说明与实际实现保持同步；验收结果见 [视频生成验收记录](./VIDEO-GENERATION-ACCEPTANCE.md)。
 
 视频生成沿用图片生成的管理方式：创建配置，测试后启用，再将自动注册的内置 MCP 服务加入允许访问的分组。入口为 `/videogen`。新建配置默认禁用。
 
@@ -26,14 +26,14 @@
 4. 保存配置并点击“启用”，将自动注册的 `videogen_<id>` 服务加入分组，确认分组工具已启用，再将分组绑定到 MCP 客户端使用的 API Key。
 5. 调用生成工具取得本地 `task_id`，按返回的 `poll_after_seconds` 调用状态工具，直到 `artifact_status=ready` 并出现 `videos` 链接。
 
-支持文生和单图图生，不包含 Responses、Remix、编辑或延长。`openai_video` 对接参考 New API 网关中的 Sora、Google/Vertex Veo、通义万相、豆包、可灵、海螺、即梦、Vidu 和 xAI；`gemini_video` 对接 Gemini Developer API 原生 Veo；`openrouter_video` 对接 OpenRouter 的统一视频 API，覆盖 `heygen/heygen-video-1`、`minimax/hailuo-3-max`、`google/veo-3.1-lite` 等模型。协议测试通过不等于这些模型均已完成真实生成验收。
+支持文生和单图图生，不包含 Responses、Remix、编辑或延长。`openai_video` 对接参考 New API 网关中的 Sora、Google/Vertex Veo、通义万相、豆包、可灵、海螺、即梦、Vidu 和 xAI；`gemini_video` 对接 Gemini Developer API 原生 Veo；`openrouter_video` 对接 OpenRouter 的统一视频 API，覆盖 `heygen/heygen-video-1`、`minimax/hailuo-3-max`、`google/veo-3.1-lite` 等模型；`minimax_video` 对接 MiniMax 原生 V2 和实现相同接口的自部署 Hailuo 服务。协议测试通过不等于这些模型均已完成真实生成验收。
 
 ## 配置
 
-- 协议：默认 `openai_video`，另可选 `gemini_video`、`openrouter_video`。配置列表、添加/编辑选项及详情页标题统一显示为 **OpenAI**、**Gemini**、**OpenRouter**。模型名称允许手填，不根据名称自动切换协议。New API 网关即使代理了 Veo 或带厂商前缀的模型，仍按网关实际要求选择协议。
-- 地址：可留空，OpenAI 默认 `https://api.openai.com/v1`，Gemini 默认 `https://generativelanguage.googleapis.com/v1beta`，OpenRouter 默认 `https://openrouter.ai/api/v1`；模型查询、测试和保存配置均使用此默认值。自定义地址保留反向代理前缀，Gemini 统一使用 `/v1beta`，其他协议使用 `/v1`。OpenRouter 协议下 `https://openrouter.ai` 自动补为 `https://openrouter.ai/api/v1`。使用代理时填写其实际 API 前缀，例如 `https://proxy.example.com/router/api/v1`。页面切换协议时会将上一协议的默认官方地址恢复为空，自定义地址保留。
+- 协议：默认 `openai_video`，另可选 `gemini_video`、`openrouter_video`、`minimax_video`。配置列表、添加/编辑选项及详情页标题统一显示为 **OpenAI**、**Gemini**、**OpenRouter**、**MiniMax**。模型名称允许手填，不根据名称自动切换协议。New API 网关即使代理了 Veo 或带厂商前缀的模型，仍按网关实际要求选择协议。
+- 地址：可留空，OpenAI 默认 `https://api.openai.com/v1`，Gemini 默认 `https://generativelanguage.googleapis.com/v1beta`，OpenRouter 默认 `https://openrouter.ai/api/v1`，MiniMax 默认 `https://api.minimax.io/v2`。自部署 MiniMax 请填写部署地址；也可填写国内官方 `https://api.minimaxi.com/v2`。自定义地址保留反向代理前缀，Gemini 统一使用 `/v1beta`，MiniMax 视频使用 `/v2`（模型目录使用同前缀 `/v1/models`），OpenAI / OpenRouter 使用 `/v1`。OpenRouter 协议下 `https://openrouter.ai` 自动补为 `https://openrouter.ai/api/v1`。页面切换协议时会将上一协议的默认官方地址恢复为空，自定义地址保留。
 - 能力：文生、图生或两者；默认两者。
-- 图片格式：New API 默认 multipart。通义万相和豆包插件不接收 multipart 图片文件，图生需选择 **JSON**；xAI 的复杂 metadata 也建议选择 JSON。Gemini 和 OpenRouter 固定使用 JSON，分别提交内嵌图片字节和首帧结构。
+- 图片格式：New API 默认 multipart。通义万相和豆包插件不接收 multipart 图片文件，图生需选择 **JSON**；xAI 的复杂 metadata 也建议选择 JSON。Gemini、OpenRouter、MiniMax 固定使用 JSON；MiniMax 将图片字节编码为 data URL 并作为首帧放入 `content`。
 - New API 的 JSON 图生保留经过下载、图片格式和归属校验的 URL；base64 图片先保存到共享图片存储，再提供签名 URL。OpenRouter 的 URL 同样先校验，base64 / data URL 则直接编码进 JSON，不为提交参考图依赖 `ServerAddress`；最终视频的本地下载链接仍使用该设置。
 - 单次上游请求默认超时 30 秒；后台跟踪默认 1 小时。跟踪到期会暂停查询，查询该任务可以继续跟踪，不会再次生成。
 - 默认参数为 JSON 对象，New API 示例为 `{"seconds":8,"size":"1280x720","metadata":{"resolution":"720p"}}`，OpenRouter 示例见下文。默认参数、本次测试参数和重试参数均可留空，等同于 `{}`；填写时必须是完整的 JSON 对象，不接受数组、`null` 或其他类型。格式错误会指出对应输入框，阻止提交。时长、分辨率与其他参数的可用组合由具体模型校验。
@@ -119,6 +119,45 @@ HTTP 400 任务可修正参数后，通过页面“重试生成”更新原记�
 凭证通过 `x-goog-api-key` 请求头发送，仅附加到配置的上游来源；查询不接受任意 URL。视频下载采用现有 DNS、来源、重定向、大小及文件头校验，跨来源不携带 API Key，私有地址会被拒绝。代理需要自行处理官方下载 URI 的鉴权或返回同来源下载地址。operation 名称保存在现有私有任务字段中，重启与重试保存时重新查询结果获取 URI，不重新生成。上游错误和无视频的安全过滤结果映射为生成失败；提交超时等结果不明确时仍保持 `submission_unknown`。
 
 默认模型搜索词仍为 `video`；Gemini 目录已按视频能力筛选，所以该搜索词能显示全部返回的视频模型，也可以改搜 `veo` 或清空。本轮使用模拟接口验收，未向真实付费模型提交生成。
+
+### MiniMax 原生视频协议（`minimax_video`）
+
+页面选择 **MiniMax**，基础地址填部署服务的根地址或代理前缀，例如 `http://localhost:8000/minimax`；已有 `/v1` 或 `/v2` 后缀也可使用，不会重复拼接版本。地址留空使用官方 `https://api.minimax.io/v2`。此适配器按已确认的原生 V2 接口实现；自部署服务需提供相同请求与响应格式。接口依据 [MiniMax 创建任务](https://platform.minimax.io/docs/api-reference/video-generation-v2-create) 和 [查询任务](https://platform.minimax.io/docs/api-reference/video-generation-v2-query) 官方文档。
+
+```json
+{
+  "name": "自部署 Hailuo",
+  "protocol": "minimax_video",
+  "model_name": "hailuo-3-max",
+  "endpoint_url": "http://localhost:8000/minimax/v2",
+  "api_key": "<DEPLOYMENT_API_KEY>",
+  "operation": "both",
+  "default_params": {
+    "seconds": 5,
+    "size": "768P",
+    "extra_body": {
+      "extra": {"prompt_expansion_mode": "balanced"}
+    }
+  }
+}
+```
+
+模型名原样发送，不设白名单、不按名称改写协议。自部署填写实际模型 ID（例如 `hailuo-3-max`）；使用官方服务时填写其原生 ID（例如 `MiniMax-H3-Max`）。`minimax/hailuo-3-max` 是已有 OpenRouter 接入的模型名，是否可用于原生服务取决于该服务注册的别名。
+
+| 请求（保留配置的代理前缀） | 行为 |
+| --- | --- |
+| `POST /v2/video_generation` | JSON 提交，`prompt` 转为 `content` 中的文本条目，读取 `task_id` |
+| `GET /v2/query/video_generation/{task_id}` | 读取 `task.id`、`task.status`、错误与 `task.content.url` |
+| 结果 `task.content.url` | 安全流式下载到现有 local/S3 视频存储 |
+| `GET /v1/models` | 读取部署服务提供的模型目录，统一 `id` / `name` |
+
+`seconds` 映射为整数 `duration`，`size` 映射为 `resolution`。原生接口需要这些字段，因此未填写时适配器默认 **5 秒、768P**；文生默认 `ratio=16:9`，图生默认 `ratio=adaptive`。可以通过通用字段或 `extra_body.duration` / `extra_body.resolution` 覆盖对应默认值，但两种写法不能同时出现。`extra_body` 直接平铺到请求顶层，支持 `ratio`、嵌套 `extra.prompt_expansion_mode` 等原生选项；非空 `metadata` 在提交前拒绝。具体模型的时长、分辨率及选项由部署服务校验。
+
+图生复用已有图片 URL、归属、格式与大小检查，使用实际字节构造 `content` 的 `image_url.url=data:...`、`role=first_frame`；不转发客户端本地路径或原参考图 URL，不要求部署服务能访问本应用的图片地址。不允许通过扩展覆盖 `content`、模型、提示词、参考图、凭证或任务控制字段；本期仅开放文生和单图首帧，不开放首尾帧、多模态参考、编辑或延长。
+
+鉴权为 `Authorization: Bearer`。轮询仅接受提交后持久化的合法任务 ID，检查返回 ID 一致；`queued/running/succeeded/failed/cancelled` 映射为现有任务状态。下载时重新查询 URL，因此重启和保存失败重试都复用原任务，不重新生成。凭证仅发送到配置的上游来源，跨来源下载及重定向不携带凭证，并沿用地址、大小与视频文件头检查。明确 4xx 拒绝和生成失败标记为失败，网络错误或不明确的 5xx 继续标记为提交结果不确定。
+
+模型目录是否包含视频模型由部署决定；未提供目录或未返回该模型时仍可手填，模型搜索词仍默认 `video`，可清空或改搜 `hailuo`。本次使用模拟原生服务验证，尚未对实际自部署实例提交生成。
 
 ### OpenRouter 视频协议（`openrouter_video`）
 
@@ -233,7 +272,7 @@ HTTP 400 任务可修正参数后，通过页面“重试生成”更新原记�
 
 Direct 模式使用上面的命名空间；Smart 模式先搜索、查看工具 schema，再通过 `mcp.execute` 使用 `videogen_1.generate_video` 等 tool_id。后续状态查询依赖前一次返回的 task_id，分步执行。生成工具应启用对应分组权限；取消注册后仍可在管理 API 或页面查询旧任务。
 
-`openai_video` 的 `metadata` 承载网关插件参数，multipart 会将其序列化为 JSON 字符串；其他复杂扩展参数需使用 JSON 模式。`gemini_video`、`openrouter_video` 不接受非空 `metadata`，参数通过 `extra_body` 传入。三种协议都禁止扩展覆盖模型、提示词、参考图、鉴权或本地任务控制参数。
+`openai_video` 的 `metadata` 承载网关插件参数，multipart 会将其序列化为 JSON 字符串；其他复杂扩展参数需使用 JSON 模式。`gemini_video`、`openrouter_video`、`minimax_video` 不接受非空 `metadata`，参数通过 `extra_body` 传入。四种协议都禁止扩展覆盖模型、提示词、参考图、鉴权或本地任务控制参数。
 
 保存失败时，使用 `get_video_status` 的 `retry_download=true` 或页面的“重试保存”。它只获取已有视频，不再创建生成任务。提交超时、响应缺少任务 ID 或进程中断造成的 `submission_unknown` 不会自动重试生成，以免重复消耗上游额度。
 

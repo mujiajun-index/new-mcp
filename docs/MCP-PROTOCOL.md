@@ -1332,6 +1332,8 @@ curl --no-buffer --silent --show-error "$MCP_URL" \
 
 上游协议由配置显式选择：默认 `openai_video` 保持 New API / OpenAI 视频格式，`gemini_video` 使用 Gemini 原生 Veo 异步 operation，`openrouter_video` 使用 OpenRouter 异步视频 API，覆盖 `heygen/heygen-video-1`、`minimax/hailuo-3-max`、`google/veo-3.1-lite` 等模型。三者复用以下 MCP 工具名，不能根据模型 ID 推断或切换协议。OpenRouter 将通用 `seconds` 转为整数 `duration`，图生构造 JSON 首帧。Gemini 将整数 `seconds` 转为 `durationSeconds`、`size` 转为 `resolution`，`extra_body` 直接映射原生驼峰 `parameters`，图生内嵌经校验的单图字节；固定单个输出，不允许追加参考帧或延长。Gemini / OpenRouter 工具 schema 不提供 `metadata`，非空值会拒绝。协议保存在任务快照，已有任务查询与保存不随配置协议修改而改变。
 
+另支持 `minimax_video` 原生 V2，页面名称 MiniMax，可连接实现 `/v2/video_generation` 与 `/v2/query/video_generation/{task_id}` 的自部署 Hailuo 服务。复用以下工具名和本地任务 ID；模型名原样提交，`prompt` 转为 `content` 文本，图生将校验后的图片字节编码为首帧 data URL。`seconds` / `size` 对应 `duration` / `resolution`，默认 5 秒、768P，文生比例默认 16:9、图生 adaptive；其他选项使用 `extra_body`，schema 不提供 `metadata`。从查询结果 `task.content.url` 安全下载，任务恢复和保存重试不重新生成。详见 [MiniMax 接入说明](./VIDEO-GENERATION.md#minimax-原生视频协议minimax_video)。
+
 | 调用方式 | 工具标识示例 |
 | --- | --- |
 | Direct tools/call | `videogen_1__generate_video`、`videogen_1__generate_video_from_image`、`videogen_1__get_video_status` |

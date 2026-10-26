@@ -662,7 +662,7 @@ OnAuthFailure(keyIndex int)                           // 401/403 熔断:落库+�
 
 请求使用 `openai_video`：提交 `POST /v1/videos`，轮询 `GET /v1/videos/{id}`，下载 `GET /v1/videos/{id}/content`。支持 JSON 和 multipart，不设置厂商模型白名单。参考图复用格式、归属、大小与地址检查，multipart 上传实际字节，JSON 使用经校验的 URL 或已暂存图片的签名链接。
 
-另支持 `gemini_video` 和 `openrouter_video`。Gemini 使用原生 `/v1beta/models/{model}:predictLongRunning`、operation 资源查询和结果 URI 下载，凭证为仅限配置来源的 `x-goog-api-key`；参考图校验后按官方 SDK 的 JSON `image.bytesBase64Encoded` / `mimeType` 提交，输出数量固定 `parameters.sampleCount=1`。OpenRouter 使用 `/api/v1/videos` 系列接口和 JSON 首帧。三者共用任务、租约、幂等及安全流式保存；Gemini 重启后凭已持久化 operation 名称重新获取下载地址，无需新增任务字段。
+另支持 `gemini_video`、`openrouter_video` 和 `minimax_video`。Gemini 使用原生 `/v1beta/models/{model}:predictLongRunning`、operation 资源查询和结果 URI 下载，凭证为仅限配置来源的 `x-goog-api-key`；参考图校验后按官方 SDK 的 JSON `image.bytesBase64Encoded` / `mimeType` 提交，输出数量固定 `parameters.sampleCount=1`。OpenRouter 使用 `/api/v1/videos` 系列接口和 JSON 首帧。MiniMax 使用 `/v2/video_generation`、`/v2/query/video_generation/{id}`，JSON `content` 包含文本和单图首帧，完成后重新查询 `task.content.url` 下载，兼容提供相同接口的自部署服务。四者共用任务、租约、幂等及安全流式保存；Gemini / MiniMax 重启后凭已持久化上游标识重新获取下载地址，无需新增任务字段。
 
 处理流程：
 

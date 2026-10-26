@@ -85,6 +85,27 @@ for (const language of ["zh", "en"]) {
       "https://openrouter.ai/api/v1/videos",
     );
   });
+  test(`${language}: MiniMax native protocol label and endpoint previews`, () => {
+    assert.equal(videoProtocolLabel("minimax_video"), "MiniMax");
+    assert.equal(
+      defaultVideoEndpoint("minimax_video"),
+      "https://api.minimax.io/v2",
+    );
+    assert.equal(
+      videoEndpoint("", "minimax_video"),
+      "https://api.minimax.io/v2/video_generation",
+    );
+    for (const suffix of ["", "/", "/v1", "/v2/"]) {
+      assert.equal(
+        videoEndpoint(
+          `http://localhost:8000/native${suffix}`,
+          "minimax_video",
+          "hailuo-3-max",
+        ),
+        "http://localhost:8000/native/v2/video_generation",
+      );
+    }
+  });
   const fields = [
     strings.defaultParams,
     strings.testParams,

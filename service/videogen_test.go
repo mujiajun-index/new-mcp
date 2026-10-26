@@ -121,6 +121,7 @@ func TestVideoGenOfficialEndpointDefaults(t *testing.T) {
 		videogen.ProtocolOpenAI:     videogen.DefaultOpenAIEndpoint,
 		videogen.ProtocolGemini:     videogen.DefaultGeminiEndpoint,
 		videogen.ProtocolOpenRouter: videogen.DefaultOpenRouterEndpoint,
+		videogen.ProtocolMiniMax:    videogen.DefaultMiniMaxEndpoint,
 	} {
 		t.Run(protocol, func(t *testing.T) {
 			detail, err := s.Create(1, &dto.VideoGenConfigReq{Name: igPtr("Official video"), Protocol: igPtr(protocol), ModelName: igPtr("video-model"), APIKey: igPtr("test-key")})
@@ -186,7 +187,7 @@ func TestGeminiVideoConfigAndTools(t *testing.T) {
 	if len(tools) != 4 || tools[0].Schema.Properties["seconds"]["type"] != "integer" || tools[0].Schema.Properties["metadata"] != nil || !strings.Contains(tools[0].Schema.Properties["size"]["description"].(string), "resolution") || tools[1].Description != model.DefaultGeminiGenerateVideoFromImageDesc {
 		t.Fatal("wrong Gemini MCP schema", tools)
 	}
-	for _, protocol := range []string{videogen.ProtocolOpenRouter, videogen.ProtocolOpenAI, videogen.ProtocolGemini} {
+	for _, protocol := range []string{videogen.ProtocolMiniMax, videogen.ProtocolOpenRouter, videogen.ProtocolOpenAI, videogen.ProtocolGemini} {
 		if err := s.Update(1, detail.ID, &dto.VideoGenConfigReq{Protocol: igPtr(protocol), DefaultParams: igPtr(json.RawMessage(`{}`)), GenerateVideoFromImageDesc: igPtr("Keep my custom description")}); err != nil {
 			t.Fatal(err)
 		}
