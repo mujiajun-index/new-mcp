@@ -18,6 +18,9 @@ func SystemOneHandler(ctx context.Context, serviceID int64, _ map[string]interfa
 	if err != nil || !config.AutoRegister {
 		return nil, fmt.Errorf("System One config not found or disabled")
 	}
+	if !model.CanExecuteConfig(ctx, CallerUserID(ctx), config.UserID, config.ID, "systemone") {
+		return nil, fmt.Errorf("service is not accessible to this user")
+	}
 	key, err := common.Decrypt(config.APIKey)
 	if err != nil {
 		return nil, fmt.Errorf("cannot decrypt System One API key: %w", err)

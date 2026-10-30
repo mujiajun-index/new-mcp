@@ -17,6 +17,7 @@ import (
 	"github.com/mujkjk/newmcp/internal/mcp/installer"
 	"github.com/mujkjk/newmcp/internal/mcp/transport"
 	"github.com/mujkjk/newmcp/internal/mcp/virtual"
+	"github.com/mujkjk/newmcp/internal/mcp/virtual/events"
 	"github.com/mujkjk/newmcp/model"
 	"github.com/shirou/gopsutil/v4/mem"
 )
@@ -373,9 +374,12 @@ func (s *McpServiceService) update(userID, serviceID int64, req *dto.UpdateServi
 	if err := svc.Update(); err != nil {
 		return err
 	}
+	if svc.TransportType == "virtual" && (req.Config != nil || req.Status != nil || req.AuthType != nil || req.AuthConfig != nil) {
+		events.ServiceChanged(serviceID)
+	}
 	// 禁用即停:先关闭连接/stdio 子进程,即使后续分组清理失败也不能继续调用。
 	// 重新启用后按需连接;被动服务等待本地重新接入。
-	if req.Status != nil && *req.Status != common.StatusEnabled && SessionPool != nil {
+	if req.Status != nil && *req.Status != common.StatusEnabled && SessionPool != nil && svc.TransportType != "virtual" {
 		SessionPool.Remove(serviceID)
 	}
 	// 禁用服务（status 置为非启用值）时，从全部分组中移除该服务及其工具配置。
@@ -402,7 +406,9 @@ func (s *McpServiceService) update(userID, serviceID int64, req *dto.UpdateServi
 		if req.AuthType != nil || queryConfigChanged {
 			bridge.KeySelectors.Invalidate(serviceID)
 		}
-		SessionPool.Remove(serviceID)
+		if svc.TransportType != "virtual" {
+			SessionPool.Remove(serviceID)
+		}
 		if req.Status == nil || *req.Status == common.StatusEnabled {
 			go SessionPool.GetOrConnect(context.Background(), svc)
 		}
@@ -513,7 +519,12 @@ func (s *McpServiceService) refreshMarketplaceTools(svc *model.McpService) (*dto
 	}
 	// 资源/提示快照一并同步;仅在市场项快照非空时覆盖,避免无快照的旧市场项清空引用行已有缓存
 	if item.ResourcesSnapshot != "" {
-		updates["resources_cache"] = item.ResourcesSnapshot
+		resourcesSnapshot := item.ResourcesSnapshot
+		if item.TransportType == "virtual" {
+			binding := model.ItemVirtualBinding(item)
+			resourcesSnapshot = virtual.PublicResourceSnapshot(binding.VirtualType)
+		}
+		updates["resources_cache"] = resourcesSnapshot
 	}
 	if item.PromptsSnapshot != "" {
 		updates["prompts_cache"] = item.PromptsSnapshot
@@ -620,7 +631,7 @@ func (s *McpServiceService) GetTools(userID, serviceID int64) ([]interface{}, er
 }
 
 // CallTool 服务详情页工具测试:直连该服务的上游会话执行 tools/call(调试用途)。
-// 虚拟服务(vision/camera)走 VirtualRegistry 分发;市场引用服务注入平台上游配置后调用,
+// 所有服务通过 MCP 适配器调用；市场引用服务先解析平台配置,
 // 并与网关调用同口径计费(见 callMarketplaceToolTested):预扣 → 成功确认/失败退款,
 // 管理员默认同样扣费(ChargeAdmin),余额不足/未定价直接拒绝。
 // 本地错误(连接失败/工具不存在)以 IsError+Error 返回,由前端在结果区展示。
@@ -804,43 +815,32 @@ func (s *McpServiceService) testMarketplaceEntry(ctx context.Context, svc *model
 	return res, nil
 }
 
-// callToolTestedContext 工具测试的实际调用:虚拟服务分发或上游 tools/call,全部出口
+// toolTestContext bounds manual calls independently of upstream generation time.
+// All service tests execute through an MCP adapter; marketplace calls share billing.
+// callToolTestedContext 工具测试的实际调用:统一适配器 tools/call,全部出口
 // (连接失败/工具不存在/调用失败/结果解析)统一返回 CallToolResult 供外层落日志。
 // 第二返回值 callOK=上游调用在传输层成功(结果内 isError 的工具层错误由外层结合
 // ChargeOnClientError 判定,传输失败恒退款,同网关 §6.6);第三返回值 keyIndex=
 // 多秘钥服务本次实际使用的池内序号(落日志 key_index,0=单秘钥/未调上游)。
-func callToolTestedContext(parent context.Context, svc *model.McpService, userID int64, req *dto.CallToolReq) (*dto.CallToolResult, bool, int) {
+func toolTestContext(parent context.Context, svc *model.McpService) (context.Context, context.CancelFunc) {
 	seconds := 60
-	if svc.Source == "videogen" || svc.Source == "imagegen" || svc.Source == "audiogen" {
+	kind := svc.Source
+	if svc.TransportType == "virtual" {
+		if binding, err := virtual.ParseBinding(svc.Config); err == nil {
+			kind = binding.VirtualType
+		}
+	}
+	if kind == "videogen" || kind == "imagegen" || kind == "audiogen" {
 		seconds = 40
 	}
-	ctx, cancel := context.WithCancel(parent)
-	if seconds > 0 {
-		cancel()
-		ctx, cancel = context.WithTimeout(parent, time.Duration(seconds)*time.Second)
-	}
+	return context.WithTimeout(parent, time.Duration(seconds)*time.Second)
+}
+
+func callToolTestedContext(parent context.Context, svc *model.McpService, userID int64, req *dto.CallToolReq) (*dto.CallToolResult, bool, int) {
+	ctx, cancel := toolTestContext(parent, svc)
 	defer cancel()
 
-	var args json.RawMessage
-	if req.Arguments != nil {
-		args, _ = json.Marshal(req.Arguments)
-	}
 	start := time.Now()
-
-	// 虚拟服务:按 serviceID 分发到虚拟工具处理器(vision/camera 等自有性质,免费)。
-	if svc.TransportType == "virtual" {
-		if VirtualRegistry == nil {
-			return &dto.CallToolResult{IsError: true, Error: "虚拟服务未初始化"}, false, 0
-		}
-		var config map[string]interface{}
-		_ = json.Unmarshal([]byte(svc.Config), &config)
-		raw, vErr := VirtualRegistry.Handle(virtual.WithCallerUserID(ctx, userID), svc.ID, config, req.Name, args)
-		if vErr != nil {
-			return &dto.CallToolResult{IsError: true, Error: vErr.Error(), DurationMs: time.Since(start).Milliseconds()}, false, 0
-		}
-		res, _ := parseTestResult(raw, start)
-		return res, true, 0
-	}
 
 	// 普通服务:获取测试用适配器(优先复用会话池,见 acquireTestAdapter)。
 	adapter, closeAdapter, fail := acquireTestAdapter(ctx, svc)
@@ -879,7 +879,7 @@ func callToolTestedContext(parent context.Context, svc *model.McpService, userID
 
 // ReadResource 服务详情页资源测试:对指定 URI 执行 resources/read。
 // 市场引用服务注入平台上游配置后同口径计费(与网关 resources/read 一致:按资源
-// 条目价扣费,无条目价免费;2026-08 起资源/提示纳入条目级定价);虚拟服务无资源能力;
+// 条目价扣费,无条目价免费;2026-08 起资源/提示纳入条目级定价);虚拟服务通过适配器提供资源;
 // 结果同样落调用日志(recordManualTestLog,计费结算结果随日志落库)。
 func (s *McpServiceService) ReadResource(userID, serviceID int64, req *dto.ReadResourceReq) (*dto.CallToolResult, error) {
 	return s.ReadResourceContext(context.Background(), userID, serviceID, req)
@@ -889,9 +889,6 @@ func (s *McpServiceService) ReadResourceContext(ctx context.Context, userID, ser
 	svc, err := model.GetServiceByID(userID, serviceID)
 	if err != nil {
 		return nil, err
-	}
-	if svc.TransportType == "virtual" {
-		return &dto.CallToolResult{IsError: true, Error: "虚拟服务不支持资源测试"}, nil
 	}
 	if svc.Source == "marketplace" && svc.MarketplaceItemID != nil {
 		return s.testMarketplaceEntry(ctx, svc, userID, billing.EntryKindResource, req.URI, "resources/read", req.URI,
@@ -934,7 +931,7 @@ func readResourceTested(parent context.Context, svc *model.McpService, req *dto.
 }
 
 // GetPrompt 服务详情页提示测试:按传入参数渲染提示(prompts/get),市场服务同
-// ReadResource 同口径计费(按提示条目价扣费,无条目价免费);虚拟服务无提示能力;
+// ReadResource 同口径计费(按提示条目价扣费,无条目价免费);虚拟服务通过适配器提供提示;
 // 结果同样落调用日志(recordManualTestLog,计费结算结果随日志落库)。
 func (s *McpServiceService) GetPrompt(userID, serviceID int64, req *dto.GetPromptReq) (*dto.CallToolResult, error) {
 	return s.GetPromptContext(context.Background(), userID, serviceID, req)
@@ -944,9 +941,6 @@ func (s *McpServiceService) GetPromptContext(ctx context.Context, userID, servic
 	svc, err := model.GetServiceByID(userID, serviceID)
 	if err != nil {
 		return nil, err
-	}
-	if svc.TransportType == "virtual" {
-		return &dto.CallToolResult{IsError: true, Error: "虚拟服务不支持提示测试"}, nil
 	}
 	if svc.Source == "marketplace" && svc.MarketplaceItemID != nil {
 		return s.testMarketplaceEntry(ctx, svc, userID, billing.EntryKindPrompt, req.Name, "prompts/get", req.Name,
@@ -1051,7 +1045,11 @@ func (s *McpServiceService) GetResources(userID, serviceID int64) (map[string]in
 		return nil, err
 	}
 	var cache map[string]interface{}
-	_ = json.Unmarshal([]byte(svc.ResourcesCache), &cache)
+	resourcesCache := svc.ResourcesCache
+	if canonical, ok := virtualResourceSnapshotForService(svc); ok {
+		resourcesCache = canonical
+	}
+	_ = json.Unmarshal([]byte(resourcesCache), &cache)
 	if cache == nil {
 		cache = map[string]interface{}{"resources": []interface{}{}, "templates": []interface{}{}}
 	}
@@ -1406,14 +1404,23 @@ func (s *McpServiceService) ListAdminServices(page, pageSize int) ([]dto.Service
 }
 
 // ListClonableServices 返回指定管理员(userID)可克隆上架的来源服务(其账户下 source=user/admin,
-// 自动排除虚拟服务、被动接入与市场引用),供"从自有服务克隆"下拉使用(§11)。
+// 支持五类虚拟服务，排除被动接入与市场引用),供"从自有服务克隆"下拉使用(§11)。
 func (s *McpServiceService) ListClonableServices(userID int64, page, pageSize int) ([]dto.ServiceListItem, int64, error) {
 	offset := common.GetOffset(page, pageSize)
 	services, total, err := model.ListClonableServices(userID, offset, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
-	return s.toServiceListItems(services), total, nil
+	items := s.toServiceListItems(services)
+	for i, svc := range services {
+		if svc.TransportType == "virtual" {
+			binding, err := virtual.ParseBinding(svc.Config)
+			if err == nil {
+				items[i].VirtualBinding = &binding
+			}
+		}
+	}
+	return items, total, nil
 }
 
 // marketplaceOfflineSet 批量判定市场引用行的条目离线态(条目软删[默认作用域排除]

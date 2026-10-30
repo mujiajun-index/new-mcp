@@ -18,6 +18,7 @@ import (
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/internal/imageasset"
 	"github.com/mujkjk/newmcp/internal/mcp/imagegen"
+	"github.com/mujkjk/newmcp/internal/mcp/virtual/events"
 	"github.com/mujkjk/newmcp/internal/storage"
 	"github.com/mujkjk/newmcp/internal/taskreference"
 	"github.com/mujkjk/newmcp/internal/videoasset"
@@ -119,7 +120,7 @@ func (m *Manager) submitTask(ctx context.Context, uid int64, cfg *model.VideoGen
 	if m.Store == nil {
 		return nil, fmt.Errorf("video storage not initialized")
 	}
-	if uid == 0 || cfg.UserID != uid {
+	if uid == 0 || !model.CanExecuteConfig(ctx, uid, cfg.UserID, cfg.ID, "videogen") {
 		return nil, fmt.Errorf("video configuration is not accessible to this user")
 	}
 	if err := ValidateParams(args, false); err != nil {
@@ -139,7 +140,7 @@ func (m *Manager) submitTask(ctx context.Context, uid int64, cfg *model.VideoGen
 	if requestID == "" {
 		requestID = uuid.NewString()
 	}
-	idempotency := hash([]any{uid, cfg.ID, requestID})
+	idempotency := model.ScopedTaskKey(ctx, hash([]any{uid, cfg.ID, requestID}))
 	input := map[string]any{}
 	for k, v := range args {
 		if k != "wait_seconds" && k != "request_id" {
@@ -273,13 +274,15 @@ func (m *Manager) submitTask(ctx context.Context, uid int64, cfg *model.VideoGen
 	}
 	now := time.Now()
 	owner := uuid.NewString()
-	t := &model.VideoGenTask{ID: uuid.NewString(), UserID: uid, ConfigID: cfg.ID, ConfigName: cfg.Name, Source: source, Operation: operation, Protocol: conn.Protocol, Model: cfg.ModelName, Prompt: prompt, IdempotencyKey: idempotency, RequestHash: digest, RequestParams: requestParams, Connection: snapshot, Status: "submitting", ArtifactStatus: "pending", RequestTimeoutSeconds: cfg.RequestTimeoutSeconds, TaskTimeoutSeconds: cfg.TaskTimeoutSeconds, TrackingDeadline: now.Add(time.Duration(cfg.TaskTimeoutSeconds) * time.Second), NextPollAt: now, LeaseOwner: owner, LeaseUntil: now.Add(time.Duration(cfg.RequestTimeoutSeconds+15) * time.Second)}
+	taskScope := model.VirtualExecutionFrom(ctx)
+	t := &model.VideoGenTask{ID: uuid.NewString(), UserID: uid, ServiceID: taskScope.ServiceID, MarketplaceItemID: taskScope.MarketplaceItemID, ConfigID: cfg.ID, ConfigName: cfg.Name, Source: source, Operation: operation, Protocol: conn.Protocol, Model: cfg.ModelName, Prompt: prompt, IdempotencyKey: idempotency, RequestHash: digest, RequestParams: requestParams, Connection: snapshot, Status: "submitting", ArtifactStatus: "pending", RequestTimeoutSeconds: cfg.RequestTimeoutSeconds, TaskTimeoutSeconds: cfg.TaskTimeoutSeconds, TrackingDeadline: now.Add(time.Duration(cfg.TaskTimeoutSeconds) * time.Second), NextPollAt: now, LeaseOwner: owner, LeaseUntil: now.Add(time.Duration(cfg.RequestTimeoutSeconds+15) * time.Second)}
 	t.ReferenceImages = taskreference.Encode(recorded)
 	if retry != nil {
 		// Replace the failed attempt in place while preserving the task identity
 		// and the original submission's idempotency mapping.
 		previous := retry.task
 		t.ID, t.IdempotencyKey, t.RequestHash = previous.ID, previous.IdempotencyKey, previous.RequestHash
+		t.ServiceID, t.MarketplaceItemID = previous.ServiceID, previous.MarketplaceItemID
 		t.Source, t.RetryOf, t.CreatedAt = previous.Source, previous.RetryOf, previous.CreatedAt
 		t.RetryCount, t.Revision, t.UpdatedAt = previous.RetryCount+1, previous.Revision+1, now
 		requests[requestID] = retry.hash
@@ -328,6 +331,7 @@ func (m *Manager) submitTask(ctx context.Context, uid int64, cfg *model.VideoGen
 		}
 		return nil, err
 	}
+	notifyVideoTask(t)
 	if !m.launch(func() { defer func() { <-m.sem }(); m.submit(t, client, req) }) {
 		<-m.sem
 		m.finish(t, map[string]any{"status": "failed", "error": "video manager is shutting down", "connection": "", "stopped_at": time.Now()})
@@ -380,12 +384,26 @@ func (m *Manager) videoValues(t *model.VideoGenTask, client *Client, v *Video) m
 // Every worker write is conditional on its lease token. An expired worker can
 // never overwrite state committed by the next lease holder.
 func (m *Manager) finish(t *model.VideoGenTask, values map[string]any) {
+	visible := false
+	for _, field := range []string{"status", "progress", "artifact_status", "tracking_paused", "error", "last_error", "failures", "stopped_at", "storage_key", "short_id", "expires_at"} {
+		if _, ok := values[field]; ok {
+			visible = true
+			break
+		}
+	}
 	values["lease_owner"] = ""
 	values["revision"] = gorm.Expr("revision + 1")
 	values["lease_until"] = unleasedAt
-	if err := m.DB.Model(&model.VideoGenTask{}).Where("id = ? AND lease_owner = ?", t.ID, t.LeaseOwner).Updates(values).Error; err != nil {
-		log.Printf("[videogen] task=%s update failed: %v", t.ID, err)
+	res := m.DB.Model(&model.VideoGenTask{}).Where("id = ? AND lease_owner = ?", t.ID, t.LeaseOwner).Updates(values)
+	if res.Error != nil {
+		log.Printf("[videogen] task=%s update failed: %v", t.ID, res.Error)
+	} else if visible && res.RowsAffected == 1 {
+		notifyVideoTask(t)
 	}
+}
+
+func notifyVideoTask(t *model.VideoGenTask) {
+	events.TaskChanged("videogen", t.UserID, t.ServiceID, t.ConfigID)
 }
 
 func (m *Manager) claim(t *model.VideoGenTask, duration time.Duration) bool {
@@ -419,8 +437,12 @@ func (m *Manager) reconcileRejectedSubmissions() error {
 			if t.StoppedAt == nil {
 				values["stopped_at"] = time.Now()
 			}
-			if err := m.DB.WithContext(m.ctx).Model(&model.VideoGenTask{}).Where("id = ? AND status = ? AND upstream_id = ? AND lease_owner = ? AND revision = ? AND error = ?", t.ID, "submission_unknown", "", "", t.Revision, t.Error).Updates(values).Error; err != nil {
-				return err
+			res := m.DB.WithContext(m.ctx).Model(&model.VideoGenTask{}).Where("id = ? AND status = ? AND upstream_id = ? AND lease_owner = ? AND revision = ? AND error = ?", t.ID, "submission_unknown", "", "", t.Revision, t.Error).Updates(values)
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 1 {
+				notifyVideoTask(t)
 			}
 		}
 	}
@@ -431,7 +453,16 @@ func (m *Manager) ProcessDue() {
 		return
 	}
 	now := time.Now()
-	m.DB.Model(&model.VideoGenTask{}).Where("status = ? AND lease_until <= ?", "submitting", now).Updates(map[string]any{"status": "submission_unknown", "error": "Submission outcome is unknown; do not automatically resubmit this generation.", "connection": "", "stopped_at": now, "lease_owner": "", "lease_until": unleasedAt, "revision": gorm.Expr("revision + 1")})
+	const interruption = "Submission outcome is unknown; do not automatically resubmit this generation."
+	recovered := m.DB.Model(&model.VideoGenTask{}).Where("status = ? AND lease_until <= ?", "submitting", now).Updates(map[string]any{"status": "submission_unknown", "error": interruption, "connection": "", "stopped_at": now, "lease_owner": "", "lease_until": unleasedAt, "revision": gorm.Expr("revision + 1")})
+	if recovered.Error == nil && recovered.RowsAffected > 0 {
+		var changed []model.VideoGenTask
+		if m.DB.Where("status = ? AND error = ?", "submission_unknown", interruption).Find(&changed).Error == nil {
+			for i := range changed {
+				notifyVideoTask(&changed[i])
+			}
+		}
+	}
 	var rows []model.VideoGenTask
 	err := m.DB.Where("upstream_id <> ? AND tracking_paused = ? AND next_poll_at <= ? AND lease_until <= ?", "", false, now, now).Where("status IN ? OR (status = ? AND artifact_status IN ?)", []string{"queued", "in_progress", "unknown"}, "completed", []string{"pending", "saving"}).Order("next_poll_at").Limit(100).Find(&rows).Error
 	if err != nil {
@@ -528,6 +559,7 @@ func (m *Manager) save(t *model.VideoGenTask, client *Client) {
 		m.finish(t, map[string]any{"artifact_status": "failed", "error": err.Error(), "stopped_at": time.Now()})
 		return
 	}
+	notifyVideoTask(t)
 	ctx, cancel := context.WithTimeout(m.ctx, 5*time.Minute)
 	defer cancel()
 	resp, err := client.Content(ctx, t.UpstreamID, videoasset.MaxBytes())
@@ -567,9 +599,12 @@ func (m *Manager) Get(uid int64, configID *int64, id string, resume bool) (*mode
 		return nil, fmt.Errorf("video task not found")
 	}
 	if resume && t.TrackingPaused && t.UpstreamID != "" && t.Connection != "" {
-		err := m.DB.Model(&model.VideoGenTask{}).Where("id = ? AND tracking_paused = ? AND lease_until <= ?", t.ID, true, time.Now()).Updates(map[string]any{"tracking_paused": false, "tracking_deadline": time.Now().Add(time.Duration(t.TaskTimeoutSeconds) * time.Second), "next_poll_at": time.Now(), "stopped_at": nil, "revision": gorm.Expr("revision + 1")}).Error
-		if err != nil {
-			return nil, err
+		res := m.DB.Model(&model.VideoGenTask{}).Where("id = ? AND tracking_paused = ? AND lease_until <= ?", t.ID, true, time.Now()).Updates(map[string]any{"tracking_paused": false, "tracking_deadline": time.Now().Add(time.Duration(t.TaskTimeoutSeconds) * time.Second), "next_poll_at": time.Now(), "stopped_at": nil, "revision": gorm.Expr("revision + 1")})
+		if res.Error != nil {
+			return nil, res.Error
+		}
+		if res.RowsAffected == 1 {
+			notifyVideoTask(&t)
 		}
 		_ = q.First(&t).Error
 	}
@@ -591,6 +626,7 @@ func (m *Manager) RetryDownload(uid int64, configID *int64, id string) (*model.V
 	if res.RowsAffected != 1 {
 		return nil, ErrBusy
 	}
+	notifyVideoTask(t)
 	return m.Get(uid, configID, id, false)
 }
 
@@ -739,6 +775,9 @@ func (m *Manager) Delete(uid int64, id string) error {
 		}
 	}
 	res := m.DB.Where("id = ? AND lease_owner = ?", id, t.LeaseOwner).Delete(&model.VideoGenTask{})
+	if res.Error == nil && res.RowsAffected == 1 {
+		notifyVideoTask(t)
+	}
 	return res.Error
 }
 

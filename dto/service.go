@@ -1,5 +1,7 @@
 package dto
 
+import "github.com/mujkjk/newmcp/model"
+
 type CreateServiceReq struct {
 	Name          string                 `json:"name" binding:"required,min=1,max=128"`
 	DisplayName   string                 `json:"display_name" binding:"omitempty,max=255"`
@@ -26,12 +28,13 @@ type UpdateServiceReq struct {
 }
 
 type ServiceListItem struct {
-	ID            int64  `json:"id"`
-	Name          string `json:"name"`
-	DisplayName   string `json:"display_name"`
-	Description   string `json:"description"`
-	TransportType string `json:"transport_type"`
-	Source        string `json:"source"`
+	VirtualBinding *model.VirtualBinding `json:"virtual_binding,omitempty"`
+	ID             int64                 `json:"id"`
+	Name           string                `json:"name"`
+	DisplayName    string                `json:"display_name"`
+	Description    string                `json:"description"`
+	TransportType  string                `json:"transport_type"`
+	Source         string                `json:"source"`
 	// 多秘钥模式(random/polling);空 = 单秘钥。列表徽章用。
 	KeyMode      string `json:"key_mode,omitempty"`
 	HealthStatus string `json:"health_status"`

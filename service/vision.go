@@ -12,6 +12,7 @@ import (
 	"github.com/mujkjk/newmcp/internal/mcp/virtual"
 	"github.com/mujkjk/newmcp/internal/mcp/vision"
 	"github.com/mujkjk/newmcp/model"
+	"gorm.io/gorm"
 )
 
 type VisionService struct{}
@@ -79,6 +80,7 @@ func (s *VisionService) GetByID(userID, id int64) (*dto.VisionConfigDetail, erro
 }
 
 func (s *VisionService) Update(userID, id int64, req *dto.UpdateVisionConfigReq) error {
+	defer syncVirtualMarketplaceBindings("vision", id)
 	vc, err := model.GetVisionConfigByID(userID, id)
 	if err != nil {
 		return err
@@ -131,6 +133,7 @@ func (s *VisionService) Update(userID, id int64, req *dto.UpdateVisionConfigReq)
 }
 
 func (s *VisionService) Enable(userID, id int64) error {
+	defer syncVirtualMarketplaceBindings("vision", id)
 	vc, err := model.GetVisionConfigByID(userID, id)
 	if err != nil {
 		return err
@@ -177,6 +180,7 @@ func (s *VisionService) Enable(userID, id int64) error {
 }
 
 func (s *VisionService) Disable(userID, id int64) error {
+	defer syncVirtualMarketplaceBindings("vision", id)
 	vc, err := model.GetVisionConfigByID(userID, id)
 	if err != nil {
 		return err
@@ -205,14 +209,41 @@ func (s *VisionService) Disable(userID, id int64) error {
 }
 
 func (s *VisionService) Delete(userID, id int64) error {
-	// Disable first to clean up virtual service
-	_ = s.Disable(userID, id)
-
-	vc, err := model.GetVisionConfigByID(userID, id)
-	if err != nil {
-		return err
+	var deletedServiceID int64
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := model.RequireVirtualConfigUnbound(tx, userID, model.VirtualBinding{VirtualType: "vision", RefID: id}); err != nil {
+			return err
+		}
+		var cfg model.VisionConfig
+		if err := tx.Where("id = ? AND user_id = ?", id, userID).First(&cfg).Error; err != nil {
+			return err
+		}
+		if cfg.RegisteredServiceID != nil {
+			sid := *cfg.RegisteredServiceID
+			deletedServiceID = sid
+			for _, row := range []any{&model.McpGroupTool{}, &model.McpGroupItem{}, &model.McpGroupService{}} {
+				if err := tx.Where("service_id = ?", sid).Delete(row).Error; err != nil {
+					return err
+				}
+			}
+			if err := tx.Delete(&model.McpService{}, sid).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Delete(&cfg).Error
+	})
+	if err == nil {
+		if deletedServiceID != 0 {
+			if VirtualRegistry != nil {
+				VirtualRegistry.Unregister(deletedServiceID)
+			}
+			if SessionPool != nil {
+				SessionPool.Remove(deletedServiceID)
+			}
+		}
+		syncVirtualMarketplaceBindings("vision", id)
 	}
-	return vc.Delete()
+	return err
 }
 
 func (s *VisionService) TestVision(req *dto.TestVisionReq) *dto.TestVisionResult {

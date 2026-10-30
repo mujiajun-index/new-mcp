@@ -64,6 +64,8 @@ func GetVideoGenConfigByServiceID(id int64) (*VideoGenConfig, error) {
 // Task rows outlive configurations. Connection is a private snapshot using
 // common.Encrypt's existing CRYPTO_SECRET semantics, never API JSON.
 type VideoGenTask struct {
+	ServiceID             int64      `json:"-" gorm:"index"`
+	MarketplaceItemID     *int64     `json:"-" gorm:"index"`
 	ID                    string     `json:"task_id" gorm:"primaryKey;size:36"`
 	UserID                int64      `json:"-" gorm:"not null;index"`
 	ConfigID              int64      `json:"config_id" gorm:"index"`

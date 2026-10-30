@@ -36,6 +36,7 @@ func Start(ctx context.Context, uid int64, cfg *model.ImageGenConfig, tool, sour
 	if err := model.DB.WithContext(ctx).Create(task).Error; err != nil {
 		return nil, fmt.Errorf("record image task: %w", err)
 	}
+	notifyImageTask(task)
 	return task, nil
 }
 
@@ -83,7 +84,7 @@ func Finish(task *model.ImageGenTask, images []model.ImageGenTaskImage, raw json
 		encodedKey, _ := json.Marshal(key)
 		usage = []byte(strings.ReplaceAll(string(usage), string(encodedKey[1:len(encodedKey)-1]), "[REDACTED]"))
 	}
-	return model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for i := range images {
 			images[i].TaskID = task.ID
 			images[i].RevisedPrompt = redact(images[i].RevisedPrompt, key)
@@ -95,6 +96,10 @@ func Finish(task *model.ImageGenTask, images []model.ImageGenTaskImage, raw json
 		}
 		return tx.Model(task).Updates(map[string]any{"status": status, "error": redact(message, key), "warnings": string(warnings), "text": redact(response.Result.Text, key), "usage": string(usage), "duration_ms": now.Sub(task.CreatedAt).Milliseconds(), "finished_at": now}).Error
 	})
+	if err == nil {
+		notifyImageTask(task)
+	}
+	return err
 }
 
 // Called once on server startup. Synchronous requests cannot resume after a
@@ -198,8 +203,8 @@ func Views(tasks []model.ImageGenTask) ([]TaskView, error) {
 // Upload and reference rows retain their own lifetimes and shared file bytes.
 func Delete(uid int64, id string, store storage.Storage) error {
 	var keys []string
+	var task model.ImageGenTask
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
-		var task model.ImageGenTask
 		if err := tx.Where("id = ? AND user_id = ?", id, uid).First(&task).Error; err != nil {
 			return err
 		}
@@ -218,6 +223,7 @@ func Delete(uid int64, id string, store storage.Storage) error {
 	})
 	if err == nil {
 		deleteUnusedBlobs(context.Background(), model.DB, store, keys)
+		notifyImageTask(&task)
 	}
 	return err
 }

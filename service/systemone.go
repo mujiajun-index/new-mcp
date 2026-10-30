@@ -84,6 +84,7 @@ func (s *SystemOneService) Create(userID int64, req *dto.SystemOneConfigReq) (*d
 }
 
 func (s *SystemOneService) Update(userID, id int64, req *dto.SystemOneConfigReq) error {
+	defer syncVirtualMarketplaceBindings("systemone", id)
 	if err := normalizeSystemOne(req, false); err != nil {
 		return err
 	}
@@ -157,6 +158,7 @@ func (s *SystemOneService) SyncAllRegisteredTools() int {
 }
 
 func (s *SystemOneService) Enable(userID, id int64) error {
+	defer syncVirtualMarketplaceBindings("systemone", id)
 	c, err := model.GetSystemOneConfig(userID, id)
 	if err != nil {
 		return err
@@ -189,6 +191,7 @@ func (s *SystemOneService) Enable(userID, id int64) error {
 }
 
 func (s *SystemOneService) Disable(userID, id int64) error {
+	defer syncVirtualMarketplaceBindings("systemone", id)
 	c, err := model.GetSystemOneConfig(userID, id)
 	if err != nil {
 		return err
@@ -219,10 +222,38 @@ func (s *SystemOneService) Disable(userID, id int64) error {
 }
 
 func (s *SystemOneService) Delete(userID, id int64) error {
-	if err := s.Disable(userID, id); err != nil {
-		return err
+	var deletedServiceID int64
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := model.RequireVirtualConfigUnbound(tx, userID, model.VirtualBinding{VirtualType: "systemone", RefID: id}); err != nil {
+			return err
+		}
+		var cfg model.SystemOneConfig
+		if err := tx.Where("id = ? AND user_id = ?", id, userID).First(&cfg).Error; err != nil {
+			return err
+		}
+		if cfg.RegisteredServiceID != nil {
+			sid := *cfg.RegisteredServiceID
+			deletedServiceID = sid
+			for _, row := range []any{&model.McpGroupTool{}, &model.McpGroupItem{}, &model.McpGroupService{}} {
+				if err := tx.Where("service_id = ?", sid).Delete(row).Error; err != nil {
+					return err
+				}
+			}
+			if err := tx.Delete(&model.McpService{}, sid).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Delete(&cfg).Error
+	})
+	if err == nil && deletedServiceID != 0 {
+		if VirtualRegistry != nil {
+			VirtualRegistry.Unregister(deletedServiceID)
+		}
+		if SessionPool != nil {
+			SessionPool.Remove(deletedServiceID)
+		}
 	}
-	return model.DB.Where("id = ? AND user_id = ?", id, userID).Delete(&model.SystemOneConfig{}).Error
+	return err
 }
 
 func (s *SystemOneService) Test(userID int64, req *dto.TestSystemOneReq) *dto.TestSystemOneResult {

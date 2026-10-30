@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/mujkjk/newmcp/internal/imageasset"
+	"github.com/mujkjk/newmcp/internal/mcp/virtual/events"
 	"github.com/mujkjk/newmcp/model"
 )
 
@@ -81,6 +82,9 @@ func runCleanupSweep(ctx context.Context) {
 			log.Printf("[upload-cleanup] delete row %d: %v", img.ID, err)
 			continue
 		}
+		if img.Source == model.ImageSourceGenerated {
+			notifyExpiredImageTasks(img.ID)
+		}
 		if n, err := model.CountByKey(img.StorageKey); err != nil {
 			log.Printf("[upload-cleanup] refcount %q: %v", img.StorageKey, err)
 		} else if n == 0 {
@@ -91,6 +95,24 @@ func runCleanupSweep(ctx context.Context) {
 		deleted++
 	}
 	log.Printf("[upload-cleanup] swept %d/%d expired uploads", deleted, len(expired))
+}
+
+func notifyExpiredImageTasks(uploadID int64) {
+	var ids []string
+	if err := model.DB.Model(&model.ImageGenTaskImage{}).Where("upload_id = ?", uploadID).Distinct().Pluck("task_id", &ids).Error; err != nil || len(ids) == 0 {
+		return
+	}
+	var tasks []model.ImageGenTask
+	if model.DB.Where("id IN ?", ids).Find(&tasks).Error != nil {
+		return
+	}
+	for i := range tasks {
+		task := &tasks[i]
+		res := model.DB.Model(task).UpdateColumn("updated_at", time.Now())
+		if res.Error == nil && res.RowsAffected == 1 {
+			events.TaskChanged("imagegen", task.UserID, task.ServiceID, task.ConfigID)
+		}
+	}
 }
 
 // runPendingReapSweep (V1.1) fast-reaps presigned-PUT slots that never received

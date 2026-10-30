@@ -8,6 +8,7 @@ import (
 type TransportType string
 
 const (
+	TypeVirtual        TransportType = "virtual"
 	TypeStdio          TransportType = "stdio"
 	TypeSSE            TransportType = "sse"
 	TypeStreamableHTTP TransportType = "streamable-http"

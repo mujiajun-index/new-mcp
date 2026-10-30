@@ -63,6 +63,7 @@ export type TransportType = 'stdio' | 'sse' | 'streamable-http' | 'websocket' | 
 export type AuthType = 'none' | 'api_key' | 'bearer' | 'custom' | 'query_param'
 
 export interface ServiceListItem {
+  virtual_binding?: VirtualBinding
   id: number
   name: string
   display_name: string
@@ -599,7 +600,12 @@ export interface MarketplaceListItem {
   price_per_call: number // 展示货币单价(per_call)
 }
 
+export interface VirtualBinding { virtual_type: string; ref_id: number }
+
 export interface MarketplaceDetail {
+  virtual_binding?: VirtualBinding
+  binding_name?: string
+  binding_available?: boolean
   id: number
   name: string
   display_name: string

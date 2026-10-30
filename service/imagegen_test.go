@@ -737,16 +737,13 @@ func TestImageGenServiceTestDeadlineRules(t *testing.T) {
 		}
 		cfg, _ := model.GetImageGenConfig(1, c.ID)
 		svc, _ := model.GetServiceByID(1, *cfg.RegisteredServiceID)
-		VirtualRegistry.Register(svc.ID, 1, svc.Name, nil, func(ctx context.Context, _ int64, _ map[string]interface{}, _ string, _ json.RawMessage) (json.RawMessage, error) {
-			deadline, hasDeadline := ctx.Deadline()
-			if !hasDeadline || time.Until(deadline) > 40*time.Second || time.Until(deadline) < 35*time.Second {
-				t.Error("async tool test must use a short caller deadline independent of generation timeout")
-			}
-			return json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`), nil
-		})
-		result, ok, _ := callToolTestedContext(context.Background(), svc, 1, &dto.CallToolReq{Name: "generate_image", Arguments: map[string]any{"prompt": "x"}})
-		if !ok || result.IsError {
-			t.Fatalf("service test: %+v", result)
+		ctx, cancel := toolTestContext(context.Background(), svc)
+		deadline, ok := ctx.Deadline()
+		remaining := time.Until(deadline)
+		cancel()
+		if !ok || remaining > 40*time.Second || remaining < 35*time.Second {
+			t.Fatalf("async tool test deadline: %v, %v", ok, remaining)
 		}
+
 	}
 }

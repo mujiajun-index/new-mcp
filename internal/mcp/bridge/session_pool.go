@@ -13,6 +13,7 @@ import (
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/internal/mcp/installer"
 	"github.com/mujkjk/newmcp/internal/mcp/transport"
+	"github.com/mujkjk/newmcp/internal/mcp/virtual"
 	"github.com/mujkjk/newmcp/model"
 )
 
@@ -1109,6 +1110,8 @@ func CreateAdapter(svc *model.McpService) transport.TransportAdapter {
 	_ = json.Unmarshal([]byte(svc.Config), &config)
 
 	switch transport.TransportType(svc.TransportType) {
+	case transport.TypeVirtual:
+		return virtual.NewAdapter(svc)
 	case transport.TypeStdio:
 		cmd, _ := config["command"].(string)
 		argsRaw, _ := config["args"].([]interface{})

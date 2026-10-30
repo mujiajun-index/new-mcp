@@ -9,6 +9,7 @@ import (
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/dto"
 	"github.com/mujkjk/newmcp/internal/mcp/virtual"
+	"github.com/mujkjk/newmcp/internal/mcp/virtual/events"
 	"github.com/mujkjk/newmcp/model"
 )
 
@@ -117,6 +118,7 @@ func (s *CameraService) Update(userID, id int64, req *dto.UpdateCameraReq) error
 
 	if cam.AutoRegister && cam.RegisteredServiceID != nil {
 		s.syncVirtualService(cam)
+		events.ConfigChanged("camera", id)
 	}
 
 	return nil
@@ -162,6 +164,7 @@ func (s *CameraService) Enable(userID, id int64) error {
 	if VirtualRegistry != nil {
 		VirtualRegistry.Register(svc.ID, cam.UserID, serviceName, virtual.ParseConfig(svc.Config), virtual.CameraHandler)
 	}
+	events.ConfigChanged("camera", id)
 
 	return nil
 }
@@ -188,6 +191,7 @@ func (s *CameraService) Disable(userID, id int64) error {
 	cam.AutoRegister = false
 	cam.RegisteredServiceID = nil
 	_ = cam.Update()
+	events.ConfigChanged("camera", id)
 
 	return nil
 }

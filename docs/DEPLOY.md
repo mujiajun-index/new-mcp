@@ -290,11 +290,13 @@ make build
 | `DB_TYPE` | `sqlite` | 数据库类型: sqlite/mysql/postgres |
 | `DB_PATH` | `./data/newmcp.db` | SQLite 数据库路径 |
 | `SQL_DSN` | - | MySQL/PostgreSQL DSN |
-| `REDIS_CONN_STRING` | - | Redis 连接字符串 (可选) |
+| `REDIS_CONN_STRING` | - | Redis 连接字符串；多实例部署的虚拟服务通知必须在每个实例配置同一个 Redis |
 | `SESSION_SECRET` | - | Session 密钥 (多实例必须设置) |
 | `CRYPTO_SECRET` | - | 加密密钥 (加密 API Key 等敏感数据) |
 | `LOG_LEVEL` | `info` | 日志级别: debug/info/warn/error |
 | `TZ` | 容器/系统默认时区 | 进程本地时区；按北京时间计算“今日”可设置 `Asia/Shanghai` |
+
+多实例部署时，所有后端实例必须连接同一个 Redis（支持 Streams 的 Redis 5.0 或更高版本），并共享同一数据库。虚拟 MCP 的任务、工具配置和市场绑定变更写入 Redis Stream；各实例使用阻塞读取接收通知，空闲时不查询任务表。Redis 临时断开后会重试连接，并在恢复时同步一次已连接虚拟服务的状态。配置了 `REDIS_CONN_STRING` 但启动时 Redis 不可用，服务会启动失败。
 
 MySQL 连接串使用 `parseTime=True&loc=Asia%2FShanghai`，并设置进程环境变量 `TZ=Asia/Shanghai`。日志的 `created_at` 在 MySQL 的 DATETIME 列中按北京时间存储，例如 `2026-10-17 16:34:10`，不带 `Z` 或时区后缀。只设置 `TZ` 不会改变 MySQL 驱动默认的 UTC 连接时区，必须同时设置 `loc`。
 

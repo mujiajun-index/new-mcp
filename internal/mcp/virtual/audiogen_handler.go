@@ -19,10 +19,10 @@ func AudioGenHandler(ctx context.Context, serviceID int64, config map[string]any
 		return nil, fmt.Errorf("audio configuration not found")
 	}
 	uid := CallerUserID(ctx)
-	if uid == 0 || uid != row.UserID || !row.AutoRegister || row.Status != common.StatusEnabled {
+	if uid == 0 || !model.CanExecuteConfig(ctx, uid, row.UserID, row.ID, "audiogen") || !row.AutoRegister || row.Status != common.StatusEnabled {
 		return nil, fmt.Errorf("audio service is not accessible")
 	}
-	c, e := model.GetAudioGenConfig(uid, row.ID)
+	c, e := model.GetAudioGenConfig(row.UserID, row.ID)
 	if e != nil {
 		return nil, e
 	}
@@ -32,7 +32,7 @@ func RunAudioGen(ctx context.Context, uid int64, c *model.AudioGenConfig, tool s
 	if AudioManager == nil {
 		return nil, fmt.Errorf("audio manager not initialized")
 	}
-	if uid == 0 || uid != c.UserID {
+	if uid == 0 || !model.CanExecuteConfig(ctx, uid, c.UserID, c.ID, "audiogen") {
 		return nil, fmt.Errorf("audio configuration is not accessible")
 	}
 	if len(raw) > 32<<20 {
@@ -63,7 +63,14 @@ func RunAudioGen(ctx context.Context, uid int64, c *model.AudioGenConfig, tool s
 		if e != nil {
 			return nil, e
 		}
-		t, e := AudioManager.Get(uid, &c.ID, id)
+		if err := model.CheckVirtualTask(ctx, "audiogen_tasks", id); err != nil {
+			return nil, err
+		}
+		configID := &c.ID
+		if model.VirtualExecutionFrom(ctx).ServiceID != 0 {
+			configID = nil
+		}
+		t, e := AudioManager.Get(uid, configID, id)
 		if e != nil {
 			return nil, e
 		}
@@ -73,7 +80,7 @@ func RunAudioGen(ctx context.Context, uid int64, c *model.AudioGenConfig, tool s
 				return nil, fmt.Errorf("retry_download must be boolean")
 			}
 			if retry {
-				t, e = AudioManager.RetrySave(uid, &c.ID, id)
+				t, e = AudioManager.RetrySave(uid, configID, id)
 				if e != nil {
 					return nil, e
 				}

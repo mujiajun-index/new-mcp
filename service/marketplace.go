@@ -14,6 +14,8 @@ import (
 	"github.com/mujkjk/newmcp/dto"
 	"github.com/mujkjk/newmcp/internal/mcp/bridge"
 	"github.com/mujkjk/newmcp/internal/mcp/transport"
+	"github.com/mujkjk/newmcp/internal/mcp/virtual"
+	"github.com/mujkjk/newmcp/internal/mcp/virtual/events"
 	"github.com/mujkjk/newmcp/model"
 	"gorm.io/gorm"
 )
@@ -23,10 +25,8 @@ type MarketplaceService struct{}
 // ErrExplicitPricingRequired 非自用模式下市场上架/启用须显式定价(§5.6)。
 var ErrExplicitPricingRequired = errors.New("非自用模式下,市场上架/启用必须显式定价(设置价格或标记免费)")
 
-// ErrVirtualServiceNotListable 虚拟服务(vision/camera 等,transport_type='virtual')仅自有配置免费使用,
-// 不可上架市场:其 config/凭证绑定配置者私有资源(如 vision_configs.ref_id),克隆或手动上架后无法作为
-// 平台托管服务运行。与定价/自用模式无关的上架硬约束(D16/§11)。
-var ErrVirtualServiceNotListable = errors.New("虚拟服务(视觉/摄像头等)仅支持自有配置免费使用,不可上架到服务市场")
+// ErrVirtualServiceNotListable applies to unsupported built-in marketplace types.
+var ErrVirtualServiceNotListable = errors.New("此虚拟服务类型暂不支持上架市场，当前支持视觉、决策、图片、视频和音频生成")
 
 // Passive endpoints belong to one service row; cloning their empty outbound
 // configuration cannot create an independent marketplace upstream connection.
@@ -270,6 +270,24 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 	if err != nil {
 		return err
 	}
+	if item.TransportType == "virtual" {
+		if req.TransportType != nil && *req.TransportType != "virtual" {
+			return fmt.Errorf("虚拟市场服务不能更改传输类型")
+		}
+		if req.ConfigTemplate != nil {
+			return fmt.Errorf("请使用 virtual_binding 更换配置")
+		}
+		if req.VirtualBinding != nil {
+			old := model.ItemVirtualBinding(item)
+			if old.VirtualType != req.VirtualBinding.VirtualType {
+				return fmt.Errorf("只能绑定同类型配置")
+			}
+			raw, _ := json.Marshal(req.VirtualBinding)
+			item.ConfigTemplate = encryptConfigTemplate(string(raw))
+		}
+	} else if req.VirtualBinding != nil || (req.TransportType != nil && *req.TransportType == "virtual") {
+		return fmt.Errorf("虚拟市场服务必须从已有虚拟服务上架")
+	}
 	if req.TransportType != nil && *req.TransportType == common.TransportPassiveWS {
 		return ErrPassiveServiceNotListable
 	}
@@ -432,7 +450,7 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 	}
 	// 独占进程切换(仅 stdio 条目):会话池键控方式改变(行键↔条目键),旧会话必须
 	// 踢掉按新模式重建,否则共享→独占后旧共享进程仍被全体复用、反向则旧行进程残留。
-	kickSessions := req.ConfigTemplate != nil || req.QueryParamName != nil
+	kickSessions := req.ConfigTemplate != nil || req.QueryParamName != nil || req.VirtualBinding != nil
 	if req.IsolatedProcess != nil && item.TransportType == string(transport.TypeStdio) && item.IsolatedProcess != *req.IsolatedProcess {
 		item.IsolatedProcess = *req.IsolatedProcess
 		kickSessions = true
@@ -457,6 +475,22 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 	// (含覆盖用户自定义名称/描述/标签,产品确认的同步语义);下架联动(引用行禁用+清
 	// 分组)同事务;踢会话与计费缓存失效留在事务外(非事务副作用,回滚不应执行)
 	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if item.TransportType == "virtual" && (req.VirtualBinding != nil || item.Status == common.StatusEnabled) {
+			b := model.ItemVirtualBinding(item)
+			if err := validateVirtualBindingTx(tx, item.AdminID, b); err != nil {
+				return err
+			}
+			source, err := virtual.ResolveBindingDB(tx, b, item.AdminID)
+			if err != nil {
+				return err
+			}
+			item.ToolsSnapshot = source.ToolsCache
+			item.ResourcesSnapshot = virtual.PublicResourceSnapshot(b.VirtualType)
+			item.PromptsSnapshot = "[]"
+			refUpdates["tools_cache"] = item.ToolsSnapshot
+			refUpdates["resources_cache"] = item.ResourcesSnapshot
+			refUpdates["prompts_cache"] = "[]"
+		}
 		if err := tx.Save(item).Error; err != nil {
 			return err
 		}
@@ -479,8 +513,12 @@ func (s *MarketplaceService) UpdateItem(itemID int64, req *dto.UpdateMarketplace
 	// 踢掉待下次调用按新配置重连(引用服务众多,不做预连,按需重连即可)。
 	// 进程模式切换(共享↔独占)与下架(下架即停)同理并入同一次踢除——
 	// RemoveByMarketplaceItem 同时覆盖共享(条目键)与独占(行键)会话。
-	if (kickSessions || disableRefs) && SessionPool != nil {
-		SessionPool.RemoveByMarketplaceItem(item.ID)
+	if kickSessions || disableRefs {
+		if item.TransportType == "virtual" {
+			events.MarketplaceChanged(item.ID)
+		} else if SessionPool != nil {
+			SessionPool.RemoveByMarketplaceItem(item.ID)
+		}
 	}
 	billing.InvalidatePricingCacheItem(item.ID)
 	return nil
@@ -512,7 +550,9 @@ func (s *MarketplaceService) DeleteItem(itemID int64) error {
 	// 计费退款路径仍是兜底。
 	// 失效选择器快照(避免注册表残留明文,同服务删除侧)+ 踢掉该条目现存会话
 	bridge.KeySelectors.InvalidateItem(itemID)
-	if SessionPool != nil {
+	if item.TransportType == "virtual" {
+		events.MarketplaceChanged(itemID)
+	} else if SessionPool != nil {
 		SessionPool.RemoveByMarketplaceItem(itemID)
 	}
 	billing.InvalidatePricingCacheItem(itemID)
@@ -537,6 +577,7 @@ func (s *MarketplaceService) RefreshItemSnapshots(itemID int64) (*dto.Marketplac
 	// 临时行也必须带市场归属,CreateAdapter 才会从条目级秘钥池注入认证头。
 	tmp := &model.McpService{
 		Name:              item.Name,
+		UserID:            item.AdminID,
 		TransportType:     item.TransportType,
 		Config:            item.ConfigTemplate,
 		Source:            "marketplace",
@@ -561,6 +602,11 @@ func (s *MarketplaceService) RefreshItemSnapshots(itemID int64) (*dto.Marketplac
 	defer adapter.Close()
 
 	toolsJSON, resourcesJSON, promptsJSON := bridge.FetchAdapterCaches(ctx, adapter)
+	if item.TransportType == "virtual" {
+		b := model.ItemVirtualBinding(item)
+		resourcesJSON = virtual.PublicResourceSnapshot(b.VirtualType)
+		promptsJSON = "[]"
+	}
 	updates := map[string]interface{}{
 		"tools_snapshot":     toolsJSON,
 		"resources_snapshot": resourcesJSON,
@@ -597,6 +643,10 @@ func (s *MarketplaceService) RefreshItemSnapshots(itemID int64) (*dto.Marketplac
 		return model.UpdateMarketplaceRefsByItems(tx, []int64{item.ID}, refUpdates)
 	}); err != nil {
 		return nil, err
+	}
+	if item.TransportType == "virtual" {
+		binding := model.ItemVirtualBinding(item)
+		events.ConfigChanged(binding.VirtualType, binding.RefID)
 	}
 
 	var result dto.MarketplaceRefreshResult
@@ -752,7 +802,12 @@ func (s *MarketplaceService) SetItemEntryPrices(itemID int64, prices []dto.Marke
 			URI string `json:"uri"`
 		} `json:"resources"`
 	}
-	if json.Unmarshal([]byte(item.ResourcesSnapshot), &res) == nil {
+	resourcesSnapshot := item.ResourcesSnapshot
+	if item.TransportType == "virtual" {
+		binding := model.ItemVirtualBinding(item)
+		resourcesSnapshot = virtual.PublicResourceSnapshot(binding.VirtualType)
+	}
+	if json.Unmarshal([]byte(resourcesSnapshot), &res) == nil {
 		for _, r := range res.Resources {
 			if r.URI != "" {
 				valid[billing.EntryKindResource+"\x00"+r.URI] = true
@@ -818,7 +873,7 @@ func (s *MarketplaceService) SetItemEntryPrices(itemID int64, prices []dto.Marke
 }
 
 // CloneFromService 从**管理员自己账户下**的自有服务克隆上架(D14/§11):深拷贝 transport/config/auth/tools,
-// 与源服务无关联。仅允许克隆 svc.UserID==adminID 的服务(不得上架其他用户的服务);虚拟服务(virtual)拒绝。
+// 普通服务复制连接配置；虚拟服务绑定现有配置。仅管理员自己的服务可上架。
 // 保留源凭证但调用方应替换为平台凭证(前端高亮提示)。非自用模式须显式定价。
 func (s *MarketplaceService) CloneFromService(adminID int64, req *dto.CloneMarketplaceReq) (*dto.MarketplaceDetail, error) {
 	svc, err := model.GetServiceByIDWithoutUser(req.FromServiceID)
@@ -829,10 +884,18 @@ func (s *MarketplaceService) CloneFromService(adminID int64, req *dto.CloneMarke
 	if svc.UserID != adminID {
 		return nil, ErrServiceNotOwned
 	}
-	// 虚拟服务(vision/camera 等)不可上架(D16/§11):其 config 指向配置者私有资源(如 vision_configs.ref_id),
-	// 克隆后无法作为平台托管服务运行。
+	// Built-in services retain a live, validated configuration reference.
+	if svc.Source == "marketplace" {
+		return nil, fmt.Errorf("不能从市场引用再次上架")
+	}
 	if svc.TransportType == "virtual" {
-		return nil, ErrVirtualServiceNotListable
+		b, e := virtual.ParseBinding(svc.Config)
+		if e != nil || b.VirtualType == "camera" {
+			return nil, ErrVirtualServiceNotListable
+		}
+		if _, e = virtual.ResolveBinding(b, adminID); e != nil {
+			return nil, e
+		}
 	}
 	if svc.TransportType == common.TransportPassiveWS {
 		return nil, ErrPassiveServiceNotListable
@@ -904,7 +967,20 @@ func (s *MarketplaceService) CloneFromService(adminID int64, req *dto.CloneMarke
 		item.Description = svc.Description
 	}
 
-	if err := item.Insert(); err != nil {
+	if svc.TransportType == "virtual" {
+		b, _ := virtual.ParseBinding(svc.Config)
+		item.ResourcesSnapshot = virtual.PublicResourceSnapshot(b.VirtualType)
+		item.PromptsSnapshot = "[]"
+	}
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if item.TransportType == "virtual" {
+			b := model.ItemVirtualBinding(item)
+			if err := validateVirtualBindingTx(tx, adminID, b); err != nil {
+				return err
+			}
+		}
+		return tx.Create(item).Error
+	}); err != nil {
 		return nil, err
 	}
 	if carryKeyPool {
@@ -971,6 +1047,21 @@ func (s *MarketplaceService) GetItemByID(itemID int64) (*dto.MarketplaceDetail, 
 	var cfg map[string]interface{}
 	_ = json.Unmarshal([]byte(plain), &cfg)
 	detail.ConfigTemplate = maskConfigCredentials(cfg)
+	if item.TransportType == "virtual" {
+		b := model.ItemVirtualBinding(item)
+		var named struct{ Name string }
+		if table := model.VirtualConfigTable(b.VirtualType); table != "" {
+			_ = model.DB.Table(table).Select("name").Where("id = ? AND user_id = ? AND deleted_at IS NULL", b.RefID, item.AdminID).First(&named).Error
+			detail.BindingName = named.Name
+		}
+		detail.VirtualBinding = &b
+		available := false
+		if source, e := virtual.ResolveBinding(b, item.AdminID); e == nil {
+			detail.BindingName = source.DisplayName
+			available = true
+		}
+		detail.BindingAvailable = &available
+	}
 	// 条目级多秘钥状态(仅 admin 详情,公开浏览 toDetail 不填)
 	authCfg := item.ParseAuthKeyConfig()
 	detail.KeyMode = authCfg.KeyMode
@@ -1049,6 +1140,10 @@ func (s *MarketplaceService) AddToMyServices(userID, itemID int64) (*dto.Install
 		Status:            common.StatusEnabled,
 		HealthStatus:      common.HealthUnknown,
 		AuthType:          "none",
+	}
+	if item.TransportType == "virtual" {
+		binding := model.ItemVirtualBinding(item)
+		svc.ResourcesCache = virtual.PublicResourceSnapshot(binding.VirtualType)
 	}
 
 	if err := svc.Insert(); err != nil {
@@ -1158,7 +1253,12 @@ func (s *MarketplaceService) toDetail(item *model.MarketplaceItem) *dto.Marketpl
 	var toolsSnapshot []interface{}
 	_ = json.Unmarshal([]byte(item.ToolsSnapshot), &toolsSnapshot)
 	var resourcesSnapshot map[string]interface{}
-	_ = json.Unmarshal([]byte(item.ResourcesSnapshot), &resourcesSnapshot)
+	resourcesJSON := item.ResourcesSnapshot
+	if item.TransportType == "virtual" {
+		binding := model.ItemVirtualBinding(item)
+		resourcesJSON = virtual.PublicResourceSnapshot(binding.VirtualType)
+	}
+	_ = json.Unmarshal([]byte(resourcesJSON), &resourcesSnapshot)
 	var promptsSnapshot []interface{}
 	_ = json.Unmarshal([]byte(item.PromptsSnapshot), &promptsSnapshot)
 	var serverInfo map[string]interface{}

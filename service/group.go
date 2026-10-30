@@ -248,7 +248,11 @@ func (s *GroupService) GetResources(userID, groupID int64) ([]dto.GroupResourceI
 				MIMEType    string `json:"mimeType"`
 			} `json:"templates"`
 		}
-		_ = json.Unmarshal([]byte(svc.ResourcesCache), &cache)
+		resourcesCache := svc.ResourcesCache
+		if canonical, ok := virtualResourceSnapshotForService(svc); ok {
+			resourcesCache = canonical
+		}
+		_ = json.Unmarshal([]byte(resourcesCache), &cache)
 		for _, r := range cache.Resources {
 			result = append(result, dto.GroupResourceItem{
 				ServiceID:   gs.ServiceID,

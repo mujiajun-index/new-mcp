@@ -19,7 +19,7 @@ func VideoGenHandler(ctx context.Context, serviceID int64, config map[string]any
 		return nil, fmt.Errorf("video configuration not found")
 	}
 	uid := CallerUserID(ctx)
-	if uid == 0 || uid != cfg.UserID {
+	if uid == 0 || !model.CanExecuteConfig(ctx, uid, cfg.UserID, cfg.ID, "videogen") {
 		return nil, fmt.Errorf("video service is not accessible to this user")
 	}
 	if !cfg.AutoRegister || cfg.Status != common.StatusEnabled {
@@ -38,7 +38,7 @@ func RunVideoGen(ctx context.Context, uid int64, cfg *model.VideoGenConfig, tool
 	if VideoManager == nil {
 		return nil, fmt.Errorf("video manager not initialized")
 	}
-	if uid == 0 || uid != cfg.UserID {
+	if uid == 0 || !model.CanExecuteConfig(ctx, uid, cfg.UserID, cfg.ID, "videogen") {
 		return nil, fmt.Errorf("video configuration is not accessible to this user")
 	}
 	if len(raw) > 16<<20 {
@@ -69,12 +69,19 @@ func RunVideoGen(ctx context.Context, uid int64, cfg *model.VideoGenConfig, tool
 				return nil, fmt.Errorf("retry_download must be a boolean")
 			}
 		}
-		t, err := VideoManager.Get(uid, &cfg.ID, id, true)
+		if err := model.CheckVirtualTask(ctx, "videogen_tasks", id); err != nil {
+			return nil, err
+		}
+		configID := &cfg.ID
+		if model.VirtualExecutionFrom(ctx).ServiceID != 0 {
+			configID = nil
+		}
+		t, err := VideoManager.Get(uid, configID, id, true)
 		if err != nil {
 			return nil, err
 		}
 		if retry {
-			t, err = VideoManager.RetryDownload(uid, &cfg.ID, id)
+			t, err = VideoManager.RetryDownload(uid, configID, id)
 			if err != nil {
 				return nil, err
 			}

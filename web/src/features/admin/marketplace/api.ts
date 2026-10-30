@@ -98,8 +98,14 @@ export async function adminCloneMarketplace(data: CloneMarketplaceReq) {
 
 // 可克隆来源服务列表(克隆来源选择用):GET /admin/marketplace/clone-sources
 export async function adminListCloneSources() {
-  const res = await api.get('/admin/marketplace/clone-sources')
-  return res.data
+  const first = (await api.get('/admin/marketplace/clone-sources', { params: { page: 1, page_size: 100 } })).data
+  const items = [...(first.data || [])]
+  for (let page = 2; items.length < (first.pagination?.total || 0); page++) {
+    const next = (await api.get('/admin/marketplace/clone-sources', { params: { page, page_size: 100 } })).data
+    if (!next.data?.length) break
+    items.push(...next.data)
+  }
+  return { ...first, data: items }
 }
 
 // --- 条目级多秘钥管理(/admin/marketplace/:id/keys) ---

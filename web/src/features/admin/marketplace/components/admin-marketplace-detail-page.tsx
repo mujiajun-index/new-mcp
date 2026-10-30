@@ -3,7 +3,7 @@ import dayjs from 'dayjs'
 import { useParams, useNavigate, useRouter } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { adminGetMarketplace, adminUpdateMarketplace, adminRefreshMarketplace, adminGetMarketplaceProcess, adminControlMarketplaceProcess, adminSetEntryPrices, marketplaceKeysApi } from '../api'
+import { adminListCloneSources, adminGetMarketplace, adminUpdateMarketplace, adminRefreshMarketplace, adminGetMarketplaceProcess, adminControlMarketplaceProcess, adminSetEntryPrices, marketplaceKeysApi } from '../api'
 import { EntryPriceControl, EntryPricingBar, useEntryPricingDraft } from './entry-pricing'
 import { ServiceKeysCard } from '@/components/service-keys-card'
 import { adminListMarketplaceGroups, adminListMarketplaceTags } from '@/features/admin/marketplace-categories/api'
@@ -28,7 +28,7 @@ import {
   ArrowLeft, Save, RefreshCw, Pencil, X, Check, Loader2, ChevronDown, ChevronRight,
   Activity, Power, Play, Ban, Square, RotateCw, Layers, MemoryStick, Search, User, Users, Download,
 } from 'lucide-react'
-import type { MarketplaceDetail, MarketplaceEntryPrice, AuthType, MarketplaceItemProcess, MarketplaceItemProcessInstance, ProcessControlAction } from '@/types'
+import type { ServiceListItem, MarketplaceDetail, MarketplaceEntryPrice, AuthType, MarketplaceItemProcess, MarketplaceItemProcessInstance, ProcessControlAction } from '@/types'
 import { queryNames, withQueryValue, withoutQueryValue } from '@/lib/query-auth'
 
 // AdminMarketplaceDetailPage 市场项详情 + 编辑(§11)。上半只读概览,下半编辑表单(调 adminUpdateMarketplace)。
@@ -226,7 +226,7 @@ export function AdminMarketplaceDetailPage() {
       </div>
 
       {/* 平台上游配置编辑(仅平台托管项):折叠区,展开后可改 URL/鉴权等,与服务详情同款 */}
-      {item.category === 'instant' && <UpstreamConfigCard item={item} queryId={id} />}
+      {item.category === 'instant' && (item.transport_type === 'virtual' ? <VirtualBindingCard item={item} queryId={id} /> : <UpstreamConfigCard item={item} queryId={id} />)}
 
       {/* 条目级秘钥管理(多秘钥池):一份池对全部安装用户全局轮换,交互同服务详情页 */}
       {keysCardVisible && (
@@ -1221,4 +1221,35 @@ function InstanceProcessCard({
       </div>
     </div>
   )
+}
+
+function VirtualBindingCard({ item, queryId }: { item: MarketplaceDetail; queryId: string }) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const [sourceID, setSourceID] = useState('')
+  const { data } = useQuery({ queryKey: ['marketplace-clone-sources'], queryFn: adminListCloneSources })
+  const sources = ((data?.data || []) as ServiceListItem[]).filter((s) => s.transport_type === 'virtual' && s.source === item.virtual_binding?.virtual_type)
+  const selected = sources.find((s) => String(s.id) === sourceID)
+  const mutation = useMutation({
+    mutationFn: () => adminUpdateMarketplace(item.id, { virtual_binding: selected?.virtual_binding }),
+    onSuccess: () => { toast.success(t('common.success')); setSourceID(''); queryClient.invalidateQueries({ queryKey: ['admin-marketplace-detail', queryId] }) },
+    onError: (error: Error) => toast.error(error.message),
+  })
+  const paths: Record<string, string> = { vision: 'vision', systemone: 'system-one', imagegen: 'imagegen', videogen: 'videogen', audiogen: 'audiogen' }
+  const binding = item.virtual_binding
+  return <SectionCard title={t('marketplace.virtualBinding')}>
+    <div className="flex flex-wrap items-center gap-3 text-sm">
+      <span>{binding?.virtual_type}</span><span>{item.binding_name || `#${binding?.ref_id}`}</span>
+      <Badge variant={item.binding_available ? 'default' : 'destructive'}>{t(item.binding_available ? 'marketplace.bindingAvailable' : 'marketplace.bindingUnavailable')}</Badge>
+      {binding && <a className="text-primary underline" href={`/${paths[binding.virtual_type]}/${binding.ref_id}`}>{t('marketplace.openBoundConfig')}</a>}
+    </div>
+    <p className="mt-2 text-xs text-muted-foreground">{t('marketplace.virtualBindingHint')}</p>
+    <div className="mt-3 flex items-center gap-2">
+      <Select value={sourceID} onValueChange={setSourceID}>
+        <SelectTrigger className="max-w-md"><SelectValue placeholder={t('marketplace.chooseBoundConfig')} /></SelectTrigger>
+        <SelectContent>{sources.map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.display_name || s.name}</SelectItem>)}</SelectContent>
+      </Select>
+      <Button disabled={!selected || mutation.isPending} onClick={() => mutation.mutate()}>{t('common.save')}</Button>
+    </div>
+  </SectionCard>
 }

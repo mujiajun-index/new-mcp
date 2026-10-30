@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/mujkjk/newmcp/common"
+	"github.com/mujkjk/newmcp/internal/mcp/virtual/events"
 	"github.com/mujkjk/newmcp/middleware"
 	"github.com/mujkjk/newmcp/model"
 	"github.com/mujkjk/newmcp/router"
@@ -33,6 +34,15 @@ func main() {
 
 	model.CheckSetup()
 	model.InitOptionMap()
+	// Start the cross-instance event listener before accepting MCP connections
+	// or launching task workers that can change virtual-service resources.
+	srvCtx, srvCancel := context.WithCancel(context.Background())
+	defer srvCancel()
+	stopEvents, err := events.StartRedis(srvCtx, common.RedisConnString)
+	if err != nil {
+		log.Fatalf("Failed to initialize virtual-service events: %v", err)
+	}
+	defer stopEvents()
 
 	gin.SetMode(common.GinMode)
 
@@ -47,10 +57,6 @@ func main() {
 	// Start cloud connections (XiaoZhi, custom WSS)
 	router.StartCloudConnections()
 	defer router.StopCloudConnections()
-
-	// Graceful shutdown
-	srvCtx, srvCancel := context.WithCancel(context.Background())
-	defer srvCancel()
 
 	// Background workers (expired-upload cleanup, …) — bound to srvCtx so they
 	// exit on shutdown. Started after srvCtx exists for the same reason.

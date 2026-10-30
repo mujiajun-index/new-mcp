@@ -265,7 +265,7 @@ func AdminCloneMarketplaceItem(c *gin.Context) {
 }
 
 // AdminListCloneSources 列出当前管理员自己账户下可克隆上架的来源服务(其账户下 source=user/admin,
-// 自动排除虚拟服务与市场引用),供"从自有服务克隆"下拉使用(§11)。
+// 支持五类虚拟服务，排除市场引用),供"从自有服务克隆"下拉使用(§11)。
 func AdminListCloneSources(c *gin.Context) {
 	adminID := c.GetInt64("user_id")
 	page, pageSize := common.GetPagination(c)

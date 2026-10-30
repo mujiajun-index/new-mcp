@@ -96,27 +96,25 @@ type billingOutcome struct {
 }
 
 type GatewayHandler struct {
-	pool            *bridge.SessionPool
-	toolRouter      *bridge.ToolRouter
-	searchEngine    *smart.SearchEngine
-	virtualRegistry *virtual.VirtualToolRegistry
-	billing         *billing.BillingService
-	streams         streamRegistry
-	legacy          legacyRegistry
-	eventState      gatewayEventState
-	logMu           sync.Mutex
-	logWG           sync.WaitGroup
-	logClosed       bool
-	workWG          sync.WaitGroup
+	pool         *bridge.SessionPool
+	toolRouter   *bridge.ToolRouter
+	searchEngine *smart.SearchEngine
+	billing      *billing.BillingService
+	streams      streamRegistry
+	legacy       legacyRegistry
+	eventState   gatewayEventState
+	logMu        sync.Mutex
+	logWG        sync.WaitGroup
+	logClosed    bool
+	workWG       sync.WaitGroup
 }
 
-func NewGatewayHandler(pool *bridge.SessionPool, toolRouter *bridge.ToolRouter, vr *virtual.VirtualToolRegistry) *GatewayHandler {
+func NewGatewayHandler(pool *bridge.SessionPool, toolRouter *bridge.ToolRouter, _ *virtual.VirtualToolRegistry) *GatewayHandler {
 	return &GatewayHandler{
-		pool:            pool,
-		toolRouter:      toolRouter,
-		searchEngine:    smart.NewSearchEngine(),
-		virtualRegistry: vr,
-		billing:         billing.NewBillingService(),
+		pool:         pool,
+		toolRouter:   toolRouter,
+		searchEngine: smart.NewSearchEngine(),
+		billing:      billing.NewBillingService(),
 	}
 }
 
@@ -499,40 +497,18 @@ func applyBillingToLog(log *model.McpCallLog, b *billingOutcome) {
 	log.MarketplaceItemID = b.ItemID
 }
 
-// routeAndCall handles virtual tool check, session routing, and tool execution.
+// routeAndCall uses the same session, authorization and billing path for every MCP transport.
 // 仅当解析到的服务为市场来源(source=marketplace)时触发计费(§6);自有/虚拟工具免费。
 func (h *GatewayHandler) routeAndCall(ctx context.Context, reqID interface{}, logCtx *LogContext, toolName string, args json.RawMessage, svcID *int64, svcName *string, requestID string, billing *billingOutcome, keyIndex *int) *JSONRPCResponse {
-	parsedSvc, parsedTool := bridge.ParseNamespacedName(toolName)
-
-	// Check virtual tools first (vision/camera 等属自有性质,免费). upload_image is
-	// now a per-config vision tool, dispatched here like analyze_image (parsedSvc
-	// is the real "vision_<id>" service name). The caller's userID is injected so
-	// the upload branch can attribute ownership + enforce the per-user quota.
-	if h.virtualRegistry != nil && parsedSvc != "" {
-		if vSvcID, entry, ok := h.virtualRegistry.LookupByName(logCtx.UserID, parsedSvc); ok {
-			if (entry.Config["virtual_type"] == "imagegen" || entry.Config["virtual_type"] == "videogen" || entry.Config["virtual_type"] == "audiogen") && !h.generationToolAccessible(logCtx, vSvcID, parsedTool) {
-				return h.errorResponse(reqID, -32602, "Generation tool is not enabled in an accessible group")
-			}
-			vResult, vErr := h.virtualRegistry.Handle(virtual.WithCallerUserID(ctx, logCtx.UserID), vSvcID, entry.Config, parsedTool, args)
-			*svcID = vSvcID
-			*svcName = entry.Name
-			if vErr != nil {
-				return h.errorResponse(reqID, -32603, "Virtual tool failed: "+vErr.Error())
-			}
-			return &JSONRPCResponse{
-				JSONRPC: "2.0",
-				ID:      reqID,
-				Result:  json.RawMessage(vResult),
-			}
-		}
-	}
-
-	// Route to real MCP service
+	// Route through the shared MCP session pool
 	session, resolvedTool, release, err := h.acquireRouteOrConnect(ctx, toolName, logCtx.UserID)
 	if err != nil {
 		return h.errorResponse(reqID, acquireErrCode(err), err.Error())
 	}
 	defer release()
+	if !h.toolAccessible(logCtx, session.ServiceID, resolvedTool) {
+		return h.errorResponse(reqID, -32602, "Tool is not enabled in an accessible group")
+	}
 
 	*svcID = session.ServiceID
 	*svcName = session.ServiceName
@@ -688,10 +664,9 @@ func callTool(ctx context.Context, adapter transport.TransportAdapter, params ma
 	return raw, 0, err
 }
 
-// executeOne 执行一次工具调用:作用域校验 → 虚拟工具 → 路由 → 计费 A/B → 上游调用。
+// executeOne 执行一次工具调用:作用域校验 → MCP 路由 → 计费 A/B → 适配器调用。
 // itemRequestID 为本次调用的计费幂等键。
 func (h *GatewayHandler) executeOne(ctx context.Context, logCtx *LogContext, toolID string, arguments json.RawMessage, timeoutMs int, itemRequestID string) *callOutcome {
-	requestedTimeoutMs := timeoutMs
 	if toolID == "" {
 		return &callOutcome{Err: "tool_id is required", ErrCode: -32602}
 	}
@@ -709,49 +684,14 @@ func (h *GatewayHandler) executeOne(ctx context.Context, logCtx *LogContext, too
 		return &callOutcome{Err: fmt.Sprintf("service '%s' is not accessible with this API key", svcName), ErrCode: -32602}
 	}
 
-	// Check virtual tools first
-	if h.virtualRegistry != nil {
-		parsedSvc, parsedTool := bridge.ParseNamespacedName(toolID)
-		if parsedSvc != "" {
-			if vSvcID, entry, ok := h.virtualRegistry.LookupByName(logCtx.UserID, parsedSvc); ok {
-				if (entry.Config["virtual_type"] == "imagegen" || entry.Config["virtual_type"] == "videogen" || entry.Config["virtual_type"] == "audiogen") && !h.generationToolAccessible(logCtx, vSvcID, parsedTool) {
-					return &callOutcome{Err: "Generation tool is not enabled in an accessible group", ErrCode: -32602}
-				}
-				if (entry.Config["virtual_type"] == "imagegen" || entry.Config["virtual_type"] == "videogen" || entry.Config["virtual_type"] == "audiogen") && requestedTimeoutMs > 0 {
-					var cancel context.CancelFunc
-					ctx, cancel = context.WithTimeout(ctx, time.Duration(requestedTimeoutMs)*time.Millisecond)
-					defer cancel()
-				}
-				vResult, vErr := h.virtualRegistry.Handle(virtual.WithCallerUserID(ctx, logCtx.UserID), vSvcID, entry.Config, parsedTool, arguments)
-				gID, gName := h.resolveGroupForService(vSvcID, logCtx)
-				if vErr != nil {
-					return &callOutcome{
-						Err:         "Virtual tool failed: " + vErr.Error(),
-						ErrCode:     -32603,
-						ToolName:    parsedTool,
-						ServiceID:   vSvcID,
-						ServiceName: entry.Name,
-						GroupID:     gID,
-						GroupName:   gName,
-					}
-				}
-				return &callOutcome{
-					Result:      json.RawMessage(vResult),
-					ToolName:    parsedTool,
-					ServiceID:   vSvcID,
-					ServiceName: entry.Name,
-					GroupID:     gID,
-					GroupName:   gName,
-				}
-			}
-		}
-	}
-
 	session, toolName, release, err := h.acquireRouteOrConnect(ctx, toolID, logCtx.UserID)
 	if err != nil {
 		return &callOutcome{Err: err.Error(), ErrCode: acquireErrCode(err)}
 	}
 	defer release()
+	if !h.toolAccessible(logCtx, session.ServiceID, toolName) {
+		return &callOutcome{Err: "Tool is not enabled in an accessible group", ErrCode: -32602}
+	}
 
 	gID, gName := h.resolveGroupForService(session.ServiceID, logCtx)
 
@@ -1081,9 +1021,9 @@ func (h *GatewayHandler) resolveGroupForService(serviceID int64, logCtx *LogCont
 	return 0, ""
 }
 
-// generationToolAccessible checks the live group membership and tool filters for
-// virtual image/video calls, including cached names sent directly or via execute_batch.
-func (h *GatewayHandler) generationToolAccessible(logCtx *LogContext, serviceID int64, tool string) bool {
+// toolAccessible checks live group membership and tool filters for all transports,
+// including cached names sent directly or through execute_batch.
+func (h *GatewayHandler) toolAccessible(logCtx *LogContext, serviceID int64, tool string) bool {
 	info, err := bridge.ResolveApiKeyInfo(logCtx.ApiKeyID)
 	if err != nil || info.UserID != logCtx.UserID {
 		return false

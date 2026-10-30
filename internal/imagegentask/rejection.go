@@ -32,8 +32,12 @@ func (m *Manager) reconcileRejectedSubmissions() error {
 				continue
 			}
 			query := m.DB.WithContext(m.ctx).Model(&model.ImageGenTask{}).Where("id = ? AND status = ? AND error = ? AND lease_owner = ? AND result_key = ? AND result_count = 0", row.ID, "submission_unknown", row.Error, "", "")
-			if err := freeLease(query, time.Now()).UpdateColumns(map[string]any{"status": "failed", "artifact_status": "failed", "snapshot": ""}).Error; err != nil {
-				return err
+			res := freeLease(query, time.Now()).UpdateColumns(map[string]any{"status": "failed", "artifact_status": "failed", "snapshot": ""})
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 1 {
+				notifyImageTask(&row)
 			}
 		}
 	}

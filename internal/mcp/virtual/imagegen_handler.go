@@ -25,7 +25,7 @@ func ImageGenHandler(ctx context.Context, serviceID int64, config map[string]int
 		return nil, fmt.Errorf("image generation config not found")
 	}
 	uid := CallerUserID(ctx)
-	if uid == 0 || uid != cfg.UserID {
+	if uid == 0 || !model.CanExecuteConfig(ctx, uid, cfg.UserID, cfg.ID, "imagegen") {
 		return nil, fmt.Errorf("image service is not accessible to this user")
 	}
 	if !cfg.AutoRegister || cfg.Status != common.StatusEnabled {

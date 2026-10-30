@@ -61,6 +61,8 @@ type AudioGenModel struct {
 func (AudioGenModel) TableName() string { return "audiogen_models" }
 
 type AudioGenTask struct {
+	ServiceID         int64     `json:"-" gorm:"index"`
+	MarketplaceItemID *int64    `json:"-" gorm:"index"`
 	ID                string    `json:"task_id" gorm:"primaryKey;size:36"`
 	UserID            int64     `json:"-" gorm:"index"`
 	ConfigID          int64     `json:"config_id" gorm:"index"`

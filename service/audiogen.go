@@ -238,6 +238,7 @@ func (s *AudioGenService) register(c *model.AudioGenConfig) {
 	}
 }
 func (s *AudioGenService) Update(uid, id int64, r *dto.AudioGenConfigReq) error {
+	defer syncVirtualMarketplaceBindings("audiogen", id)
 	audioConfigMu.Lock()
 	defer audioConfigMu.Unlock()
 	var c *model.AudioGenConfig
@@ -275,6 +276,7 @@ func audioHasEnabled(c *model.AudioGenConfig) bool {
 	return false
 }
 func (s *AudioGenService) Enable(uid, id int64) error {
+	defer syncVirtualMarketplaceBindings("audiogen", id)
 	audioConfigMu.Lock()
 	defer audioConfigMu.Unlock()
 	var c *model.AudioGenConfig
@@ -292,7 +294,7 @@ func (s *AudioGenService) Enable(uid, id int64) error {
 		}
 		tools, _ := json.Marshal(buildAudioGenTools(c))
 		now := time.Now()
-		svc := model.McpService{UserID: uid, Name: fmt.Sprintf("audiogen_%d", id), DisplayName: c.Name, Description: c.Description, TransportType: "virtual", Source: "audiogen", Config: fmt.Sprintf(`{"virtual_type":"audiogen","ref_id":%d}`, id), ToolsCache: string(tools), ToolsUpdatedAt: &now, Status: common.StatusEnabled, HealthStatus: "healthy"}
+		svc := model.McpService{UserID: uid, Name: fmt.Sprintf("audiogen_%d", id), DisplayName: c.Name, Description: c.Description, ResourcesCache: virtual.PublicResourceSnapshot("audiogen"), PromptsCache: "[]", TransportType: "virtual", Source: "audiogen", Config: fmt.Sprintf(`{"virtual_type":"audiogen","ref_id":%d}`, id), ToolsCache: string(tools), ToolsUpdatedAt: &now, Status: common.StatusEnabled, HealthStatus: "healthy"}
 		if e = tx.Create(&svc).Error; e != nil {
 			return e
 		}
@@ -306,6 +308,7 @@ func (s *AudioGenService) Enable(uid, id int64) error {
 	return e
 }
 func (s *AudioGenService) remove(uid, id int64, del bool) error {
+	defer syncVirtualMarketplaceBindings("audiogen", id)
 	audioConfigMu.Lock()
 	defer audioConfigMu.Unlock()
 	var sid int64
@@ -313,6 +316,11 @@ func (s *AudioGenService) remove(uid, id int64, del bool) error {
 		c, e := lockedAudio(tx, uid, id)
 		if e != nil {
 			return e
+		}
+		if del {
+			if err := model.RequireVirtualConfigUnbound(tx, uid, model.VirtualBinding{VirtualType: "audiogen", RefID: id}); err != nil {
+				return err
+			}
 		}
 		if c.RegisteredServiceID != nil {
 			sid = *c.RegisteredServiceID

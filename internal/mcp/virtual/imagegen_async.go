@@ -16,7 +16,7 @@ func RunImageGenAsync(ctx context.Context, uid int64, cfg *model.ImageGenConfig,
 	if ImageManager == nil {
 		return nil, fmt.Errorf("image task manager not initialized")
 	}
-	if uid == 0 || cfg.UserID != uid {
+	if uid == 0 || !model.CanExecuteConfig(ctx, uid, cfg.UserID, cfg.ID, "imagegen") {
 		return nil, fmt.Errorf("image configuration is not accessible to this user")
 	}
 	if len(raw) > 32<<20 {
@@ -55,7 +55,14 @@ func RunImageGenAsync(ctx context.Context, uid int64, cfg *model.ImageGenConfig,
 		if err != nil {
 			return nil, err
 		}
-		t, err := ImageManager.Get(uid, &cfg.ID, id)
+		if err := model.CheckVirtualTask(ctx, "imagegen_tasks", id); err != nil {
+			return nil, err
+		}
+		configID := &cfg.ID
+		if model.VirtualExecutionFrom(ctx).ServiceID != 0 {
+			configID = nil
+		}
+		t, err := ImageManager.Get(uid, configID, id)
 		if err != nil {
 			return nil, err
 		}
@@ -65,7 +72,7 @@ func RunImageGenAsync(ctx context.Context, uid int64, cfg *model.ImageGenConfig,
 				return nil, fmt.Errorf("retry_download must be a boolean")
 			}
 			if retry {
-				t, err = ImageManager.RetrySave(uid, &cfg.ID, id)
+				t, err = ImageManager.RetrySave(uid, configID, id)
 				if err != nil {
 					return nil, err
 				}

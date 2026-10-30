@@ -20,6 +20,7 @@ import (
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/internal/imageasset"
 	"github.com/mujkjk/newmcp/internal/mcp/imagegen"
+	"github.com/mujkjk/newmcp/internal/mcp/virtual/events"
 	"github.com/mujkjk/newmcp/internal/storage"
 	"github.com/mujkjk/newmcp/internal/taskreference"
 	"github.com/mujkjk/newmcp/model"
@@ -113,7 +114,7 @@ func WaitSeconds(args map[string]any, fallback int) (int, error) {
 }
 
 func (m *Manager) Submit(ctx context.Context, uid int64, cfg *model.ImageGenConfig, tool, source string, args map[string]any) (*model.ImageGenTask, error) {
-	if uid == 0 || cfg.UserID != uid {
+	if uid == 0 || !model.CanExecuteConfig(ctx, uid, cfg.UserID, cfg.ID, "imagegen") {
 		return nil, fmt.Errorf("image configuration is not accessible to this user")
 	}
 	if m.Store == nil {
@@ -146,7 +147,7 @@ func (m *Manager) Submit(ctx context.Context, uid int64, cfg *model.ImageGenConf
 	if cfg.ID == 0 {
 		input = append(input, cfg.Provider, cfg.EndpointURL, cfg.ModelName, cfg.DefaultParams, cfg.ApiKey, cfg.EditRequestFormat, cfg.TimeoutSeconds)
 	}
-	hash, key := digest(input), digest([]any{uid, cfg.ID, requestID})
+	hash, key := digest(input), model.ScopedTaskKey(ctx, digest([]any{uid, cfg.ID, requestID}))
 	lookup := func() (*model.ImageGenTask, error) {
 		var t model.ImageGenTask
 		err := m.DB.Where("idempotency_key = ? AND user_id = ?", key, uid).First(&t).Error
@@ -184,7 +185,8 @@ func (m *Manager) Submit(ctx context.Context, uid int64, cfg *model.ImageGenConf
 	if source != "test" {
 		source = "mcp"
 	}
-	t := &model.ImageGenTask{ID: uuid.NewString(), UserID: uid, ConfigID: cfg.ID, ConfigName: redact(cfg.Name, cfg.ApiKey), Source: source, Operation: op, Provider: cfg.Provider, Model: cfg.ModelName, Prompt: redact(prompt, cfg.ApiKey), ReferenceCount: count, ReferenceImages: taskreference.Encode(s.References), Status: "queued", ArtifactStatus: "pending", IdempotencyKey: &key, RequestHash: hash, Snapshot: sealed}
+	taskScope := model.VirtualExecutionFrom(ctx)
+	t := &model.ImageGenTask{ID: uuid.NewString(), UserID: uid, ServiceID: taskScope.ServiceID, MarketplaceItemID: taskScope.MarketplaceItemID, ConfigID: cfg.ID, ConfigName: redact(cfg.Name, cfg.ApiKey), Source: source, Operation: op, Provider: cfg.Provider, Model: cfg.ModelName, Prompt: redact(prompt, cfg.ApiKey), ReferenceCount: count, ReferenceImages: taskreference.Encode(s.References), Status: "queued", ArtifactStatus: "pending", IdempotencyKey: &key, RequestHash: hash, Snapshot: sealed}
 	if err := m.DB.WithContext(ctx).Create(t).Error; err != nil {
 		if previous, e := lookup(); e == nil {
 			return previous, nil
@@ -193,6 +195,7 @@ func (m *Manager) Submit(ctx context.Context, uid int64, cfg *model.ImageGenConf
 		}
 		return nil, err
 	}
+	notifyImageTask(t)
 	// From this point cancellation affects the short wait, never the accepted work.
 	m.ProcessDue()
 	return t, nil
@@ -240,7 +243,16 @@ func (m *Manager) ProcessDue() {
 	}
 	now := time.Now()
 	// A lost synchronous HTTP request has no upstream job ID to query. Never POST it again.
-	freeLease(m.DB.Model(&model.ImageGenTask{}).Where("status = ? AND idempotency_key IS NOT NULL", "running"), now).Updates(map[string]any{"status": "submission_unknown", "error": "Image submission result is unknown after worker interruption; generation was not resubmitted", "snapshot": "", "lease_owner": "", "lease_until": nil, "finished_at": now})
+	const interruption = "Image submission result is unknown after worker interruption; generation was not resubmitted"
+	recovered := freeLease(m.DB.Model(&model.ImageGenTask{}).Where("status = ? AND idempotency_key IS NOT NULL", "running"), now).Updates(map[string]any{"status": "submission_unknown", "error": interruption, "snapshot": "", "lease_owner": "", "lease_until": nil, "finished_at": now})
+	if recovered.Error == nil && recovered.RowsAffected > 0 {
+		var changed []model.ImageGenTask
+		if m.DB.Where("status = ? AND error = ?", "submission_unknown", interruption).Find(&changed).Error == nil {
+			for i := range changed {
+				notifyImageTask(&changed[i])
+			}
+		}
+	}
 	var rows []model.ImageGenTask
 	if freeLease(m.DB.Where("status IN ? AND idempotency_key IS NOT NULL", []string{"queued", "saving"}), now).Order("created_at ASC, id ASC").Limit(8).Find(&rows).Error != nil {
 		return
@@ -271,7 +283,20 @@ func (m *Manager) owned(t *model.ImageGenTask) *gorm.DB {
 }
 func (m *Manager) update(t *model.ImageGenTask, values map[string]any) bool {
 	r := m.owned(t).Updates(values)
-	return r.Error == nil && r.RowsAffected == 1
+	changed := r.Error == nil && r.RowsAffected == 1
+	if changed {
+		for _, field := range []string{"status", "artifact_status", "error", "warnings", "text", "usage", "result_count", "finished_at"} {
+			if _, ok := values[field]; ok {
+				notifyImageTask(t)
+				break
+			}
+		}
+	}
+	return changed
+}
+
+func notifyImageTask(t *model.ImageGenTask) {
+	events.TaskChanged("imagegen", t.UserID, t.ServiceID, t.ConfigID)
 }
 func (m *Manager) terminal(t *model.ImageGenTask, status, message string) {
 	now := time.Now()
@@ -538,6 +563,7 @@ func (m *Manager) RetrySave(uid int64, configID *int64, id string) (*model.Image
 	if res.RowsAffected != 1 {
 		return nil, fmt.Errorf("image task is busy")
 	}
+	notifyImageTask(t)
 	m.ProcessDue()
 	return m.Get(uid, configID, id)
 }
@@ -576,6 +602,7 @@ func (m *Manager) Delete(uid int64, id string) error {
 	})
 	if err == nil {
 		deleteUnusedBlobs(m.ctx, m.DB, m.Store, keys)
+		notifyImageTask(t)
 	}
 	return err
 }

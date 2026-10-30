@@ -197,6 +197,7 @@ func (s *ImageGenService) Create(uid int64, r *dto.ImageGenConfigReq) (*ImageGen
 	return imageGenDetail(c), nil
 }
 func (s *ImageGenService) Update(uid, id int64, r *dto.ImageGenConfigReq) error {
+	defer syncVirtualMarketplaceBindings("imagegen", id)
 	imageGenConfigMu.Lock()
 	defer imageGenConfigMu.Unlock()
 	var cfg model.ImageGenConfig
@@ -237,6 +238,7 @@ func syncImageGenService(tx *gorm.DB, c *model.ImageGenConfig) error {
 	return nil
 }
 func (s *ImageGenService) Enable(uid, id int64) error {
+	defer syncVirtualMarketplaceBindings("imagegen", id)
 	imageGenConfigMu.Lock()
 	defer imageGenConfigMu.Unlock()
 	var cfg model.ImageGenConfig
@@ -249,7 +251,7 @@ func (s *ImageGenService) Enable(uid, id int64) error {
 		}
 		tools, _ := json.Marshal(buildImageGenTools(&cfg))
 		now := time.Now()
-		svc := model.McpService{UserID: uid, Name: fmt.Sprintf("imagegen_%d", id), DisplayName: cfg.Name, Description: cfg.Description, TransportType: "virtual", Source: "imagegen", Config: fmt.Sprintf(`{"virtual_type":"imagegen","ref_id":%d}`, id), ToolsCache: string(tools), ToolsUpdatedAt: &now, Status: common.StatusEnabled, HealthStatus: "healthy"}
+		svc := model.McpService{UserID: uid, Name: fmt.Sprintf("imagegen_%d", id), DisplayName: cfg.Name, Description: cfg.Description, ResourcesCache: virtual.PublicResourceSnapshot("imagegen"), PromptsCache: "[]", TransportType: "virtual", Source: "imagegen", Config: fmt.Sprintf(`{"virtual_type":"imagegen","ref_id":%d}`, id), ToolsCache: string(tools), ToolsUpdatedAt: &now, Status: common.StatusEnabled, HealthStatus: "healthy"}
 		if e := tx.Create(&svc).Error; e != nil {
 			return e
 		}
@@ -268,6 +270,7 @@ func (s *ImageGenService) register(c *model.ImageGenConfig) {
 	}
 }
 func (s *ImageGenService) remove(uid, id int64, deleteConfig bool) error {
+	defer syncVirtualMarketplaceBindings("imagegen", id)
 	imageGenConfigMu.Lock()
 	defer imageGenConfigMu.Unlock()
 	var serviceID int64
@@ -275,6 +278,11 @@ func (s *ImageGenService) remove(uid, id int64, deleteConfig bool) error {
 		var cfg model.ImageGenConfig
 		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", id, uid).First(&cfg).Error; e != nil {
 			return e
+		}
+		if deleteConfig {
+			if err := model.RequireVirtualConfigUnbound(tx, uid, model.VirtualBinding{VirtualType: "imagegen", RefID: id}); err != nil {
+				return err
+			}
 		}
 		if cfg.RegisteredServiceID != nil {
 			serviceID = *cfg.RegisteredServiceID

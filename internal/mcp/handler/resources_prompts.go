@@ -90,7 +90,7 @@ type scopeEntry struct {
 	groupID int64
 }
 
-// servicesInScope 返回该请求可见的服务(去重、排除 vision/camera 虚拟服务)。
+// servicesInScope 返回该请求可见的服务(去重，按实际 MCP 能力处理所有服务)。
 // GroupSlug 非空时限定该分组并校验访问权;否则聚合 API Key 绑定分组的全部服务,
 // 与 tools/list 的取数口径一致。
 func (h *GatewayHandler) servicesInScope(logCtx *LogContext) ([]scopeEntry, error) {
@@ -125,7 +125,7 @@ func (h *GatewayHandler) servicesInScope(logCtx *LogContext) ([]scopeEntry, erro
 	seen := make(map[int64]bool)
 	var scope []scopeEntry
 	for _, p := range pairs {
-		if seen[p.Service.ID] || p.Service.TransportType == "virtual" {
+		if seen[p.Service.ID] {
 			continue
 		}
 		seen[p.Service.ID] = true

@@ -1,13 +1,16 @@
 package dto
 
+import "github.com/mujkjk/newmcp/model"
+
 // --- Admin: Update marketplace item ---
 // 注:市场项创建仅支持"从自有服务克隆上架"(CloneMarketplaceReq),无手动创建。
 
 type UpdateMarketplaceItemReq struct {
-	DisplayName *string `json:"display_name"`
-	Description *string `json:"description"`
-	IconURL     *string `json:"icon_url"`
-	Category    *string `json:"category"`
+	VirtualBinding *model.VirtualBinding `json:"virtual_binding"`
+	DisplayName    *string               `json:"display_name"`
+	Description    *string               `json:"description"`
+	IconURL        *string               `json:"icon_url"`
+	Category       *string               `json:"category"`
 	// 分组绑定(多对多):nil/缺省=不动;[]=清空;[...]=全量替换(同 Tags 语义)
 	GroupIDs             []int64                 `json:"group_ids"`
 	Tags                 []string                `json:"tags"`
@@ -164,17 +167,20 @@ type MarketplaceListItem struct {
 }
 
 type MarketplaceDetail struct {
-	ID            int64    `json:"id"`
-	Name          string   `json:"name"`
-	DisplayName   string   `json:"display_name"`
-	Description   string   `json:"description"`
-	IconURL       string   `json:"icon_url"`
-	Category      string   `json:"category"`
-	GroupIDs      []int64  `json:"group_ids"`
-	GroupNames    []string `json:"group_names"`
-	Tags          []string `json:"tags"`
-	Version       string   `json:"version"`
-	TransportType string   `json:"transport_type"`
+	VirtualBinding   *model.VirtualBinding `json:"virtual_binding,omitempty"`
+	BindingName      string                `json:"binding_name,omitempty"`
+	BindingAvailable *bool                 `json:"binding_available,omitempty"`
+	ID               int64                 `json:"id"`
+	Name             string                `json:"name"`
+	DisplayName      string                `json:"display_name"`
+	Description      string                `json:"description"`
+	IconURL          string                `json:"icon_url"`
+	Category         string                `json:"category"`
+	GroupIDs         []int64               `json:"group_ids"`
+	GroupNames       []string              `json:"group_names"`
+	Tags             []string              `json:"tags"`
+	Version          string                `json:"version"`
+	TransportType    string                `json:"transport_type"`
 	// 独占进程(仅 stdio 条目有意义):false=共享(全部安装用户共用平台子进程)
 	IsolatedProcess bool `json:"isolated_process"`
 	// 平台上游连接配置(config_template 解密):url/command/args 等结构明文,headers/env 的凭证值

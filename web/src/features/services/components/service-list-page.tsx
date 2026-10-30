@@ -320,8 +320,7 @@ export function ServiceListPage() {
                   ]}
                   actions={
                     <>
-                      {!isVirtual && (
-                        <Button
+                      <Button
                           variant="ghost"
                           size="sm"
                           className="gap-1"
@@ -333,7 +332,6 @@ export function ServiceListPage() {
                             : <Zap className="h-3.5 w-3.5" />}
                           {t('services.test')}
                         </Button>
-                      )}
                       <Link to="/services/$id" params={{ id: String(s.id) }}>
                         <Button variant="ghost" size="sm">{t('services.detail')}</Button>
                       </Link>
@@ -430,7 +428,6 @@ export function ServiceListPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {!isVirtual && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -443,12 +440,10 @@ export function ServiceListPage() {
                               : <Zap className="h-3.5 w-3.5" />}
                             {t('services.test')}
                           </Button>
-                          )}
                           <Link to="/services/$id" params={{ id: String(s.id) }}>
                             <Button variant="ghost" size="sm">{t('services.detail')}</Button>
                           </Link>
-                          {!isVirtual && (
-                          <Button
+                          {!isVirtual && (<Button
                             variant="ghost"
                             size="sm"
                             className="text-destructive hover:text-destructive"

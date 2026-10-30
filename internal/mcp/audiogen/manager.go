@@ -17,6 +17,7 @@ import (
 	"github.com/mujkjk/newmcp/common"
 	"github.com/mujkjk/newmcp/internal/audioasset"
 	"github.com/mujkjk/newmcp/internal/mcp/imagegen"
+	"github.com/mujkjk/newmcp/internal/mcp/virtual/events"
 	"github.com/mujkjk/newmcp/internal/storage"
 	"github.com/mujkjk/newmcp/internal/taskreference"
 	"github.com/mujkjk/newmcp/model"
@@ -224,7 +225,7 @@ func (m *Manager) capture(ctx context.Context, t *model.AudioGenTask, in Input) 
 	return m.Store.Put(ctx, t.InputKey, bytes.NewReader(b), "application/json")
 }
 func (m *Manager) Submit(ctx context.Context, uid int64, c *model.AudioGenConfig, kind string, args map[string]any, source string) (*model.AudioGenTask, error) {
-	if uid == 0 || uid != c.UserID {
+	if uid == 0 || !model.CanExecuteConfig(ctx, uid, c.UserID, c.ID, "audiogen") {
 		return nil, fmt.Errorf("audio configuration is not accessible")
 	}
 	conn, e := Resolve(c, kind)
@@ -240,7 +241,7 @@ func (m *Manager) Submit(ctx context.Context, uid int64, c *model.AudioGenConfig
 		requestID = uuid.NewString()
 	}
 	sum := sha256.Sum256([]byte(fmt.Sprintf("%d|%d|%s|%s", uid, c.ID, kind, requestID)))
-	idem := hex.EncodeToString(sum[:])
+	idem := model.ScopedTaskKey(ctx, hex.EncodeToString(sum[:]))
 	var existing model.AudioGenTask
 	if e = m.DB.Where("idempotency_key = ?", idem).First(&existing).Error; e == nil {
 		if existing.RequestHash != hash {
@@ -255,7 +256,8 @@ func (m *Manager) Submit(ctx context.Context, uid int64, c *model.AudioGenConfig
 	if e != nil {
 		return nil, e
 	}
-	t := &model.AudioGenTask{ID: uuid.NewString(), UserID: uid, ConfigID: c.ID, ExecutionConfigID: c.ID, ConfigName: c.Name, Kind: kind, Source: source, Protocol: conn.Slot.Protocol, Model: conn.Slot.Model, Prompt: prompt(kind, in.Params), Status: "queued", ArtifactStatus: "none", IdempotencyKey: idem, RequestHash: hash, Connection: encrypted}
+	taskScope := model.VirtualExecutionFrom(ctx)
+	t := &model.AudioGenTask{ID: uuid.NewString(), UserID: uid, ServiceID: taskScope.ServiceID, MarketplaceItemID: taskScope.MarketplaceItemID, ConfigID: c.ID, ExecutionConfigID: c.ID, ConfigName: c.Name, Kind: kind, Source: source, Protocol: conn.Slot.Protocol, Model: conn.Slot.Model, Prompt: prompt(kind, in.Params), Status: "queued", ArtifactStatus: "none", IdempotencyKey: idem, RequestHash: hash, Connection: encrypted}
 	if e = m.capture(ctx, t, in); e != nil {
 		return nil, e
 	}
@@ -266,8 +268,13 @@ func (m *Manager) Submit(ctx context.Context, uid int64, c *model.AudioGenConfig
 		}
 		return nil, e
 	}
+	notifyAudioTask(t)
 	m.notify()
 	return t, nil
+}
+
+func notifyAudioTask(t *model.AudioGenTask) {
+	events.TaskChanged("audiogen", t.UserID, t.ServiceID, t.ConfigID)
 }
 func (m *Manager) Get(uid int64, configID *int64, id string) (*model.AudioGenTask, error) {
 	q := m.DB.Where("id = ? AND user_id = ?", id, uid)
@@ -312,7 +319,10 @@ func (m *Manager) sweep(ctx context.Context) {
 		if _, e := m.readStage(ctx, key); e == nil {
 			status, artifact, errText = "completed", "pending", ""
 		}
-		_ = m.DB.Model(&model.AudioGenTask{}).Where("id = ? AND status = ? AND lease_until < ?", t.ID, "running", time.Now()).Updates(map[string]any{"status": status, "artifact_status": artifact, "output_key": key, "error": errText, "connection": "", "lease_owner": ""}).Error
+		res := m.DB.Model(&model.AudioGenTask{}).Where("id = ? AND status = ? AND lease_until < ?", t.ID, "running", time.Now()).Updates(map[string]any{"status": status, "artifact_status": artifact, "output_key": key, "error": errText, "connection": "", "lease_owner": ""})
+		if res.Error == nil && res.RowsAffected == 1 {
+			notifyAudioTask(&t)
+		}
 	}
 	var saveCount int64
 	_ = m.DB.Model(&model.AudioGenTask{}).Where("artifact_status = ? AND lease_until > ?", "saving", time.Now()).Count(&saveCount).Error
@@ -326,6 +336,7 @@ func (m *Manager) sweep(ctx context.Context) {
 		res := m.DB.Model(&model.AudioGenTask{}).Where("id = ? AND (artifact_status = ? OR (artifact_status = ? AND lease_until < ?))", t.ID, "pending", "saving", time.Now()).Updates(map[string]any{"artifact_status": "saving", "lease_owner": owner, "lease_until": time.Now().Add(10 * time.Minute)})
 		if res.Error == nil && res.RowsAffected == 1 {
 			t.LeaseOwner = owner
+			notifyAudioTask(&t)
 			saveCount++
 			m.wg.Add(1)
 			go func(t model.AudioGenTask) { defer m.wg.Done(); m.save(ctx, &t) }(t)
@@ -370,6 +381,7 @@ func (m *Manager) sweep(ctx context.Context) {
 		if err != nil || !claimed {
 			break
 		}
+		notifyAudioTask(&task)
 		m.wg.Add(1)
 		go func(t model.AudioGenTask) { defer m.wg.Done(); m.generate(ctx, &t) }(task)
 	}
@@ -420,12 +432,18 @@ func (m *Manager) generate(parent context.Context, t *model.AudioGenTask) {
 	res := m.DB.Model(&model.AudioGenTask{}).Where("id = ? AND status = ? AND lease_owner = ?", t.ID, "running", t.LeaseOwner).Updates(map[string]any{"status": "completed", "artifact_status": "pending", "output_key": key, "connection": "", "result_text": out.Text, "transcript": out.Transcript, "input_transcript": out.InputTranscript, "lyrics": out.Lyrics, "usage": string(out.Usage)})
 	// result_text is the column name; no caller-visible state is inferred from HTTP success.
 	if res.Error != nil {
-		_ = m.DB.Model(&model.AudioGenTask{}).Where("id = ? AND status = ? AND lease_owner = ?", t.ID, "running", t.LeaseOwner).Updates(map[string]any{"status": "completed", "artifact_status": "pending", "output_key": key, "connection": ""}).Error
+		res = m.DB.Model(&model.AudioGenTask{}).Where("id = ? AND status = ? AND lease_owner = ?", t.ID, "running", t.LeaseOwner).Updates(map[string]any{"status": "completed", "artifact_status": "pending", "output_key": key, "connection": ""})
+	}
+	if res.Error == nil && res.RowsAffected == 1 {
+		notifyAudioTask(t)
 	}
 	m.notify()
 }
 func (m *Manager) fail(t *model.AudioGenTask, status, msg string) {
-	_ = m.DB.Model(&model.AudioGenTask{}).Where("id = ? AND status = ? AND lease_owner = ?", t.ID, "running", t.LeaseOwner).Updates(map[string]any{"status": status, "error": msg, "connection": "", "lease_owner": "", "lease_until": time.Time{}}).Error
+	res := m.DB.Model(&model.AudioGenTask{}).Where("id = ? AND status = ? AND lease_owner = ?", t.ID, "running", t.LeaseOwner).Updates(map[string]any{"status": status, "error": msg, "connection": "", "lease_owner": "", "lease_until": time.Time{}})
+	if res.Error == nil && res.RowsAffected == 1 {
+		notifyAudioTask(t)
+	}
 }
 func (m *Manager) save(parent context.Context, t *model.AudioGenTask) {
 	ctx, cancel := context.WithTimeout(parent, 10*time.Minute)
@@ -501,7 +519,10 @@ func (m *Manager) save(parent context.Context, t *model.AudioGenTask) {
 		updates["lyrics"] = out.Lyrics
 		updates["usage"] = string(out.Usage)
 	}
-	_ = m.DB.Model(&model.AudioGenTask{}).Where("id = ? AND lease_owner = ? AND artifact_status = ?", t.ID, t.LeaseOwner, "saving").Updates(updates).Error
+	res := m.DB.Model(&model.AudioGenTask{}).Where("id = ? AND lease_owner = ? AND artifact_status = ?", t.ID, t.LeaseOwner, "saving").Updates(updates)
+	if res.Error == nil && res.RowsAffected == 1 {
+		notifyAudioTask(t)
+	}
 }
 func (m *Manager) RetrySave(uid int64, configID *int64, id string) (*model.AudioGenTask, error) {
 	t, e := m.Get(uid, configID, id)
@@ -522,6 +543,9 @@ func (m *Manager) RetrySave(uid int64, configID *int64, id string) (*model.Audio
 	res := m.DB.Model(t).Where("artifact_status = ?", "failed").Updates(map[string]any{"artifact_status": "pending", "last_error": ""})
 	if res.Error != nil {
 		return nil, res.Error
+	}
+	if res.RowsAffected == 1 {
+		notifyAudioTask(t)
 	}
 	m.notify()
 	return m.Get(uid, configID, id)
@@ -613,6 +637,7 @@ func (m *Manager) Retry(ctx context.Context, uid int64, id string, c *model.Audi
 	if res.RowsAffected != 1 {
 		return nil, fmt.Errorf("task changed during retry")
 	}
+	notifyAudioTask(t)
 	_ = m.Store.Delete(context.Background(), oldInput)
 	m.notify()
 	return m.Get(uid, nil, id)
@@ -725,7 +750,11 @@ func (m *Manager) Delete(uid int64, id string) (err error) {
 			}
 		}
 	}
-	return m.DB.Where("id = ? AND user_id = ? AND status = ?", id, uid, "deleting").Delete(&model.AudioGenTask{}).Error
+	res := m.DB.Where("id = ? AND user_id = ? AND status = ?", id, uid, "deleting").Delete(&model.AudioGenTask{})
+	if res.Error == nil && res.RowsAffected == 1 {
+		notifyAudioTask(t)
+	}
+	return res.Error
 }
 func (m *Manager) cleanup(ctx context.Context) {
 	model.MediaRetentionMutex.RLock()
@@ -740,7 +769,13 @@ func (m *Manager) cleanup(ctx context.Context) {
 	for _, a := range assets {
 		if m.Store.Delete(ctx, a.StorageKey) == nil {
 			if a.TaskID != "" {
-				_ = m.DB.Model(&a).Updates(map[string]any{"status": "expired", "storage_key": ""}).Error
+				if m.DB.Model(&a).Updates(map[string]any{"status": "expired", "storage_key": ""}).Error == nil {
+					if task, err := m.Get(a.UserID, nil, a.TaskID); err == nil {
+						if m.DB.Model(task).Update("updated_at", time.Now()).Error == nil {
+							notifyAudioTask(task)
+						}
+					}
+				}
 			} else {
 				_ = m.DB.Delete(&a).Error
 			}

@@ -81,6 +81,9 @@ func VisionHandler(ctx context.Context, serviceID int64, config map[string]inter
 		return nil, fmt.Errorf("vision config not found: %w", err)
 	}
 
+	if !model.CanExecuteConfig(ctx, CallerUserID(ctx), vc.UserID, vc.ID, "vision") {
+		return nil, fmt.Errorf("service is not accessible to this user")
+	}
 	// Built-in upload_image tool: dispatched through this same handler (per-config,
 	// like analyze_image) rather than as a global tool. It short-circuits before the
 	// image/image_url param parsing below because its argument is local_path. The

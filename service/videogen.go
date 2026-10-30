@@ -234,6 +234,7 @@ func syncVideoGenService(tx *gorm.DB, c *model.VideoGenConfig) error {
 }
 
 func (s *VideoGenService) Update(uid, id int64, r *dto.VideoGenConfigReq) error {
+	defer syncVirtualMarketplaceBindings("videogen", id)
 	videoGenConfigMu.Lock()
 	defer videoGenConfigMu.Unlock()
 	var c *model.VideoGenConfig
@@ -267,6 +268,7 @@ func (s *VideoGenService) register(c *model.VideoGenConfig) {
 }
 
 func (s *VideoGenService) Enable(uid, id int64) error {
+	defer syncVirtualMarketplaceBindings("videogen", id)
 	videoGenConfigMu.Lock()
 	defer videoGenConfigMu.Unlock()
 	var c *model.VideoGenConfig
@@ -281,7 +283,7 @@ func (s *VideoGenService) Enable(uid, id int64) error {
 		}
 		tools, _ := json.Marshal(buildVideoGenTools(c))
 		now := time.Now()
-		svc := model.McpService{UserID: uid, Name: fmt.Sprintf("videogen_%d", id), DisplayName: c.Name, Description: c.Description, TransportType: "virtual", Source: "videogen", Config: fmt.Sprintf(`{"virtual_type":"videogen","ref_id":%d}`, id), ToolsCache: string(tools), ToolsUpdatedAt: &now, Status: common.StatusEnabled, HealthStatus: "healthy"}
+		svc := model.McpService{UserID: uid, Name: fmt.Sprintf("videogen_%d", id), DisplayName: c.Name, Description: c.Description, ResourcesCache: virtual.PublicResourceSnapshot("videogen"), PromptsCache: "[]", TransportType: "virtual", Source: "videogen", Config: fmt.Sprintf(`{"virtual_type":"videogen","ref_id":%d}`, id), ToolsCache: string(tools), ToolsUpdatedAt: &now, Status: common.StatusEnabled, HealthStatus: "healthy"}
 		if e := tx.Create(&svc).Error; e != nil {
 			return e
 		}
@@ -296,6 +298,7 @@ func (s *VideoGenService) Enable(uid, id int64) error {
 }
 
 func (s *VideoGenService) remove(uid, id int64, deleteConfig bool) error {
+	defer syncVirtualMarketplaceBindings("videogen", id)
 	videoGenConfigMu.Lock()
 	defer videoGenConfigMu.Unlock()
 	var serviceID int64
@@ -303,6 +306,11 @@ func (s *VideoGenService) remove(uid, id int64, deleteConfig bool) error {
 		c, e := lockedVideoGenConfig(tx, uid, id)
 		if e != nil {
 			return e
+		}
+		if deleteConfig {
+			if err := model.RequireVirtualConfigUnbound(tx, uid, model.VirtualBinding{VirtualType: "videogen", RefID: id}); err != nil {
+				return err
+			}
 		}
 		if c.RegisteredServiceID != nil {
 			serviceID = *c.RegisteredServiceID
